@@ -1,0 +1,48 @@
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+   name: pertisk-kube-backend
+   namespace: pertisk-kube
+ spec:
+   replicas: 1
+   selector:
+     matchLabels:
+       app: pertisk-kube-backend
+   template:
+     metadata:
+       labels:
+         app: pertisk-kube-backend
+     spec:
+       serviceAccountName: pertisk-kube-sa
+       containers:
+         - name: backend
+           image: your-registry/pertisk-kube-backend:latest
+           imagePullPolicy: IfNotPresent
+           ports:
+             - containerPort: 8091
+           readinessProbe:
+             httpGet:
+               path: /api/health
+               port: 8091
+             initialDelaySeconds: 5
+             periodSeconds: 10
+           livenessProbe:
+             httpGet:
+               path: /api/health
+               port: 8091
+             initialDelaySeconds: 15
+             periodSeconds: 20
+ ---
+ apiVersion: v1
+ kind: Service
+ metadata:
+   name: pertisk-kube-backend
+   namespace: pertisk-kube
+ spec:
+   selector:
+     app: pertisk-kube-backend
+   ports:
+     - name: http
+       port: 8091
+       targetPort: 8091
+

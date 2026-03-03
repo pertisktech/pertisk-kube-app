@@ -1,0 +1,185 @@
+/* Omni-inspired global theme */
+
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@300;400;500&display=swap');
+
+/* Light theme (default) */
+:root {
+  --color-naturals-n0: #101118;
+  --color-naturals-n1: #13141c;
+  --color-naturals-n2: #15161e;
+  --color-naturals-n3: #191b24;
+  --color-naturals-n4: #1f222e;
+  --color-naturals-n5: #272932;
+  --color-naturals-n6: #2c2e38;
+  --color-naturals-n7: #3a3b45;
+  --color-naturals-n8: #5b5c64;
+  --color-naturals-n9: #7d7d85;
+  --color-naturals-n10: #878990;
+  --color-naturals-n11: #9fa1a6;
+  --color-naturals-n12: #c3c3c7;
+  --color-naturals-n13: #e8e8e9;
+  --color-naturals-n14: #ffffff;
+  --color-primary-p1: #ffbea9;
+  --color-primary-p2: #fe9e74;
+  --color-primary-p3: #ff8b59;
+  --color-primary-p4: #ff5f2a;
+  --color-primary-p5: #ce5027;
+  --color-primary-p6: #342321;
+  --color-bg: var(--color-naturals-n0);
+  --color-surface: var(--color-naturals-n1);
+  --color-surface-elevated: var(--color-naturals-n2);
+  --color-hover: var(--color-naturals-n4);
+  --color-border: var(--color-naturals-n5);
+  --color-text: var(--color-naturals-n13);
+  --color-text-secondary: var(--color-naturals-n11);
+  --color-muted: var(--color-naturals-n9);
+  --color-card: var(--color-naturals-n2);
+  --color-sidebar: var(--color-naturals-n1);
+  --color-primary: var(--color-primary-p3);
+  --color-primary-hover: var(--color-primary-p2);
+  --color-bg-gradient-start: var(--color-naturals-n0);
+  --color-bg-gradient-end: var(--color-naturals-n1);
+  --color-icon-primary: var(--color-primary-p3);
+  --color-icon-secondary: var(--color-naturals-n10);
+  --color-icon-success: #10b981;
+  --color-icon-warning: #f59e0b;
+  --color-icon-danger: #ef4444;
+  --color-icon-info: #0ea5e9;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --font-sans: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Roboto Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-sidebar: 0 0 0 1px rgba(31, 34, 46, 0.95), 8px 0 24px rgba(0, 0, 0, 0.32);
+  --transition-sidebar: 220ms;
+  --error: #ef4444;
+  --warn: #f59e0b;
+}
+
+/* Dark theme */
+html.dark {
+  --color-primary-glow: color-mix(in srgb, var(--color-primary) 25%, transparent);
+  --color-icon-success: #34d399;
+  --color-icon-warning: #fbbf24;
+  --color-icon-danger: #f87171;
+  --color-icon-info: #38bdf8;
+  --shadow-sidebar: 0 0 0 1px rgba(31, 34, 46, 0.95), 8px 0 24px rgba(0, 0, 0, 0.32);
+  --error: #f87171;
+  --warn: #fbbf24;
+}
+
+/* Keep light class available, but theme stays Omni-like */
+html.light {
+  --color-bg: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #ffffff;
+  --color-hover: #eef0f3;
+  --color-border: #dde2e8;
+  --color-text: #191b24;
+  --color-text-secondary: #4f5663;
+  --color-muted: #707887;
+  --color-card: #ffffff;
+  --color-sidebar: #f8fafc;
+  --color-bg-gradient-start: #f5f6f8;
+  --color-bg-gradient-end: #ffffff;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.07);
+  --shadow-md: 0 8px 24px rgba(16, 24, 40, 0.1);
+  --shadow-sidebar: 0 0 0 1px rgba(150, 160, 175, 0.3), 8px 0 8px rgba(16, 24, 40, 0.04);
+}
+
+:root {
+  --radius-xl: 20px;
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Map legacy names for existing components */
+:root {
+  --bg: var(--color-bg);
+  --bg-card: var(--color-card);
+  --bg-hover: var(--color-hover);
+  --border: var(--color-border);
+  --text: var(--color-text);
+  --text-muted: var(--color-muted);
+  --accent: var(--color-primary);
+  --accent-dim: var(--color-primary-hover);
+  --radius: var(--radius-md);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 15px;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--color-bg);
+  background-image: linear-gradient(180deg, var(--color-bg-gradient-start), var(--color-bg-gradient-end));
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+/* Dark mode: subtle gradient overlay */
+html.dark body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    radial-gradient(900px 400px at 100% -10%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 65%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+#root {
+  height: 100vh;
+  overflow: hidden;
+}
+
+html,
+body,
+#root {
+  transition: background-color var(--transition-normal), color var(--transition-fast);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-naturals-n5);
+  border: 1px solid var(--color-naturals-n4);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-naturals-n6);
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+

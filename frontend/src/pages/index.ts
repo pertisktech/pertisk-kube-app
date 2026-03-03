@@ -1,0 +1,11 @@
+export { Dashboard } from './Dashboard';
+export { NamespacesPage } from './NamespacesPage';
+export { NodesPage } from './NodesPage';
+export { PodsPage } from './PodsPage';
+export { DeploymentsPage } from './DeploymentsPage';
+export { StatefulSetsPage } from './StatefulSetsPage';
+export { DaemonSetsPage } from './DaemonSetsPage';
+export { ReplicaSetsPage } from './ReplicaSetsPage';
+export { JobsPage } from './JobsPage';
+export { CronJobsPage } from './CronJobsPage';
+export { EventsPage } from './EventsPage';

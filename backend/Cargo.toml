@@ -1,0 +1,20 @@
+ [package]
+ name = "pertisk-kube-backend"
+ version = "0.1.0"
+ edition = "2021"
+
+ [dependencies]
+ axum = { version = "0.7", features = ["macros", "json"] }
+ hyper = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+ serde = { version = "1", features = ["derive"] }
+ serde_json = "1"
+ thiserror = "1"
+anyhow = "1"
+ tower = "0.5"
+tower-http = { version = "0.5", features = ["trace", "cors", "fs"] }
+ tracing = "0.1"
+ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+ kube = { version = "0.91", features = ["runtime", "derive"] }
+ k8s-openapi = { version = "0.22", features = ["v1_30"] }
+
