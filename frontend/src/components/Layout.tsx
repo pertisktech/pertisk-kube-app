@@ -3,6 +3,8 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Menu,
   X,
+  PanelLeft,
+  PanelLeftClose,
   LayoutDashboard,
   Network,
   Database,
@@ -38,6 +40,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const location = useLocation();
 
   const isActive = (path: string) => {
@@ -58,13 +61,14 @@ export const Layout = () => {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 bg-sidebar border-r border-border shadow-lg overflow-y-auto transition-transform duration-300 md:relative md:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 bg-sidebar border-r border-border shadow-lg overflow-y-auto transition-all duration-300 md:relative md:translate-x-0',
+          sidebarCollapsed ? 'w-[72px]' : 'w-64',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         <div className="p-4">
           <div className="flex items-center justify-between mb-8">
-            <h1 className="text-lg font-bold text-primary">Pertisk Kube</h1>
+            {!sidebarCollapsed && <h1 className="text-lg font-bold text-primary">Pertisk Kube</h1>}
             <button
               onClick={() => setSidebarOpen(false)}
               className="md:hidden p-1 hover:bg-hover rounded"
@@ -84,13 +88,15 @@ export const Layout = () => {
                   onClick={() => setSidebarOpen(false)}
                   className={cn(
                     'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                    sidebarCollapsed && 'justify-center px-2',
                     active
                       ? 'bg-hover text-primary'
                       : 'text-text-secondary hover:bg-hover hover:text-text'
                   )}
+                  title={item.label}
                 >
                   <Icon size={18} className="flex-shrink-0" />
-                  <span>{item.label}</span>
+                  {!sidebarCollapsed && <span>{item.label}</span>}
                 </Link>
               );
             })}
@@ -107,6 +113,13 @@ export const Layout = () => {
             className="md:hidden p-2 hover:bg-hover rounded"
           >
             <Menu size={20} />
+          </button>
+          <button
+            onClick={() => setSidebarCollapsed((previous) => !previous)}
+            className="hidden md:inline-flex p-2 hover:bg-hover rounded text-text-secondary"
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {sidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
           </button>
           <div className="ml-auto text-sm text-text-secondary">
             Kubernetes Dashboard

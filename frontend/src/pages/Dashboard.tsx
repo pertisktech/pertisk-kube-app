@@ -20,8 +20,17 @@ export const Dashboard = () => {
     );
   }
 
-  const readyNodeCount = nodes?.filter((n) => n.ready).length || 0;
-  const runningPodCount = pods?.filter((p) => p.status === 'Running').length || 0;
+  const totalNodeCount = nodes?.length || 0;
+  const readyNodeCount =
+    nodes?.filter((node) => {
+      if (typeof node.ready === 'boolean') return node.ready;
+      return String(node.ready).toLowerCase() === 'true';
+    }).length || 0;
+  const runningPodCount =
+    pods?.filter((pod) => {
+      const state = (pod.status || pod.phase || '').toLowerCase();
+      return state === 'running';
+    }).length || 0;
 
   return (
     <div className="space-y-6">
@@ -33,9 +42,9 @@ export const Dashboard = () => {
       {/* Cluster Overview */}
       <Card title="Cluster Overview">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Stat label="Total Nodes" value={dashboard?.total_nodes || 0} />
+          <Stat label="Total Nodes" value={totalNodeCount} />
           <Stat label="Ready Nodes" value={readyNodeCount} />
-          <Stat label="Total Pods" value={dashboard?.total_pods || 0} />
+          <Stat label="Total Pods" value={dashboard?.pods || 0} />
           <Stat label="Running Pods" value={runningPodCount} />
         </div>
       </Card>
@@ -43,11 +52,13 @@ export const Dashboard = () => {
       {/* Resource Summary */}
       <Card title="Resource Summary">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Stat label="Deployments" value={dashboard?.total_deployments || 0} />
+          <Stat label="Deployments" value={dashboard?.deployments || 0} />
+          <Stat label="Namespaces" value={dashboard?.namespaces || 0} />
+          <Stat label="StatefulSets" value={dashboard?.statefulsets || 0} />
           <div className="flex flex-col gap-1 p-3">
-            <span className="text-sm text-text-secondary">Cluster Version</span>
+            <span className="text-sm text-text-secondary">Events</span>
             <span className="text-lg font-semibold text-text">
-              {dashboard?.cluster_version || 'Unknown'}
+              {dashboard?.events || 0}
             </span>
           </div>
         </div>
@@ -70,12 +81,18 @@ export const Dashboard = () => {
                     Status:{' '}
                     <span
                       className={
-                        node.ready
+                        (typeof node.ready === 'boolean'
+                          ? node.ready
+                          : String(node.ready).toLowerCase() === 'true')
                           ? 'text-icon-success font-medium'
                           : 'text-icon-danger font-medium'
                       }
                     >
-                      {node.ready ? 'Ready' : 'NotReady'}
+                      {(typeof node.ready === 'boolean'
+                        ? node.ready
+                        : String(node.ready).toLowerCase() === 'true')
+                        ? 'Ready'
+                        : 'NotReady'}
                     </span>
                   </p>
                   <p>Roles: {node.roles.join(', ') || 'None'}</p>

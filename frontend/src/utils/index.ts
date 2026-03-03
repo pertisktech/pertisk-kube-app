@@ -1,27 +1,33 @@
-export const formatDate = (timestamp: string): string => {
-  try {
-    const date = new Date(timestamp);
-    return date.toLocaleString();
-  } catch {
-    return timestamp;
-  }
+export const formatDate = (timestamp?: string | null): string => {
+  if (!timestamp) return '-';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return date.toLocaleString();
 };
 
-export const timeAgo = (timestamp: string): string => {
-  try {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+export const timeAgo = (timestamp?: string | null): string => {
+  if (!timestamp) return '-';
 
-    if (seconds < 60) return `${seconds}s ago`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+  const trimmed = timestamp.trim();
+  if (!trimmed) return '-';
 
-    return `${Math.floor(seconds / 604800)}w ago`;
-  } catch {
-    return timestamp;
+  if (/^\d+\s*[smhdw]$/i.test(trimmed) || /ago$/i.test(trimmed)) {
+    return trimmed;
   }
+
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  const now = new Date();
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (!Number.isFinite(seconds) || seconds < 0) return '-';
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+
+  return `${Math.floor(seconds / 604800)}w ago`;
 };
 
 export const getStatusColor = (

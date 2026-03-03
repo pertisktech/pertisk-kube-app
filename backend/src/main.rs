@@ -27,6 +27,8 @@ struct ApiResponse<T> {
 #[derive(Serialize)]
 struct NamespaceItem {
     name: String,
+    phase: String,
+    age: String,
 }
 
 #[derive(Serialize)]
@@ -148,7 +150,22 @@ async fn list_namespaces(State(state): State<AppState>) -> impl IntoResponse {
             let items: Vec<NamespaceItem> = list
                 .items
                 .into_iter()
-                .filter_map(|ns| ns.metadata.name.map(|name| NamespaceItem { name }))
+                .filter_map(|ns| {
+                    ns.metadata.name.map(|name| NamespaceItem {
+                        name,
+                        phase: ns
+                            .status
+                            .as_ref()
+                            .and_then(|s| s.phase.clone())
+                            .unwrap_or_else(|| "Unknown".into()),
+                        age: ns
+                            .metadata
+                            .creation_timestamp
+                            .as_ref()
+                            .map(|t| t.0.to_rfc3339())
+                            .unwrap_or_default(),
+                    })
+                })
                 .collect();
             let total = items.len();
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()

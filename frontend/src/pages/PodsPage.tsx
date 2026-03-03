@@ -20,7 +20,7 @@ export const PodsPage = () => {
     },
     {
       header: 'Status',
-      accessor: (row: Pod) => <StatusBadge status={row.status} />,
+      accessor: (row: Pod) => <StatusBadge status={row.status || row.phase || 'Unknown'} />,
       width: '12%',
     },
     {

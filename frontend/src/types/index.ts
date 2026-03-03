@@ -8,7 +8,8 @@ export interface Namespace {
 export interface Pod {
   name: string;
   namespace: string;
-  status: string;
+  status?: string;
+  phase?: string;
   ready: string;
   restarts: number;
   age: string;
@@ -85,7 +86,7 @@ export interface KubernetesEvent {
 
 export interface K8sNode {
   name: string;
-  ready: boolean;
+  ready: boolean | string;
   roles: string[];
   kubelet_version: string;
   os_image: string;
@@ -95,12 +96,15 @@ export interface K8sNode {
 }
 
 export interface DashboardSummary {
-  total_nodes: number;
-  ready_nodes: number;
-  total_pods: number;
-  running_pods: number;
-  total_deployments: number;
-  cluster_version: string;
+  namespaces: number;
+  pods: number;
+  deployments: number;
+  statefulsets: number;
+  daemonsets: number;
+  replicasets: number;
+  jobs: number;
+  cronjobs: number;
+  events: number;
 }
 
 export interface ApiResponse<T> {
