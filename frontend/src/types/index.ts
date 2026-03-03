@@ -32,17 +32,23 @@ export interface Deployment {
 export interface StatefulSet {
   name: string;
   namespace: string;
+  status: string;
   ready: string;
+  current: number;
+  updated: number;
   age: string;
+  images: string[];
 }
 
 export interface DaemonSet {
   name: string;
   namespace: string;
+  status: string;
   desired: number;
   current: number;
   ready: number;
   available: number;
+  updated: number;
   node_selector: Record<string, string>;
   age: string;
   images: string[];
@@ -51,9 +57,11 @@ export interface DaemonSet {
 export interface ReplicaSet {
   name: string;
   namespace: string;
+  status: string;
   desired: number;
   current: number;
   ready: number;
+  available: number;
   age: string;
   images: string[];
 }

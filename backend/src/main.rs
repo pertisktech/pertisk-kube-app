@@ -113,6 +113,46 @@ struct DeploymentItem {
 }
 
 #[derive(Serialize)]
+struct StatefulSetItem {
+    name: String,
+    namespace: String,
+    status: String,
+    ready: String,
+    current: i32,
+    updated: i32,
+    age: String,
+    images: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct DaemonSetItem {
+    name: String,
+    namespace: String,
+    status: String,
+    desired: i32,
+    current: i32,
+    ready: i32,
+    available: i32,
+    updated: i32,
+    node_selector: std::collections::BTreeMap<String, String>,
+    age: String,
+    images: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct ReplicaSetItem {
+    name: String,
+    namespace: String,
+    status: String,
+    desired: i32,
+    current: i32,
+    ready: i32,
+    available: i32,
+    age: String,
+    images: Vec<String>,
+}
+
+#[derive(Serialize)]
 struct CronJobItem {
     name: String,
     namespace: String,
@@ -662,7 +702,7 @@ async fn list_statefulsets(State(state): State<AppState>) -> impl IntoResponse {
     let api: Api<StatefulSet> = Api::all(state.client);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
-            let items: Vec<WorkloadItem> = list
+            let items: Vec<StatefulSetItem> = list
                 .items
                 .into_iter()
                 .map(|item| {
@@ -673,12 +713,54 @@ async fn list_statefulsets(State(state): State<AppState>) -> impl IntoResponse {
                         .as_ref()
                         .and_then(|s| s.ready_replicas)
                         .unwrap_or(0);
-                    let desired = item.status.as_ref().map(|s| s.replicas).unwrap_or(0);
-                    WorkloadItem {
+                    let desired = item.spec.as_ref().and_then(|s| s.replicas).unwrap_or(0);
+                    let current = item
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.current_replicas)
+                        .unwrap_or(0);
+                    let updated = item
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.updated_replicas)
+                        .unwrap_or(0);
+                    let age = item
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    let images = item
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.template.spec.as_ref())
+                        .map(|pod_spec| {
+                            pod_spec
+                                .containers
+                                .iter()
+                                .filter_map(|container| container.image.clone())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    let status = if desired == 0 {
+                        "Stopped".to_string()
+                    } else if ready >= desired {
+                        "Running".to_string()
+                    } else if ready > 0 {
+                        "Progressing".to_string()
+                    } else {
+                        "Pending".to_string()
+                    };
+
+                    StatefulSetItem {
                         name,
                         namespace,
-                        kind: "StatefulSet".into(),
-                        status: Some(format!("{}/{} ready", ready, desired)),
+                        status,
+                        ready: format!("{}/{}", ready, desired),
+                        current,
+                        updated,
+                        age,
+                        images,
                     }
                 })
                 .collect();
@@ -698,7 +780,7 @@ async fn list_daemonsets(State(state): State<AppState>) -> impl IntoResponse {
     let api: Api<DaemonSet> = Api::all(state.client);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
-            let items: Vec<WorkloadItem> = list
+            let items: Vec<DaemonSetItem> = list
                 .items
                 .into_iter()
                 .map(|item| {
@@ -710,11 +792,67 @@ async fn list_daemonsets(State(state): State<AppState>) -> impl IntoResponse {
                         .as_ref()
                         .map(|s| s.desired_number_scheduled)
                         .unwrap_or(0);
-                    WorkloadItem {
+                    let current = item
+                        .status
+                        .as_ref()
+                        .map(|s| s.current_number_scheduled)
+                        .unwrap_or(0);
+                    let available = item
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.number_available)
+                        .unwrap_or(0);
+                    let updated = item
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.updated_number_scheduled)
+                        .unwrap_or(0);
+                    let node_selector = item
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.template.spec.as_ref())
+                        .and_then(|pod_spec| pod_spec.node_selector.clone())
+                        .unwrap_or_default();
+                    let images = item
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.template.spec.as_ref())
+                        .map(|pod_spec| {
+                            pod_spec
+                                .containers
+                                .iter()
+                                .filter_map(|container| container.image.clone())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    let age = item
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    let status = if desired == 0 {
+                        "Stopped".to_string()
+                    } else if ready >= desired {
+                        "Running".to_string()
+                    } else if ready > 0 || available > 0 {
+                        "Progressing".to_string()
+                    } else {
+                        "Pending".to_string()
+                    };
+
+                    DaemonSetItem {
                         name,
                         namespace,
-                        kind: "DaemonSet".into(),
-                        status: Some(format!("{}/{} ready", ready, desired)),
+                        status,
+                        desired,
+                        current,
+                        ready,
+                        available,
+                        updated,
+                        node_selector,
+                        age,
+                        images,
                     }
                 })
                 .collect();
@@ -734,7 +872,7 @@ async fn list_replicasets(State(state): State<AppState>) -> impl IntoResponse {
     let api: Api<ReplicaSet> = Api::all(state.client);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
-            let items: Vec<WorkloadItem> = list
+            let items: Vec<ReplicaSetItem> = list
                 .items
                 .into_iter()
                 .map(|item| {
@@ -745,12 +883,52 @@ async fn list_replicasets(State(state): State<AppState>) -> impl IntoResponse {
                         .as_ref()
                         .and_then(|s| s.ready_replicas)
                         .unwrap_or(0);
-                    let desired = item.status.as_ref().map(|s| s.replicas).unwrap_or(0);
-                    WorkloadItem {
+                    let desired = item.spec.as_ref().and_then(|s| s.replicas).unwrap_or(0);
+                    let current = item.status.as_ref().map(|s| s.replicas).unwrap_or(0);
+                    let available = item
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.available_replicas)
+                        .unwrap_or(0);
+                    let age = item
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    let images = item
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.template.as_ref())
+                        .and_then(|template| template.spec.as_ref())
+                        .map(|pod_spec| {
+                            pod_spec
+                                .containers
+                                .iter()
+                                .filter_map(|container| container.image.clone())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    let status = if desired == 0 {
+                        "Stopped".to_string()
+                    } else if ready >= desired {
+                        "Running".to_string()
+                    } else if ready > 0 || available > 0 {
+                        "Progressing".to_string()
+                    } else {
+                        "Pending".to_string()
+                    };
+
+                    ReplicaSetItem {
                         name,
                         namespace,
-                        kind: "ReplicaSet".into(),
-                        status: Some(format!("{}/{} ready", ready, desired)),
+                        status,
+                        desired,
+                        current,
+                        ready,
+                        available,
+                        age,
+                        images,
                     }
                 })
                 .collect();

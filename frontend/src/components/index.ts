@@ -6,3 +6,6 @@ export { NamespaceDetailPanel } from './NamespaceDetailPanel';
 export { NodeDetailPanel } from './NodeDetailPanel';
 export { PodDetailPanel } from './PodDetailPanel';
 export { DeploymentDetailPanel } from './DeploymentDetailPanel';
+export { DaemonSetDetailPanel } from './DaemonSetDetailPanel';
+export { ReplicaSetDetailPanel } from './ReplicaSetDetailPanel';
+export { StatefulSetDetailPanel } from './StatefulSetDetailPanel';
