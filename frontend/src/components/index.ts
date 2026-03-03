@@ -9,3 +9,5 @@ export { DeploymentDetailPanel } from './DeploymentDetailPanel';
 export { DaemonSetDetailPanel } from './DaemonSetDetailPanel';
 export { ReplicaSetDetailPanel } from './ReplicaSetDetailPanel';
 export { StatefulSetDetailPanel } from './StatefulSetDetailPanel';
+export { JobDetailPanel } from './JobDetailPanel';
+export { CronJobDetailPanel } from './CronJobDetailPanel';

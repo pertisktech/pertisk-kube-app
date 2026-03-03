@@ -121,10 +121,19 @@ export const DataTable = <T extends Record<string, any>>({
                 )}
               >
                 {columns.map((col, colIdx) => (
-                  <td key={colIdx} className="px-4 py-3 text-text">
-                    {typeof col.accessor === 'function'
-                      ? col.accessor(row)
-                      : String(row[col.accessor] || '-')}
+                  <td key={colIdx} className={cn('px-4 py-3', colIdx === 0 ? 'text-primary font-medium' : 'text-text')}>
+                    {(() => {
+                      const cellValue =
+                        typeof col.accessor === 'function'
+                          ? col.accessor(row)
+                          : String(row[col.accessor] || '-');
+
+                      if (col.header === 'Age') {
+                        return <span className="whitespace-nowrap">{cellValue}</span>;
+                      }
+
+                      return cellValue;
+                    })()}
                   </td>
                 ))}
               </tr>

@@ -101,9 +101,7 @@ export const DeploymentsPage = () => {
     },
     {
       header: 'Age',
-      accessor: (row: Deployment) => (
-        <span className="whitespace-nowrap">{timeAgo(row.age)}</span>
-      ),
+      accessor: (row: Deployment) => timeAgo(row.age),
       width: '10%',
       sortable: true,
       sortKey: 'age',

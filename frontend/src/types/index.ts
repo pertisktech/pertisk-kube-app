@@ -69,6 +69,7 @@ export interface ReplicaSet {
 export interface Job {
   name: string;
   namespace: string;
+  status?: string;
   completions: string;
   duration: string;
   age: string;
@@ -81,6 +82,8 @@ export interface CronJob {
   suspend: boolean;
   active: number;
   last_schedule: string;
+  next_execution: string;
+  time_zone: string;
   age: string;
 }
 

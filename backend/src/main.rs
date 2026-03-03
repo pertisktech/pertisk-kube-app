@@ -7,8 +7,11 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use chrono::Utc;
+use cron::Schedule;
 use kube::{api::ListParams, Api, Client};
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::{env, net::SocketAddr, path::PathBuf};
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -93,14 +96,6 @@ struct EventItem {
 }
 
 #[derive(Serialize)]
-struct WorkloadItem {
-    name: String,
-    namespace: String,
-    kind: String,
-    status: Option<String>,
-}
-
-#[derive(Serialize)]
 struct DeploymentItem {
     name: String,
     namespace: String,
@@ -153,11 +148,42 @@ struct ReplicaSetItem {
 }
 
 #[derive(Serialize)]
+struct JobItem {
+    name: String,
+    namespace: String,
+    status: String,
+    completions: String,
+    duration: String,
+    age: String,
+}
+
+#[derive(Serialize)]
 struct CronJobItem {
     name: String,
     namespace: String,
-    schedule: Option<String>,
-    suspend: Option<bool>,
+    schedule: String,
+    suspend: bool,
+    active: i32,
+    last_schedule: String,
+    next_execution: String,
+    time_zone: String,
+    age: String,
+}
+
+fn format_compact_duration(seconds: i64) -> String {
+    if seconds < 60 {
+        return format!("{}s", seconds);
+    }
+
+    if seconds < 3600 {
+        return format!("{}m", seconds / 60);
+    }
+
+    if seconds < 86_400 {
+        return format!("{}h", seconds / 3600);
+    }
+
+    format!("{}d", seconds / 86_400)
 }
 
 #[derive(Serialize)]
@@ -948,26 +974,62 @@ async fn list_jobs(State(state): State<AppState>) -> impl IntoResponse {
     let api: Api<Job> = Api::all(state.client);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
-            let items: Vec<WorkloadItem> = list
+            let items: Vec<JobItem> = list
                 .items
                 .into_iter()
                 .map(|item| {
                     let name = item.metadata.name.unwrap_or_default();
                     let namespace = item.metadata.namespace.unwrap_or_else(|| "default".into());
-                    let status_text = item.status.map(|s| {
-                        let succeeded = s.succeeded.unwrap_or(0);
-                        let failed = s.failed.unwrap_or(0);
-                        let active = s.active.unwrap_or(0);
-                        format!(
-                            "active: {}, succeeded: {}, failed: {}",
-                            active, succeeded, failed
-                        )
-                    });
-                    WorkloadItem {
+
+                    let desired_completions = item
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.completions)
+                        .unwrap_or(1)
+                        .max(1);
+
+                    let status = item.status.as_ref();
+                    let succeeded = status.and_then(|s| s.succeeded).unwrap_or(0).max(0);
+                    let failed = status.and_then(|s| s.failed).unwrap_or(0).max(0);
+                    let active = status.and_then(|s| s.active).unwrap_or(0).max(0);
+
+                    let status_text = if failed > 0 {
+                        "Failed".to_string()
+                    } else if succeeded >= desired_completions {
+                        "Completed".to_string()
+                    } else if active > 0 {
+                        "Running".to_string()
+                    } else {
+                        "Pending".to_string()
+                    };
+
+                    let completions = format!("{}/{}", succeeded, desired_completions);
+
+                    let duration = if let Some(start_time) = status.and_then(|s| s.start_time.clone()) {
+                        let start = start_time.0;
+                        let end = status
+                            .and_then(|s| s.completion_time.clone())
+                            .map(|t| t.0)
+                            .unwrap_or_else(Utc::now);
+                        let elapsed = (end - start).num_seconds().max(0);
+                        format_compact_duration(elapsed)
+                    } else {
+                        "-".to_string()
+                    };
+
+                    let age = item
+                        .metadata
+                        .creation_timestamp
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    JobItem {
                         name,
                         namespace,
-                        kind: "Job".into(),
                         status: status_text,
+                        completions,
+                        duration,
+                        age,
                     }
                 })
                 .collect();
@@ -993,13 +1055,53 @@ async fn list_cronjobs(State(state): State<AppState>) -> impl IntoResponse {
                 .map(|item| {
                     let name = item.metadata.name.unwrap_or_default();
                     let namespace = item.metadata.namespace.unwrap_or_else(|| "default".into());
-                    let schedule = item.spec.as_ref().map(|s| s.schedule.clone()).filter(|s| !s.is_empty());
-                    let suspend = item.spec.as_ref().and_then(|s| s.suspend);
+                    let schedule = item
+                        .spec
+                        .as_ref()
+                        .map(|s| s.schedule.clone())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| "-".into());
+                    let suspend = item.spec.as_ref().and_then(|s| s.suspend).unwrap_or(false);
+                    let active = item
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.active.as_ref())
+                        .map(|a| a.len() as i32)
+                        .unwrap_or(0);
+                    let last_schedule = item
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.last_schedule_time.clone())
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    let next_execution = Schedule::from_str(&schedule)
+                        .ok()
+                        .and_then(|parsed| parsed.after(&Utc::now()).next())
+                        .map(|t| t.to_rfc3339())
+                        .unwrap_or_default();
+
+                    let time_zone = item
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.time_zone.clone())
+                        .unwrap_or_else(|| "Local".into());
+
+                    let age = item
+                        .metadata
+                        .creation_timestamp
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
                     CronJobItem {
                         name,
                         namespace,
                         schedule,
                         suspend,
+                        active,
+                        last_schedule,
+                        next_execution,
+                        time_zone,
+                        age,
                     }
                 })
                 .collect();
