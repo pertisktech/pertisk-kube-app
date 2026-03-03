@@ -43,8 +43,16 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend_dist
 RUN cargo build --release --bin pertisk-kube-backend
 
 # Stage 3: Runtime
-FROM gcr.io/distroless/cc-debian12
+# Use ubuntu:24.04 (Noble) for GLIBC 2.39+ compatibility
+FROM ubuntu:24.04
 WORKDIR /app
+
+# Install ca-certificates for HTTPS and create non-root user
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    useradd -m -u 65532 appuser
 
 # Copy the backend binary
 COPY --from=backend-builder /app/target/release/pertisk-kube-backend .
@@ -59,6 +67,6 @@ ENV RUST_LOG=info
 EXPOSE 8091
 
 # Run as non-root user
-USER 65532
+USER appuser
 
 ENTRYPOINT ["./pertisk-kube-backend"]

@@ -16,7 +16,7 @@ app:
   image:
     registry: harbor.tools.thaidevops.co
     repository: pertisksoft/pertisk-kube/web
-    tag: "v0.0.1"
+    tag: "v0.0.4"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -46,7 +46,7 @@ app:
 
 # Ingress configuration
 ingress:
-  enabled: true
+  enabled: false
   className: nginx
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
