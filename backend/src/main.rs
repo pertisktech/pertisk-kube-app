@@ -1,6 +1,14 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
+use axum::{
+    extract::{Request, State},
+    http::{header, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router,
+};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use kube::{api::ListParams, Api, Client};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{env, net::SocketAddr, path::PathBuf};
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -11,6 +19,19 @@ use tracing::{error, info};
 #[derive(Clone)]
 struct AppState {
     client: Client,
+    username: String,
+    password: String,
+}
+
+#[derive(Deserialize)]
+struct LoginRequest {
+    username: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+struct LoginResponse {
+    success: bool,
 }
 
 #[derive(Serialize)]
@@ -93,7 +114,13 @@ async fn main() -> anyhow::Result<()> {
     // In-cluster config (works in Kubernetes) or falls back to local kubeconfig.
     let client = Client::try_default().await?;
 
-    let state = AppState { client };
+    let username = env::var("USERNAME").unwrap_or_else(|_| "admin".to_string());
+    let password = env::var("PASSWORD").unwrap_or_else(|_| "admin".to_string());
+    let state = AppState {
+        client,
+        username,
+        password,
+    };
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -103,8 +130,11 @@ async fn main() -> anyhow::Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("frontend/dist"));
 
-    let api = Router::new()
+    let public_api = Router::new()
         .route("/health", get(health))
+        .route("/login", post(login));
+
+    let protected_api = Router::new()
         .route("/dashboard", get(get_dashboard_summary))
         .route("/nodes", get(list_nodes))
         .route("/namespaces", get(list_namespaces))
@@ -115,7 +145,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/daemonsets", get(list_daemonsets))
         .route("/replicasets", get(list_replicasets))
         .route("/jobs", get(list_jobs))
-        .route("/cronjobs", get(list_cronjobs));
+        .route("/cronjobs", get(list_cronjobs))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_basic_auth,
+        ));
+
+    let api = public_api.merge(protected_api);
 
     let index_html = static_dir.join("index.html");
     let spa_service = ServeDir::new(static_dir).not_found_service(ServeFile::new(index_html));
@@ -139,6 +175,41 @@ async fn health() -> impl IntoResponse {
         status: "ok".into(),
     };
     (StatusCode::OK, Json(body))
+}
+
+async fn login(State(state): State<AppState>, Json(payload): Json<LoginRequest>) -> impl IntoResponse {
+    if payload.username == state.username && payload.password == state.password {
+        return (StatusCode::OK, Json(LoginResponse { success: true })).into_response();
+    }
+
+    StatusCode::UNAUTHORIZED.into_response()
+}
+
+async fn require_basic_auth(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let credentials = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(parse_basic_auth);
+
+    match credentials {
+        Some((username, password)) if username == state.username && password == state.password => {
+            next.run(request).await
+        }
+        _ => StatusCode::UNAUTHORIZED.into_response(),
+    }
+}
+
+fn parse_basic_auth(value: &str) -> Option<(String, String)> {
+    let encoded = value.strip_prefix("Basic ")?;
+    let decoded = STANDARD.decode(encoded).ok()?;
+    let decoded_str = String::from_utf8(decoded).ok()?;
+    let (username, password) = decoded_str.split_once(':')?;
+    Some((username.to_string(), password.to_string()))
 }
 
 async fn list_namespaces(State(state): State<AppState>) -> impl IntoResponse {

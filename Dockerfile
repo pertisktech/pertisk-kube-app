@@ -19,8 +19,11 @@ COPY frontend/public ./public
 RUN npm run build
 
 # Stage 2: Build Backend
-FROM rustlang/rust:nightly AS backend-builder
+FROM rust:alpine AS backend-builder
 WORKDIR /app
+
+# Install build dependencies for native crates
+RUN apk add --no-cache build-base pkgconfig openssl-dev
 
 # Copy workspace Cargo.toml first
 COPY Cargo.toml ./Cargo.toml
@@ -43,16 +46,12 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend_dist
 RUN cargo build --release --bin pertisk-kube-backend
 
 # Stage 3: Runtime
-# Use ubuntu:24.04 (Noble) for GLIBC 2.39+ compatibility
-FROM ubuntu:24.04
+FROM alpine:latest
 WORKDIR /app
 
 # Install ca-certificates for HTTPS and create non-root user
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    useradd -m -u 65532 appuser
+RUN apk add --no-cache ca-certificates && \
+    adduser -D -u 65532 appuser
 
 # Copy the backend binary
 COPY --from=backend-builder /app/target/release/pertisk-kube-backend .

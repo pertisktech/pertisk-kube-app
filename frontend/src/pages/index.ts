@@ -9,3 +9,4 @@ export { ReplicaSetsPage } from './ReplicaSetsPage';
 export { JobsPage } from './JobsPage';
 export { CronJobsPage } from './CronJobsPage';
 export { EventsPage } from './EventsPage';
+export { LoginPage } from './LoginPage';

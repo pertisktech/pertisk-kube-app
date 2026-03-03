@@ -24,6 +24,9 @@ app:
     targetPort: 8091
   env:
     rustLog: info
+  auth:
+    username: admin
+    password: admin
   resources:
     limits:
       cpu: 500m

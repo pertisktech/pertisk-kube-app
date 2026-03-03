@@ -27,6 +27,16 @@ spec:
               value: "/app/static"
             - name: RUST_LOG
               value: {{ .Values.app.env.rustLog | default "info" }}
+            - name: USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pertisk-kube.fullname" . }}-auth
+                  key: username
+            - name: PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pertisk-kube.fullname" . }}-auth
+                  key: password
           ports:
             - name: http
               containerPort: {{ .Values.app.service.targetPort }}

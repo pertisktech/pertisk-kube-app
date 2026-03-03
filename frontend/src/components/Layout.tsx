@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
+  ChevronDown,
   Menu,
+  Moon,
   X,
   PanelLeft,
   PanelLeftClose,
+  Sun,
   LayoutDashboard,
   Network,
   Database,
@@ -17,6 +20,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { cn } from '../utils';
+import { useTheme } from '../context/ThemeContext';
 
 interface NavItem {
   label: string;
@@ -38,15 +42,36 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Events', path: '/events', icon: AlertCircle },
 ];
 
-export const Layout = () => {
+interface LayoutProps {
+  username?: string;
+  onLogout: () => void;
+}
+
+export const Layout = ({ username, onLogout }: LayoutProps) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
   const location = useLocation();
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    }
+
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
     return location.pathname.startsWith(path);
   };
+
+  const initial = username ? username.charAt(0).toUpperCase() : 'U';
 
   return (
     <div className="flex h-screen bg-bg text-text">
@@ -121,8 +146,53 @@ export const Layout = () => {
           >
             {sidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
           </button>
-          <div className="ml-auto text-sm text-text-secondary">
-            Kubernetes Dashboard
+          <div className="ml-auto flex items-center gap-2">
+            {theme && (
+              <button
+                type="button"
+                onClick={theme.toggleTheme}
+                title={theme.isDark ? 'Light mode' : 'Dark mode'}
+                aria-label={theme.isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                className="inline-flex items-center justify-center p-2 rounded-lg hover:bg-hover text-text-secondary"
+              >
+                {theme.isDark ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
+            )}
+
+            <div ref={userMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setShowUserMenu((previous) => !previous)}
+                className={cn(
+                  'inline-flex items-center gap-2 px-2 py-1.5 rounded-lg border border-border text-sm hover:bg-hover',
+                  showUserMenu ? 'bg-hover' : 'bg-surface'
+                )}
+              >
+                <span className="w-7 h-7 rounded-full bg-primary text-bg font-semibold text-xs inline-flex items-center justify-center">
+                  {initial}
+                </span>
+                <span className="text-text-secondary max-w-28 truncate">{username || 'User'}</span>
+                <ChevronDown
+                  size={14}
+                  className={cn('text-text-secondary transition-transform', showUserMenu && 'rotate-180')}
+                />
+              </button>
+
+              {showUserMenu && (
+                <div className="absolute right-0 mt-1 w-40 bg-surface border border-border rounded-lg p-1 shadow-md z-50">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      onLogout();
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-hover text-text-secondary"
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
