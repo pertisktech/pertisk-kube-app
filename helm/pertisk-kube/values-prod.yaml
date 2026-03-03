@@ -1,0 +1,81 @@
+# Production values for pertisk-kube unified deployment
+
+# Override the chart name (optional)
+nameOverride: ""
+# Override the full name (optional)
+fullnameOverride: ""
+
+namespace:
+  # Whether to create the namespace (use with --create-namespace flag)
+  create: false
+
+app:
+  name: pertisk-kube
+  replicaCount: 2  # Increase replicas for HA
+  image:
+    registry: harbor.tools.thaidevops.co
+    repository: pertisksoft/pertisk-kube/web
+    tag: v1.0.0  # Use specific version tags instead of latest
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 8091
+    targetPort: 8091
+  env:
+    rustLog: info
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  readinessProbe:
+    httpGet:
+      path: /api/health
+      port: 8091
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 3
+  livenessProbe:
+    httpGet:
+      path: /api/health
+      port: 8091
+    initialDelaySeconds: 30
+    periodSeconds: 20
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 3
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  hosts:
+    - host: pertisk-kube.yourdomain.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: pertisk-kube-tls
+      hosts:
+        - pertisk-kube.yourdomain.com
+
+rbac:
+  create: true
+  serviceAccountName: pertisk-kube-sa
+  rules:
+    - apiGroups: [""]
+      resources: ["pods", "services", "nodes", "namespaces", "events", "persistentvolumeclaims", "persistentvolumes"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["apps"]
+      resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["batch"]
+      resources: ["jobs", "cronjobs"]
+      verbs: ["get", "list", "watch"]

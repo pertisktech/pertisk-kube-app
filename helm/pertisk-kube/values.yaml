@@ -1,0 +1,85 @@
+# Default values for pertisk-kube unified deployment
+
+# Override the chart name
+nameOverride: ""
+# Override the full name
+fullnameOverride: ""
+
+namespace:
+  # Whether to create the namespace (use with --create-namespace flag)
+  create: false
+
+# Unified application configuration
+app:
+  name: pertisk-kube
+  replicaCount: 1
+  image:
+    registry: harbor.tools.thaidevops.co
+    repository: pertisksoft/pertisk-kube/web
+    tag: "v0.0.1"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8091
+    targetPort: 8091
+  env:
+    rustLog: info
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  readinessProbe:
+    httpGet:
+      path: /api/health
+      port: 8091
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  livenessProbe:
+    httpGet:
+      path: /api/health
+      port: 8091
+    initialDelaySeconds: 15
+    periodSeconds: 20
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: pertisk-kube.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: pertisk-kube-tls
+      hosts:
+        - pertisk-kube.example.com
+
+# RBAC configuration
+rbac:
+  create: true
+  serviceAccountName: pertisk-kube-sa
+  rules:
+    - apiGroups: [""]
+      resources:
+        [
+          "pods",
+          "services",
+          "nodes",
+          "namespaces",
+          "events",
+          "persistentvolumeclaims",
+          "persistentvolumes",
+        ]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["apps"]
+      resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["batch"]
+      resources: ["jobs", "cronjobs"]
+      verbs: ["get", "list", "watch"]
