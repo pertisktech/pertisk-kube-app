@@ -2,10 +2,19 @@ import { ReactNode } from 'react';
 import { Loader } from 'lucide-react';
 import { cn } from '../utils';
 
+export type SortDirection = 'asc' | 'desc';
+
+export interface SortState {
+  key: string;
+  direction: SortDirection;
+}
+
 interface Column<T> {
   header: string;
   accessor: keyof T | ((row: T) => ReactNode);
   width?: string;
+  sortable?: boolean;
+  sortKey?: string;
 }
 
 interface DataTableProps<T> {
@@ -14,6 +23,10 @@ interface DataTableProps<T> {
   isLoading: boolean;
   error?: string | null;
   rowKey: keyof T;
+  onRowClick?: (row: T) => void;
+  selectedRowKey?: string;
+  sortState?: SortState;
+  onSortChange?: (sort: SortState) => void;
 }
 
 export const DataTable = <T extends Record<string, any>>({
@@ -22,6 +35,10 @@ export const DataTable = <T extends Record<string, any>>({
   isLoading,
   error,
   rowKey,
+  onRowClick,
+  selectedRowKey,
+  sortState,
+  onSortChange,
 }: DataTableProps<T>) => {
   if (error) {
     return (
@@ -62,7 +79,31 @@ export const DataTable = <T extends Record<string, any>>({
                   className="px-4 py-3 text-left font-semibold text-text"
                   style={{ width: col.width }}
                 >
-                  {col.header}
+                  {col.sortable && col.sortKey && onSortChange ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const currentKey = col.sortKey!;
+                        const nextDirection: SortDirection =
+                          sortState?.key === currentKey && sortState?.direction === 'asc'
+                            ? 'desc'
+                            : 'asc';
+                        onSortChange({ key: currentKey, direction: nextDirection });
+                      }}
+                      className="inline-flex items-center gap-1 hover:text-primary"
+                    >
+                      <span>{col.header}</span>
+                      <span className="text-xs text-text-secondary">
+                        {sortState?.key === col.sortKey
+                          ? sortState.direction === 'asc'
+                            ? '▲'
+                            : '▼'
+                          : '↕'}
+                      </span>
+                    </button>
+                  ) : (
+                    col.header
+                  )}
                 </th>
               ))}
             </tr>
@@ -71,9 +112,12 @@ export const DataTable = <T extends Record<string, any>>({
             {data.map((row, rowIdx) => (
               <tr
                 key={String(row[rowKey])}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
                 className={cn(
                   'border-b border-border',
-                  rowIdx % 2 === 0 ? 'bg-surface' : 'bg-surface-elevated'
+                  rowIdx % 2 === 0 ? 'bg-surface' : 'bg-surface-elevated',
+                  onRowClick && 'cursor-pointer hover:bg-hover',
+                  selectedRowKey === String(row[rowKey]) && 'bg-hover'
                 )}
               >
                 {columns.map((col, colIdx) => (

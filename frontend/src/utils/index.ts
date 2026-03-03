@@ -34,11 +34,27 @@ export const getStatusColor = (
   status: string
 ): 'green' | 'yellow' | 'red' | 'gray' => {
   const lower = status?.toLowerCase() || '';
-  if (lower === 'running' || lower === 'active' || lower === 'true' || lower === 'ready')
+  if (
+    lower === 'running' ||
+    lower === 'active' ||
+    lower === 'true' ||
+    lower === 'ready' ||
+    lower === 'available'
+  )
     return 'green';
-  if (lower === 'pending' || lower === 'unknown' || lower === 'false')
+  if (
+    lower === 'pending' ||
+    lower === 'unknown' ||
+    lower === 'false' ||
+    lower === 'progressing'
+  )
     return 'yellow';
-  if (lower === 'failed' || lower === 'error' || lower === 'crashed')
+  if (
+    lower === 'failed' ||
+    lower === 'error' ||
+    lower === 'crashed' ||
+    lower === 'unavailable'
+  )
     return 'red';
   return 'gray';
 };

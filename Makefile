@@ -8,7 +8,7 @@ DOCKER_TAG ?= $(VERSION)
 HELM_RELEASE ?= pertisk-kube
 HELM_NAMESPACE ?= pertisk-rproxy
 
-.PHONY: dev dev-backend dev-frontend frontend-install frontend-build tools fmt build-backend run-monolith run-ingress-k3s
+.PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run-monolith run-ingress-k3s
 .PHONY: docker-build docker-build-amd64 docker-build-arm64 docker-build-multi docker-push docker-push-multi
 .PHONY: helm-install helm-upgrade helm-uninstall helm-template helm-deploy
 .PHONY: release version
@@ -32,6 +32,9 @@ dev-frontend:
 frontend-build:
 	cd frontend && npm install && npm run build
 
+frontend-build-watch:
+	cd frontend && npm install && npm run build -- --watch
+
 fmt:
 	cargo fmt
 
@@ -44,7 +47,10 @@ run-monolith: frontend-build
 
 # Simulate running as an ingress-style controller talking to k3s/k8s via kubeconfig.
 run-ingress-k3s: tools frontend-build
-	@if [ -f "$(K3S_KUBECONFIG)" ]; then \
+	@echo "Starting frontend build watcher (npm install && npm run build -- --watch)..."
+	@$(MAKE) frontend-build-watch & FRONTEND_WATCH_PID=$$!; \
+	trap 'kill $$FRONTEND_WATCH_PID 2>/dev/null || true' INT TERM EXIT; \
+	if [ -f "$(K3S_KUBECONFIG)" ]; then \
 		echo "Using local k3s kubeconfig: $(K3S_KUBECONFIG)"; \
 		KUBECONFIG="$(K3S_KUBECONFIG)" \
 		STATIC_DIR=frontend/dist \

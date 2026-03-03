@@ -2,3 +2,7 @@ export { Layout } from './Layout';
 export { DataTable } from './DataTable';
 export { StatusBadge } from './StatusBadge';
 export { Card, Stat } from './Card';
+export { NamespaceDetailPanel } from './NamespaceDetailPanel';
+export { NodeDetailPanel } from './NodeDetailPanel';
+export { PodDetailPanel } from './PodDetailPanel';
+export { DeploymentDetailPanel } from './DeploymentDetailPanel';

@@ -2,6 +2,7 @@
 export interface Namespace {
   name: string;
   phase: string;
+  labels: string;
   age: string;
 }
 
@@ -13,11 +14,14 @@ export interface Pod {
   ready: string;
   restarts: number;
   age: string;
+  node?: string;
+  pod_ip?: string;
 }
 
 export interface Deployment {
   name: string;
   namespace: string;
+  status: string;
   ready: string;
   updated: number;
   available: number;
@@ -88,6 +92,13 @@ export interface K8sNode {
   name: string;
   ready: boolean | string;
   roles: string[];
+  ip?: string;
+  ipv4?: string;
+  ipv6?: string;
+  internal_ip?: string;
+  external_ip?: string;
+  taints?: string[];
+  runtime?: string;
   kubelet_version: string;
   os_image: string;
   age?: string;

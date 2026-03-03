@@ -49,6 +49,7 @@ struct ApiResponse<T> {
 struct NamespaceItem {
     name: String,
     phase: String,
+    labels: String,
     age: String,
 }
 
@@ -56,7 +57,13 @@ struct NamespaceItem {
 struct PodItem {
     name: String,
     namespace: String,
+    status: Option<String>,
     phase: Option<String>,
+    ready: String,
+    restarts: u32,
+    age: String,
+    node: Option<String>,
+    pod_ip: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -66,6 +73,13 @@ struct NodeItem {
     roles: Vec<String>,
     kubelet_version: Option<String>,
     os_image: Option<String>,
+    ip: Option<String>,
+    ipv4: Option<String>,
+    ipv6: Option<String>,
+    internal_ip: Option<String>,
+    external_ip: Option<String>,
+    taints: Vec<String>,
+    runtime: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -84,6 +98,18 @@ struct WorkloadItem {
     namespace: String,
     kind: String,
     status: Option<String>,
+}
+
+#[derive(Serialize)]
+struct DeploymentItem {
+    name: String,
+    namespace: String,
+    status: String,
+    ready: String,
+    updated: i32,
+    available: i32,
+    images: Vec<String>,
+    age: String,
 }
 
 #[derive(Serialize)]
@@ -154,11 +180,17 @@ async fn main() -> anyhow::Result<()> {
     let api = public_api.merge(protected_api);
 
     let index_html = static_dir.join("index.html");
-    let spa_service = ServeDir::new(static_dir).not_found_service(ServeFile::new(index_html));
+    let assets_dir = static_dir.join("assets");
+    let config_js = static_dir.join("config.js");
+    let favicon_svg = static_dir.join("favicon.svg");
 
     let app = Router::new()
         .nest("/api", api)
-        .nest_service("/", spa_service)
+        .nest_service("/assets", ServeDir::new(assets_dir))
+        .route_service("/config.js", ServeFile::new(config_js))
+        .route_service("/favicon.svg", ServeFile::new(favicon_svg))
+        .route_service("/", ServeFile::new(index_html.clone()))
+        .fallback_service(ServeFile::new(index_html))
         .with_state(state)
         .layer(cors);
 
@@ -229,6 +261,23 @@ async fn list_namespaces(State(state): State<AppState>) -> impl IntoResponse {
                             .as_ref()
                             .and_then(|s| s.phase.clone())
                             .unwrap_or_else(|| "Unknown".into()),
+                        labels: ns
+                            .metadata
+                            .labels
+                            .as_ref()
+                            .map(|labels| {
+                                let mut pairs: Vec<String> = labels
+                                    .iter()
+                                    .map(|(key, value)| format!("{}={}", key, value))
+                                    .collect();
+                                pairs.sort();
+                                if pairs.is_empty() {
+                                    "-".to_string()
+                                } else {
+                                    pairs.join(", ")
+                                }
+                            })
+                            .unwrap_or_else(|| "-".to_string()),
                         age: ns
                             .metadata
                             .creation_timestamp
@@ -260,11 +309,56 @@ async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
                 .map(|pod| {
                     let name = pod.metadata.name.unwrap_or_default();
                     let namespace = pod.metadata.namespace.unwrap_or_else(|| "default".into());
-                    let phase = pod.status.and_then(|s| s.phase);
+                    let creation_timestamp = pod
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    let (phase, ready, restarts, pod_ip) = pod
+                        .status
+                        .as_ref()
+                        .map(|status| {
+                            let phase = status.phase.clone();
+                            let container_statuses = status.container_statuses.as_ref();
+
+                            let (ready_count, total_count) = container_statuses
+                                .map(|items| {
+                                    let ready_count = items.iter().filter(|item| item.ready).count();
+                                    let total_count = items.len();
+                                    (ready_count, total_count)
+                                })
+                                .unwrap_or((0, 0));
+
+                            let restarts: u32 = container_statuses
+                                .map(|items| {
+                                    items
+                                        .iter()
+                                        .map(|item| item.restart_count)
+                                        .sum::<i32>()
+                                        .max(0) as u32
+                                })
+                                .unwrap_or(0);
+
+                            let ready = format!("{}/{}", ready_count, total_count);
+
+                            (phase, ready, restarts, status.pod_ip.clone())
+                        })
+                        .unwrap_or((None, "0/0".to_string(), 0, None));
+
+                    let node = pod.spec.as_ref().and_then(|spec| spec.node_name.clone());
+
                     PodItem {
                         name,
                         namespace,
+                        status: phase.clone(),
                         phase,
+                        ready,
+                        restarts,
+                        age: creation_timestamp,
+                        node,
+                        pod_ip,
                     }
                 })
                 .collect();
@@ -344,6 +438,78 @@ async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         .as_ref()
                         .and_then(|status| status.node_info.as_ref())
                         .map(|info| info.os_image.clone());
+                    let internal_ip = node
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.addresses.as_ref())
+                        .and_then(|addresses| {
+                            addresses
+                                .iter()
+                                .find(|address| address.type_ == "InternalIP")
+                                .map(|address| address.address.clone())
+                        });
+                    let external_ip = node
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.addresses.as_ref())
+                        .and_then(|addresses| {
+                            addresses
+                                .iter()
+                                .find(|address| address.type_ == "ExternalIP")
+                                .map(|address| address.address.clone())
+                        });
+                    let (ipv4, ipv6) = node
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.addresses.as_ref())
+                        .map(|addresses| {
+                            let first_ipv4 = addresses
+                                .iter()
+                                .filter(|address| {
+                                    address.type_ == "InternalIP" || address.type_ == "ExternalIP"
+                                })
+                                .map(|address| address.address.clone())
+                                .find(|address| address.contains('.'));
+
+                            let first_ipv6 = addresses
+                                .iter()
+                                .filter(|address| {
+                                    address.type_ == "InternalIP" || address.type_ == "ExternalIP"
+                                })
+                                .map(|address| address.address.clone())
+                                .find(|address| address.contains(':'));
+
+                            (first_ipv4, first_ipv6)
+                        })
+                        .unwrap_or((None, None));
+                    let ip = ipv4
+                        .clone()
+                        .or_else(|| internal_ip.clone())
+                        .or_else(|| external_ip.clone())
+                        .or_else(|| ipv6.clone());
+                    let taints = node
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.taints.as_ref())
+                        .map(|items| {
+                            items
+                                .iter()
+                                .map(|taint| {
+                                    let key = taint.key.clone();
+                                    let effect = taint.effect.clone();
+                                    match &taint.value {
+                                        Some(value) => format!("{}={}:{}", key, value, effect),
+                                        None => format!("{}:{}", key, effect),
+                                    }
+                                })
+                                .collect::<Vec<String>>()
+                        })
+                        .unwrap_or_default();
+                    let runtime = node
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.node_info.as_ref())
+                        .map(|info| info.container_runtime_version.clone());
 
                     NodeItem {
                         name,
@@ -351,6 +517,13 @@ async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         roles,
                         kubelet_version,
                         os_image,
+                        ip,
+                        ipv4,
+                        ipv6,
+                        internal_ip,
+                        external_ip,
+                        taints,
+                        runtime,
                     }
                 })
                 .collect();
@@ -406,27 +579,70 @@ async fn list_deployments(State(state): State<AppState>) -> impl IntoResponse {
     let api: Api<Deployment> = Api::all(state.client);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
-            let items: Vec<WorkloadItem> = list
+            let items: Vec<DeploymentItem> = list
                 .items
                 .into_iter()
                 .map(|item| {
                     let name = item.metadata.name.unwrap_or_default();
                     let namespace = item.metadata.namespace.unwrap_or_else(|| "default".into());
+                    let desired = item
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.replicas)
+                        .unwrap_or(1);
                     let ready = item
                         .status
                         .as_ref()
                         .and_then(|s| s.ready_replicas)
                         .unwrap_or(0);
-                    let desired = item
+                    let updated = item
                         .status
                         .as_ref()
-                        .and_then(|s| s.replicas)
+                        .and_then(|s| s.updated_replicas)
                         .unwrap_or(0);
-                    WorkloadItem {
+                    let available = item
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.available_replicas)
+                        .unwrap_or(0);
+                    let images = item
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.template.spec.as_ref())
+                        .map(|pod_spec| {
+                            pod_spec
+                                .containers
+                                .iter()
+                                .map(|container| container.image.clone().unwrap_or_default())
+                                .filter(|image| !image.is_empty())
+                                .collect::<Vec<String>>()
+                        })
+                        .unwrap_or_default();
+                    let age = item
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    let status = if desired == 0 {
+                        "Stopped".to_string()
+                    } else if updated >= desired && available >= desired {
+                        "Running".to_string()
+                    } else if updated > 0 || available > 0 {
+                        "Progressing".to_string()
+                    } else {
+                        "Pending".to_string()
+                    };
+
+                    DeploymentItem {
                         name,
                         namespace,
-                        kind: "Deployment".into(),
-                        status: Some(format!("{}/{} ready", ready, desired)),
+                        status,
+                        ready: format!("{}/{}", ready, desired),
+                        updated,
+                        available,
+                        images,
+                        age,
                     }
                 })
                 .collect();
