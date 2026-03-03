@@ -9,4 +9,8 @@ export { ReplicaSetsPage } from './ReplicaSetsPage';
 export { JobsPage } from './JobsPage';
 export { CronJobsPage } from './CronJobsPage';
 export { EventsPage } from './EventsPage';
+export { ConfigResourcePage } from './ConfigResourcePage';
+export { NetworkResourcePage } from './NetworkResourcePage';
+export { StoragePage } from './StoragePage';
+export { StorageResourcePage } from './StorageResourcePage';
 export { LoginPage } from './LoginPage';
