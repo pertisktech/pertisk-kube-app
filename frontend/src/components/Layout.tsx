@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
+import { useNamespace } from '../context/NamespaceContext';
 import {
   ChevronDown,
   Menu,
@@ -95,24 +96,31 @@ interface LayoutProps {
 interface BreadcrumbItem {
   label: string;
   path?: string;
+  icon?: LucideIcon;
 }
 
 export const Layout = ({ username, onLogout }: LayoutProps) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showNamespaceMenu, setShowNamespaceMenu] = useState(false);
   const [workloadsOpen, setWorkloadsOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [storageOpen, setStorageOpen] = useState(false);
   const [networkOpen, setNetworkOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const namespaceMenuRef = useRef<HTMLDivElement>(null);
   const theme = useTheme();
   const location = useLocation();
+  const { selectedNamespaces, toggleNamespace, clearNamespaces, namespaces } = useNamespace();
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false);
+      }
+      if (namespaceMenuRef.current && !namespaceMenuRef.current.contains(event.target as Node)) {
+        setShowNamespaceMenu(false);
       }
     }
 
@@ -151,55 +159,55 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     const pathname = location.pathname;
 
     if (pathname === '/') {
-      return [{ label: 'Dashboard', path: '/' }] as BreadcrumbItem[];
+      return [{ label: 'Dashboard', path: '/', icon: LayoutDashboard }] as BreadcrumbItem[];
     }
 
     if (pathname === NAMESPACE_ITEM.path || pathname.startsWith(`${NAMESPACE_ITEM.path}/`)) {
-      return [{ label: NAMESPACE_ITEM.label, path: NAMESPACE_ITEM.path }] as BreadcrumbItem[];
+      return [{ label: NAMESPACE_ITEM.label, path: NAMESPACE_ITEM.path, icon: NAMESPACE_ITEM.icon }] as BreadcrumbItem[];
     }
 
     const navItem = NAV_ITEMS.find(
       (item) => item.path !== '/' && (pathname === item.path || pathname.startsWith(`${item.path}/`))
     );
     if (navItem) {
-      return [{ label: navItem.label, path: navItem.path }] as BreadcrumbItem[];
+      return [{ label: navItem.label, path: navItem.path, icon: navItem.icon }] as BreadcrumbItem[];
     }
 
     const workloadItem = WORKLOAD_ITEMS.find(
       (item) => pathname === item.path || pathname.startsWith(`${item.path}/`)
     );
     if (workloadItem) {
-      return [{ label: 'Workloads' }, { label: workloadItem.label }] as BreadcrumbItem[];
+      return [{ label: 'Workloads', icon: Archive }, { label: workloadItem.label, icon: workloadItem.icon }] as BreadcrumbItem[];
     }
 
     const configItem = CONFIG_ITEMS.find(
       (item) => pathname === item.path || pathname.startsWith(`${item.path}/`)
     );
     if (configItem) {
-      return [{ label: 'Config' }, { label: configItem.label }] as BreadcrumbItem[];
+      return [{ label: 'Config', icon: Settings }, { label: configItem.label, icon: configItem.icon }] as BreadcrumbItem[];
     }
 
     const networkItem = NETWORK_ITEMS.find(
       (item) => pathname === item.path || pathname.startsWith(`${item.path}/`)
     );
     if (networkItem) {
-      return [{ label: 'Networks', path: '/network' }, { label: networkItem.label }] as BreadcrumbItem[];
+      return [{ label: 'Networks', path: '/network', icon: Network }, { label: networkItem.label, icon: networkItem.icon }] as BreadcrumbItem[];
     }
     if (pathname === '/network') {
-      return [{ label: 'Networks', path: '/network' }] as BreadcrumbItem[];
+      return [{ label: 'Networks', path: '/network', icon: Network }] as BreadcrumbItem[];
     }
 
     const storageItem = STORAGE_ITEMS.find(
       (item) => pathname === item.path || pathname.startsWith(`${item.path}/`)
     );
     if (storageItem) {
-      return [{ label: 'Storage', path: '/storage' }, { label: storageItem.label }] as BreadcrumbItem[];
+      return [{ label: 'Storage', path: '/storage', icon: Database }, { label: storageItem.label, icon: storageItem.icon }] as BreadcrumbItem[];
     }
     if (pathname === '/storage') {
-      return [{ label: 'Storage', path: '/storage' }] as BreadcrumbItem[];
+      return [{ label: 'Storage', path: '/storage', icon: Database }] as BreadcrumbItem[];
     }
 
-    return [{ label: 'Dashboard', path: '/' }] as BreadcrumbItem[];
+    return [{ label: 'Dashboard', path: '/', icon: LayoutDashboard }] as BreadcrumbItem[];
   })();
 
   const initial = username ? username.charAt(0).toUpperCase() : 'U';
@@ -518,14 +526,111 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
       {/* Main content */}
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Top bar */}
-        <header className="bg-surface border-b border-border px-4 py-3 flex items-center">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="md:hidden p-2 hover:bg-hover rounded"
-          >
-            <Menu size={20} />
-          </button>
-          <div className="ml-auto flex items-center gap-2">
+        <header className="bg-surface border-b border-border px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-4 flex-1">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="md:hidden p-2 hover:bg-hover rounded"
+            >
+              <Menu size={20} />
+            </button>
+            <nav className="text-sm text-text-secondary" aria-label="Breadcrumb">
+              <ol className="flex items-center flex-wrap gap-2">
+                {breadcrumbs.map((crumb, index) => {
+                  const isLast = index === breadcrumbs.length - 1;
+                  const Icon = crumb.icon;
+                  return (
+                    <li key={`${crumb.label}-${index}`} className="inline-flex items-center gap-2">
+                      {index > 0 && <span>/</span>}
+                      <div className="flex items-center gap-1.5">
+                        {Icon && <Icon size={16} className="flex-shrink-0" />}
+                        {crumb.path && !isLast ? (
+                          <Link to={crumb.path} className="hover:text-text transition-colors">
+                            {crumb.label}
+                          </Link>
+                        ) : (
+                          <span className={cn(isLast && 'text-text font-medium')}>{crumb.label}</span>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            </nav>
+          </div>
+          <div className="flex items-center gap-2">
+            {namespaces.length > 0 && (
+              <div ref={namespaceMenuRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowNamespaceMenu((previous) => !previous)}
+                  className={cn(
+                    'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-sm hover:bg-hover',
+                    showNamespaceMenu ? 'bg-hover' : 'bg-surface'
+                  )}
+                >
+                  <Database size={14} className="flex-shrink-0" />
+                  <span className="max-w-40 truncate">
+                    {selectedNamespaces.length === 0
+                      ? 'All Namespaces'
+                      : selectedNamespaces.length === 1
+                      ? selectedNamespaces[0]
+                      : `${selectedNamespaces.length} selected`}
+                  </span>
+                  <ChevronDown
+                    size={14}
+                    className={cn('text-text-secondary transition-transform', showNamespaceMenu && 'rotate-180')}
+                  />
+                </button>
+
+                {showNamespaceMenu && (
+                  <div className="absolute right-0 mt-1 w-56 bg-surface border border-border rounded-lg shadow-md z-50 max-h-64 overflow-y-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearNamespaces();
+                        setShowNamespaceMenu(false);
+                      }}
+                      className={cn(
+                        'w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover transition-colors',
+                        selectedNamespaces.length === 0
+                          ? 'bg-hover text-primary'
+                          : 'text-text-secondary'
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedNamespaces.length === 0}
+                        onChange={() => {}}
+                        className="cursor-pointer"
+                      />
+                      <span>All Namespaces</span>
+                    </button>
+                    {namespaces.map((ns) => (
+                      <button
+                        key={ns}
+                        type="button"
+                        onClick={() => toggleNamespace(ns)}
+                        className={cn(
+                          'w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-hover transition-colors border-t border-border',
+                          selectedNamespaces.includes(ns)
+                            ? 'bg-hover text-primary'
+                            : 'text-text-secondary'
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedNamespaces.includes(ns)}
+                          onChange={() => {}}
+                          className="cursor-pointer"
+                        />
+                        <span>{ns}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {theme && (
               <button
                 type="button"
@@ -577,25 +682,6 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
 
         {/* Content */}
         <main className="flex-1 overflow-auto bg-bg p-6">
-          <nav className="mb-4 text-sm text-text-secondary" aria-label="Breadcrumb">
-            <ol className="flex items-center flex-wrap gap-2">
-              {breadcrumbs.map((crumb, index) => {
-                const isLast = index === breadcrumbs.length - 1;
-                return (
-                  <li key={`${crumb.label}-${index}`} className="inline-flex items-center gap-2">
-                    {index > 0 && <span>/</span>}
-                    {crumb.path && !isLast ? (
-                      <Link to={crumb.path} className="hover:text-text transition-colors">
-                        {crumb.label}
-                      </Link>
-                    ) : (
-                      <span className={cn(isLast && 'text-text font-medium')}>{crumb.label}</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-          </nav>
           <Outlet />
         </main>
       </div>

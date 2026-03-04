@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useCronJobs } from '../hooks/useKubernetes';
+import { useNamespace } from '../context/NamespaceContext';
 import { CronJobDetailPanel, DataTable } from '../components';
 import type { CronJob } from '../types';
 import { timeAgo } from '../utils';
@@ -17,12 +18,20 @@ type CronJobSortKey =
 
 export const CronJobsPage = () => {
   const { data, isLoading, error } = useCronJobs();
+  const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedCronJob, setSelectedCronJob] = useState<CronJob | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [sortState, setSortState] = useState<{ key: CronJobSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
   });
+
+  useEffect(() => {
+    if (data && data.length > 0) {
+      const uniqueNamespaces = Array.from(new Set(data.map((cronJob) => cronJob.namespace)));
+      setNamespaces(uniqueNamespaces);
+    }
+  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -42,7 +51,13 @@ export const CronJobsPage = () => {
   }, [data]);
 
   const sortedCronJobs = useMemo(() => {
-    const source = [...(data || [])];
+    let source = [...(data || [])];
+    
+    // Filter by selected namespaces (if any are selected)
+    if (selectedNamespaces.length > 0) {
+      source = source.filter((cronJob) => selectedNamespaces.includes(cronJob.namespace));
+    }
+    
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
     return source.sort((first, second) => {
@@ -69,7 +84,7 @@ export const CronJobsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState]);
+  }, [data, sortState, selectedNamespaces]);
 
   const columns = [
     {

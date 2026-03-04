@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useJobs } from '../hooks/useKubernetes';
+import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, JobDetailPanel } from '../components';
 import type { Job } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
@@ -8,12 +9,20 @@ type JobSortKey = 'name' | 'namespace' | 'status' | 'completions' | 'duration' |
 
 export const JobsPage = () => {
   const { data, isLoading, error } = useJobs();
+  const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [sortState, setSortState] = useState<{ key: JobSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
   });
+
+  useEffect(() => {
+    if (data && data.length > 0) {
+      const uniqueNamespaces = Array.from(new Set(data.map((job) => job.namespace)));
+      setNamespaces(uniqueNamespaces);
+    }
+  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -116,7 +125,13 @@ export const JobsPage = () => {
   ];
 
   const sortedJobs = useMemo(() => {
-    const source = [...(data || [])];
+    let source = [...(data || [])];
+    
+    // Filter by selected namespaces (if any are selected)
+    if (selectedNamespaces.length > 0) {
+      source = source.filter((job) => selectedNamespaces.includes(job.namespace));
+    }
+    
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
     return source.sort((first, second) => {
@@ -139,7 +154,7 @@ export const JobsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState]);
+  }, [data, sortState, selectedNamespaces]);
 
   return (
     <div className="space-y-6">

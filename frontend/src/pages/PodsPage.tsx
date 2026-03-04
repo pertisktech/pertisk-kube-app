@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePods } from '../hooks/useKubernetes';
+import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
 import { PodDetailPanel } from '../components/PodDetailPanel';
 import { StatusBadge } from '../components/StatusBadge';
@@ -10,12 +11,20 @@ type PodSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'restarts' | 'age'
 
 export const PodsPage = () => {
   const { data, isLoading, error } = usePods();
+  const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedPod, setSelectedPod] = useState<Pod | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [sortState, setSortState] = useState<{ key: PodSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
   });
+
+  useEffect(() => {
+    if (data && data.length > 0) {
+      const uniqueNamespaces = Array.from(new Set(data.map((pod) => pod.namespace)));
+      setNamespaces(uniqueNamespaces);
+    }
+  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -80,7 +89,13 @@ export const PodsPage = () => {
   ];
 
   const sortedPods = useMemo(() => {
-    const source = [...(data || [])];
+    let source = [...(data || [])];
+    
+    // Filter by selected namespaces (if any are selected)
+    if (selectedNamespaces.length > 0) {
+      source = source.filter((pod) => selectedNamespaces.includes(pod.namespace));
+    }
+    
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
     return source.sort((first, second) => {
@@ -97,7 +112,7 @@ export const PodsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState]);
+  }, [data, sortState, selectedNamespaces]);
 
   return (
     <div className="space-y-6">

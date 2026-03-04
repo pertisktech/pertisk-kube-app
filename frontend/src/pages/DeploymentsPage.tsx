@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDeployments } from '../hooks/useKubernetes';
+import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
 import { DeploymentDetailPanel } from '../components/DeploymentDetailPanel';
 import type { Deployment } from '../types';
@@ -9,12 +10,20 @@ type DeploymentSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'updated' |
 
 export const DeploymentsPage = () => {
   const { data, isLoading, error } = useDeployments();
+  const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedDeployment, setSelectedDeployment] = useState<Deployment | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [sortState, setSortState] = useState<{ key: DeploymentSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
   });
+
+  useEffect(() => {
+    if (data && data.length > 0) {
+      const uniqueNamespaces = Array.from(new Set(data.map((deployment) => deployment.namespace)));
+      setNamespaces(uniqueNamespaces);
+    }
+  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -109,7 +118,13 @@ export const DeploymentsPage = () => {
   ];
 
   const sortedDeployments = useMemo(() => {
-    const source = [...(data || [])];
+    let source = [...(data || [])];
+    
+    // Filter by selected namespaces (if any are selected)
+    if (selectedNamespaces.length > 0) {
+      source = source.filter((deployment) => selectedNamespaces.includes(deployment.namespace));
+    }
+    
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
     return source.sort((first, second) => {
@@ -127,7 +142,7 @@ export const DeploymentsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState]);
+  }, [data, sortState, selectedNamespaces]);
 
   return (
     <div className="space-y-6">

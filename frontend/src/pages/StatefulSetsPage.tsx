@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStatefulSets } from '../hooks/useKubernetes';
+import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, StatefulSetDetailPanel } from '../components';
 import type { StatefulSet } from '../types';
 import { getStatusColor, timeAgo, truncateString } from '../utils';
@@ -8,12 +9,20 @@ type StatefulSetSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'current' 
 
 export const StatefulSetsPage = () => {
   const { data, isLoading, error } = useStatefulSets();
+  const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedStatefulSet, setSelectedStatefulSet] = useState<StatefulSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [sortState, setSortState] = useState<{ key: StatefulSetSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
   });
+
+  useEffect(() => {
+    if (data && data.length > 0) {
+      const uniqueNamespaces = Array.from(new Set(data.map((statefulSet) => statefulSet.namespace)));
+      setNamespaces(uniqueNamespaces);
+    }
+  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -104,7 +113,13 @@ export const StatefulSetsPage = () => {
   ];
 
   const sortedStatefulSets = useMemo(() => {
-    const source = [...(data || [])];
+    let source = [...(data || [])];
+    
+    // Filter by selected namespaces (if any are selected)
+    if (selectedNamespaces.length > 0) {
+      source = source.filter((statefulSet) => selectedNamespaces.includes(statefulSet.namespace));
+    }
+    
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
     return source.sort((first, second) => {
@@ -122,7 +137,7 @@ export const StatefulSetsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState]);
+  }, [data, sortState, selectedNamespaces]);
 
   return (
     <div className="space-y-6">

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Layout } from './components';
+import { NamespaceProvider } from './context/NamespaceContext';
 import { clearAuth, getAuthUser, isAuthenticated } from './utils/auth';
 import {
   Dashboard,
@@ -40,9 +41,10 @@ export const App = () => {
   }
 
   return (
-    <Router>
-      <Routes>
-        <Route element={<Layout username={authUser} onLogout={handleLogout} />}>
+    <NamespaceProvider>
+      <Router>
+        <Routes>
+          <Route element={<Layout username={authUser} onLogout={handleLogout} />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/namespaces" element={<NamespacesPage />} />
           <Route path="/nodes" element={<NodesPage />} />
@@ -79,5 +81,6 @@ export const App = () => {
         </Route>
       </Routes>
     </Router>
+    </NamespaceProvider>
   );
 };

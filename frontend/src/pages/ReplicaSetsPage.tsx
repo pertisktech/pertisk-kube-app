@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useReplicaSets } from '../hooks/useKubernetes';
+import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ReplicaSetDetailPanel } from '../components';
 import type { ReplicaSet } from '../types';
 import { getStatusColor, timeAgo, truncateString } from '../utils';
@@ -17,12 +18,20 @@ type ReplicaSetSortKey =
 
 export const ReplicaSetsPage = () => {
   const { data, isLoading, error } = useReplicaSets();
+  const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedReplicaSet, setSelectedReplicaSet] = useState<ReplicaSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [sortState, setSortState] = useState<{ key: ReplicaSetSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
   });
+
+  useEffect(() => {
+    if (data && data.length > 0) {
+      const uniqueNamespaces = Array.from(new Set(data.map((replicaSet) => replicaSet.namespace)));
+      setNamespaces(uniqueNamespaces);
+    }
+  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -121,7 +130,13 @@ export const ReplicaSetsPage = () => {
   ];
 
   const sortedReplicaSets = useMemo(() => {
-    const source = [...(data || [])];
+    let source = [...(data || [])];
+    
+    // Filter by selected namespaces (if any are selected)
+    if (selectedNamespaces.length > 0) {
+      source = source.filter((replicaSet) => selectedNamespaces.includes(replicaSet.namespace));
+    }
+    
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
     return source.sort((first, second) => {
@@ -140,7 +155,7 @@ export const ReplicaSetsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState]);
+  }, [data, sortState, selectedNamespaces]);
 
   return (
     <div className="space-y-6">

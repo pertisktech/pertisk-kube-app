@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDaemonSets } from '../hooks/useKubernetes';
+import { useNamespace } from '../context/NamespaceContext';
 import { DaemonSetDetailPanel, DataTable } from '../components';
 import type { DaemonSet } from '../types';
 import { getStatusColor, timeAgo, truncateString } from '../utils';
@@ -17,12 +18,20 @@ type DaemonSetSortKey =
 
 export const DaemonSetsPage = () => {
   const { data, isLoading, error } = useDaemonSets();
+  const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedDaemonSet, setSelectedDaemonSet] = useState<DaemonSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [sortState, setSortState] = useState<{ key: DaemonSetSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
   });
+
+  useEffect(() => {
+    if (data && data.length > 0) {
+      const uniqueNamespaces = Array.from(new Set(data.map((daemonSet) => daemonSet.namespace)));
+      setNamespaces(uniqueNamespaces);
+    }
+  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -121,7 +130,13 @@ export const DaemonSetsPage = () => {
   ];
 
   const sortedDaemonSets = useMemo(() => {
-    const source = [...(data || [])];
+    let source = [...(data || [])];
+    
+    // Filter by selected namespaces (if any are selected)
+    if (selectedNamespaces.length > 0) {
+      source = source.filter((daemonSet) => selectedNamespaces.includes(daemonSet.namespace));
+    }
+    
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
     return source.sort((first, second) => {
@@ -140,7 +155,7 @@ export const DaemonSetsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState]);
+  }, [data, sortState, selectedNamespaces]);
 
   return (
     <div className="space-y-6">
