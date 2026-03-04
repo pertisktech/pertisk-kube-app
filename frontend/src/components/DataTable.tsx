@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Loader } from 'lucide-react';
+import { Loader, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { cn } from '../utils';
 import { Checkbox } from './Checkbox';
 
@@ -133,13 +133,15 @@ export const DataTable = <T extends Record<string, any>>({
                       className="inline-flex items-center gap-1 hover:text-primary"
                     >
                       <span>{col.header}</span>
-                      <span className="text-xs text-text-secondary">
-                        {sortState?.key === col.sortKey
-                          ? sortState.direction === 'asc'
-                            ? '▲'
-                            : '▼'
-                          : '↕'}
-                      </span>
+                      {sortState?.key === col.sortKey ? (
+                        sortState.direction === 'asc' ? (
+                          <ArrowUp size={14} className="text-primary" />
+                        ) : (
+                          <ArrowDown size={14} className="text-primary" />
+                        )
+                      ) : (
+                        <ArrowUpDown size={14} className="text-text-secondary" />
+                      )}
                     </button>
                   ) : (
                     col.header

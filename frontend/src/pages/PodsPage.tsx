@@ -75,7 +75,7 @@ export const PodsPage = () => {
       accessor: (row: Pod) => (
         <span className="font-medium text-primary">{row.name}</span>
       ),
-      width: '30%',
+      width: '24%',
       sortable: true,
       sortKey: 'name',
     },
@@ -93,7 +93,7 @@ export const PodsPage = () => {
           <StatusBadge status={row.status || row.phase || 'Unknown'} />
         </span>
       ),
-      width: '10%',
+      width: '8%',
       sortable: true,
       sortKey: 'status',
     },
@@ -137,7 +137,7 @@ export const PodsPage = () => {
     {
       header: 'QoS',
       accessor: (row: Pod) => row.qos || '-',
-      width: '10%',
+      width: '14%',
       sortable: true,
       sortKey: 'qos',
     },
