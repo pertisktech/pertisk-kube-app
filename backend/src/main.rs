@@ -419,6 +419,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/nodes", get(list_nodes))
         .route("/namespaces", get(list_namespaces))
         .route("/pods", get(list_pods))
+        .route(
+            "/pods/:namespace/:name/yaml",
+            get(get_pod_yaml).put(update_pod_yaml),
+        )
         .route("/events", get(list_events))
         .route("/deployments", get(list_deployments))
         .route(
@@ -447,6 +451,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/ws", get(ws_handler::ws_handler))  // WebSocket endpoint
+        .route("/api/exec", get(ws_handler::exec_ws_handler))
         .nest("/api", api)
         .nest_service("/assets", ServeDir::new(assets_dir))
         .route_service("/config.js", ServeFile::new(config_js))
@@ -1016,6 +1021,96 @@ async fn list_deployments(State(state): State<AppState>) -> impl IntoResponse {
         Err(err) => {
             error!("Error listing deployments: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn get_pod_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Pod;
+
+    let api: Api<Pod> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(pod) => match serde_yaml::to_string(&pod) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize pod to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting pod YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_pod_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Pod;
+
+    let mut pod: Pod = match serde_yaml::from_str(&body) {
+        Ok(pod) => pod,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    pod.metadata.name = Some(name.clone());
+    pod.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<Pod> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&pod) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting pod YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "Pod updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating pod YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update pod: {}", err)
+                })),
+            )
+                .into_response()
         }
     }
 }

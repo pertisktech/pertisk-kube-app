@@ -1,6 +1,7 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
+        Query,
         State,
     },
     response::Response,
@@ -8,6 +9,11 @@ use axum::{
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use kube::{Api, runtime::watcher};
 use serde::{Deserialize, Serialize};
+use std::process::Stdio;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    process::Command,
+};
 use tracing::{error, info, warn};
 
 use crate::AppState;
@@ -40,12 +46,213 @@ enum ServerMessage {
     Pong,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExecQuery {
+    pub namespace: String,
+    pub pod: String,
+    pub container: Option<String>,
+}
+
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
 ) -> Response {
     info!("New WebSocket connection request");
     ws.on_upgrade(|socket| handle_socket(socket, state))
+}
+
+pub async fn exec_ws_handler(
+    ws: WebSocketUpgrade,
+    Query(query): Query<ExecQuery>,
+) -> Response {
+    info!(
+        "New exec websocket request: namespace={}, pod={}, container={:?}",
+        query.namespace, query.pod, query.container
+    );
+
+    ws.on_upgrade(move |socket| handle_exec_socket(socket, query))
+}
+
+async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(256);
+
+    let ws_send_task = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            if ws_sender.send(Message::Text(msg)).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    // Build kubectl exec command
+    let mut cmd = Command::new("kubectl");
+    cmd.arg("exec")
+        .arg("-i")
+        .arg("-n")
+        .arg(&query.namespace)
+        .arg(&query.pod);
+
+    // Add container argument if specified
+    if let Some(container) = &query.container {
+        cmd.arg("-c").arg(container);
+    }
+
+    // Execute shell
+    cmd.arg("--")
+        .arg("sh")
+        .arg("-i")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(err) => {
+            let _ = tx
+                .send(format!(
+                    "\r\n\u{1b}[1;31mFailed to start shell: {}\u{1b}[0m\r\n",
+                    err
+                ))
+                .await;
+            ws_send_task.abort();
+            return;
+        }
+    };
+
+    let mut child_stdin = match child.stdin.take() {
+        Some(stdin) => stdin,
+        None => {
+            let _ = tx
+                .send("\r\n\u{1b}[1;31mFailed to open stdin for shell\u{1b}[0m\r\n".to_string())
+                .await;
+            let _ = child.kill().await;
+            ws_send_task.abort();
+            return;
+        }
+    };
+
+    let mut child_stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let _ = tx
+                .send("\r\n\u{1b}[1;31mFailed to open stdout for shell\u{1b}[0m\r\n".to_string())
+                .await;
+            let _ = child.kill().await;
+            ws_send_task.abort();
+            return;
+        }
+    };
+
+    let mut child_stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            let _ = tx
+                .send("\r\n\u{1b}[1;31mFailed to open stderr for shell\u{1b}[0m\r\n".to_string())
+                .await;
+            let _ = child.kill().await;
+            ws_send_task.abort();
+            return;
+        }
+    };
+
+    let _ = tx
+        .send(format!(
+            "\u{1b}[1;32mConnected shell: {}/{}\u{1b}[0m\r\n",
+            query.namespace, query.pod
+        ))
+        .await;
+
+    let tx_stdout = tx.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut buffer = [0_u8; 4096];
+        loop {
+            match child_stdout.read(&mut buffer).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    let output = String::from_utf8_lossy(&buffer[..n]).to_string();
+                    if tx_stdout.send(output).await.is_err() {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    let _ = tx_stdout
+                        .send(format!("\r\n\u{1b}[1;31mstdout error: {}\u{1b}[0m\r\n", err))
+                        .await;
+                    break;
+                }
+            }
+        }
+    });
+
+    let tx_stderr = tx.clone();
+    let stderr_task = tokio::spawn(async move {
+        let mut buffer = [0_u8; 4096];
+        loop {
+            match child_stderr.read(&mut buffer).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    let output = String::from_utf8_lossy(&buffer[..n]).to_string();
+                    if tx_stderr.send(output).await.is_err() {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    let _ = tx_stderr
+                        .send(format!("\r\n\u{1b}[1;31mstderr error: {}\u{1b}[0m\r\n", err))
+                        .await;
+                    break;
+                }
+            }
+        }
+    });
+
+    while let Some(message) = ws_receiver.next().await {
+        match message {
+            Ok(Message::Text(text)) => {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if json
+                        .get("type")
+                        .and_then(|value| value.as_str())
+                        .is_some_and(|value| value == "resize")
+                    {
+                        continue;
+                    }
+                }
+
+                // xterm sends Enter as "\r"; shell over pipes expects "\n".
+                let normalized = text.replace('\r', "\n");
+
+                if child_stdin.write_all(normalized.as_bytes()).await.is_err() {
+                    break;
+                }
+
+                let _ = child_stdin.flush().await;
+            }
+            Ok(Message::Binary(data)) => {
+                if child_stdin.write_all(&data).await.is_err() {
+                    break;
+                }
+            }
+            Ok(Message::Close(_)) => break,
+            Ok(Message::Ping(_)) => {}
+            Ok(Message::Pong(_)) => {}
+            Err(err) => {
+                warn!("Exec websocket receive error: {}", err);
+                break;
+            }
+        }
+    }
+
+    let _ = child.kill().await;
+    stdout_task.abort();
+    stderr_task.abort();
+    ws_send_task.abort();
+
+    info!(
+        "Exec websocket closed: namespace={}, pod={}, container={:?}",
+        query.namespace, query.pod, query.container
+    );
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState) {

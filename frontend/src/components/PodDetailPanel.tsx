@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { X, Pencil, Terminal } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';
@@ -6,9 +6,11 @@ import { timeAgo } from '../utils';
 interface PodDetailPanelProps {
   pod: Pod;
   onClose: () => void;
+  onOpenYamlEditor: (pod: Pod) => void;
+  onOpenShell: (pod: Pod) => void;
 }
 
-export const PodDetailPanel = ({ pod, onClose }: PodDetailPanelProps) => {
+export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell }: PodDetailPanelProps) => {
   const status = pod.status || pod.phase || 'Unknown';
 
   return (
@@ -23,6 +25,27 @@ export const PodDetailPanel = ({ pod, onClose }: PodDetailPanelProps) => {
             aria-label="Close pod panel"
           >
             <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-5 py-2 border-b border-border flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => onOpenShell(pod)}
+            className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover mr-2"
+            aria-label="Open pod shell"
+            title="Open Shell"
+          >
+            <Terminal size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenYamlEditor(pod)}
+            className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
+            aria-label="Edit pod YAML"
+            title="Edit YAML"
+          >
+            <Pencil size={15} />
           </button>
         </div>
 
@@ -86,6 +109,13 @@ export const PodDetailPanel = ({ pod, onClose }: PodDetailPanelProps) => {
                 <p className="text-text-secondary">QoS</p>
                 <p className="text-text break-all">{pod.qos || '-'}</p>
               </div>
+            </div>
+          </section>
+
+          <section className="min-w-0 bg-surface border border-border rounded-lg p-4 space-y-3">
+            <p className="text-xs uppercase tracking-wide text-text-secondary">Manifest</p>
+            <div className="px-3 py-2 text-sm text-text-secondary border border-border rounded-md bg-surface-elevated">
+              Use the pencil icon in the top-right corner to edit pod YAML in the bottom content tab.
             </div>
           </section>
         </div>

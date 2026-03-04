@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import AceEditor from 'react-ace';
+import YAML from 'yaml';
+import 'ace-builds/src-noconflict/mode-yaml';
+import 'ace-builds/src-noconflict/theme-github';
+import 'ace-builds/src-noconflict/theme-tomorrow_night';
 import { useRealtimeDeployments } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
+import { useTheme } from '../context/ThemeContext';
 import { DataTable } from '../components/DataTable';
 import { DeploymentDetailPanel } from '../components/DeploymentDetailPanel';
 import type { Deployment } from '../types';
@@ -9,9 +15,47 @@ import { getStatusColor, timeAgo } from '../utils';
 
 type DeploymentSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'updated' | 'available' | 'images' | 'age';
 
+const sanitizeDeploymentYamlForEdit = (yamlText: string) => {
+  try {
+    const parsed = YAML.parse(yamlText) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== 'object') {
+      return yamlText;
+    }
+
+    const metadata = (parsed.metadata as Record<string, unknown> | undefined) ?? undefined;
+    if (metadata && typeof metadata === 'object') {
+      delete metadata.managedFields;
+      delete metadata.resourceVersion;
+      delete metadata.uid;
+      delete metadata.generation;
+      delete metadata.creationTimestamp;
+      delete metadata.selfLink;
+
+      const annotations = metadata.annotations as Record<string, unknown> | undefined;
+      if (annotations && typeof annotations === 'object') {
+        delete annotations['deployment.kubernetes.io/revision'];
+        delete annotations['kubectl.kubernetes.io/last-applied-configuration'];
+
+        if (Object.keys(annotations).length === 0) {
+          delete metadata.annotations;
+        }
+      }
+    }
+
+    delete parsed.status;
+
+    return YAML.stringify(parsed, {
+      lineWidth: 0,
+    });
+  } catch {
+    return yamlText;
+  }
+};
+
 export const DeploymentsPage = () => {
   const { data, isLoading, error } = useRealtimeDeployments();
   const { selectedNamespaces } = useNamespace();
+  const theme = useTheme();
   const [selectedDeployment, setSelectedDeployment] = useState<Deployment | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [yamlTabs, setYamlTabs] = useState<Deployment[]>([]);
@@ -102,7 +146,8 @@ export const DeploymentsPage = () => {
         }
 
         const yaml = await response.text();
-        setYamlContentsByTab((previous) => ({ ...previous, [activeYamlTabKey]: yaml }));
+        const sanitizedYaml = sanitizeDeploymentYamlForEdit(yaml);
+        setYamlContentsByTab((previous) => ({ ...previous, [activeYamlTabKey]: sanitizedYaml }));
       } catch (error) {
         if ((error as Error).name !== 'AbortError') {
           setYamlErrorByTab((previous) => ({
@@ -144,6 +189,7 @@ export const DeploymentsPage = () => {
 
     setActiveYamlTabKey(key);
     setYamlDrawerVisible(true);
+    setPanelOpen(false);
   };
 
   const handleCloseYamlTab = (tabKey: string) => {
@@ -368,54 +414,73 @@ export const DeploymentsPage = () => {
         <p className="text-text-secondary mt-1">Manage Kubernetes deployments</p>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={sortedDeployments}
-        isLoading={isLoading}
-        error={error}
-        rowKey="id"
-        onRowClick={(row) => {
-          setSelectedDeployment(row);
-          setPanelOpen(true);
+      <div
+        className="space-y-2"
+        style={{
+          paddingBottom:
+            yamlTabs.length > 0
+              ? yamlDrawerVisible
+                ? yamlDrawerHeightPx ?? 420
+                : 84
+              : 0,
         }}
-        selectedRowKey={panelOpen && selectedDeployment ? `${selectedDeployment.namespace}/${selectedDeployment.name}` : undefined}
-        sortState={sortState}
-        onSortChange={(nextSort) => setSortState(nextSort as { key: DeploymentSortKey; direction: 'asc' | 'desc' })}
-        enableRowSelection={true}
-        selectedRows={selectedRows}
-        onRowSelectionChange={(rows) => setSelectedRows(rows)}
-      />
+      >
+        <DataTable
+          columns={columns}
+          data={sortedDeployments}
+          isLoading={isLoading}
+          error={error}
+          rowKey="id"
+          onRowClick={(row) => {
+            setSelectedDeployment(row);
+            setPanelOpen(true);
+          }}
+          selectedRowKey={panelOpen && selectedDeployment ? `${selectedDeployment.namespace}/${selectedDeployment.name}` : undefined}
+          sortState={sortState}
+          onSortChange={(nextSort) => setSortState(nextSort as { key: DeploymentSortKey; direction: 'asc' | 'desc' })}
+          enableRowSelection={true}
+          selectedRows={selectedRows}
+          onRowSelectionChange={(rows) => setSelectedRows(rows)}
+        />
 
-      {yamlTabs.length > 0 && !yamlDrawerVisible && (
-        <section className="fixed inset-x-0 bottom-0 md:left-[calc(var(--layout-sidebar-width,16rem)+1.5rem)] md:right-6 z-[96] bg-surface border border-border rounded-t-lg shadow-2xl p-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-text-secondary">YAML tabs hidden ({yamlTabs.length})</span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setYamlDrawerVisible(true)}
-                className="px-3 py-1 text-xs rounded-md bg-[var(--color-primary)] text-bg"
-              >
-                Show
-              </button>
-              <button
-                type="button"
-                onClick={handleCloseYamlEditor}
-                className="px-3 py-1 text-xs rounded-md border border-border text-text-secondary hover:text-text"
-              >
-                Close
-              </button>
+        {yamlTabs.length > 0 && !yamlDrawerVisible && (
+          <section className="fixed bottom-0 left-0 md:left-[var(--layout-sidebar-width,16rem)] right-0 z-[96]">
+            <div className="px-6">
+              <div className="bg-surface border border-border rounded-t-lg shadow-2xl p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-text-secondary">YAML tabs hidden ({yamlTabs.length})</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setYamlDrawerVisible(true)}
+                      className="px-3 py-1 text-xs rounded-md bg-[var(--color-primary)] text-bg"
+                    >
+                      Show
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCloseYamlEditor}
+                      className="px-3 py-1 text-xs rounded-md border border-border text-text-secondary hover:text-text"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        </section>
-      )}
+          </section>
+        )}
 
-      {yamlTabs.length > 0 && yamlDrawerVisible && activeYamlDeployment && activeYamlTabKey && (
-        <section
-          className="fixed inset-x-0 bottom-0 md:left-[calc(var(--layout-sidebar-width,16rem)+1.5rem)] md:right-6 z-[96] bg-surface border border-border rounded-t-lg shadow-2xl p-3 pt-5 space-y-2 overflow-auto relative"
-          style={yamlDrawerHeightPx ? { height: `${yamlDrawerHeightPx}px` } : { height: 'clamp(220px, 45vh, 620px)' }}
-        >
-          <div
+        {yamlTabs.length > 0 && yamlDrawerVisible && activeYamlDeployment && activeYamlTabKey && (
+          <section className="fixed bottom-0 left-0 md:left-[var(--layout-sidebar-width,16rem)] right-0 z-[96]">
+            <div className="px-6">
+              <div
+                className="bg-surface border border-border rounded-t-lg shadow-2xl p-3 pt-5 space-y-2 overflow-auto relative"
+                style={{
+                  height: yamlDrawerHeightPx ? `${yamlDrawerHeightPx}px` : 'clamp(220px, 45vh, 620px)',
+                }}
+              >
+              <div
             className="absolute top-0 left-0 right-0 h-5 cursor-ns-resize flex items-start justify-center"
             onMouseDown={(event) => {
               event.preventDefault();
@@ -507,21 +572,40 @@ export const DeploymentsPage = () => {
               </div>
             )}
 
-            <textarea
-              value={yamlContentsByTab[activeYamlTabKey] || ''}
-              onChange={(event) =>
-                setYamlContentsByTab((previous) => ({
-                  ...previous,
-                  [activeYamlTabKey]: event.target.value,
-                }))
-              }
-              placeholder={yamlLoadingTabKey === activeYamlTabKey ? 'Loading YAML...' : 'Deployment YAML'}
-              disabled={yamlLoadingTabKey === activeYamlTabKey || yamlSavingTabKey === activeYamlTabKey}
-              className="w-full h-[calc(100%-90px)] min-h-[180px] resize-y rounded-md border border-border bg-surface-elevated text-text p-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-            />
+            <div className="w-full h-[calc(100%-90px)] min-h-[180px] rounded-md border border-border bg-surface-elevated overflow-hidden">
+              <AceEditor
+                mode="yaml"
+                theme={theme?.isDark ? 'tomorrow_night' : 'github'}
+                name={`deployment-yaml-editor-${activeYamlTabKey}`}
+                value={yamlContentsByTab[activeYamlTabKey] || ''}
+                onChange={(value) =>
+                  setYamlContentsByTab((previous) => ({
+                    ...previous,
+                    [activeYamlTabKey]: value,
+                  }))
+                }
+                readOnly={yamlLoadingTabKey === activeYamlTabKey || yamlSavingTabKey === activeYamlTabKey}
+                width="100%"
+                height="100%"
+                fontSize={12}
+                showPrintMargin={false}
+                setOptions={{
+                  useWorker: false,
+                  wrap: true,
+                  tabSize: 2,
+                  showLineNumbers: true,
+                }}
+                editorProps={{
+                  $blockScrolling: true,
+                }}
+              />
+            </div>
           </>
-        </section>
-      )}
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
 
       {panelOpen && selectedDeployment && (
         <>

@@ -13,12 +13,21 @@
 COPY frontend/dist /app/frontend_dist
  RUN cargo build --release
 
- FROM gcr.io/distroless/cc
+ FROM alpine:latest
+ RUN apk add --no-cache \
+   ca-certificates \
+   curl \
+   bash
+
+ # Install kubectl
+ RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+   && chmod +x kubectl \
+   && mv kubectl /usr/local/bin/
+
  WORKDIR /app
  COPY --from=builder /app/pertisk-kube-backend/target/release/pertisk-kube-backend .
 COPY --from=builder /app/frontend_dist ./static
 ENV STATIC_DIR=/app/static
 EXPOSE 8091
- USER 65532
  ENTRYPOINT ["./pertisk-kube-backend"]
 
