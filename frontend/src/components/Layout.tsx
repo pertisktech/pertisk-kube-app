@@ -751,7 +751,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
       {/* Main content */}
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Top bar */}
-        <header className="bg-surface border-b border-border px-4 py-3 flex items-center justify-between">
+        <header className="relative z-[70] bg-surface border-b border-border px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4 flex-1">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -785,7 +785,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
           </div>
           <div className="flex items-center gap-2">
             {namespaces.length > 0 && shouldShowNamespaceFilter && (
-              <div ref={namespaceMenuRef} className="relative">
+              <div ref={namespaceMenuRef} className="relative z-[80]">
                 <button
                   type="button"
                   onClick={() => setShowNamespaceMenu((previous) => !previous)}
@@ -809,7 +809,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                 </button>
 
                 {showNamespaceMenu && (
-                  <div className="absolute right-0 mt-1 w-56 bg-surface border border-border rounded-lg shadow-md z-50 max-h-64 overflow-y-auto">
+                  <div className="absolute right-0 mt-1 w-56 bg-surface border border-border rounded-lg shadow-md z-[90] max-h-64 overflow-y-auto">
                     <button
                       type="button"
                       onClick={() => {
@@ -825,7 +825,10 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                     >
                       <Checkbox
                         checked={selectedNamespaces.length === 0}
-                        onChange={() => {}}
+                        onChange={() => {
+                          clearNamespaces();
+                          setShowNamespaceMenu(false);
+                        }}
                       />
                       <span>All Namespaces</span>
                     </button>
@@ -843,7 +846,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                       >
                         <Checkbox
                           checked={selectedNamespaces.includes(ns)}
-                          onChange={() => {}}
+                          onChange={() => toggleNamespace(ns)}
                         />
                         <span>{ns}</span>
                       </button>
