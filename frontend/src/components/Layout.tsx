@@ -114,6 +114,9 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const location = useLocation();
   const { selectedNamespaces, toggleNamespace, clearNamespaces, namespaces } = useNamespace();
 
+  // Hide namespace filter on Dashboard, Nodes, and Namespaces pages
+  const shouldShowNamespaceFilter = location.pathname !== '/' && location.pathname !== '/nodes' && location.pathname !== '/namespaces';
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
@@ -559,7 +562,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
             </nav>
           </div>
           <div className="flex items-center gap-2">
-            {namespaces.length > 0 && (
+            {namespaces.length > 0 && shouldShowNamespaceFilter && (
               <div ref={namespaceMenuRef} className="relative">
                 <button
                   type="button"

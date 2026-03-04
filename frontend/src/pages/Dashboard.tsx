@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { useDashboard, useNodes, usePods } from '../hooks/useKubernetes';
+import { useNamespace } from '../context/NamespaceContext';
 import { Card, Stat } from '../components/Card';
 import { Loader } from 'lucide-react';
 
@@ -6,6 +8,14 @@ export const Dashboard = () => {
   const { data: dashboard, isLoading: dashLoading } = useDashboard();
   const { data: nodes, isLoading: nodesLoading } = useNodes();
   const { data: pods, isLoading: podsLoading } = usePods();
+  const { setNamespaces } = useNamespace();
+
+  useEffect(() => {
+    if (pods && pods.length > 0) {
+      const uniqueNamespaces = Array.from(new Set(pods.map((pod) => pod.namespace)));
+      setNamespaces(uniqueNamespaces);
+    }
+  }, [pods, setNamespaces]);
 
   const isLoading = dashLoading || nodesLoading || podsLoading;
 

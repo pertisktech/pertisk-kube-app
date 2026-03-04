@@ -21,6 +21,7 @@ export const CronJobsPage = () => {
   const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedCronJob, setSelectedCronJob] = useState<CronJob | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [sortState, setSortState] = useState<{ key: CronJobSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
@@ -180,6 +181,9 @@ export const CronJobsPage = () => {
         selectedRowKey={panelOpen ? selectedCronJob?.name : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: CronJobSortKey; direction: 'asc' | 'desc' })}
+        enableRowSelection={true}
+        selectedRows={selectedRows}
+        onRowSelectionChange={(rows) => setSelectedRows(rows)}
       />
 
       {panelOpen && selectedCronJob && (

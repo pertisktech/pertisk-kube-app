@@ -21,6 +21,7 @@ export const DaemonSetsPage = () => {
   const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedDaemonSet, setSelectedDaemonSet] = useState<DaemonSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [sortState, setSortState] = useState<{ key: DaemonSetSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
@@ -177,6 +178,9 @@ export const DaemonSetsPage = () => {
         selectedRowKey={panelOpen ? selectedDaemonSet?.name : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: DaemonSetSortKey; direction: 'asc' | 'desc' })}
+        enableRowSelection={true}
+        selectedRows={selectedRows}
+        onRowSelectionChange={(rows) => setSelectedRows(rows)}
       />
 
       {panelOpen && selectedDaemonSet && (

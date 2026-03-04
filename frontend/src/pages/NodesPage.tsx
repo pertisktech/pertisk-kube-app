@@ -11,6 +11,7 @@ export const NodesPage = () => {
   const { data, isLoading, error } = useNodes();
   const [selectedNode, setSelectedNode] = useState<K8sNode | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [sortState, setSortState] = useState<{ key: NodeSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
@@ -125,6 +126,9 @@ export const NodesPage = () => {
         selectedRowKey={panelOpen ? selectedNode?.name : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: NodeSortKey; direction: 'asc' | 'desc' })}
+        enableRowSelection={true}
+        selectedRows={selectedRows}
+        onRowSelectionChange={(rows) => setSelectedRows(rows)}
       />
 
       {panelOpen && selectedNode && (

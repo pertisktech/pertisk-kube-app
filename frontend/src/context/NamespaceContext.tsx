@@ -18,7 +18,10 @@ export const NamespaceProvider = ({ children }: { children: ReactNode }) => {
     const stored = localStorage.getItem('selectedNamespaces');
     return stored ? JSON.parse(stored) : [];
   });
-  const [namespaces, setNamespaces] = useState<string[]>([]);
+  const [namespaces, setNamespacesState] = useState<string[]>(() => {
+    const stored = localStorage.getItem('availableNamespaces');
+    return stored ? JSON.parse(stored) : [];
+  });
   const [isLoading, setIsLoading] = useState(false);
 
   const setSelectedNamespaces = (newNamespaces: string[]) => {
@@ -28,6 +31,25 @@ export const NamespaceProvider = ({ children }: { children: ReactNode }) => {
     } else {
       localStorage.removeItem('selectedNamespaces');
     }
+  };
+
+  const setNamespaces = (newNamespaces: string[]) => {
+    // Only update if different to avoid unnecessary re-renders
+    setNamespacesState((prevNamespaces) => {
+      const prevSet = new Set(prevNamespaces);
+      const newSet = new Set(newNamespaces);
+      
+      // Check if sets are equal
+      if (prevSet.size === newSet.size && [...prevSet].every((item) => newSet.has(item))) {
+        return prevNamespaces;
+      }
+      
+      // Persist to localStorage
+      if (newNamespaces.length > 0) {
+        localStorage.setItem('availableNamespaces', JSON.stringify(newNamespaces));
+      }
+      return newNamespaces;
+    });
   };
 
   const toggleNamespace = (namespace: string) => {

@@ -21,6 +21,7 @@ export const ReplicaSetsPage = () => {
   const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedReplicaSet, setSelectedReplicaSet] = useState<ReplicaSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [sortState, setSortState] = useState<{ key: ReplicaSetSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
@@ -177,6 +178,9 @@ export const ReplicaSetsPage = () => {
         selectedRowKey={panelOpen ? selectedReplicaSet?.name : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: ReplicaSetSortKey; direction: 'asc' | 'desc' })}
+        enableRowSelection={true}
+        selectedRows={selectedRows}
+        onRowSelectionChange={(rows) => setSelectedRows(rows)}
       />
 
       {panelOpen && selectedReplicaSet && (

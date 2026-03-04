@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNamespaces } from '../hooks/useKubernetes';
+import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
 import { NamespaceDetailPanel } from '../components/NamespaceDetailPanel';
 import type { Namespace } from '../types';
@@ -9,12 +10,21 @@ type NamespaceSortKey = 'name' | 'status' | 'age';
 
 export const NamespacesPage = () => {
   const { data, isLoading, error } = useNamespaces();
+  const { setNamespaces } = useNamespace();
   const [selectedNamespace, setSelectedNamespace] = useState<Namespace | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [sortState, setSortState] = useState<{ key: NamespaceSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
   });
+
+  useEffect(() => {
+    if (data && data.length > 0) {
+      const namespaceNames = data.map((ns) => ns.name);
+      setNamespaces(namespaceNames);
+    }
+  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -113,6 +123,9 @@ export const NamespacesPage = () => {
         selectedRowKey={panelOpen ? selectedNamespace?.name : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: NamespaceSortKey; direction: 'asc' | 'desc' })}
+        enableRowSelection={true}
+        selectedRows={selectedRows}
+        onRowSelectionChange={(rows) => setSelectedRows(rows)}
       />
 
       {panelOpen && selectedNamespace && (

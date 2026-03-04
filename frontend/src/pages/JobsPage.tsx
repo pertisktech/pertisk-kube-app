@@ -12,6 +12,7 @@ export const JobsPage = () => {
   const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [sortState, setSortState] = useState<{ key: JobSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
@@ -176,6 +177,9 @@ export const JobsPage = () => {
         selectedRowKey={panelOpen ? selectedJob?.name : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: JobSortKey; direction: 'asc' | 'desc' })}
+        enableRowSelection={true}
+        selectedRows={selectedRows}
+        onRowSelectionChange={(rows) => setSelectedRows(rows)}
       />
 
       {panelOpen && selectedJob && (

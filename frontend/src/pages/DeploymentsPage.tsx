@@ -13,6 +13,7 @@ export const DeploymentsPage = () => {
   const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedDeployment, setSelectedDeployment] = useState<Deployment | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [sortState, setSortState] = useState<{ key: DeploymentSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
@@ -164,6 +165,9 @@ export const DeploymentsPage = () => {
         selectedRowKey={panelOpen ? selectedDeployment?.name : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: DeploymentSortKey; direction: 'asc' | 'desc' })}
+        enableRowSelection={true}
+        selectedRows={selectedRows}
+        onRowSelectionChange={(rows) => setSelectedRows(rows)}
       />
 
       {panelOpen && selectedDeployment && (

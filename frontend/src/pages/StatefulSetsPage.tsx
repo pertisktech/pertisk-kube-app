@@ -12,6 +12,7 @@ export const StatefulSetsPage = () => {
   const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedStatefulSet, setSelectedStatefulSet] = useState<StatefulSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [sortState, setSortState] = useState<{ key: StatefulSetSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
@@ -161,6 +162,9 @@ export const StatefulSetsPage = () => {
         onSortChange={(nextSort) =>
           setSortState(nextSort as { key: StatefulSetSortKey; direction: 'asc' | 'desc' })
         }
+        enableRowSelection={true}
+        selectedRows={selectedRows}
+        onRowSelectionChange={(rows) => setSelectedRows(rows)}
       />
 
       {panelOpen && selectedStatefulSet && (

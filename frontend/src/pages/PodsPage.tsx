@@ -14,6 +14,7 @@ export const PodsPage = () => {
   const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedPod, setSelectedPod] = useState<Pod | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [sortState, setSortState] = useState<{ key: PodSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
@@ -134,6 +135,9 @@ export const PodsPage = () => {
         selectedRowKey={panelOpen ? selectedPod?.name : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: PodSortKey; direction: 'asc' | 'desc' })}
+        enableRowSelection={true}
+        selectedRows={selectedRows}
+        onRowSelectionChange={(rows) => setSelectedRows(rows)}
       />
 
       {panelOpen && selectedPod && (

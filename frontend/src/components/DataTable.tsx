@@ -27,6 +27,9 @@ interface DataTableProps<T> {
   selectedRowKey?: string;
   sortState?: SortState;
   onSortChange?: (sort: SortState) => void;
+  selectedRows?: string[];
+  onRowSelectionChange?: (selectedKeys: string[]) => void;
+  enableRowSelection?: boolean;
 }
 
 export const DataTable = <T extends Record<string, any>>({
@@ -39,6 +42,9 @@ export const DataTable = <T extends Record<string, any>>({
   selectedRowKey,
   sortState,
   onSortChange,
+  selectedRows = [],
+  onRowSelectionChange,
+  enableRowSelection = false,
 }: DataTableProps<T>) => {
   if (error) {
     return (
@@ -67,12 +73,47 @@ export const DataTable = <T extends Record<string, any>>({
     );
   }
 
+  const handleSelectAll = (checked: boolean) => {
+    if (onRowSelectionChange) {
+      if (checked) {
+        const allKeys = data.map((row) => String(row[rowKey]));
+        onRowSelectionChange(allKeys);
+      } else {
+        onRowSelectionChange([]);
+      }
+    }
+  };
+
+  const handleRowSelect = (rowKeyValue: string, checked: boolean) => {
+    if (onRowSelectionChange) {
+      if (checked) {
+        onRowSelectionChange([...selectedRows, rowKeyValue]);
+      } else {
+        onRowSelectionChange(selectedRows.filter((key) => key !== rowKeyValue));
+      }
+    }
+  };
+
+  const allSelected = enableRowSelection && data.length > 0 && selectedRows.length === data.length;
+  const someSelected = enableRowSelection && selectedRows.length > 0 && selectedRows.length < data.length;
+
   return (
     <div className="bg-surface border border-border rounded-lg overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-surface-elevated">
+              {enableRowSelection && (
+                <th className="w-12 px-2 py-3 text-left">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    indeterminate={someSelected}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className="cursor-pointer"
+                  />
+                </th>
+              )}
               {columns.map((col, idx) => (
                 <th
                   key={idx}
@@ -109,35 +150,52 @@ export const DataTable = <T extends Record<string, any>>({
             </tr>
           </thead>
           <tbody>
-            {data.map((row, rowIdx) => (
-              <tr
-                key={String(row[rowKey])}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={cn(
-                  'border-b border-border',
-                  rowIdx % 2 === 0 ? 'bg-surface' : 'bg-surface-elevated',
-                  onRowClick && 'cursor-pointer hover:bg-hover',
-                  selectedRowKey === String(row[rowKey]) && 'bg-hover'
-                )}
-              >
-                {columns.map((col, colIdx) => (
-                  <td key={colIdx} className={cn('px-4 py-3', colIdx === 0 ? 'text-primary font-medium' : 'text-text')}>
-                    {(() => {
-                      const cellValue =
-                        typeof col.accessor === 'function'
-                          ? col.accessor(row)
-                          : String(row[col.accessor] || '-');
+            {data.map((row, rowIdx) => {
+              const rowKeyValue = String(row[rowKey]);
+              const isSelected = selectedRows.includes(rowKeyValue);
 
-                      if (col.header === 'Age') {
-                        return <span className="whitespace-nowrap">{cellValue}</span>;
-                      }
+              return (
+                <tr
+                  key={rowKeyValue}
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  className={cn(
+                    'border-b border-border',
+                    rowIdx % 2 === 0 ? 'bg-surface' : 'bg-surface-elevated',
+                    onRowClick && 'cursor-pointer hover:bg-hover',
+                    selectedRowKey === rowKeyValue && 'bg-hover',
+                    isSelected && 'bg-hover'
+                  )}
+                >
+                  {enableRowSelection && (
+                    <td className="w-12 px-2 py-3">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => handleRowSelect(rowKeyValue, e.target.checked)}
+                        className="cursor-pointer"
+                      />
+                    </td>
+                  )}
+                  {columns.map((col, colIdx) => (
+                    <td key={colIdx} className={cn('px-4 py-3', colIdx === 0 ? 'text-primary font-medium' : 'text-text')}>
+                      {(() => {
+                        const cellValue =
+                          typeof col.accessor === 'function'
+                            ? col.accessor(row)
+                            : String(row[col.accessor] || '-');
 
-                      return cellValue;
-                    })()}
-                  </td>
-                ))}
-              </tr>
-            ))}
+                        if (col.header === 'Age') {
+                          return <span className="whitespace-nowrap">{cellValue}</span>;
+                        }
+
+                        return cellValue;
+                      })()}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
