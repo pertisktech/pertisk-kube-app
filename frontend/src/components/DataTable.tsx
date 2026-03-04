@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { Loader } from 'lucide-react';
 import { cn } from '../utils';
+import { Checkbox } from './Checkbox';
 
 export type SortDirection = 'asc' | 'desc';
 
@@ -104,20 +105,18 @@ export const DataTable = <T extends Record<string, any>>({
           <thead>
             <tr className="border-b border-border bg-surface-elevated">
               {enableRowSelection && (
-                <th className="w-12 px-2 py-3 text-left">
-                  <input
-                    type="checkbox"
+                <th className="w-8 pl-2 pr-0 py-2 text-left">
+                  <Checkbox
                     checked={allSelected}
                     indeterminate={someSelected}
                     onChange={(e) => handleSelectAll(e.target.checked)}
-                    className="cursor-pointer"
                   />
                 </th>
               )}
               {columns.map((col, idx) => (
                 <th
                   key={idx}
-                  className="px-4 py-3 text-left font-semibold text-text"
+                  className="px-3 py-2 text-left font-semibold text-text"
                   style={{ width: col.width }}
                 >
                   {col.sortable && col.sortKey && onSortChange ? (
@@ -167,18 +166,15 @@ export const DataTable = <T extends Record<string, any>>({
                   )}
                 >
                   {enableRowSelection && (
-                    <td className="w-12 px-2 py-3">
-                      <input
-                        type="checkbox"
+                    <td className="w-8 pl-2 pr-0 py-2">
+                      <Checkbox
                         checked={isSelected}
-                        onClick={(e) => e.stopPropagation()}
                         onChange={(e) => handleRowSelect(rowKeyValue, e.target.checked)}
-                        className="cursor-pointer"
                       />
                     </td>
                   )}
                   {columns.map((col, colIdx) => (
-                    <td key={colIdx} className={cn('px-4 py-3', colIdx === 0 ? 'text-primary font-medium' : 'text-text')}>
+                    <td key={colIdx} className={cn('px-3 py-2', colIdx === 0 ? 'text-primary font-medium' : 'text-text')}>
                       {(() => {
                         const cellValue =
                           typeof col.accessor === 'function'

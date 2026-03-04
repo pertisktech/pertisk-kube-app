@@ -118,13 +118,19 @@ export const DeploymentsPage = () => {
     },
   ];
 
-  const sortedDeployments = useMemo(() => {
+  const sortedDeployments = useMemo((): (Deployment & { id: string })[] => {
     let source = [...(data || [])];
     
     // Filter by selected namespaces (if any are selected)
     if (selectedNamespaces.length > 0) {
       source = source.filter((deployment) => selectedNamespaces.includes(deployment.namespace));
     }
+    
+    // Add unique id for row selection
+    source = source.map((item) => ({
+      ...item,
+      id: `${item.namespace}/${item.name}`,
+    })) as (Deployment & { id: string })[];
     
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
@@ -142,7 +148,7 @@ export const DeploymentsPage = () => {
       const firstAge = Date.parse(first.age || '');
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
-    });
+    }) as (Deployment & { id: string })[];
   }, [data, sortState, selectedNamespaces]);
 
   return (
@@ -157,12 +163,12 @@ export const DeploymentsPage = () => {
         data={sortedDeployments}
         isLoading={isLoading}
         error={error?.message}
-        rowKey="name"
+        rowKey="id"
         onRowClick={(row) => {
           setSelectedDeployment(row);
           setPanelOpen(true);
         }}
-        selectedRowKey={panelOpen ? selectedDeployment?.name : undefined}
+        selectedRowKey={panelOpen && selectedDeployment ? `${selectedDeployment.namespace}/${selectedDeployment.name}` : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: DeploymentSortKey; direction: 'asc' | 'desc' })}
         enableRowSelection={true}

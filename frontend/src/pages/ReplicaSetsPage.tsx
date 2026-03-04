@@ -130,7 +130,7 @@ export const ReplicaSetsPage = () => {
     },
   ];
 
-  const sortedReplicaSets = useMemo(() => {
+  const sortedReplicaSets = useMemo((): (ReplicaSet & { id: string })[] => {
     let source = [...(data || [])];
     
     // Filter by selected namespaces (if any are selected)
@@ -138,9 +138,15 @@ export const ReplicaSetsPage = () => {
       source = source.filter((replicaSet) => selectedNamespaces.includes(replicaSet.namespace));
     }
     
+    // Add unique id for row selection
+    const sourceWithId = source.map((item) => ({
+      ...item,
+      id: `${item.namespace}/${item.name}`,
+    }));
+    
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
-    return source.sort((first, second) => {
+    return sourceWithId.sort((first, second) => {
       if (sortState.key === 'name') return first.name.localeCompare(second.name) * factor;
       if (sortState.key === 'namespace') return first.namespace.localeCompare(second.namespace) * factor;
       if (sortState.key === 'status') return (first.status || '').localeCompare(second.status || '') * factor;
@@ -170,12 +176,12 @@ export const ReplicaSetsPage = () => {
         data={sortedReplicaSets}
         isLoading={isLoading}
         error={error?.message}
-        rowKey="name"
+        rowKey="id"
         onRowClick={(row) => {
           setSelectedReplicaSet(row);
           setPanelOpen(true);
         }}
-        selectedRowKey={panelOpen ? selectedReplicaSet?.name : undefined}
+        selectedRowKey={panelOpen && selectedReplicaSet ? `${selectedReplicaSet.namespace}/${selectedReplicaSet.name}` : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: ReplicaSetSortKey; direction: 'asc' | 'desc' })}
         enableRowSelection={true}

@@ -130,13 +130,19 @@ export const DaemonSetsPage = () => {
     },
   ];
 
-  const sortedDaemonSets = useMemo(() => {
+  const sortedDaemonSets = useMemo((): (DaemonSet & { id: string })[] => {
     let source = [...(data || [])];
     
     // Filter by selected namespaces (if any are selected)
     if (selectedNamespaces.length > 0) {
       source = source.filter((daemonSet) => selectedNamespaces.includes(daemonSet.namespace));
     }
+    
+    // Add unique id for row selection
+    source = source.map((item) => ({
+      ...item,
+      id: `${item.namespace}/${item.name}`,
+    })) as (DaemonSet & { id: string })[];
     
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
@@ -155,7 +161,7 @@ export const DaemonSetsPage = () => {
       const firstAge = Date.parse(first.age || '');
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
-    });
+    }) as (DaemonSet & { id: string })[];
   }, [data, sortState, selectedNamespaces]);
 
   return (
@@ -170,12 +176,12 @@ export const DaemonSetsPage = () => {
         data={sortedDaemonSets}
         isLoading={isLoading}
         error={error?.message}
-        rowKey="name"
+        rowKey="id"
         onRowClick={(row) => {
           setSelectedDaemonSet(row);
           setPanelOpen(true);
         }}
-        selectedRowKey={panelOpen ? selectedDaemonSet?.name : undefined}
+        selectedRowKey={panelOpen && selectedDaemonSet ? `${selectedDaemonSet.namespace}/${selectedDaemonSet.name}` : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: DaemonSetSortKey; direction: 'asc' | 'desc' })}
         enableRowSelection={true}

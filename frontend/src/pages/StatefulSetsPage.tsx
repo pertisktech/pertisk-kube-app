@@ -113,7 +113,7 @@ export const StatefulSetsPage = () => {
     },
   ];
 
-  const sortedStatefulSets = useMemo(() => {
+  const sortedStatefulSets = useMemo((): (StatefulSet & { id: string })[] => {
     let source = [...(data || [])];
     
     // Filter by selected namespaces (if any are selected)
@@ -121,9 +121,15 @@ export const StatefulSetsPage = () => {
       source = source.filter((statefulSet) => selectedNamespaces.includes(statefulSet.namespace));
     }
     
+    // Add unique id for row selection
+    const sourceWithId = source.map((item) => ({
+      ...item,
+      id: `${item.namespace}/${item.name}`,
+    }));
+    
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
-    return source.sort((first, second) => {
+    return sourceWithId.sort((first, second) => {
       if (sortState.key === 'name') return first.name.localeCompare(second.name) * factor;
       if (sortState.key === 'namespace') return first.namespace.localeCompare(second.namespace) * factor;
       if (sortState.key === 'status') return (first.status || '').localeCompare(second.status || '') * factor;
@@ -152,12 +158,12 @@ export const StatefulSetsPage = () => {
         data={sortedStatefulSets}
         isLoading={isLoading}
         error={error?.message}
-        rowKey="name"
+        rowKey="id"
         onRowClick={(row) => {
           setSelectedStatefulSet(row);
           setPanelOpen(true);
         }}
-        selectedRowKey={panelOpen ? selectedStatefulSet?.name : undefined}
+        selectedRowKey={panelOpen && selectedStatefulSet ? `${selectedStatefulSet.namespace}/${selectedStatefulSet.name}` : undefined}
         sortState={sortState}
         onSortChange={(nextSort) =>
           setSortState(nextSort as { key: StatefulSetSortKey; direction: 'asc' | 'desc' })

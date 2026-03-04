@@ -48,54 +48,60 @@ export const PodsPage = () => {
       accessor: (row: Pod) => (
         <span className="font-medium text-primary">{row.name}</span>
       ),
-      width: '25%',
+      width: '30%',
       sortable: true,
       sortKey: 'name',
     },
     {
       header: 'Namespace',
       accessor: 'namespace' as const,
-      width: '15%',
+      width: '18%',
       sortable: true,
       sortKey: 'namespace',
     },
     {
       header: 'Status',
       accessor: (row: Pod) => <StatusBadge status={row.status || row.phase || 'Unknown'} />,
-      width: '12%',
+      width: '13%',
       sortable: true,
       sortKey: 'status',
     },
     {
       header: 'Ready',
       accessor: 'ready' as const,
-      width: '10%',
+      width: '12%',
       sortable: true,
       sortKey: 'ready',
     },
     {
       header: 'Restarts',
       accessor: 'restarts' as const,
-      width: '10%',
+      width: '12%',
       sortable: true,
       sortKey: 'restarts',
     },
     {
       header: 'Age',
       accessor: (row: Pod) => timeAgo(row.age),
-      width: '14%',
+      width: '15%',
       sortable: true,
       sortKey: 'age',
     },
   ];
 
-  const sortedPods = useMemo(() => {
+  const sortedPods = useMemo((): (Pod & { id: string })[] => {
     let source = [...(data || [])];
     
     // Filter by selected namespaces (if any are selected)
     if (selectedNamespaces.length > 0) {
       source = source.filter((pod) => selectedNamespaces.includes(pod.namespace));
     }
+    
+    // Add unique id for row selection
+    source = source.map((pod) => ({
+      ...pod,
+      id: `${pod.namespace}/${pod.name}`,
+    })) as (Pod & { id: string })[];
     
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
@@ -112,7 +118,7 @@ export const PodsPage = () => {
       const firstAge = Date.parse(first.age || '');
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
-    });
+    }) as (Pod & { id: string })[];
   }, [data, sortState, selectedNamespaces]);
 
   return (
@@ -127,12 +133,12 @@ export const PodsPage = () => {
         data={sortedPods}
         isLoading={isLoading}
         error={error?.message}
-        rowKey="name"
+        rowKey="id"
         onRowClick={(row) => {
           setSelectedPod(row);
           setPanelOpen(true);
         }}
-        selectedRowKey={panelOpen ? selectedPod?.name : undefined}
+        selectedRowKey={panelOpen && selectedPod ? `${selectedPod.namespace}/${selectedPod.name}` : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: PodSortKey; direction: 'asc' | 'desc' })}
         enableRowSelection={true}

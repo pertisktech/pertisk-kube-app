@@ -76,14 +76,14 @@ export const JobsPage = () => {
     {
       header: 'Name',
       accessor: 'name' as const,
-      width: '24%',
+      width: '28%',
       sortable: true,
       sortKey: 'name',
     },
     {
       header: 'Namespace',
       accessor: 'namespace' as const,
-      width: '16%',
+      width: '18%',
       sortable: true,
       sortKey: 'namespace',
     },
@@ -94,7 +94,7 @@ export const JobsPage = () => {
           {row.status || 'Pending'}
         </span>
       ),
-      width: '14%',
+      width: '15%',
       sortable: true,
       sortKey: 'status',
     },
@@ -105,7 +105,7 @@ export const JobsPage = () => {
           {row.completions || '-'}
         </span>
       ),
-      width: '14%',
+      width: '15%',
       sortable: true,
       sortKey: 'completions',
     },
@@ -125,13 +125,19 @@ export const JobsPage = () => {
     },
   ];
 
-  const sortedJobs = useMemo(() => {
+  const sortedJobs = useMemo((): (Job & { id: string })[] => {
     let source = [...(data || [])];
     
     // Filter by selected namespaces (if any are selected)
     if (selectedNamespaces.length > 0) {
       source = source.filter((job) => selectedNamespaces.includes(job.namespace));
     }
+    
+    // Add unique id for row selection
+    source = source.map((job) => ({
+      ...job,
+      id: `${job.namespace}/${job.name}`,
+    })) as (Job & { id: string })[];
     
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
@@ -154,7 +160,7 @@ export const JobsPage = () => {
       const firstAge = Date.parse(first.age || '');
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
-    });
+    }) as (Job & { id: string })[];
   }, [data, sortState, selectedNamespaces]);
 
   return (
@@ -169,12 +175,12 @@ export const JobsPage = () => {
         data={sortedJobs}
         isLoading={isLoading}
         error={error?.message}
-        rowKey="name"
+        rowKey="id"
         onRowClick={(row) => {
           setSelectedJob(row);
           setPanelOpen(true);
         }}
-        selectedRowKey={panelOpen ? selectedJob?.name : undefined}
+        selectedRowKey={panelOpen && selectedJob ? `${selectedJob.namespace}/${selectedJob.name}` : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: JobSortKey; direction: 'asc' | 'desc' })}
         enableRowSelection={true}

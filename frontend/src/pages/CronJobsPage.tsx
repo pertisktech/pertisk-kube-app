@@ -51,13 +51,19 @@ export const CronJobsPage = () => {
     setSelectedCronJob(updatedSelected ?? data[0]);
   }, [data]);
 
-  const sortedCronJobs = useMemo(() => {
+  const sortedCronJobs = useMemo((): (CronJob & { id: string })[] => {
     let source = [...(data || [])];
     
     // Filter by selected namespaces (if any are selected)
     if (selectedNamespaces.length > 0) {
       source = source.filter((cronJob) => selectedNamespaces.includes(cronJob.namespace));
     }
+    
+    // Add unique id for row selection
+    source = source.map((item) => ({
+      ...item,
+      id: `${item.namespace}/${item.name}`,
+    })) as (CronJob & { id: string })[];
     
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
@@ -84,7 +90,7 @@ export const CronJobsPage = () => {
       const firstAge = Date.parse(first.age || '');
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
-    });
+    }) as (CronJob & { id: string })[];
   }, [data, sortState, selectedNamespaces]);
 
   const columns = [
@@ -173,12 +179,12 @@ export const CronJobsPage = () => {
         data={sortedCronJobs}
         isLoading={isLoading}
         error={error?.message}
-        rowKey="name"
+        rowKey="id"
         onRowClick={(row) => {
           setSelectedCronJob(row);
           setPanelOpen(true);
         }}
-        selectedRowKey={panelOpen ? selectedCronJob?.name : undefined}
+        selectedRowKey={panelOpen && selectedCronJob ? `${selectedCronJob.namespace}/${selectedCronJob.name}` : undefined}
         sortState={sortState}
         onSortChange={(nextSort) => setSortState(nextSort as { key: CronJobSortKey; direction: 'asc' | 'desc' })}
         enableRowSelection={true}

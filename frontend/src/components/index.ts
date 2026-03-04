@@ -1,6 +1,7 @@
 export { Layout } from './Layout';
 export { DataTable } from './DataTable';
 export { StatusBadge } from './StatusBadge';
+export { Checkbox } from './Checkbox';
 export { Card, Stat } from './Card';
 export { NamespaceDetailPanel } from './NamespaceDetailPanel';
 export { NodeDetailPanel } from './NodeDetailPanel';

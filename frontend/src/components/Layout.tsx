@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useNamespace } from '../context/NamespaceContext';
+import { Checkbox } from './Checkbox';
 import {
   ChevronDown,
   Menu,
@@ -83,7 +84,7 @@ const WORKLOAD_ITEMS: NavItem[] = [
   { label: 'Deployment', path: '/deployments', icon: Archive },
   { label: 'StatefulSet', path: '/statefulsets', icon: Archive },
   { label: 'DaemonSet', path: '/daemonsets', icon: RotateCw },
-  { label: 'Replica', path: '/replicasets', icon: Boxes },
+  { label: 'ReplicaSet', path: '/replicasets', icon: Boxes },
   { label: 'Jobs', path: '/jobs', icon: Clock },
   { label: 'CronJob', path: '/cronjobs', icon: Clock },
 ];
@@ -601,11 +602,9 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                           : 'text-text-secondary'
                       )}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selectedNamespaces.length === 0}
                         onChange={() => {}}
-                        className="cursor-pointer"
                       />
                       <span>All Namespaces</span>
                     </button>
@@ -621,11 +620,9 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                             : 'text-text-secondary'
                         )}
                       >
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={selectedNamespaces.includes(ns)}
                           onChange={() => {}}
-                          className="cursor-pointer"
                         />
                         <span>{ns}</span>
                       </button>
