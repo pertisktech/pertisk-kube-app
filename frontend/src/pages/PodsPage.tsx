@@ -66,7 +66,7 @@ export const PodsPage = () => {
     {
       header: 'Name',
       accessor: (row: Pod) => (
-        <span className="font-medium text-primary">{row.name}</span>
+        <span className="font-medium text-text">{row.name}</span>
       ),
       width: '24%',
       sortable: true,

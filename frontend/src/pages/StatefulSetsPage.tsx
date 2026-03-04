@@ -46,7 +46,7 @@ export const StatefulSetsPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (row: StatefulSet) => <span className="font-medium text-primary">{row.name}</span>,
+      accessor: (row: StatefulSet) => <span className="font-medium text-text">{row.name}</span>,
       width: '22%',
       sortable: true,
       sortKey: 'name',

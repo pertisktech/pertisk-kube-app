@@ -59,6 +59,19 @@ const EVENTS_ITEM: NavItem = {
   icon: Bell,
 };
 
+const HELM_ITEMS: NavItem[] = [
+  { label: 'Charts', path: '/helm/charts', icon: Archive },
+  { label: 'Releases', path: '/helm/releases', icon: Boxes },
+];
+
+const ACCESS_CONTROL_ITEMS: NavItem[] = [
+  { label: 'Service Accounts', path: '/access-control/serviceaccounts', icon: KeyRound },
+  { label: 'Cluster Roles', path: '/access-control/clusterroles', icon: Shield },
+  { label: 'Roles', path: '/access-control/roles', icon: Shield },
+  { label: 'Cluster Role Bindings', path: '/access-control/clusterrolebindings', icon: Boxes },
+  { label: 'Role Bindings', path: '/access-control/rolebindings', icon: Boxes },
+];
+
 const NETWORK_ITEMS: NavItem[] = [
   { label: 'Services', path: '/network/services', icon: Network },
   { label: 'Endpoints', path: '/network/endpoints', icon: Network },
@@ -118,6 +131,8 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const [configOpen, setConfigOpen] = useState(false);
   const [storageOpen, setStorageOpen] = useState(false);
   const [networkOpen, setNetworkOpen] = useState(false);
+  const [helmOpen, setHelmOpen] = useState(false);
+  const [accessControlOpen, setAccessControlOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const namespaceMenuRef = useRef<HTMLDivElement>(null);
   const theme = useTheme();
@@ -157,6 +172,12 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     }
     if (STORAGE_ITEMS.some((item) => pathname.startsWith(item.path)) || pathname === '/storage') {
       setStorageOpen(true);
+    }
+    if (HELM_ITEMS.some((item) => pathname.startsWith(item.path)) || pathname === '/helm') {
+      setHelmOpen(true);
+    }
+    if (ACCESS_CONTROL_ITEMS.some((item) => pathname.startsWith(item.path)) || pathname === '/access-control') {
+      setAccessControlOpen(true);
     }
   }, [location.pathname]);
 
@@ -198,6 +219,8 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const hasActiveConfig = CONFIG_ITEMS.some((item) => isActive(item.path));
   const hasActiveStorage = STORAGE_ITEMS.some((item) => isActive(item.path));
   const hasActiveNetwork = NETWORK_ITEMS.some((item) => isActive(item.path));
+  const hasActiveHelm = HELM_ITEMS.some((item) => isActive(item.path));
+  const hasActiveAccessControl = ACCESS_CONTROL_ITEMS.some((item) => isActive(item.path));
 
   const breadcrumbs = (() => {
     const pathname = location.pathname;
@@ -253,6 +276,29 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     }
     if (pathname === '/storage') {
       return [{ label: 'Storage', path: '/storage', icon: Database }] as BreadcrumbItem[];
+    }
+
+    const helmItem = HELM_ITEMS.find(
+      (item) => pathname === item.path || pathname.startsWith(`${item.path}/`)
+    );
+    if (helmItem) {
+      return [{ label: 'Helm', icon: Boxes }, { label: helmItem.label, icon: helmItem.icon }] as BreadcrumbItem[];
+    }
+    if (pathname === '/helm') {
+      return [{ label: 'Helm', icon: Boxes }] as BreadcrumbItem[];
+    }
+
+    const accessControlItem = ACCESS_CONTROL_ITEMS.find(
+      (item) => pathname === item.path || pathname.startsWith(`${item.path}/`)
+    );
+    if (accessControlItem) {
+      return [
+        { label: 'Access Control', icon: Shield },
+        { label: accessControlItem.label, icon: accessControlItem.icon },
+      ] as BreadcrumbItem[];
+    }
+    if (pathname === '/access-control') {
+      return [{ label: 'Access Control', icon: Shield }] as BreadcrumbItem[];
     }
 
     return [{ label: 'Dashboard', path: '/', icon: LayoutDashboard }] as BreadcrumbItem[];
@@ -312,7 +358,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                     'order-1',
                     sidebarCollapsed && 'justify-center px-2',
                     active
-                      ? 'bg-hover text-primary'
+                      ? 'bg-hover text-[var(--color-primary)] font-semibold'
                       : 'text-text-secondary hover:bg-hover hover:text-text'
                   )}
                   title={item.label}
@@ -336,7 +382,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                   'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveConfig
-                    ? 'bg-hover text-primary'
+                    ? 'bg-hover text-[var(--color-primary)] font-semibold'
                     : 'text-text-secondary hover:bg-hover hover:text-text'
                 )}
                 title="Config"
@@ -366,7 +412,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                         className={cn(
                           'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
                           active
-                            ? 'bg-hover text-primary'
+                            ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
                         )}
                         title={item.label}
@@ -393,7 +439,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                   'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveNetwork
-                    ? 'bg-hover text-primary'
+                    ? 'bg-hover text-[var(--color-primary)] font-semibold'
                     : 'text-text-secondary hover:bg-hover hover:text-text'
                 )}
                 title="Networks"
@@ -423,7 +469,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                         className={cn(
                           'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
                           active
-                            ? 'bg-hover text-primary'
+                            ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
                         )}
                         title={item.label}
@@ -450,7 +496,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                   'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveStorage
-                    ? 'bg-hover text-primary'
+                    ? 'bg-hover text-[var(--color-primary)] font-semibold'
                     : 'text-text-secondary hover:bg-hover hover:text-text'
                 )}
                 title="Storage"
@@ -480,7 +526,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                         className={cn(
                           'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
                           active
-                            ? 'bg-hover text-primary'
+                            ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
                         )}
                         title={item.label}
@@ -507,7 +553,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                   'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveWorkload
-                    ? 'bg-hover text-primary'
+                    ? 'bg-hover text-[var(--color-primary)] font-semibold'
                     : 'text-text-secondary hover:bg-hover hover:text-text'
                 )}
                 title="Workloads"
@@ -537,7 +583,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                         className={cn(
                           'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
                           active
-                            ? 'bg-hover text-primary'
+                            ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
                         )}
                         title={item.label}
@@ -559,7 +605,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                 'order-6',
                 sidebarCollapsed && 'justify-center px-2',
                 isActive(NAMESPACE_ITEM.path)
-                  ? 'bg-hover text-primary'
+                  ? 'bg-hover text-[var(--color-primary)] font-semibold'
                   : 'text-text-secondary hover:bg-hover hover:text-text'
               )}
               title={NAMESPACE_ITEM.label}
@@ -576,7 +622,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                 'order-7',
                 sidebarCollapsed && 'justify-center px-2',
                 isActive(EVENTS_ITEM.path)
-                  ? 'bg-hover text-primary'
+                  ? 'bg-hover text-[var(--color-primary)] font-semibold'
                   : 'text-text-secondary hover:bg-hover hover:text-text'
               )}
               title={EVENTS_ITEM.label}
@@ -584,6 +630,120 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
               <EVENTS_ITEM.icon size={18} className="flex-shrink-0" />
               {!sidebarCollapsed && <span>{EVENTS_ITEM.label}</span>}
             </Link>
+
+            <div className="space-y-1 order-8">
+              <button
+                type="button"
+                onClick={() => {
+                  if (sidebarCollapsed) {
+                    setSidebarCollapsed(false);
+                  }
+                  setHelmOpen((previous) => !previous);
+                }}
+                className={cn(
+                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                  sidebarCollapsed && 'justify-center px-2',
+                  hasActiveHelm
+                    ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                    : 'text-text-secondary hover:bg-hover hover:text-text'
+                )}
+                title="Helm"
+              >
+                <Boxes size={18} className="flex-shrink-0" />
+                {!sidebarCollapsed && (
+                  <>
+                    <span className="flex-1 text-left">Helm</span>
+                    <ChevronDown
+                      size={16}
+                      className={cn('transition-transform', helmOpen && 'rotate-180')}
+                    />
+                  </>
+                )}
+              </button>
+
+              {!sidebarCollapsed && helmOpen && (
+                <div className="space-y-1">
+                  {HELM_ITEMS.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.path);
+                    return (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setSidebarOpen(false)}
+                        className={cn(
+                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
+                          active
+                            ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                            : 'text-text-secondary hover:bg-hover hover:text-text'
+                        )}
+                        title={item.label}
+                      >
+                        <Icon size={16} className="flex-shrink-0" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-1 order-9">
+              <button
+                type="button"
+                onClick={() => {
+                  if (sidebarCollapsed) {
+                    setSidebarCollapsed(false);
+                  }
+                  setAccessControlOpen((previous) => !previous);
+                }}
+                className={cn(
+                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                  sidebarCollapsed && 'justify-center px-2',
+                  hasActiveAccessControl
+                    ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                    : 'text-text-secondary hover:bg-hover hover:text-text'
+                )}
+                title="Access Control"
+              >
+                <Shield size={18} className="flex-shrink-0" />
+                {!sidebarCollapsed && (
+                  <>
+                    <span className="flex-1 text-left">Access Control</span>
+                    <ChevronDown
+                      size={16}
+                      className={cn('transition-transform', accessControlOpen && 'rotate-180')}
+                    />
+                  </>
+                )}
+              </button>
+
+              {!sidebarCollapsed && accessControlOpen && (
+                <div className="space-y-1">
+                  {ACCESS_CONTROL_ITEMS.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.path);
+                    return (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setSidebarOpen(false)}
+                        className={cn(
+                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
+                          active
+                            ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                            : 'text-text-secondary hover:bg-hover hover:text-text'
+                        )}
+                        title={item.label}
+                      >
+                        <Icon size={16} className="flex-shrink-0" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </nav>
         </div>
       </aside>

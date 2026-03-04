@@ -15,6 +15,8 @@ import {
   JobsPage,
   CronJobsPage,
   EventsPage,
+  HelmResourcePage,
+  AccessControlResourcePage,
   ConfigResourcePage,
   NetworkResourcePage,
   StorageResourcePage,
@@ -77,6 +79,13 @@ export const App = () => {
           <Route path="/storage/pvc" element={<StorageResourcePage title="PVC" />} />
           <Route path="/storage/pv" element={<StorageResourcePage title="PV" />} />
           <Route path="/storage/storageclasses" element={<StorageResourcePage title="Storage Classes" />} />
+          <Route path="/helm/charts" element={<HelmResourcePage title="Charts" />} />
+          <Route path="/helm/releases" element={<HelmResourcePage title="Releases" />} />
+          <Route path="/access-control/serviceaccounts" element={<AccessControlResourcePage title="Service Accounts" />} />
+          <Route path="/access-control/clusterroles" element={<AccessControlResourcePage title="Cluster Roles" />} />
+          <Route path="/access-control/roles" element={<AccessControlResourcePage title="Roles" />} />
+          <Route path="/access-control/clusterrolebindings" element={<AccessControlResourcePage title="Cluster Role Bindings" />} />
+          <Route path="/access-control/rolebindings" element={<AccessControlResourcePage title="Role Bindings" />} />
           <Route path="/events" element={<EventsPage />} />
         </Route>
       </Routes>

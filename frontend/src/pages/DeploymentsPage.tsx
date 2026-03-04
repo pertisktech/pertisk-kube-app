@@ -48,7 +48,7 @@ export const DeploymentsPage = () => {
     {
       header: 'Name',
       accessor: (row: Deployment) => (
-        <span className="font-medium text-primary">{row.name}</span>
+        <span className="font-medium text-text">{row.name}</span>
       ),
       width: '25%',
       sortable: true,

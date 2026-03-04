@@ -9,6 +9,8 @@ export { ReplicaSetsPage } from './ReplicaSetsPage';
 export { JobsPage } from './JobsPage';
 export { CronJobsPage } from './CronJobsPage';
 export { EventsPage } from './EventsPage';
+export { HelmResourcePage } from './HelmResourcePage';
+export { AccessControlResourcePage } from './AccessControlResourcePage';
 export { ConfigResourcePage } from './ConfigResourcePage';
 export { NetworkResourcePage } from './NetworkResourcePage';
 export { StoragePage } from './StoragePage';

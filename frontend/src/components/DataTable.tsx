@@ -176,7 +176,15 @@ export const DataTable = <T extends Record<string, any>>({
                     </td>
                   )}
                   {columns.map((col, colIdx) => (
-                    <td key={colIdx} className={cn('px-3 py-2', colIdx === 0 ? 'text-primary font-medium' : 'text-text')}>
+                    <td
+                      key={colIdx}
+                      className={cn(
+                        'px-3 py-2',
+                        col.header === 'Name' && typeof col.accessor !== 'function'
+                          ? 'text-text font-medium'
+                          : 'text-text'
+                      )}
+                    >
                       {(() => {
                         const cellValue =
                           typeof col.accessor === 'function'

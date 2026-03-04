@@ -36,7 +36,7 @@ export const NodesPage = () => {
     {
       header: 'Name',
       accessor: (row: K8sNode) => (
-        <span className="font-medium text-primary">{row.name}</span>
+        <span className="font-medium text-text">{row.name}</span>
       ),
       width: '18%',
       sortable: true,

@@ -68,7 +68,9 @@ export const JobsPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: 'name' as const,
+      accessor: (row: Job) => (
+        <span className="font-medium text-text">{row.name}</span>
+      ),
       width: '28%',
       sortable: true,
       sortKey: 'name',

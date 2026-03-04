@@ -89,7 +89,9 @@ export const CronJobsPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: 'name' as const,
+      accessor: (row: CronJob) => (
+        <span className="font-medium text-text">{row.name}</span>
+      ),
       width: '25%',
       sortable: true,
       sortKey: 'name',

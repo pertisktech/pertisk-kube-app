@@ -55,7 +55,7 @@ export const ReplicaSetsPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (row: ReplicaSet) => <span className="font-medium text-primary">{row.name}</span>,
+      accessor: (row: ReplicaSet) => <span className="font-medium text-text">{row.name}</span>,
       width: '25%',
       sortable: true,
       sortKey: 'name',
