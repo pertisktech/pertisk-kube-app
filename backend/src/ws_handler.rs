@@ -86,6 +86,7 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
     });
 
     // Build kubectl exec command
+    info!("Starting exec shell: namespace={}, pod={}, container={:?}", query.namespace, query.pod, query.container);
     let mut cmd = Command::new("kubectl");
     cmd.arg("exec")
         .arg("-i")
@@ -98,17 +99,21 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
         cmd.arg("-c").arg(container);
     }
 
-    // Execute shell
+    // Execute shell in non-interactive mode
+    // This avoids prompt/output buffering issues over pipes
     cmd.arg("--")
         .arg("sh")
-        .arg("-i")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     let mut child = match cmd.spawn() {
-        Ok(child) => child,
+        Ok(child) => {
+            info!("kubectl exec process spawned successfully");
+            child
+        }
         Err(err) => {
+            error!("Failed to spawn kubectl exec: {}", err);
             let _ = tx
                 .send(format!(
                     "\r\n\u{1b}[1;31mFailed to start shell: {}\u{1b}[0m\r\n",
@@ -162,6 +167,15 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
             query.namespace, query.pod
         ))
         .await;
+
+    // In non-interactive mode, send initial marker to prime the connection
+    if let Err(err) = child_stdin.write_all(b":\n").await {
+        error!("Failed to prime shell stdin: {}", err);
+        let _ = child.kill().await;
+        ws_send_task.abort();
+        return;
+    }
+    let _ = child_stdin.flush().await;
 
     let tx_stdout = tx.clone();
     let stdout_task = tokio::spawn(async move {
@@ -224,10 +238,14 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
                 let normalized = text.replace('\r', "\n");
 
                 if child_stdin.write_all(normalized.as_bytes()).await.is_err() {
+                    error!("Failed to write to shell stdin");
                     break;
                 }
 
-                let _ = child_stdin.flush().await;
+                if let Err(e) = child_stdin.flush().await {
+                    error!("Failed to flush stdin: {}", e);
+                    break;
+                }
             }
             Ok(Message::Binary(data)) => {
                 if child_stdin.write_all(&data).await.is_err() {

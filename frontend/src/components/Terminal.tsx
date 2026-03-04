@@ -27,6 +27,10 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
       cursorBlink: true,
       fontSize: 13,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      allowProposedApi: true,
+      rows: 30,
+      cols: 120,
+      scrollback: 1000,
       theme: theme?.isDark
         ? {
             background: '#1e1e1e',
@@ -70,10 +74,6 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
             brightCyan: '#0598bc',
             brightWhite: '#a5a5a5',
           },
-      rows: 30,
-      cols: 120,
-      scrollback: 1000,
-      allowProposedApi: true,
     });
 
     // Add addons
@@ -99,6 +99,70 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
+    let commandBuffer = '';
+    let currentPath = '/';
+    let pendingOutput = '';
+    const pwdMarkerStart = '__PTK_PWD__';
+    const pwdMarkerEnd = '__PTK_END__';
+
+    const writePrompt = () => {
+      xterm.write(`${currentPath} $ `);
+    };
+
+    const handleCtrlC = () => {
+      commandBuffer = '';
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send('\u0003');
+      }
+      xterm.write('^C\r\n');
+      writePrompt();
+    };
+
+    const normalizeLineEndings = (text: string) =>
+      text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n');
+
+    const processIncomingData = (chunk: string) => {
+      pendingOutput += chunk;
+      const tailReserve = Math.max(0, pwdMarkerStart.length - 1);
+
+      while (true) {
+        const markerStart = pendingOutput.indexOf(pwdMarkerStart);
+
+        if (markerStart === -1) {
+          if (pendingOutput.length > tailReserve) {
+            const safeOutput = pendingOutput.slice(0, pendingOutput.length - tailReserve);
+            xterm.write(normalizeLineEndings(safeOutput));
+            pendingOutput = pendingOutput.slice(pendingOutput.length - tailReserve);
+          }
+          return;
+        }
+
+        if (markerStart > 0) {
+          xterm.write(normalizeLineEndings(pendingOutput.slice(0, markerStart)));
+        }
+
+        const pathStart = markerStart + pwdMarkerStart.length;
+        const markerEnd = pendingOutput.indexOf(pwdMarkerEnd, pathStart);
+
+        if (markerEnd === -1) {
+          pendingOutput = pendingOutput.slice(markerStart);
+          return;
+        }
+
+        const parsedPath = pendingOutput
+          .slice(pathStart, markerEnd)
+          .replace(/\r?\n/g, '')
+          .trim();
+
+        if (parsedPath.length > 0) {
+          currentPath = parsedPath;
+        }
+
+        pendingOutput = pendingOutput.slice(markerEnd + pwdMarkerEnd.length);
+        xterm.write('\r\n');
+        writePrompt();
+      }
+    };
 
     ws.onopen = () => {
       xterm.writeln('\x1b[1;32m✓ Connected to pod shell\x1b[0m');
@@ -107,10 +171,15 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
         xterm.writeln(`\x1b[1;36mContainer:\x1b[0m ${containerName}`);
       }
       xterm.writeln('');
+      ws.send(`printf '${pwdMarkerStart}%s${pwdMarkerEnd}' "$PWD"\n`);
+      // Auto-focus terminal after connection
+      xterm.focus();
     };
 
     ws.onmessage = (event) => {
-      xterm.write(event.data);
+      if (typeof event.data === 'string') {
+        processIncomingData(event.data);
+      }
     };
 
     ws.onerror = () => {
@@ -121,10 +190,44 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
       xterm.writeln('\r\n\x1b[1;33m✗ Connection closed\x1b[0m');
     };
 
+    const keyHandlerDisposable = xterm.onKey(({ domEvent }) => {
+      if (domEvent.type === 'keydown' && domEvent.ctrlKey && domEvent.key.toLowerCase() === 'c') {
+        domEvent.preventDefault();
+        handleCtrlC();
+      }
+    });
+
     // Send terminal input to WebSocket
     xterm.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
+      if (ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      if (data === '\r') {
+        xterm.write('\r\n');
+        ws.send(`${commandBuffer}\nprintf '${pwdMarkerStart}%s${pwdMarkerEnd}' "$PWD"\n`);
+        commandBuffer = '';
+        return;
+      }
+
+      if (data === '\x7f') {
+        if (commandBuffer.length > 0) {
+          commandBuffer = commandBuffer.slice(0, -1);
+          xterm.write('\b \b');
+        }
+        return;
+      }
+
+      if (data === '\u0003') {
+        handleCtrlC();
+        return;
+      }
+
+      const code = data.length === 1 ? data.charCodeAt(0) : -1;
+      const isPrintable = data.length === 1 && code >= 32 && code !== 127;
+      if (isPrintable) {
+        commandBuffer += data;
+        xterm.write(data);
       }
     });
 
@@ -151,6 +254,7 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
     window.addEventListener('resize', handleResize);
 
     return () => {
+      keyHandlerDisposable.dispose();
       terminalRef.current?.removeEventListener('mousedown', handleFocus);
       window.removeEventListener('resize', handleResize);
       ws.close();
