@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
-use kube::{Api, runtime::{watcher, WatchStreamExt}, ResourceExt};
+use kube::{runtime::watcher::{watcher, Event}, Api, ResourceExt};
 use tracing::{error, info, warn};
 
 use crate::proto::kubernetes::{
@@ -187,7 +187,19 @@ impl KubernetesWatch for KubernetesWatchService {
 
         match resource_type {
             ResourceType::Pods => list_pods(&self.kube_client, req.namespace).await,
-            _ => Err(Status::unimplemented("Resource type not yet supported")),
+            ResourceType::Deployments => list_deployments(&self.kube_client, req.namespace).await,
+            ResourceType::Services => list_services(&self.kube_client, req.namespace).await,
+            ResourceType::Nodes => list_nodes(&self.kube_client).await,
+            ResourceType::Events => list_events(&self.kube_client, req.namespace).await,
+            ResourceType::Statefulsets => list_statefulsets(&self.kube_client, req.namespace).await,
+            ResourceType::Daemonsets => list_daemonsets(&self.kube_client, req.namespace).await,
+            ResourceType::Jobs => list_jobs(&self.kube_client, req.namespace).await,
+            ResourceType::Cronjobs => list_cronjobs(&self.kube_client, req.namespace).await,
+            ResourceType::Replicasets => list_replicasets(&self.kube_client, req.namespace).await,
+            ResourceType::Namespaces => list_namespaces(&self.kube_client).await,
+            ResourceType::Unspecified => {
+                Err(Status::invalid_argument("Resource type is required"))
+            }
         }
     }
 
@@ -217,6 +229,19 @@ async fn watch_resource(
 ) -> anyhow::Result<()> {
     match ResourceType::try_from(resource_type) {
         Ok(ResourceType::Pods) => watch_pods(client, namespace, tx).await,
+        Ok(ResourceType::Deployments) => watch_deployments(client, namespace, tx).await,
+        Ok(ResourceType::Services) => watch_services(client, namespace, tx).await,
+        Ok(ResourceType::Nodes) => watch_nodes(client, tx).await,
+        Ok(ResourceType::Events) => watch_events(client, namespace, tx).await,
+        Ok(ResourceType::Statefulsets) => watch_statefulsets(client, namespace, tx).await,
+        Ok(ResourceType::Daemonsets) => watch_daemonsets(client, namespace, tx).await,
+        Ok(ResourceType::Jobs) => watch_jobs(client, namespace, tx).await,
+        Ok(ResourceType::Cronjobs) => watch_cronjobs(client, namespace, tx).await,
+        Ok(ResourceType::Replicasets) => watch_replicasets(client, namespace, tx).await,
+        Ok(ResourceType::Namespaces) => watch_namespaces(client, tx).await,
+        Ok(ResourceType::Unspecified) => {
+            Err(anyhow::anyhow!("Resource type is required"))
+        }
         _ => {
             warn!("Unsupported resource type: {}", resource_type);
             Ok(())
@@ -224,80 +249,194 @@ async fn watch_resource(
     }
 }
 
-async fn watch_pods(
-    client: kube::Client,
-    namespace: Option<String>,
-    tx: mpsc::Sender<Result<WatchResponse, Status>>,
+async fn send_resource_update<T: serde::Serialize + ResourceExt>(
+    tx: &mpsc::Sender<Result<WatchResponse, Status>>,
+    resource_type: ResourceType,
+    action: WatchAction,
+    resource: &T,
 ) -> anyhow::Result<()> {
-    use k8s_openapi::api::core::v1::Pod;
+    let data = serde_json::to_vec(resource)?;
+    let resource_version = resource.resource_version().unwrap_or_default();
 
-    let api: Api<Pod> = if let Some(ns) = namespace {
-        Api::namespaced(client, &ns)
-    } else {
-        Api::all(client)
+    let response = WatchResponse {
+        message: Some(watch_response::Message::ResourceUpdate(ResourceUpdate {
+            resource_type: resource_type as i32,
+            action: action as i32,
+            data,
+            resource_version,
+            timestamp: chrono::Utc::now().timestamp(),
+        })),
     };
 
-    let stream = watcher(api, Default::default()).applied_objects();
-    tokio::pin!(stream);
-
-    while let Some(result) = stream.next().await {
-        match result {
-            Ok(pod) => {
-                let data = serde_json::to_vec(&pod)?;
-                let resource_version = pod.resource_version().unwrap_or_default();
-
-                let response = WatchResponse {
-                    message: Some(watch_response::Message::ResourceUpdate(ResourceUpdate {
-                        resource_type: ResourceType::Pods as i32,
-                        action: WatchAction::Modified as i32,
-                        data,
-                        resource_version,
-                        timestamp: chrono::Utc::now().timestamp(),
-                    })),
-                };
-
-                if tx.send(Ok(response)).await.is_err() {
-                    break; // Client disconnected
-                }
-            }
-            Err(e) => {
-                error!("Pod watch error: {}", e);
-                break;
-            }
-        }
+    if tx.send(Ok(response)).await.is_err() {
+        return Err(anyhow::anyhow!("Client disconnected"));
     }
 
     Ok(())
 }
 
-async fn list_pods(
-    client: &kube::Client,
-    namespace: Option<String>,
-) -> Result<Response<ListResponse>, Status> {
-    use k8s_openapi::api::core::v1::Pod;
+macro_rules! create_watch_fn {
+    ($fn_name:ident, $resource:ty, $resource_type:expr, namespaced) => {
+        async fn $fn_name(
+            client: kube::Client,
+            namespace: Option<String>,
+            tx: mpsc::Sender<Result<WatchResponse, Status>>,
+        ) -> anyhow::Result<()> {
+            let api: Api<$resource> = if let Some(ns) = namespace {
+                Api::namespaced(client, &ns)
+            } else {
+                Api::all(client)
+            };
 
-    let api: Api<Pod> = if let Some(ns) = namespace {
-        Api::namespaced(client.clone(), &ns)
-    } else {
-        Api::all(client.clone())
+            let stream = watcher(api, Default::default());
+            tokio::pin!(stream);
+
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(event) => match event {
+                        Event::Applied(resource) => {
+                            send_resource_update(&tx, $resource_type, WatchAction::Modified, &resource)
+                                .await?;
+                        }
+                        Event::Deleted(resource) => {
+                            send_resource_update(&tx, $resource_type, WatchAction::Deleted, &resource)
+                                .await?;
+                        }
+                        Event::Restarted(resources) => {
+                            for resource in resources {
+                                send_resource_update(&tx, $resource_type, WatchAction::Added, &resource)
+                                    .await?;
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        error!("Watch error for {:?}: {}", $resource_type, e);
+                        break;
+                    }
+                }
+            }
+
+            Ok(())
+        }
     };
+    ($fn_name:ident, $resource:ty, $resource_type:expr, cluster) => {
+        async fn $fn_name(
+            client: kube::Client,
+            tx: mpsc::Sender<Result<WatchResponse, Status>>,
+        ) -> anyhow::Result<()> {
+            let api: Api<$resource> = Api::all(client);
 
-    let pods = api
-        .list(&Default::default())
-        .await
-        .map_err(|e| Status::internal(format!("Failed to list pods: {}", e)))?;
+            let stream = watcher(api, Default::default());
+            tokio::pin!(stream);
 
-    let items: Vec<Vec<u8>> = pods
-        .items
-        .iter()
-        .filter_map(|pod| serde_json::to_vec(pod).ok())
-        .collect();
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(event) => match event {
+                        Event::Applied(resource) => {
+                            send_resource_update(&tx, $resource_type, WatchAction::Modified, &resource)
+                                .await?;
+                        }
+                        Event::Deleted(resource) => {
+                            send_resource_update(&tx, $resource_type, WatchAction::Deleted, &resource)
+                                .await?;
+                        }
+                        Event::Restarted(resources) => {
+                            for resource in resources {
+                                send_resource_update(&tx, $resource_type, WatchAction::Added, &resource)
+                                    .await?;
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        error!("Watch error for {:?}: {}", $resource_type, e);
+                        break;
+                    }
+                }
+            }
 
-    let count = items.len() as i32;
-
-    Ok(Response::new(ListResponse {
-        items,
-        resource_version: pods.metadata.resource_version.unwrap_or_default(),
-        count,
-    }))
+            Ok(())
+        }
+    };
 }
+
+create_watch_fn!(watch_pods, k8s_openapi::api::core::v1::Pod, ResourceType::Pods, namespaced);
+create_watch_fn!(watch_deployments, k8s_openapi::api::apps::v1::Deployment, ResourceType::Deployments, namespaced);
+create_watch_fn!(watch_services, k8s_openapi::api::core::v1::Service, ResourceType::Services, namespaced);
+create_watch_fn!(watch_events, k8s_openapi::api::core::v1::Event, ResourceType::Events, namespaced);
+create_watch_fn!(watch_statefulsets, k8s_openapi::api::apps::v1::StatefulSet, ResourceType::Statefulsets, namespaced);
+create_watch_fn!(watch_daemonsets, k8s_openapi::api::apps::v1::DaemonSet, ResourceType::Daemonsets, namespaced);
+create_watch_fn!(watch_jobs, k8s_openapi::api::batch::v1::Job, ResourceType::Jobs, namespaced);
+create_watch_fn!(watch_cronjobs, k8s_openapi::api::batch::v1::CronJob, ResourceType::Cronjobs, namespaced);
+create_watch_fn!(watch_replicasets, k8s_openapi::api::apps::v1::ReplicaSet, ResourceType::Replicasets, namespaced);
+create_watch_fn!(watch_nodes, k8s_openapi::api::core::v1::Node, ResourceType::Nodes, cluster);
+create_watch_fn!(watch_namespaces, k8s_openapi::api::core::v1::Namespace, ResourceType::Namespaces, cluster);
+
+macro_rules! create_list_fn {
+    ($fn_name:ident, $resource:ty, namespaced) => {
+        async fn $fn_name(
+            client: &kube::Client,
+            namespace: Option<String>,
+        ) -> Result<Response<ListResponse>, Status> {
+            let api: Api<$resource> = if let Some(ns) = namespace {
+                Api::namespaced(client.clone(), &ns)
+            } else {
+                Api::all(client.clone())
+            };
+
+            let list = api
+                .list(&Default::default())
+                .await
+                .map_err(|e| Status::internal(format!("Failed to list resources: {}", e)))?;
+
+            let items: Vec<Vec<u8>> = list
+                .items
+                .iter()
+                .filter_map(|item| serde_json::to_vec(item).ok())
+                .collect();
+
+            let count = items.len() as i32;
+
+            Ok(Response::new(ListResponse {
+                items,
+                resource_version: list.metadata.resource_version.unwrap_or_default(),
+                count,
+            }))
+        }
+    };
+    ($fn_name:ident, $resource:ty, cluster) => {
+        async fn $fn_name(client: &kube::Client) -> Result<Response<ListResponse>, Status> {
+            let api: Api<$resource> = Api::all(client.clone());
+
+            let list = api
+                .list(&Default::default())
+                .await
+                .map_err(|e| Status::internal(format!("Failed to list resources: {}", e)))?;
+
+            let items: Vec<Vec<u8>> = list
+                .items
+                .iter()
+                .filter_map(|item| serde_json::to_vec(item).ok())
+                .collect();
+
+            let count = items.len() as i32;
+
+            Ok(Response::new(ListResponse {
+                items,
+                resource_version: list.metadata.resource_version.unwrap_or_default(),
+                count,
+            }))
+        }
+    };
+}
+
+create_list_fn!(list_pods, k8s_openapi::api::core::v1::Pod, namespaced);
+create_list_fn!(list_deployments, k8s_openapi::api::apps::v1::Deployment, namespaced);
+create_list_fn!(list_services, k8s_openapi::api::core::v1::Service, namespaced);
+create_list_fn!(list_events, k8s_openapi::api::core::v1::Event, namespaced);
+create_list_fn!(list_statefulsets, k8s_openapi::api::apps::v1::StatefulSet, namespaced);
+create_list_fn!(list_daemonsets, k8s_openapi::api::apps::v1::DaemonSet, namespaced);
+create_list_fn!(list_jobs, k8s_openapi::api::batch::v1::Job, namespaced);
+create_list_fn!(list_cronjobs, k8s_openapi::api::batch::v1::CronJob, namespaced);
+create_list_fn!(list_replicasets, k8s_openapi::api::apps::v1::ReplicaSet, namespaced);
+create_list_fn!(list_nodes, k8s_openapi::api::core::v1::Node, cluster);
+create_list_fn!(list_namespaces, k8s_openapi::api::core::v1::Namespace, cluster);

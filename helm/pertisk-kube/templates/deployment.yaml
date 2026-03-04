@@ -41,6 +41,9 @@ spec:
             - name: http
               containerPort: {{ .Values.app.service.targetPort }}
               protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.app.service.grpcTargetPort }}
+              protocol: TCP
           {{- if .Values.app.startupProbe }}
           startupProbe:
             {{- toYaml .Values.app.startupProbe | nindent 12 }}

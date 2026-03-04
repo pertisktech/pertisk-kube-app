@@ -15,3 +15,7 @@ spec:
       port: {{ .Values.app.service.port }}
       targetPort: {{ .Values.app.service.targetPort }}
       protocol: TCP
+    - name: grpc
+      port: {{ .Values.app.service.grpcPort }}
+      targetPort: {{ .Values.app.service.grpcTargetPort }}
+      protocol: TCP

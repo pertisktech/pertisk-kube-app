@@ -68,6 +68,7 @@ ENV STATIC_DIR=/app/static
 ENV RUST_LOG=info
 
 EXPOSE 8091
+EXPOSE 50051
 
 # Run as non-root user
 USER appuser

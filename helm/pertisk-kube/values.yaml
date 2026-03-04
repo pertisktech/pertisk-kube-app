@@ -22,6 +22,8 @@ app:
     type: ClusterIP
     port: 8091
     targetPort: 8091
+    grpcPort: 50051
+    grpcTargetPort: 50051
   env:
     rustLog: info
   auth:
@@ -72,6 +74,22 @@ ingress:
     - host: pertisk-kube.example.com
       paths:
         - path: /
+          pathType: Prefix
+  tls:
+    - secretName: pertisk-kube-tls
+      hosts:
+        - pertisk-kube.example.com
+
+ingressGrpc:
+  enabled: false
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+  hosts:
+    - host: pertisk-kube.example.com
+      paths:
+        - path: /kubernetes.KubernetesWatch/
           pathType: Prefix
   tls:
     - secretName: pertisk-kube-tls
