@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useCronJobs } from '../hooks/useKubernetes';
+import { useRealtimeCronJobs } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { CronJobDetailPanel, DataTable } from '../components';
 import type { CronJob } from '../types';
@@ -17,8 +17,8 @@ type CronJobSortKey =
   | 'age';
 
 export const CronJobsPage = () => {
-  const { data, isLoading, error } = useCronJobs();
-  const { selectedNamespaces, setNamespaces } = useNamespace();
+  const { data, isLoading, error } = useRealtimeCronJobs();
+  const { selectedNamespaces } = useNamespace();
   const [selectedCronJob, setSelectedCronJob] = useState<CronJob | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -26,13 +26,6 @@ export const CronJobsPage = () => {
     key: 'name',
     direction: 'asc',
   });
-
-  useEffect(() => {
-    if (data && data.length > 0) {
-      const uniqueNamespaces = Array.from(new Set(data.map((cronJob) => cronJob.namespace)));
-      setNamespaces(uniqueNamespaces);
-    }
-  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -178,7 +171,7 @@ export const CronJobsPage = () => {
         columns={columns}
         data={sortedCronJobs}
         isLoading={isLoading}
-        error={error?.message}
+        error={error}
         rowKey="id"
         onRowClick={(row) => {
           setSelectedCronJob(row);

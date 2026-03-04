@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useReplicaSets } from '../hooks/useKubernetes';
+import { useRealtimeReplicaSets } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ReplicaSetDetailPanel } from '../components';
 import type { ReplicaSet } from '../types';
@@ -17,8 +17,8 @@ type ReplicaSetSortKey =
   | 'age';
 
 export const ReplicaSetsPage = () => {
-  const { data, isLoading, error } = useReplicaSets();
-  const { selectedNamespaces, setNamespaces } = useNamespace();
+  const { data, isLoading, error } = useRealtimeReplicaSets();
+  const { selectedNamespaces } = useNamespace();
   const [selectedReplicaSet, setSelectedReplicaSet] = useState<ReplicaSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -26,13 +26,6 @@ export const ReplicaSetsPage = () => {
     key: 'name',
     direction: 'asc',
   });
-
-  useEffect(() => {
-    if (data && data.length > 0) {
-      const uniqueNamespaces = Array.from(new Set(data.map((replicaSet) => replicaSet.namespace)));
-      setNamespaces(uniqueNamespaces);
-    }
-  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -175,7 +168,7 @@ export const ReplicaSetsPage = () => {
         columns={columns}
         data={sortedReplicaSets}
         isLoading={isLoading}
-        error={error?.message}
+        error={error}
         rowKey="id"
         onRowClick={(row) => {
           setSelectedReplicaSet(row);

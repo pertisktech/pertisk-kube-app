@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useDaemonSets } from '../hooks/useKubernetes';
+import { useRealtimeDaemonSets } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DaemonSetDetailPanel, DataTable } from '../components';
 import type { DaemonSet } from '../types';
@@ -17,8 +17,8 @@ type DaemonSetSortKey =
   | 'age';
 
 export const DaemonSetsPage = () => {
-  const { data, isLoading, error } = useDaemonSets();
-  const { selectedNamespaces, setNamespaces } = useNamespace();
+  const { data, isLoading, error } = useRealtimeDaemonSets();
+  const { selectedNamespaces } = useNamespace();
   const [selectedDaemonSet, setSelectedDaemonSet] = useState<DaemonSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -26,13 +26,6 @@ export const DaemonSetsPage = () => {
     key: 'name',
     direction: 'asc',
   });
-
-  useEffect(() => {
-    if (data && data.length > 0) {
-      const uniqueNamespaces = Array.from(new Set(data.map((daemonSet) => daemonSet.namespace)));
-      setNamespaces(uniqueNamespaces);
-    }
-  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -175,7 +168,7 @@ export const DaemonSetsPage = () => {
         columns={columns}
         data={sortedDaemonSets}
         isLoading={isLoading}
-        error={error?.message}
+        error={error}
         rowKey="id"
         onRowClick={(row) => {
           setSelectedDaemonSet(row);

@@ -29,7 +29,7 @@ export const PodsPage = () => {
   
   const isLoading = !isConnected && data.length === 0;
   
-  const { selectedNamespaces, setNamespaces } = useNamespace();
+  const { selectedNamespaces } = useNamespace();
   const [selectedPod, setSelectedPod] = useState<Pod | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -46,13 +46,6 @@ export const PodsPage = () => {
 
     return () => clearInterval(interval);
   }, []);
-
-  useEffect(() => {
-    if (data && data.length > 0) {
-      const uniqueNamespaces = Array.from(new Set(data.map((pod) => pod.namespace)));
-      setNamespaces(uniqueNamespaces);
-    }
-  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {

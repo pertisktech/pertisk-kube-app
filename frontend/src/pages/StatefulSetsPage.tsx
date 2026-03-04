@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useStatefulSets } from '../hooks/useKubernetes';
+import { useRealtimeStatefulSets } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, StatefulSetDetailPanel } from '../components';
 import type { StatefulSet } from '../types';
@@ -8,8 +8,8 @@ import { getStatusColor, timeAgo, truncateString } from '../utils';
 type StatefulSetSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'current' | 'updated' | 'images' | 'age';
 
 export const StatefulSetsPage = () => {
-  const { data, isLoading, error } = useStatefulSets();
-  const { selectedNamespaces, setNamespaces } = useNamespace();
+  const { data, isLoading, error } = useRealtimeStatefulSets();
+  const { selectedNamespaces } = useNamespace();
   const [selectedStatefulSet, setSelectedStatefulSet] = useState<StatefulSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -17,13 +17,6 @@ export const StatefulSetsPage = () => {
     key: 'name',
     direction: 'asc',
   });
-
-  useEffect(() => {
-    if (data && data.length > 0) {
-      const uniqueNamespaces = Array.from(new Set(data.map((statefulSet) => statefulSet.namespace)));
-      setNamespaces(uniqueNamespaces);
-    }
-  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -157,7 +150,7 @@ export const StatefulSetsPage = () => {
         columns={columns}
         data={sortedStatefulSets}
         isLoading={isLoading}
-        error={error?.message}
+        error={error}
         rowKey="id"
         onRowClick={(row) => {
           setSelectedStatefulSet(row);

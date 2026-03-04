@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNamespaces } from '../hooks/useKubernetes';
-import { useNamespace } from '../context/NamespaceContext';
+import { useRealtimeNamespaces } from '../hooks/useRealtimeResources';
 import { DataTable } from '../components/DataTable';
 import { NamespaceDetailPanel } from '../components/NamespaceDetailPanel';
 import type { Namespace } from '../types';
@@ -9,8 +8,7 @@ import { timeAgo } from '../utils';
 type NamespaceSortKey = 'name' | 'status' | 'age';
 
 export const NamespacesPage = () => {
-  const { data, isLoading, error } = useNamespaces();
-  const { setNamespaces } = useNamespace();
+  const { data, isLoading, error } = useRealtimeNamespaces();
   const [selectedNamespace, setSelectedNamespace] = useState<Namespace | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -18,13 +16,6 @@ export const NamespacesPage = () => {
     key: 'name',
     direction: 'asc',
   });
-
-  useEffect(() => {
-    if (data && data.length > 0) {
-      const namespaceNames = data.map((ns) => ns.name);
-      setNamespaces(namespaceNames);
-    }
-  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -114,7 +105,7 @@ export const NamespacesPage = () => {
         columns={columns}
         data={sortedNamespaces}
         isLoading={isLoading}
-        error={error?.message}
+        error={error}
         rowKey="name"
         onRowClick={(row) => {
           setSelectedNamespace(row);

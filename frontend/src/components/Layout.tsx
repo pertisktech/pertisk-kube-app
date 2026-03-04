@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useNamespace } from '../context/NamespaceContext';
+import { useRealtimeNamespaces } from '../hooks/useRealtimeResources';
+import { useNamespaces } from '../hooks/useKubernetes';
 import { Checkbox } from './Checkbox';
 import {
   ChevronDown,
@@ -29,6 +31,7 @@ import {
   Flag,
   Timer,
   SlidersHorizontal,
+  Bell,
 } from 'lucide-react';
 import { cn } from '../utils';
 import { useTheme } from '../context/ThemeContext';
@@ -48,6 +51,12 @@ const NAMESPACE_ITEM: NavItem = {
   label: 'Namespace',
   path: '/namespaces',
   icon: Database,
+};
+
+const EVENTS_ITEM: NavItem = {
+  label: 'Events',
+  path: '/events',
+  icon: Bell,
 };
 
 const NETWORK_ITEMS: NavItem[] = [
@@ -113,7 +122,9 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const namespaceMenuRef = useRef<HTMLDivElement>(null);
   const theme = useTheme();
   const location = useLocation();
-  const { selectedNamespaces, toggleNamespace, clearNamespaces, namespaces } = useNamespace();
+  const { selectedNamespaces, setSelectedNamespaces, toggleNamespace, clearNamespaces, namespaces, setNamespaces } = useNamespace();
+  const { data: realtimeNamespaces } = useRealtimeNamespaces();
+  const { data: apiNamespaces } = useNamespaces();
 
   // Hide namespace filter on Dashboard, Nodes, and Namespaces pages
   const shouldShowNamespaceFilter = location.pathname !== '/' && location.pathname !== '/nodes' && location.pathname !== '/namespaces';
@@ -149,6 +160,35 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     }
   }, [location.pathname]);
 
+  useEffect(() => {
+    const merged = new Set<string>();
+
+    (apiNamespaces || []).forEach((ns) => {
+      if (ns?.name) {
+        merged.add(ns.name);
+      }
+    });
+
+    (realtimeNamespaces || []).forEach((ns) => {
+      if (ns?.name) {
+        merged.add(ns.name);
+      }
+    });
+
+    const namespaceNames = Array.from(merged).sort((a, b) => a.localeCompare(b));
+
+    if (namespaceNames.length > 0) {
+      setNamespaces(namespaceNames);
+    }
+
+    if (selectedNamespaces.length > 0 && namespaceNames.length > 0) {
+      const validSelected = selectedNamespaces.filter((ns) => namespaceNames.includes(ns));
+      if (validSelected.length !== selectedNamespaces.length) {
+        setSelectedNamespaces(validSelected);
+      }
+    }
+  }, [apiNamespaces, realtimeNamespaces, selectedNamespaces, setNamespaces, setSelectedNamespaces]);
+
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
     return location.pathname.startsWith(path);
@@ -168,6 +208,10 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
 
     if (pathname === NAMESPACE_ITEM.path || pathname.startsWith(`${NAMESPACE_ITEM.path}/`)) {
       return [{ label: NAMESPACE_ITEM.label, path: NAMESPACE_ITEM.path, icon: NAMESPACE_ITEM.icon }] as BreadcrumbItem[];
+    }
+
+    if (pathname === EVENTS_ITEM.path || pathname.startsWith(`${EVENTS_ITEM.path}/`)) {
+      return [{ label: EVENTS_ITEM.label, path: EVENTS_ITEM.path, icon: EVENTS_ITEM.icon }] as BreadcrumbItem[];
     }
 
     const navItem = NAV_ITEMS.find(
@@ -522,6 +566,23 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
             >
               <NAMESPACE_ITEM.icon size={18} className="flex-shrink-0" />
               {!sidebarCollapsed && <span>{NAMESPACE_ITEM.label}</span>}
+            </Link>
+
+            <Link
+              to={EVENTS_ITEM.path}
+              onClick={() => setSidebarOpen(false)}
+              className={cn(
+                'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                'order-7',
+                sidebarCollapsed && 'justify-center px-2',
+                isActive(EVENTS_ITEM.path)
+                  ? 'bg-hover text-primary'
+                  : 'text-text-secondary hover:bg-hover hover:text-text'
+              )}
+              title={EVENTS_ITEM.label}
+            >
+              <EVENTS_ITEM.icon size={18} className="flex-shrink-0" />
+              {!sidebarCollapsed && <span>{EVENTS_ITEM.label}</span>}
             </Link>
           </nav>
         </div>

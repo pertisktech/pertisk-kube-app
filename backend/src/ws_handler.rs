@@ -80,14 +80,31 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             let response = ServerMessage::Subscribed { resource: resource.clone() };
                             let _ = tx.send(response).await;
 
-                            // Start watching resource
-                            if resource == "pods" {
-                                let state_clone = state.clone();
-                                let tx_clone = tx.clone();
-                                tokio::spawn(async move {
-                                    watch_pods(state_clone, tx_clone).await;
-                                });
-                            }
+                            // Start watching resource based on type
+                            let state_clone = state.clone();
+                            let tx_clone = tx.clone();
+                            let resource_clone = resource.clone();
+                            
+                            tokio::spawn(async move {
+                                match resource_clone.as_str() {
+                                    "pods" => watch_pods(state_clone, tx_clone).await,
+                                    "namespaces" => watch_namespaces(state_clone, tx_clone).await,
+                                    "deployments" => watch_deployments(state_clone, tx_clone).await,
+                                    "statefulsets" => watch_statefulsets(state_clone, tx_clone).await,
+                                    "daemonsets" => watch_daemonsets(state_clone, tx_clone).await,
+                                    "replicasets" => watch_replicasets(state_clone, tx_clone).await,
+                                    "jobs" => watch_jobs(state_clone, tx_clone).await,
+                                    "cronjobs" => watch_cronjobs(state_clone, tx_clone).await,
+                                    "events" => watch_events(state_clone, tx_clone).await,
+                                    _ => {
+                                        error!("Unknown resource type: {}", resource_clone);
+                                        let msg = ServerMessage::Error {
+                                            message: format!("Unknown resource type: {}", resource_clone),
+                                        };
+                                        let _ = tx_clone.send(msg).await;
+                                    }
+                                }
+                            });
                         }
                         ClientMessage::Unsubscribe { resource } => {
                             info!("Client unsubscribing from {}", resource);
@@ -239,3 +256,114 @@ async fn watch_pods(
         }
     }
 }
+
+// Generic macro to create watch functions for any K8s resource type
+macro_rules! create_watch_fn {
+    ($fn_name:ident, $resource_type:ty, $resource_name:expr) => {
+        async fn $fn_name(
+            state: AppState,
+            tx: tokio::sync::mpsc::Sender<ServerMessage>,
+        ) {
+            use kube::api::ListParams;
+
+            let api: Api<$resource_type> = Api::all(state.client.clone());
+            
+            // First, send all existing resources
+            info!("Fetching initial {} list...", $resource_name);
+            match api.list(&ListParams::default()).await {
+                Ok(list) => {
+                    let total_items = list.items.len();
+                    
+                    info!("Sending {} {}", total_items, $resource_name);
+                    
+                    for item in list.items {
+                        let item_data = serde_json::to_value(&item).unwrap_or_default();
+                        
+                        let msg = ServerMessage::ResourceUpdate {
+                            resource: $resource_name.to_string(),
+                            action: "ADDED".to_string(),
+                            data: item_data,
+                        };
+
+                        if tx.send(msg).await.is_err() {
+                            return; // Client disconnected
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to fetch initial {} list: {}", $resource_name, e);
+                    let msg = ServerMessage::Error {
+                        message: format!("Failed to fetch initial {}: {}", $resource_name, e),
+                    };
+                    let _ = tx.send(msg).await;
+                    return;
+                }
+            }
+
+            // Now watch for changes
+            info!("Starting {} watch stream...", $resource_name);
+            let stream = watcher(api, Default::default());
+            tokio::pin!(stream);
+
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(event) => {
+                        use kube::runtime::watcher::Event;
+                        
+                        let (action, item_opt) = match event {
+                            Event::Applied(item) => ("MODIFIED", Some(item)),
+                            Event::Deleted(item) => ("DELETED", Some(item)),
+                            Event::Restarted(items) => {
+                                for item in items {
+                                    let item_data = serde_json::to_value(&item).unwrap_or_default();
+                                    let msg = ServerMessage::ResourceUpdate {
+                                        resource: $resource_name.to_string(),
+                                        action: "MODIFIED".to_string(),
+                                        data: item_data,
+                                    };
+                                    if tx.send(msg).await.is_err() {
+                                        return;
+                                    }
+                                }
+                                continue;
+                            }
+                        };
+
+                        if let Some(item) = item_opt {
+                            let item_data = serde_json::to_value(&item).unwrap_or_default();
+                            
+                            let msg = ServerMessage::ResourceUpdate {
+                                resource: $resource_name.to_string(),
+                                action: action.to_string(),
+                                data: item_data,
+                            };
+
+                            if tx.send(msg).await.is_err() {
+                                break; // Client disconnected
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Watch error for {}: {}", $resource_name, e);
+                        let msg = ServerMessage::Error {
+                            message: format!("Watch error: {}", e),
+                        };
+                        let _ = tx.send(msg).await;
+                        break;
+                    }
+                }
+            }
+        }
+    };
+}
+
+// Create watch functions for each resource type
+create_watch_fn!(watch_deployments, k8s_openapi::api::apps::v1::Deployment, "deployments");
+create_watch_fn!(watch_statefulsets, k8s_openapi::api::apps::v1::StatefulSet, "statefulsets");
+create_watch_fn!(watch_daemonsets, k8s_openapi::api::apps::v1::DaemonSet, "daemonsets");
+create_watch_fn!(watch_replicasets, k8s_openapi::api::apps::v1::ReplicaSet, "replicasets");
+create_watch_fn!(watch_jobs, k8s_openapi::api::batch::v1::Job, "jobs");
+create_watch_fn!(watch_cronjobs, k8s_openapi::api::batch::v1::CronJob, "cronjobs");
+create_watch_fn!(watch_events, k8s_openapi::api::core::v1::Event, "events");
+create_watch_fn!(watch_namespaces, k8s_openapi::api::core::v1::Namespace, "namespaces");
+

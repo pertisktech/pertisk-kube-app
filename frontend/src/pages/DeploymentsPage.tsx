@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useDeployments } from '../hooks/useKubernetes';
+import { useRealtimeDeployments } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
 import { DeploymentDetailPanel } from '../components/DeploymentDetailPanel';
@@ -9,8 +9,8 @@ import { getStatusColor, timeAgo } from '../utils';
 type DeploymentSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'updated' | 'available' | 'images' | 'age';
 
 export const DeploymentsPage = () => {
-  const { data, isLoading, error } = useDeployments();
-  const { selectedNamespaces, setNamespaces } = useNamespace();
+  const { data, isLoading, error } = useRealtimeDeployments();
+  const { selectedNamespaces } = useNamespace();
   const [selectedDeployment, setSelectedDeployment] = useState<Deployment | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -18,13 +18,6 @@ export const DeploymentsPage = () => {
     key: 'name',
     direction: 'asc',
   });
-
-  useEffect(() => {
-    if (data && data.length > 0) {
-      const uniqueNamespaces = Array.from(new Set(data.map((deployment) => deployment.namespace)));
-      setNamespaces(uniqueNamespaces);
-    }
-  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -162,7 +155,7 @@ export const DeploymentsPage = () => {
         columns={columns}
         data={sortedDeployments}
         isLoading={isLoading}
-        error={error?.message}
+        error={error}
         rowKey="id"
         onRowClick={(row) => {
           setSelectedDeployment(row);

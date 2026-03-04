@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useJobs } from '../hooks/useKubernetes';
+import { useRealtimeJobs } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, JobDetailPanel } from '../components';
 import type { Job } from '../types';
@@ -8,8 +8,8 @@ import { getStatusColor, timeAgo } from '../utils';
 type JobSortKey = 'name' | 'namespace' | 'status' | 'completions' | 'duration' | 'age';
 
 export const JobsPage = () => {
-  const { data, isLoading, error } = useJobs();
-  const { selectedNamespaces, setNamespaces } = useNamespace();
+  const { data, isLoading, error } = useRealtimeJobs();
+  const { selectedNamespaces } = useNamespace();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -17,13 +17,6 @@ export const JobsPage = () => {
     key: 'name',
     direction: 'asc',
   });
-
-  useEffect(() => {
-    if (data && data.length > 0) {
-      const uniqueNamespaces = Array.from(new Set(data.map((job) => job.namespace)));
-      setNamespaces(uniqueNamespaces);
-    }
-  }, [data, setNamespaces]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -174,7 +167,7 @@ export const JobsPage = () => {
         columns={columns}
         data={sortedJobs}
         isLoading={isLoading}
-        error={error?.message}
+        error={error}
         rowKey="id"
         onRowClick={(row) => {
           setSelectedJob(row);
