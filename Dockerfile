@@ -23,7 +23,7 @@ FROM rust:alpine AS backend-builder
 WORKDIR /app
 
 # Install build dependencies for native crates
-RUN apk add --no-cache build-base pkgconfig openssl-dev
+RUN apk add --no-cache build-base pkgconfig openssl-dev protobuf-dev
 
 # Copy workspace Cargo.toml first
 COPY Cargo.toml ./Cargo.toml
@@ -35,6 +35,10 @@ COPY backend/Cargo.toml ./backend/Cargo.toml
 # Create a dummy main.rs to cache dependencies
 RUN echo "fn main() {}" > backend/src/main.rs
 RUN cargo fetch
+
+# Copy proto files and build script (needed for code generation)
+COPY proto ./proto
+COPY backend/build.rs ./backend/build.rs
 
 # Now copy the actual backend source
 COPY backend/src ./backend/src

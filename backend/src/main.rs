@@ -17,7 +17,12 @@ use tower_http::{
     cors::{Any, CorsLayer},
     services::{ServeDir, ServeFile},
 };
+use tonic::transport::Server;
 use tracing::{error, info};
+
+mod grpc_service;
+mod proto;
+mod ws_handler;
 
 #[derive(Clone)]
 struct AppState {
@@ -251,7 +256,11 @@ async fn main() -> anyhow::Result<()> {
     let config_js = static_dir.join("config.js");
     let favicon_svg = static_dir.join("favicon.svg");
 
+    // Clone client for gRPC server before moving state
+    let grpc_client = state.client.clone();
+
     let app = Router::new()
+        .route("/ws", get(ws_handler::ws_handler))  // WebSocket endpoint
         .nest("/api", api)
         .nest_service("/assets", ServeDir::new(assets_dir))
         .route_service("/config.js", ServeFile::new(config_js))
@@ -262,9 +271,25 @@ async fn main() -> anyhow::Result<()> {
         .layer(cors);
 
     let addr: SocketAddr = ([0, 0, 0, 0], 8091).into();
-    info!("Starting backend on {}", addr);
+    info!("Starting HTTP server on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    let http_server = axum::serve(listener, app);
+
+    // gRPC server
+    let grpc_addr: SocketAddr = ([0, 0, 0, 0], 50051).into();
+    info!("Starting gRPC server on {}", grpc_addr);
+    
+    let grpc_service = grpc_service::KubernetesWatchService::new(grpc_client).into_server();
+    let grpc_server = Server::builder()
+        .accept_http1(true)  // Required for grpc-web
+        .add_service(tonic_web::enable(grpc_service))
+        .serve(grpc_addr);
+
+    // Run both servers concurrently
+    tokio::try_join!(
+        async { http_server.await.map_err(|e| anyhow::anyhow!(e)) },
+        async { grpc_server.await.map_err(|e| anyhow::anyhow!(e)) }
+    )?;
 
     Ok(())
 }

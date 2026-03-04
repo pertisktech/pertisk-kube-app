@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package kubernetes;
+
+// Main service for watching Kubernetes resources
+service KubernetesWatch {
+  // Bidirectional streaming for real-time updates
+  rpc WatchResources(stream WatchRequest) returns (stream WatchResponse);
+  
+  // Get initial resource list
+  rpc ListResources(ListRequest) returns (ListResponse);
+  
+  // Health check
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+// ============= Request Messages =============
+
+message WatchRequest {
+  oneof action {
+    SubscribeRequest subscribe = 1;
+    UnsubscribeRequest unsubscribe = 2;
+    PingRequest ping = 3;
+  }
+}
+
+message SubscribeRequest {
+  ResourceType resource_type = 1;
+  optional string namespace = 2;
+}
+
+message UnsubscribeRequest {
+  ResourceType resource_type = 1;
+}
+
+message PingRequest {
+  int64 timestamp = 1;
+}
+
+message ListRequest {
+  ResourceType resource_type = 1;
+  optional string namespace = 2;
+}
+
+message HealthRequest {}
+
+// ============= Response Messages =============
+
+message WatchResponse {
+  oneof message {
+    ResourceUpdate resource_update = 1;
+    ErrorResponse error = 2;
+    AckResponse ack = 3;
+    PongResponse pong = 4;
+  }
+}
+
+message ResourceUpdate {
+  ResourceType resource_type = 1;
+  WatchAction action = 2;
+  bytes data = 3;  // JSON-encoded K8s resource
+  string resource_version = 4;
+  int64 timestamp = 5;
+}
+
+message ListResponse {
+  repeated bytes items = 1;
+  string resource_version = 2;
+  int32 count = 3;
+}
+
+message ErrorResponse {
+  string message = 1;
+  int32 code = 2;
+  string details = 3;
+}
+
+message AckResponse {
+  ResourceType resource_type = 1;
+  bool subscribed = 2;
+  string message = 3;
+}
+
+message PongResponse {
+  int64 timestamp = 1;
+}
+
+message HealthResponse {
+  bool healthy = 1;
+  string status = 2;
+}
+
+// ============= Enums =============
+
+enum ResourceType {
+  RESOURCE_TYPE_UNSPECIFIED = 0;
+  PODS = 1;
+  DEPLOYMENTS = 2;
+  SERVICES = 3;
+  NODES = 4;
+  EVENTS = 5;
+  STATEFULSETS = 6;
+  DAEMONSETS = 7;
+  JOBS = 8;
+  CRONJOBS = 9;
+  REPLICASETS = 10;
+  NAMESPACES = 11;
+}
+
+enum WatchAction {
+  WATCH_ACTION_UNSPECIFIED = 0;
+  ADDED = 1;
+  MODIFIED = 2;
+  DELETED = 3;
+  BOOKMARK = 4;
+  ERROR = 5;
+}

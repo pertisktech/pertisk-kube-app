@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { usePods } from '../hooks/useKubernetes';
+import { useRealtimePods } from '../hooks/useRealtimePods';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
 import { PodDetailPanel } from '../components/PodDetailPanel';
@@ -10,7 +10,15 @@ import { timeAgo } from '../utils';
 type PodSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'restarts' | 'age';
 
 export const PodsPage = () => {
-  const { data, isLoading, error } = usePods();
+  const [, forceUpdate] = useState({});
+  
+  // WebSocket realtime data (always enabled)
+  const { data, isConnected, error } = useRealtimePods<Pod>({
+    enabled: true,
+  });
+  
+  const isLoading = !isConnected && data.length === 0;
+  
   const { selectedNamespaces, setNamespaces } = useNamespace();
   const [selectedPod, setSelectedPod] = useState<Pod | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -19,6 +27,15 @@ export const PodsPage = () => {
     key: 'name',
     direction: 'asc',
   });
+
+  // Force re-render every 10 seconds to update ages
+  useEffect(() => {
+    const interval = setInterval(() => {
+      forceUpdate({});
+    }, 10000); // Update every 10 seconds
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (data && data.length > 0) {
@@ -114,10 +131,14 @@ export const PodsPage = () => {
       if (sortState.key === 'status') return firstStatus.localeCompare(secondStatus) * factor;
       if (sortState.key === 'ready') return (first.ready || '').localeCompare(second.ready || '') * factor;
       if (sortState.key === 'restarts') return ((first.restarts ?? 0) - (second.restarts ?? 0)) * factor;
+      
+      if (sortState.key === 'age') {
+        const firstAge = Date.parse(first.age || '');
+        const secondAge = Date.parse(second.age || '');
+        return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
+      }
 
-      const firstAge = Date.parse(first.age || '');
-      const secondAge = Date.parse(second.age || '');
-      return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
+      return 0;
     }) as (Pod & { id: string })[];
   }, [data, sortState, selectedNamespaces]);
 
@@ -125,14 +146,14 @@ export const PodsPage = () => {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-text">Pods</h1>
-        <p className="text-text-secondary mt-1">View all pods in the cluster</p>
+        <p className="text-text-secondary mt-1">Real-time pod monitoring</p>
       </div>
 
       <DataTable
         columns={columns}
         data={sortedPods}
         isLoading={isLoading}
-        error={error?.message}
+        error={error || undefined}
         rowKey="id"
         onRowClick={(row) => {
           setSelectedPod(row);

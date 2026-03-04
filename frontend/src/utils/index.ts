@@ -47,15 +47,19 @@ export const getStatusColor = (
   )
     return 'green';
   
-  // Warning states
+  // Warning states (transient/initializing)
   if (
     lower === 'pending' ||
     lower === 'unknown' ||
     lower === 'false' ||
     lower === 'progressing' ||
     lower === 'containercreating' ||
+    lower === 'containerstarting' ||
     lower === 'podinitialized' ||
-    lower === 'terminating'
+    lower === 'podinitializing' ||
+    lower === 'terminating' ||
+    lower === 'notready' ||
+    lower.startsWith('init:')
   )
     return 'yellow';
   
@@ -68,8 +72,11 @@ export const getStatusColor = (
     lower === 'crashloopbackoff' ||
     lower === 'imagepullbackoff' ||
     lower === 'errimagepull' ||
+    lower === 'errimageneverpu' ||
     lower === 'createcontainerconfigerror' ||
     lower === 'invalidimagelink' ||
+    lower === 'unschedulable' ||
+    lower === 'evicted' ||
     lower === 'oomkilled' ||
     lower === 'terminated'
   )
