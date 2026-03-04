@@ -17,7 +17,7 @@ export const JobDetailPanel = ({ job, onClose }: JobDetailPanelProps) => {
   };
 
   return (
-    <aside className="fixed top-0 right-0 z-50 h-screen w-[420px] max-w-[94vw] bg-surface-elevated border-l border-border shadow-2xl">
+    <aside className="fixed top-0 right-0 z-[100] h-screen w-[420px] max-w-[94vw] bg-surface-elevated border-l border-border shadow-2xl">
       <div className="h-full flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 className="text-lg font-semibold text-text">Job Info</h2>

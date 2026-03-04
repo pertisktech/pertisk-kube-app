@@ -1,13 +1,14 @@
-import { X } from 'lucide-react';
+import { Pencil, X } from 'lucide-react';
 import type { Deployment } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 
 interface DeploymentDetailPanelProps {
   deployment: Deployment;
   onClose: () => void;
+  onOpenYamlEditor: (deployment: Deployment) => void;
 }
 
-export const DeploymentDetailPanel = ({ deployment, onClose }: DeploymentDetailPanelProps) => {
+export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor }: DeploymentDetailPanelProps) => {
   const getStatusTextClass = (status: string) => {
     const color = getStatusColor(status);
     if (color === 'green') return 'text-[var(--color-icon-success)]';
@@ -17,7 +18,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose }: DeploymentDetailP
   };
 
   return (
-    <aside className="fixed top-0 right-0 z-50 h-screen w-[420px] max-w-[94vw] bg-surface-elevated border-l border-border shadow-2xl">
+    <aside className="fixed top-0 right-0 z-[100] h-screen w-[420px] max-w-[94vw] bg-surface-elevated border-l border-border shadow-2xl">
       <div className="h-full flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 className="text-lg font-semibold text-text">Deployment Info</h2>
@@ -28,6 +29,18 @@ export const DeploymentDetailPanel = ({ deployment, onClose }: DeploymentDetailP
             aria-label="Close deployment panel"
           >
             <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-5 py-2 border-b border-border flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => onOpenYamlEditor(deployment)}
+            className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
+            aria-label="Edit deployment YAML"
+            title="Edit YAML"
+          >
+            <Pencil size={15} />
           </button>
         </div>
 
@@ -88,6 +101,13 @@ export const DeploymentDetailPanel = ({ deployment, onClose }: DeploymentDetailP
                   <p className="text-text">-</p>
                 )}
               </div>
+            </div>
+          </section>
+
+          <section className="min-w-0 bg-surface border border-border rounded-lg p-4 space-y-3">
+            <p className="text-xs uppercase tracking-wide text-text-secondary">Manifest</p>
+            <div className="px-3 py-2 text-sm text-text-secondary border border-border rounded-md bg-surface-elevated">
+              Use the pencil icon in the top-right corner to edit deployment YAML in the bottom content tab.
             </div>
           </section>
         </div>

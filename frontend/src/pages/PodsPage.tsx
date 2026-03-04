@@ -211,7 +211,7 @@ export const PodsPage = () => {
       {panelOpen && selectedPod && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-transparent"
+            className="fixed inset-0 z-[95] bg-black/20"
             onClick={() => setPanelOpen(false)}
           />
           <PodDetailPanel

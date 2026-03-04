@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useNamespace } from '../context/NamespaceContext';
 import { useRealtimeNamespaces } from '../hooks/useRealtimeResources';
@@ -307,7 +308,10 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const initial = username ? username.charAt(0).toUpperCase() : 'U';
 
   return (
-    <div className="flex h-screen bg-bg text-text">
+    <div
+      className="flex h-screen bg-bg text-text"
+      style={{ '--layout-sidebar-width': sidebarCollapsed ? '72px' : '16rem' } as CSSProperties}
+    >
       {/* Mobile menu overlay */}
       {sidebarOpen && (
         <div

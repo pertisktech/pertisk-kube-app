@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Request, State},
+    extract::{Path, Request, State},
     http::{header, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -10,7 +10,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Utc;
 use cron::Schedule;
 use kube::core::{ApiResource, DynamicObject, GroupVersionKind};
-use kube::{api::ListParams, Api, Client};
+use kube::{api::{ListParams, Patch, PatchParams}, Api, Client};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -421,6 +421,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/pods", get(list_pods))
         .route("/events", get(list_events))
         .route("/deployments", get(list_deployments))
+        .route(
+            "/deployments/:namespace/:name/yaml",
+            get(get_deployment_yaml).put(update_deployment_yaml),
+        )
         .route("/statefulsets", get(list_statefulsets))
         .route("/daemonsets", get(list_daemonsets))
         .route("/replicasets", get(list_replicasets))
@@ -1012,6 +1016,96 @@ async fn list_deployments(State(state): State<AppState>) -> impl IntoResponse {
         Err(err) => {
             error!("Error listing deployments: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn get_deployment_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::Deployment;
+
+    let api: Api<Deployment> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(deployment) => match serde_yaml::to_string(&deployment) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize deployment to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting deployment YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_deployment_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::Deployment;
+
+    let mut deployment: Deployment = match serde_yaml::from_str(&body) {
+        Ok(deployment) => deployment,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    deployment.metadata.name = Some(name.clone());
+    deployment.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<Deployment> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&deployment) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting deployment YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "Deployment updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating deployment YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update deployment: {}", err),
+                })),
+            )
+                .into_response()
         }
     }
 }
