@@ -33,9 +33,18 @@ app:
     requests:
       cpu: 500m
       memory: 512Mi
-  readinessProbe:
+  startupProbe:
     httpGet:
       path: /api/health
+      port: 8091
+    initialDelaySeconds: 0
+    periodSeconds: 5
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 12
+  readinessProbe:
+    httpGet:
+      path: /api/readiness
       port: 8091
     initialDelaySeconds: 10
     periodSeconds: 10

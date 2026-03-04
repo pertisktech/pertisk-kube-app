@@ -34,28 +34,47 @@ export const getStatusColor = (
   status: string
 ): 'green' | 'yellow' | 'red' | 'gray' => {
   const lower = status?.toLowerCase() || '';
+  
+  // Success states
   if (
     lower === 'running' ||
     lower === 'active' ||
     lower === 'true' ||
     lower === 'ready' ||
-    lower === 'available'
+    lower === 'available' ||
+    lower === 'succeeded' ||
+    lower === 'completed'
   )
     return 'green';
+  
+  // Warning states
   if (
     lower === 'pending' ||
     lower === 'unknown' ||
     lower === 'false' ||
-    lower === 'progressing'
+    lower === 'progressing' ||
+    lower === 'containercreating' ||
+    lower === 'podinitialized' ||
+    lower === 'terminating'
   )
     return 'yellow';
+  
+  // Error states
   if (
     lower === 'failed' ||
     lower === 'error' ||
     lower === 'crashed' ||
-    lower === 'unavailable'
+    lower === 'unavailable' ||
+    lower === 'crashloopbackoff' ||
+    lower === 'imagepullbackoff' ||
+    lower === 'errimagepull' ||
+    lower === 'createcontainerconfigerror' ||
+    lower === 'invalidimagelink' ||
+    lower === 'oomkilled' ||
+    lower === 'terminated'
   )
     return 'red';
+  
   return 'gray';
 };
 

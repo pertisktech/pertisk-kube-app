@@ -224,6 +224,7 @@ async fn main() -> anyhow::Result<()> {
 
     let public_api = Router::new()
         .route("/health", get(health))
+        .route("/readiness", get(readiness))
         .route("/login", post(login));
 
     let protected_api = Router::new()
@@ -273,6 +274,24 @@ async fn health() -> impl IntoResponse {
         status: "ok".into(),
     };
     (StatusCode::OK, Json(body))
+}
+
+async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
+    // Check if we can connect to Kubernetes API
+    match state.client.apiserver_version().await {
+        Ok(_) => {
+            let body = HealthResponse {
+                status: "ready".into(),
+            };
+            (StatusCode::OK, Json(body)).into_response()
+        }
+        Err(err) => {
+            error!("Kubernetes API not reachable: {}", err);
+            (StatusCode::SERVICE_UNAVAILABLE, Json(HealthResponse {
+                status: "not ready".into(),
+            })).into_response()
+        }
+    }
 }
 
 async fn login(State(state): State<AppState>, Json(payload): Json<LoginRequest>) -> impl IntoResponse {
@@ -382,13 +401,17 @@ async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
-                    let (phase, ready, restarts, pod_ip) = pod
+                    // Check if pod is being deleted
+                    let is_terminating = pod.metadata.deletion_timestamp.is_some();
+
+                    let (status, phase, ready, restarts, pod_ip) = pod
                         .status
                         .as_ref()
                         .map(|status| {
                             let phase = status.phase.clone();
                             let container_statuses = status.container_statuses.as_ref();
 
+                            // Calculate ready containers
                             let (ready_count, total_count) = container_statuses
                                 .map(|items| {
                                     let ready_count = items.iter().filter(|item| item.ready).count();
@@ -397,28 +420,70 @@ async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
                                 })
                                 .unwrap_or((0, 0));
 
+                            // Calculate total restarts from all containers
                             let restarts: u32 = container_statuses
                                 .map(|items| {
                                     items
                                         .iter()
-                                        .map(|item| item.restart_count)
-                                        .sum::<i32>()
-                                        .max(0) as u32
+                                        .map(|item| item.restart_count.max(0) as u32)
+                                        .sum()
                                 })
                                 .unwrap_or(0);
 
                             let ready = format!("{}/{}", ready_count, total_count);
 
-                            (phase, ready, restarts, status.pod_ip.clone())
+                            // Determine accurate status
+                            let computed_status = if is_terminating {
+                                "Terminating".to_string()
+                            } else if let Some(containers) = container_statuses {
+                                // Check container states for more specific status
+                                let mut found_waiting = false;
+                                let mut waiting_reason = None;
+                                let mut found_terminated = false;
+                                let mut terminated_reason = None;
+
+                                for container in containers {
+                                    if let Some(state) = &container.state {
+                                        if let Some(waiting) = &state.waiting {
+                                            found_waiting = true;
+                                            waiting_reason = waiting.reason.clone();
+                                            break;
+                                        }
+                                        if let Some(terminated) = &state.terminated {
+                                            found_terminated = true;
+                                            terminated_reason = terminated.reason.clone();
+                                        }
+                                    }
+                                }
+
+                                if found_waiting {
+                                    waiting_reason.unwrap_or_else(|| "Waiting".to_string())
+                                } else if found_terminated {
+                                    terminated_reason.unwrap_or_else(|| "Terminated".to_string())
+                                } else {
+                                    phase.clone().unwrap_or_else(|| "Unknown".to_string())
+                                }
+                            } else {
+                                phase.clone().unwrap_or_else(|| "Unknown".to_string())
+                            };
+
+                            (Some(computed_status), phase, ready, restarts, status.pod_ip.clone())
                         })
-                        .unwrap_or((None, "0/0".to_string(), 0, None));
+                        .unwrap_or_else(|| {
+                            let status = if is_terminating {
+                                Some("Terminating".to_string())
+                            } else {
+                                Some("Unknown".to_string())
+                            };
+                            (status, None, "0/0".to_string(), 0, None)
+                        });
 
                     let node = pod.spec.as_ref().and_then(|spec| spec.node_name.clone());
 
                     PodItem {
                         name,
                         namespace,
-                        status: phase.clone(),
+                        status,
                         phase,
                         ready,
                         restarts,

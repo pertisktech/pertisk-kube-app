@@ -179,7 +179,7 @@ export const DataTable = <T extends Record<string, any>>({
                         const cellValue =
                           typeof col.accessor === 'function'
                             ? col.accessor(row)
-                            : String(row[col.accessor] || '-');
+                            : row[col.accessor] != null ? String(row[col.accessor]) : '-';
 
                         if (col.header === 'Age') {
                           return <span className="whitespace-nowrap">{cellValue}</span>;
