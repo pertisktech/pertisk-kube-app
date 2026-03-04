@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 use std::process::Stdio;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    process::Command,
+    process::{Child, ChildStderr, ChildStdin, ChildStdout, Command},
+    task::JoinHandle,
 };
 use tracing::{error, info, warn};
 
@@ -73,20 +74,15 @@ pub async fn exec_ws_handler(
     ws.on_upgrade(move |socket| handle_exec_socket(socket, query))
 }
 
-async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
-    let (mut ws_sender, mut ws_receiver) = socket.split();
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(256);
+async fn spawn_exec_shell(
+    query: &ExecQuery,
+    tx: &tokio::sync::mpsc::Sender<String>,
+) -> Option<(Child, ChildStdin, ChildStdout, ChildStderr)> {
+    info!(
+        "Starting exec shell: namespace={}, pod={}, container={:?}",
+        query.namespace, query.pod, query.container
+    );
 
-    let ws_send_task = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            if ws_sender.send(Message::Text(msg)).await.is_err() {
-                break;
-            }
-        }
-    });
-
-    // Build kubectl exec command
-    info!("Starting exec shell: namespace={}, pod={}, container={:?}", query.namespace, query.pod, query.container);
     let mut cmd = Command::new("kubectl");
     cmd.arg("exec")
         .arg("-i")
@@ -94,13 +90,10 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
         .arg(&query.namespace)
         .arg(&query.pod);
 
-    // Add container argument if specified
     if let Some(container) = &query.container {
         cmd.arg("-c").arg(container);
     }
 
-    // Execute shell in non-interactive mode
-    // This avoids prompt/output buffering issues over pipes
     cmd.arg("--")
         .arg("sh")
         .stdin(Stdio::piped())
@@ -120,63 +113,51 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
                     err
                 ))
                 .await;
-            ws_send_task.abort();
-            return;
+            return None;
         }
     };
 
-    let mut child_stdin = match child.stdin.take() {
+    let child_stdin = match child.stdin.take() {
         Some(stdin) => stdin,
         None => {
             let _ = tx
                 .send("\r\n\u{1b}[1;31mFailed to open stdin for shell\u{1b}[0m\r\n".to_string())
                 .await;
             let _ = child.kill().await;
-            ws_send_task.abort();
-            return;
+            return None;
         }
     };
 
-    let mut child_stdout = match child.stdout.take() {
+    let child_stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
             let _ = tx
                 .send("\r\n\u{1b}[1;31mFailed to open stdout for shell\u{1b}[0m\r\n".to_string())
                 .await;
             let _ = child.kill().await;
-            ws_send_task.abort();
-            return;
+            return None;
         }
     };
 
-    let mut child_stderr = match child.stderr.take() {
+    let child_stderr = match child.stderr.take() {
         Some(stderr) => stderr,
         None => {
             let _ = tx
                 .send("\r\n\u{1b}[1;31mFailed to open stderr for shell\u{1b}[0m\r\n".to_string())
                 .await;
             let _ = child.kill().await;
-            ws_send_task.abort();
-            return;
+            return None;
         }
     };
 
-    let _ = tx
-        .send(format!(
-            "\u{1b}[1;32mConnected shell: {}/{}\u{1b}[0m\r\n",
-            query.namespace, query.pod
-        ))
-        .await;
+    Some((child, child_stdin, child_stdout, child_stderr))
+}
 
-    // In non-interactive mode, send initial marker to prime the connection
-    if let Err(err) = child_stdin.write_all(b":\n").await {
-        error!("Failed to prime shell stdin: {}", err);
-        let _ = child.kill().await;
-        ws_send_task.abort();
-        return;
-    }
-    let _ = child_stdin.flush().await;
-
+fn spawn_output_tasks(
+    mut child_stdout: ChildStdout,
+    mut child_stderr: ChildStderr,
+    tx: tokio::sync::mpsc::Sender<String>,
+) -> (JoinHandle<()>, JoinHandle<()>) {
     let tx_stdout = tx.clone();
     let stdout_task = tokio::spawn(async move {
         let mut buffer = [0_u8; 4096];
@@ -221,9 +202,81 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
         }
     });
 
+    (stdout_task, stderr_task)
+}
+
+async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(256);
+
+    let ws_send_task = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            if ws_sender.send(Message::Text(msg)).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let (mut child, mut child_stdin, child_stdout, child_stderr) =
+        match spawn_exec_shell(&query, &tx).await {
+            Some(parts) => parts,
+            None => {
+                ws_send_task.abort();
+                return;
+            }
+        };
+
+    let _ = tx
+        .send(format!(
+            "\u{1b}[1;32mConnected shell: {}/{}\u{1b}[0m\r\n",
+            query.namespace, query.pod
+        ))
+        .await;
+
+    // In non-interactive mode, send initial marker to prime the connection
+    if let Err(err) = child_stdin.write_all(b":\n").await {
+        error!("Failed to prime shell stdin: {}", err);
+        let _ = child.kill().await;
+        ws_send_task.abort();
+        return;
+    }
+    let _ = child_stdin.flush().await;
+
+    let (mut stdout_task, mut stderr_task) = spawn_output_tasks(child_stdout, child_stderr, tx.clone());
+
     while let Some(message) = ws_receiver.next().await {
         match message {
             Ok(Message::Text(text)) => {
+                if text == "\u{3}" {
+                    let _ = child.kill().await;
+                    stdout_task.abort();
+                    stderr_task.abort();
+
+                    let _ = tx.send("\r\n^C\r\n".to_string()).await;
+
+                    let (new_child, mut new_stdin, new_stdout, new_stderr) =
+                        match spawn_exec_shell(&query, &tx).await {
+                            Some(parts) => parts,
+                            None => break,
+                        };
+
+                    if new_stdin
+                        .write_all(b"printf '__PTK_PWD__%s__PTK_END__' \"$PWD\"\n")
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                    let _ = new_stdin.flush().await;
+
+                    child = new_child;
+                    child_stdin = new_stdin;
+                    let tasks = spawn_output_tasks(new_stdout, new_stderr, tx.clone());
+                    stdout_task = tasks.0;
+                    stderr_task = tasks.1;
+                    continue;
+                }
+
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
                     if json
                         .get("type")

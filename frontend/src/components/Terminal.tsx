@@ -114,8 +114,6 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
       if (ws.readyState === WebSocket.OPEN) {
         ws.send('\u0003');
       }
-      xterm.write('^C\r\n');
-      writePrompt();
     };
 
     const normalizeLineEndings = (text: string) =>
@@ -191,7 +189,12 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
     };
 
     const keyHandlerDisposable = xterm.onKey(({ domEvent }) => {
-      if (domEvent.type === 'keydown' && domEvent.ctrlKey && domEvent.key.toLowerCase() === 'c') {
+      if (
+        domEvent.type === 'keydown' &&
+        !domEvent.repeat &&
+        domEvent.ctrlKey &&
+        domEvent.key.toLowerCase() === 'c'
+      ) {
         domEvent.preventDefault();
         handleCtrlC();
       }
@@ -218,10 +221,7 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
         return;
       }
 
-      if (data === '\u0003') {
-        handleCtrlC();
-        return;
-      }
+      if (data === '\u0003') return;
 
       const code = data.length === 1 ? data.charCodeAt(0) : -1;
       const isPrintable = data.length === 1 && code >= 32 && code !== 127;
