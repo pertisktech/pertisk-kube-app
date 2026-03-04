@@ -182,8 +182,8 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.hostname;
-    const port = window.location.port || '8091';
-    const wsUrl = `${protocol}//${host}:${port}/ws`;
+    const port = window.location.port ? `:${window.location.port}` : '';
+    const wsUrl = `${protocol}//${host}${port}/ws`;
 
     try {
       const ws = new WebSocket(wsUrl);
