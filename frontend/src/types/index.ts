@@ -16,6 +16,10 @@ export interface Pod {
   age: string;
   node?: string;
   pod_ip?: string;
+  cpu?: string;
+  memory?: string;
+  controlled_by?: string;
+  qos?: string;
 }
 
 export interface Deployment {

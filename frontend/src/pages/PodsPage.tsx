@@ -7,7 +7,17 @@ import { StatusBadge } from '../components/StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';
 
-type PodSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'restarts' | 'age';
+type PodSortKey =
+  | 'name'
+  | 'namespace'
+  | 'status'
+  | 'ready'
+  | 'restarts'
+  | 'cpu'
+  | 'memory'
+  | 'controlled_by'
+  | 'qos'
+  | 'age';
 
 export const PodsPage = () => {
   const [, forceUpdate] = useState({});
@@ -78,24 +88,58 @@ export const PodsPage = () => {
     },
     {
       header: 'Status',
-      accessor: (row: Pod) => <StatusBadge status={row.status || row.phase || 'Unknown'} />,
-      width: '13%',
+      accessor: (row: Pod) => (
+        <span className="whitespace-nowrap">
+          <StatusBadge status={row.status || row.phase || 'Unknown'} />
+        </span>
+      ),
+      width: '10%',
       sortable: true,
       sortKey: 'status',
     },
     {
       header: 'Ready',
-      accessor: 'ready' as const,
-      width: '12%',
+      accessor: (row: Pod) => <span className="whitespace-nowrap">{row.ready || '-'}</span>,
+      width: '7%',
       sortable: true,
       sortKey: 'ready',
     },
     {
       header: 'Restarts',
-      accessor: 'restarts' as const,
-      width: '12%',
+      accessor: (row: Pod) => <span className="whitespace-nowrap">{row.restarts ?? 0}</span>,
+      width: '7%',
       sortable: true,
       sortKey: 'restarts',
+    },
+    {
+      header: 'CPU',
+      accessor: (row: Pod) => row.cpu || '-',
+      width: '10%',
+      sortable: true,
+      sortKey: 'cpu',
+    },
+    {
+      header: 'Memory',
+      accessor: (row: Pod) => row.memory || '-',
+      width: '10%',
+      sortable: true,
+      sortKey: 'memory',
+    },
+    {
+      header: 'Controlled By',
+      accessor: (row: Pod) => (
+        <span className="whitespace-nowrap">{row.controlled_by || '-'}</span>
+      ),
+      width: '18%',
+      sortable: true,
+      sortKey: 'controlled_by',
+    },
+    {
+      header: 'QoS',
+      accessor: (row: Pod) => row.qos || '-',
+      width: '10%',
+      sortable: true,
+      sortKey: 'qos',
     },
     {
       header: 'Age',
@@ -131,6 +175,10 @@ export const PodsPage = () => {
       if (sortState.key === 'status') return firstStatus.localeCompare(secondStatus) * factor;
       if (sortState.key === 'ready') return (first.ready || '').localeCompare(second.ready || '') * factor;
       if (sortState.key === 'restarts') return ((first.restarts ?? 0) - (second.restarts ?? 0)) * factor;
+      if (sortState.key === 'cpu') return (first.cpu || '').localeCompare(second.cpu || '') * factor;
+      if (sortState.key === 'memory') return (first.memory || '').localeCompare(second.memory || '') * factor;
+      if (sortState.key === 'controlled_by') return (first.controlled_by || '').localeCompare(second.controlled_by || '') * factor;
+      if (sortState.key === 'qos') return (first.qos || '').localeCompare(second.qos || '') * factor;
       
       if (sortState.key === 'age') {
         const firstAge = Date.parse(first.age || '');

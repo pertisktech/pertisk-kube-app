@@ -5,14 +5,45 @@ export const formatDate = (timestamp?: string | null): string => {
   return date.toLocaleString();
 };
 
+const formatCompactAge = (seconds: number): string => {
+  if (seconds < 60) return `${seconds}s`;
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (seconds < 3600) {
+    return remainingSeconds > 0 ? `${minutes}m${remainingSeconds}s` : `${minutes}m`;
+  }
+
+  const hours = Math.floor(seconds / 3600);
+  const remainingMinutes = Math.floor((seconds % 3600) / 60);
+  if (seconds < 86400) {
+    return remainingMinutes > 0 ? `${hours}h${remainingMinutes}m` : `${hours}h`;
+  }
+
+  const days = Math.floor(seconds / 86400);
+  const remainingHours = Math.floor((seconds % 86400) / 3600);
+  if (seconds < 604800) {
+    return remainingHours > 0 ? `${days}d${remainingHours}h` : `${days}d`;
+  }
+
+  const weeks = Math.floor(seconds / 604800);
+  const remainingDays = Math.floor((seconds % 604800) / 86400);
+  return remainingDays > 0 ? `${weeks}w${remainingDays}d` : `${weeks}w`;
+};
+
 export const timeAgo = (timestamp?: string | null): string => {
   if (!timestamp) return '-';
 
   const trimmed = timestamp.trim();
   if (!trimmed) return '-';
 
-  if (/^\d+\s*[smhdw]$/i.test(trimmed) || /ago$/i.test(trimmed)) {
+  if (/^\d+\s*[smhdw](\d+\s*[smhdw])?$/i.test(trimmed)) {
     return trimmed;
+  }
+
+  const agoMatch = trimmed.match(/^(\d+)\s*([smhdw])\s*ago$/i);
+  if (agoMatch) {
+    return `${agoMatch[1]}${agoMatch[2].toLowerCase()}`;
   }
 
   const date = new Date(trimmed);
@@ -22,12 +53,8 @@ export const timeAgo = (timestamp?: string | null): string => {
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
   if (!Number.isFinite(seconds) || seconds < 0) return '-';
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
 
-  return `${Math.floor(seconds / 604800)}w ago`;
+  return formatCompactAge(seconds);
 };
 
 export const getStatusColor = (

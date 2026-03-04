@@ -70,6 +70,22 @@ export const PodDetailPanel = ({ pod, onClose }: PodDetailPanelProps) => {
                 <p className="text-text-secondary">Pod IP</p>
                 <p className="text-text break-all">{pod.pod_ip || '-'}</p>
               </div>
+              <div>
+                <p className="text-text-secondary">CPU</p>
+                <p className="text-text break-all">{pod.cpu || '-'}</p>
+              </div>
+              <div>
+                <p className="text-text-secondary">Memory</p>
+                <p className="text-text break-all">{pod.memory || '-'}</p>
+              </div>
+              <div>
+                <p className="text-text-secondary">Controlled By</p>
+                <p className="text-text break-all">{pod.controlled_by || '-'}</p>
+              </div>
+              <div>
+                <p className="text-text-secondary">QoS</p>
+                <p className="text-text break-all">{pod.qos || '-'}</p>
+              </div>
             </div>
           </section>
         </div>

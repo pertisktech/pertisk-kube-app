@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { getAuthToken } from '../utils/auth';
 
 export type ResourceType = 'pods' | 'deployments' | 'services' | 'nodes';
 
@@ -17,6 +18,11 @@ const transformPod = (rawPod: any): any => {
   const containerStatuses = status.containerStatuses || [];
   const initContainerStatuses = status.initContainerStatuses || [];
   const containers = spec.containers || [];
+  const ownerReferences = metadata.ownerReferences || [];
+  const controlledBy = ownerReferences[0]?.kind || '-';
+  const qos = status.qosClass || '-';
+  const cpu = '-';
+  const memory = '-';
   const readyCount = containerStatuses.filter((c: any) => c.ready).length;
   const totalCount = containers.length || containerStatuses.length || 0;
   const ready = totalCount > 0 ? `${readyCount}/${totalCount}` : '0/0';
@@ -162,6 +168,10 @@ const transformPod = (rawPod: any): any => {
     age: metadata.creationTimestamp || '',
     node: spec.nodeName || '',
     pod_ip: status.podIP || '',
+    cpu,
+    memory,
+    controlled_by: controlledBy,
+    qos,
   };
 };
 
@@ -176,6 +186,58 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 10;
   const deletionTimeoutsRef = useRef<Map<string, number>>(new Map()); // Track deletion timeouts
+
+  const syncPodDetails = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    try {
+      const response = await fetch('/api/pods', {
+        headers: {
+          Authorization: token,
+        },
+      });
+
+      if (!response.ok) return;
+
+      const payload = await response.json();
+      const apiPods: any[] = Array.isArray(payload?.data) ? (payload.data as any[]) : [];
+
+      setData((prevData) => {
+        const keyOf = (item: any) => `${item.namespace}/${item.name}`;
+        const apiByKey = new Map<string, any>(apiPods.map((item: any) => [keyOf(item), item]));
+
+        const merged = prevData.map((item: any) => {
+          const apiItem = apiByKey.get(keyOf(item));
+          if (!apiItem) return item;
+
+          return {
+            ...item,
+            cpu: apiItem.cpu ?? item.cpu,
+            memory: apiItem.memory ?? item.memory,
+            controlled_by: apiItem.controlled_by ?? item.controlled_by,
+            qos: apiItem.qos ?? item.qos,
+          };
+        });
+
+        if (merged.length === 0 && apiPods.length > 0) {
+          return apiPods as T[];
+        }
+
+        const existingKeys = new Set(merged.map((item: any) => keyOf(item)));
+        for (const apiItem of apiPods) {
+          const key = keyOf(apiItem);
+          if (!existingKeys.has(key)) {
+            merged.push(apiItem as T);
+          }
+        }
+
+        return merged as T[];
+      });
+    } catch (syncError) {
+      console.error('[useRealtimePods] Failed to sync pod details:', syncError);
+    }
+  }, []);
 
   const connect = useCallback(() => {
     if (!enabled) return;
@@ -251,14 +313,23 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                     // Update existing
                     const updated = [...prevData];
                     const oldStatus = (updated[foundIndex] as any).status;
-                    updated[foundIndex] = transformedPod as T;
+                    const existingPod = updated[foundIndex] as any;
+                    // Preserve metrics and metadata from last API sync if websocket update returns '-'
+                    const mergedPod = {
+                      ...transformedPod,
+                      cpu: transformedPod.cpu !== '-' ? transformedPod.cpu : (existingPod.cpu || '-'),
+                      memory: transformedPod.memory !== '-' ? transformedPod.memory : (existingPod.memory || '-'),
+                      controlled_by: transformedPod.controlled_by !== '-' ? transformedPod.controlled_by : (existingPod.controlled_by || '-'),
+                      qos: transformedPod.qos !== '-' ? transformedPod.qos : (existingPod.qos || '-'),
+                    };
+                    updated[foundIndex] = mergedPod as T;
                     
                     // Log status transitions
-                    if (oldStatus !== transformedPod.status) {
-                      console.log(`[useRealtimePods] Status transition for ${podKey}: ${oldStatus} -> ${transformedPod.status}`);
+                    if (oldStatus !== mergedPod.status) {
+                      console.log(`[useRealtimePods] Status transition for ${podKey}: ${oldStatus} -> ${mergedPod.status}`);
                       
                       // If transitioning to Terminating, set a cleanup timeout
-                      if (transformedPod.status === 'Terminating') {
+                      if (mergedPod.status === 'Terminating') {
                         // Clear any existing timeout
                         const existingTimeout = deletionTimeoutsRef.current.get(podKey);
                         if (existingTimeout) clearTimeout(existingTimeout);
@@ -414,6 +485,17 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       deletionTimeoutsRef.current.clear();
     };
   }, [enabled, connect, disconnect]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    syncPodDetails();
+    const interval = window.setInterval(() => {
+      syncPodDetails();
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [enabled, syncPodDetails]);
 
   return {
     data,

@@ -9,8 +9,10 @@ use axum::{
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Utc;
 use cron::Schedule;
+use kube::core::{ApiResource, DynamicObject, GroupVersionKind};
 use kube::{api::ListParams, Api, Client};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::{env, net::SocketAddr, path::PathBuf};
 use tower_http::{
@@ -18,7 +20,7 @@ use tower_http::{
     services::{ServeDir, ServeFile},
 };
 use tonic::transport::Server;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 mod grpc_service;
 mod proto;
@@ -72,6 +74,10 @@ struct PodItem {
     age: String,
     node: Option<String>,
     pod_ip: Option<String>,
+    cpu: String,
+    memory: String,
+    controlled_by: String,
+    qos: String,
 }
 
 #[derive(Serialize)]
@@ -189,6 +195,182 @@ fn format_compact_duration(seconds: i64) -> String {
     }
 
     format!("{}d", seconds / 86_400)
+}
+
+fn parse_cpu_millicores(value: &str) -> Option<f64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Handle millicore format: "5m" -> 5
+    if let Some(number) = trimmed.strip_suffix('m') {
+        return number.parse::<f64>().ok();
+    }
+
+    // Handle nanosecond format: "1063320n" -> 1.06332 millicores
+    if let Some(number) = trimmed.strip_suffix('n') {
+        return number.parse::<f64>().ok().map(|nanos| nanos / 1_000_000.0);
+    }
+
+    // Handle microsecond format: "1234u" -> 1.234 millicores
+    if let Some(number) = trimmed.strip_suffix('u') {
+        return number.parse::<f64>().ok().map(|micros| micros / 1000.0);
+    }
+
+    // Handle raw cores: "0.5" -> 500 millicores
+    trimmed.parse::<f64>().ok().map(|cores| cores * 1000.0)
+}
+
+fn parse_memory_bytes(value: &str) -> Option<f64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let unit_start = trimmed
+        .find(|char: char| !char.is_ascii_digit() && char != '.')
+        .unwrap_or(trimmed.len());
+
+    let (number_part, unit_part) = trimmed.split_at(unit_start);
+    let number = number_part.parse::<f64>().ok()?;
+
+    let factor = match unit_part {
+        "" => 1.0,
+        "Ki" => 1024.0,
+        "Mi" => 1024.0_f64.powi(2),
+        "Gi" => 1024.0_f64.powi(3),
+        "Ti" => 1024.0_f64.powi(4),
+        "K" | "k" => 1000.0,
+        "M" => 1000.0_f64.powi(2),
+        "G" => 1000.0_f64.powi(3),
+        "T" => 1000.0_f64.powi(4),
+        "n" => 1.0 / 1_000_000_000.0,
+        "u" => 1.0 / 1_000_000.0,
+        "m" => 1.0 / 1000.0,
+        _ => return None,
+    };
+
+    Some(number * factor)
+}
+
+fn format_millicores(value: f64) -> String {
+    if value < 1000.0 {
+        return format!("{}m", value.round() as i64);
+    }
+
+    let cores = value / 1000.0;
+    if (cores.fract()).abs() < f64::EPSILON {
+        format!("{}", cores as i64)
+    } else {
+        format!("{cores:.2}").trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
+fn format_binary_bytes(bytes: f64) -> String {
+    let units = ["B", "Ki", "Mi", "Gi", "Ti"];
+    let mut value = bytes;
+    let mut index = 0;
+
+    while value >= 1024.0 && index < units.len() - 1 {
+        value /= 1024.0;
+        index += 1;
+    }
+
+    if value >= 10.0 {
+        format!("{value:.0}{}", units[index])
+    } else {
+        format!("{value:.1}{}", units[index]).replace(".0", "")
+    }
+}
+
+async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (String, String)> {
+    let mut metrics_map: HashMap<(String, String), (String, String)> = HashMap::new();
+
+    let pod_metrics_resource =
+        ApiResource::from_gvk(&GroupVersionKind::gvk("metrics.k8s.io", "v1beta1", "PodMetrics"));
+    let metrics_api: Api<DynamicObject> = Api::all_with(client, &pod_metrics_resource);
+
+    let metrics_list = match metrics_api.list(&ListParams::default()).await {
+        Ok(list) => list,
+        Err(err) => {
+            error!("Error fetching pod metrics from metrics.k8s.io: {:?}", err);
+            return metrics_map;
+        }
+    };
+
+    info!("Fetched {} pod metrics", metrics_list.items.len());
+
+    for metric in metrics_list.items {
+        let namespace = metric.metadata.namespace.clone().unwrap_or_default();
+        let name = metric.metadata.name.clone().unwrap_or_default();
+        if namespace.is_empty() || name.is_empty() {
+            continue;
+        }
+
+        let metric_value = match serde_json::to_value(&metric) {
+            Ok(value) => value,
+            Err(e) => {
+                error!("Failed to serialize metric for {}/{}: {}", namespace, name, e);
+                continue;
+            }
+        };
+
+        let containers = match metric_value.get("containers").and_then(|value| value.as_array()) {
+            Some(containers) => containers,
+            None => {
+                warn!("No containers found in metrics for {}/{}", namespace, name);
+                continue;
+            }
+        };
+
+        let mut cpu_millicores_total = 0.0;
+        let mut memory_bytes_total = 0.0;
+        let mut has_cpu = false;
+        let mut has_memory = false;
+
+        for (idx, container) in containers.iter().enumerate() {
+            if let Some(cpu_value) = container
+                .get("usage")
+                .and_then(|value| value.get("cpu"))
+                .and_then(|value| value.as_str())
+                .and_then(parse_cpu_millicores)
+            {
+                has_cpu = true;
+                cpu_millicores_total += cpu_value;
+                info!("Container {} {}/{} CPU: {}m", idx, namespace, name, cpu_value);
+            }
+
+            if let Some(memory_value) = container
+                .get("usage")
+                .and_then(|value| value.get("memory"))
+                .and_then(|value| value.as_str())
+                .and_then(parse_memory_bytes)
+            {
+                has_memory = true;
+                memory_bytes_total += memory_value;
+                info!("Container {} {}/{} Memory: {} bytes", idx, namespace, name, memory_value);
+            }
+        }
+
+        let cpu = if has_cpu {
+            format_millicores(cpu_millicores_total)
+        } else {
+            "-".to_string()
+        };
+
+        let memory = if has_memory {
+            format_binary_bytes(memory_bytes_total)
+        } else {
+            "-".to_string()
+        };
+
+        info!("Metrics for {}/{}: CPU={}, Memory={}", namespace, name, cpu, memory);
+        metrics_map.insert((namespace, name), (cpu, memory));
+    }
+
+    info!("Total metrics collected: {}", metrics_map.len());
+    metrics_map
 }
 
 #[derive(Serialize)]
@@ -410,7 +592,9 @@ async fn list_namespaces(State(state): State<AppState>) -> impl IntoResponse {
 async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Pod;
 
-    let api: Api<Pod> = Api::all(state.client);
+    let client = state.client.clone();
+    let api: Api<Pod> = Api::all(client.clone());
+    let pod_metrics = fetch_pod_metrics(client).await;
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<PodItem> = list
@@ -419,6 +603,17 @@ async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
                 .map(|pod| {
                     let name = pod.metadata.name.unwrap_or_default();
                     let namespace = pod.metadata.namespace.unwrap_or_else(|| "default".into());
+                    let (cpu, memory) = pod_metrics
+                        .get(&(namespace.clone(), name.clone()))
+                        .cloned()
+                        .unwrap_or_else(|| ("-".to_string(), "-".to_string()));
+                    let controlled_by = pod
+                        .metadata
+                        .owner_references
+                        .as_ref()
+                        .and_then(|owners| owners.first())
+                        .map(|owner| owner.kind.clone())
+                        .unwrap_or_else(|| "-".to_string());
                     let creation_timestamp = pod
                         .metadata
                         .creation_timestamp
@@ -504,6 +699,11 @@ async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
                         });
 
                     let node = pod.spec.as_ref().and_then(|spec| spec.node_name.clone());
+                    let qos = pod
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.qos_class.clone())
+                        .unwrap_or_else(|| "-".to_string());
 
                     PodItem {
                         name,
@@ -515,6 +715,10 @@ async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
                         age: creation_timestamp,
                         node,
                         pod_ip,
+                        cpu,
+                        memory,
+                        controlled_by,
+                        qos,
                     }
                 })
                 .collect();
