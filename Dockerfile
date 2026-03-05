@@ -54,7 +54,7 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend_dist
 RUN cargo build --release --bin pertisk-kube-backend
 
 # Stage 3: Build ktail from source (portable across architectures)
-FROM golang:1.22-alpine AS ktail-builder
+FROM golang:1.25-alpine AS ktail-builder
 WORKDIR /src
 RUN apk add --no-cache git
 RUN git clone --depth=1 --branch v1.4.0 https://github.com/atombender/ktail.git . && \

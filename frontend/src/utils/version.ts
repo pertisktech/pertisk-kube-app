@@ -4,10 +4,14 @@
 export const getAppVersion = (): string => {
   try {
     // Vite environment variables are available via import.meta.env
-    let version = import.meta.env.VITE_APP_VERSION;
-    if (version) {
+    let version = import.meta.env.VITE_APP_VERSION as string | undefined;
+    if (version && version.trim()) {
       // Remove leading 'v' if present to avoid double 'v' in display
-      return version.replace(/^v+/, '');
+      version = version.trim().replace(/^v+/, '');
+      // Ensure we have a non-empty version string
+      if (version.length > 0) {
+        return version;
+      }
     }
     // Fallback to default version
     return '0.1.0';

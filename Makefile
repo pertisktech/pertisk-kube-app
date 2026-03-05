@@ -1,7 +1,7 @@
 SHELL := /bin/sh
 
 K3S_KUBECONFIG ?= /Users/nat/.kube/talos-omni-hz-cluister-kubeconfig.yaml
-VERSION ?= $(shell git describe --tags --always 2>/dev/null | sed 's/^v//' || echo "0.0.1")
+VERSION ?= $(shell git describe --tags --always --abbrev=7 2>/dev/null | sed 's/^v//; s/-/./g' || echo "0.0.1")
 DOCKER_REGISTRY ?= harbor.tools.thaidevops.co
 DOCKER_IMAGE ?= $(DOCKER_REGISTRY)/pertisksoft/pertisk-kube/web
 DOCKER_TAG ?= $(VERSION)
