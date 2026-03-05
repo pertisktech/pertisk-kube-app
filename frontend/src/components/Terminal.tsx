@@ -17,7 +17,34 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
   const xtermRef = useRef<XTerm | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const lastSentDimensionsRef = useRef<{ cols: number; rows: number } | null>(null);
   const theme = useTheme();
+
+  const sendResize = () => {
+    const ws = wsRef.current;
+    const xterm = xtermRef.current;
+
+    if (!ws || !xterm || ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const current = { cols: xterm.cols, rows: xterm.rows };
+    const last = lastSentDimensionsRef.current;
+
+    // Only send if dimensions have actually changed
+    if (last && last.cols === current.cols && last.rows === current.rows) {
+      return;
+    }
+
+    lastSentDimensionsRef.current = current;
+    ws.send(
+      JSON.stringify({
+        type: 'resize',
+        rows: xterm.rows,
+        cols: xterm.cols,
+      })
+    );
+  };
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -26,8 +53,10 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
     const xterm = new XTerm({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: '"Fira Code", Menlo, Monaco, "Courier New", monospace',
+      fontFamily:
+        '"JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
       allowProposedApi: true,
+      convertEol: true,
       rows: 30,
       cols: 120,
       scrollback: 1000,
@@ -109,6 +138,7 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
       xterm.writeln('');
       // Auto-focus terminal after connection
       xterm.focus();
+      sendResize();
     };
 
     ws.onmessage = (event) => {
@@ -138,25 +168,33 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
 
     terminalRef.current.addEventListener('mousedown', handleFocus);
 
-    // Handle resize
+    // Keep terminal dimensions synchronized so right-side shell prompt stays aligned.
     const handleResize = () => {
       fitAddon.fit();
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: 'resize',
-            rows: xterm.rows,
-            cols: xterm.cols,
-          })
-        );
-      }
+      sendResize();
     };
+
+    const resizeObserver = new ResizeObserver(() => {
+      fitAddon.fit();
+      sendResize();
+    });
+
+    resizeObserver.observe(terminalRef.current);
+
+    // Run additional fits after first layout to avoid stale width calculations.
+    const timers = [
+      window.setTimeout(handleResize, 10),
+      window.setTimeout(handleResize, 60),
+      window.setTimeout(handleResize, 150),
+    ];
 
     window.addEventListener('resize', handleResize);
 
     return () => {
       terminalRef.current?.removeEventListener('mousedown', handleFocus);
       window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
+      timers.forEach((timer) => window.clearTimeout(timer));
       ws.close();
       xterm.dispose();
     };

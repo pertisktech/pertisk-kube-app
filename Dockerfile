@@ -69,6 +69,7 @@ ARG TARGETARCH
 RUN apk add --no-cache \
     ca-certificates \
     kubectl \
+  aws-cli \
     zsh \
     git \
     curl \
@@ -97,7 +98,9 @@ RUN mkdir -p /home/appuser/.local/share/fonts && \
     chown -R appuser:appuser /home/appuser/.local
 
 # Install Oh-My-Zsh and plugins
-RUN HOME=/home/appuser sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || true && \
+RUN HOME=/home/appuser RUNZSH=no CHSH=no KEEP_ZSHRC=yes \
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
+  git clone --depth=1 https://github.com/romkatv/powerlevel10k.git /home/appuser/.oh-my-zsh/custom/themes/powerlevel10k && \
     git clone https://github.com/zsh-users/zsh-syntax-highlighting.git /home/appuser/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting && \
     git clone https://github.com/zsh-users/zsh-autosuggestions.git /home/appuser/.oh-my-zsh/custom/plugins/zsh-autosuggestions && \
     chown -R appuser:appuser /home/appuser/.oh-my-zsh && \
@@ -111,7 +114,8 @@ printf "%s\n" \
   "" \
   "# Oh-My-Zsh configuration" \
   "export ZSH=\"\$HOME/.oh-my-zsh\"" \
-    "ZSH_THEME=\"robbyrussell\"" \
+  "export POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD=true" \
+  "ZSH_THEME=\"powerlevel10k/powerlevel10k\"" \
   "plugins=(git zsh-syntax-highlighting zsh-autosuggestions kubectl docker docker-compose)" \
   "ZSH_DISABLE_COMPFIX=true" \
   "" \

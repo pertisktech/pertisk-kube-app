@@ -56,6 +56,25 @@ pub struct ExecQuery {
     pub container: Option<String>,
 }
 
+fn parse_resize_message(text: &str) -> Option<(u16, u16)> {
+    let json = serde_json::from_str::<serde_json::Value>(text).ok()?;
+    if json.get("type").and_then(|value| value.as_str()) != Some("resize") {
+        return None;
+    }
+
+    let cols = json.get("cols").and_then(|value| value.as_u64())?;
+    let rows = json.get("rows").and_then(|value| value.as_u64())?;
+
+    if cols == 0 || rows == 0 {
+        return None;
+    }
+
+    let cols = u16::try_from(cols).ok()?;
+    let rows = u16::try_from(rows).ok()?;
+
+    Some((cols, rows))
+}
+
 enum ShellSession {
     Pty {
         reader: Box<dyn std::io::Read + Send>,
@@ -105,7 +124,7 @@ async fn spawn_exec_shell(
         let pty_system = NativePtySystem::default();
         let pair = match pty_system.openpty(PtySize {
             rows: 30,
-            cols: 120,
+            cols: 285,
             pixel_width: 0,
             pixel_height: 0,
         }) {
@@ -329,14 +348,11 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
                             }
                         }
 
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if json
-                                .get("type")
-                                .and_then(|value| value.as_str())
-                                .is_some_and(|value| value == "resize")
-                            {
-                                continue;
-                            }
+                        if let Some(_) = parse_resize_message(&text) {
+                            // For kubectl exec piped shells, resize is not directly supported
+                            // The stty command would be echoed as visible input
+                            // Only handle resize in the PTY case below
+                            continue;
                         }
 
                         // xterm sends Enter as "\r"; kubectl expects "\r".
@@ -407,13 +423,11 @@ async fn handle_pty_session(
     while let Some(message) = ws_receiver.next().await {
         match message {
             Ok(Message::Text(text)) => {
-                // Handle resize messages (PTY resize not available without storing PtyMaster)
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if json.get("type").and_then(|v| v.as_str()) == Some("resize") {
-                        // PTY resize would require keeping the PtyMaster reference
-                        // For now, just skip resize messages
-                        continue;
-                    }
+                if let Some(_) = parse_resize_message(&text) {
+                    // Skip resize messages for PTY sessions
+                    // The stty command would be echoed back by the shell
+                    // PTY size is set at creation time (30 rows x 120 cols)
+                    continue;
                 }
 
                 // Write input to PTY
