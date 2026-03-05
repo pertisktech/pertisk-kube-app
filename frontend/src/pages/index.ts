@@ -12,6 +12,7 @@ export { EventsPage } from './EventsPage';
 export { HelmResourcePage } from './HelmResourcePage';
 export { AccessControlResourcePage } from './AccessControlResourcePage';
 export { ConfigResourcePage } from './ConfigResourcePage';
+export { NetworkPage } from './NetworkPage';
 export { NetworkResourcePage } from './NetworkResourcePage';
 export { StoragePage } from './StoragePage';
 export { StorageResourcePage } from './StorageResourcePage';
@@ -26,3 +27,21 @@ export { PDBPage } from './PDBPage';
 export { PriorityClassesPage } from './PriorityClassesPage';
 export { RuntimeClassesPage } from './RuntimeClassesPage';
 export { LeasesPage } from './LeasesPage';
+// Network Pages
+export { ServicesPage } from './ServicesPage';
+export { EndpointsPage } from './EndpointsPage';
+export { IngressesPage } from './IngressesPage';
+export { IngressClassesPage } from './IngressClassesPage';
+export { NetworkPoliciesPage } from './NetworkPoliciesPage';
+export { PortForwardingPage } from './PortForwardingPage';
+// Storage Pages
+export { PersistentVolumesPage } from './PersistentVolumesPage';
+export { PersistentVolumeClaimsPage } from './PersistentVolumeClaimsPage';
+export { StorageClassesPage } from './StorageClassesPage';
+// Access Control Pages
+export { AccessControlPage } from './AccessControlPage';
+export { ServiceAccountsPage } from './ServiceAccountsPage';
+export { RolesPage } from './RolesPage';
+export { RoleBindingsPage } from './RoleBindingsPage';
+export { ClusterRolesPage } from './ClusterRolesPage';
+export { ClusterRoleBindingsPage } from './ClusterRoleBindingsPage';

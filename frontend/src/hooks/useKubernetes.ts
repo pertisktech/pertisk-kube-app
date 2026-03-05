@@ -21,6 +21,19 @@ import type {
   PriorityClass,
   RuntimeClass,
   Lease,
+  Service,
+  Endpoint,
+  Ingress,
+  IngressClass,
+  NetworkPolicy,
+  PersistentVolume,
+  PersistentVolumeClaim,
+  StorageClass,
+  ServiceAccount,
+  Role,
+  RoleBinding,
+  ClusterRole,
+  ClusterRoleBinding,
 } from '../types';
 import { getAuthToken } from '../utils/auth';
 
@@ -275,6 +288,165 @@ export const useLeases = () => {
       const res = await apiFetch('/leases');
       if (!res.ok) throw new Error('Failed to fetch leases');
       const data = (await res.json()) as ApiResponse<Lease>;
+      return data.data;
+    },
+  });
+};
+
+// Network Resources
+export const useServices = () => {
+  return useQuery({
+    queryKey: ['services'],
+    queryFn: async () => {
+      const res = await apiFetch('/services');
+      if (!res.ok) throw new Error('Failed to fetch services');
+      const data = (await res.json()) as ApiResponse<Service>;
+      return data.data;
+    },
+  });
+};
+
+export const useEndpoints = () => {
+  return useQuery({
+    queryKey: ['endpoints'],
+    queryFn: async () => {
+      const res = await apiFetch('/endpoints');
+      if (!res.ok) throw new Error('Failed to fetch endpoints');
+      const data = (await res.json()) as ApiResponse<Endpoint>;
+      return data.data;
+    },
+  });
+};
+
+export const useIngresses = () => {
+  return useQuery({
+    queryKey: ['ingresses'],
+    queryFn: async () => {
+      const res = await apiFetch('/ingresses');
+      if (!res.ok) throw new Error('Failed to fetch ingresses');
+      const data = (await res.json()) as ApiResponse<Ingress>;
+      return data.data;
+    },
+  });
+};
+
+export const useIngressClasses = () => {
+  return useQuery({
+    queryKey: ['ingressclasses'],
+    queryFn: async () => {
+      const res = await apiFetch('/ingressclasses');
+      if (!res.ok) throw new Error('Failed to fetch ingress classes');
+      const data = (await res.json()) as ApiResponse<IngressClass>;
+      return data.data;
+    },
+  });
+};
+
+export const useNetworkPolicies = () => {
+  return useQuery({
+    queryKey: ['networkpolicies'],
+    queryFn: async () => {
+      const res = await apiFetch('/networkpolicies');
+      if (!res.ok) throw new Error('Failed to fetch network policies');
+      const data = (await res.json()) as ApiResponse<NetworkPolicy>;
+      return data.data;
+    },
+  });
+};
+
+// Storage Resources
+export const usePersistentVolumes = () => {
+  return useQuery({
+    queryKey: ['persistentvolumes'],
+    queryFn: async () => {
+      const res = await apiFetch('/persistentvolumes');
+      if (!res.ok) throw new Error('Failed to fetch persistent volumes');
+      const data = (await res.json()) as ApiResponse<PersistentVolume>;
+      return data.data;
+    },
+  });
+};
+
+export const usePersistentVolumeClaims = () => {
+  return useQuery({
+    queryKey: ['persistentvolumeclaims'],
+    queryFn: async () => {
+      const res = await apiFetch('/persistentvolumeclaims');
+      if (!res.ok) throw new Error('Failed to fetch persistent volume claims');
+      const data = (await res.json()) as ApiResponse<PersistentVolumeClaim>;
+      return data.data;
+    },
+  });
+};
+
+export const useStorageClasses = () => {
+  return useQuery({
+    queryKey: ['storageclasses'],
+    queryFn: async () => {
+      const res = await apiFetch('/storageclasses');
+      if (!res.ok) throw new Error('Failed to fetch storage classes');
+      const data = (await res.json()) as ApiResponse<StorageClass>;
+      return data.data;
+    },
+  });
+};
+
+// Access Control (RBAC) Resources
+export const useServiceAccounts = () => {
+  return useQuery({
+    queryKey: ['serviceaccounts'],
+    queryFn: async () => {
+      const res = await apiFetch('/serviceaccounts');
+      if (!res.ok) throw new Error('Failed to fetch service accounts');
+      const data = (await res.json()) as ApiResponse<ServiceAccount>;
+      return data.data;
+    },
+  });
+};
+
+export const useRoles = () => {
+  return useQuery({
+    queryKey: ['roles'],
+    queryFn: async () => {
+      const res = await apiFetch('/roles');
+      if (!res.ok) throw new Error('Failed to fetch roles');
+      const data = (await res.json()) as ApiResponse<Role>;
+      return data.data;
+    },
+  });
+};
+
+export const useRoleBindings = () => {
+  return useQuery({
+    queryKey: ['rolebindings'],
+    queryFn: async () => {
+      const res = await apiFetch('/rolebindings');
+      if (!res.ok) throw new Error('Failed to fetch role bindings');
+      const data = (await res.json()) as ApiResponse<RoleBinding>;
+      return data.data;
+    },
+  });
+};
+
+export const useClusterRoles = () => {
+  return useQuery({
+    queryKey: ['clusterroles'],
+    queryFn: async () => {
+      const res = await apiFetch('/clusterroles');
+      if (!res.ok) throw new Error('Failed to fetch cluster roles');
+      const data = (await res.json()) as ApiResponse<ClusterRole>;
+      return data.data;
+    },
+  });
+};
+
+export const useClusterRoleBindings = () => {
+  return useQuery({
+    queryKey: ['clusterrolebindings'],
+    queryFn: async () => {
+      const res = await apiFetch('/clusterrolebindings');
+      if (!res.ok) throw new Error('Failed to fetch cluster role bindings');
+      const data = (await res.json()) as ApiResponse<ClusterRoleBinding>;
       return data.data;
     },
   });

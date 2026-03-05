@@ -263,6 +263,136 @@ struct LeaseItem {
     age: String,
 }
 
+// Network Resources Structs
+#[derive(Serialize)]
+struct ServiceItem {
+    name: String,
+    namespace: String,
+    service_type: String,
+    cluster_ip: String,
+    external_ip: String,
+    ports: String,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct EndpointItem {
+    name: String,
+    namespace: String,
+    addresses: usize,
+    not_ready: usize,
+    ports: String,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct IngressItem {
+    name: String,
+    namespace: String,
+    ingress_class: String,
+    hosts: String,
+    address: String,
+    rules: usize,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct IngressClassItem {
+    name: String,
+    controller: String,
+    is_default: bool,
+    parameters: String,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct NetworkPolicyItem {
+    name: String,
+    namespace: String,
+    pod_selector: String,
+    policy_types: String,
+    ingress_rules: usize,
+    egress_rules: usize,
+    age: String,
+}
+
+// Storage Resources Structs
+#[derive(Serialize)]
+struct PersistentVolumeItem {
+    name: String,
+    capacity: String,
+    access_modes: String,
+    reclaim_policy: String,
+    status: String,
+    claim: String,
+    storage_class: String,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct PersistentVolumeClaimItem {
+    name: String,
+    namespace: String,
+    status: String,
+    volume: String,
+    capacity: String,
+    access_modes: String,
+    storage_class: String,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct StorageClassItem {
+    name: String,
+    provisioner: String,
+    reclaim_policy: String,
+    volume_binding_mode: String,
+    allow_volume_expansion: bool,
+    is_default: bool,
+    age: String,
+}
+
+// Access Control (RBAC) Resources Structs
+#[derive(Serialize)]
+struct ServiceAccountItem {
+    name: String,
+    namespace: String,
+    secrets: usize,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct RoleItem {
+    name: String,
+    namespace: String,
+    rules: usize,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct RoleBindingItem {
+    name: String,
+    namespace: String,
+    role: String,
+    subjects: usize,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct ClusterRoleItem {
+    name: String,
+    rules: usize,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct ClusterRoleBindingItem {
+    name: String,
+    role: String,
+    subjects: usize,
+    age: String,
+}
+
 fn format_compact_duration(seconds: i64) -> String {
     if seconds < 60 {
         return format!("{}s", seconds);
@@ -525,6 +655,19 @@ async fn main() -> anyhow::Result<()> {
         .route("/priorityclasses", get(list_priorityclasses))
         .route("/runtimeclasses", get(list_runtimeclasses))
         .route("/leases", get(list_leases))
+        .route("/services", get(list_services))
+        .route("/endpoints", get(list_endpoints))
+        .route("/ingresses", get(list_ingresses))
+        .route("/ingressclasses", get(list_ingressclasses))
+        .route("/networkpolicies", get(list_networkpolicies))
+        .route("/persistentvolumes", get(list_persistent_volumes))
+        .route("/persistentvolumeclaims", get(list_persistent_volume_claims))
+        .route("/storageclasses", get(list_storage_classes))
+        .route("/serviceaccounts", get(list_service_accounts))
+        .route("/roles", get(list_roles))
+        .route("/rolebindings", get(list_role_bindings))
+        .route("/clusterroles", get(list_cluster_roles))
+        .route("/clusterrolebindings", get(list_cluster_role_bindings))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_basic_auth,
@@ -2119,6 +2262,868 @@ async fn list_leases(State(state): State<AppState>) -> impl IntoResponse {
         }
         Err(err) => {
             error!("Error listing leases: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_services(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Service;
+
+    let api: Api<Service> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<ServiceItem> = list
+                .items
+                .into_iter()
+                .map(|svc| {
+                    let name = svc.metadata.name.unwrap_or_default();
+                    let namespace = svc.metadata.namespace.unwrap_or_else(|| "default".into());
+                    let spec = svc.spec.as_ref();
+                    let status = svc.status.as_ref();
+
+                    let service_type = spec
+                        .and_then(|s| s.type_.clone())
+                        .unwrap_or_else(|| "ClusterIP".into());
+
+                    let cluster_ip = spec
+                        .and_then(|s| s.cluster_ip.clone())
+                        .unwrap_or_else(|| "-".into());
+
+                    let mut external_values: Vec<String> = spec
+                        .and_then(|s| s.external_ips.clone())
+                        .unwrap_or_default();
+
+                    if let Some(lb_ingress) = status
+                        .and_then(|s| s.load_balancer.as_ref())
+                        .and_then(|lb| lb.ingress.as_ref())
+                    {
+                        external_values.extend(lb_ingress.iter().map(|entry| {
+                            entry
+                                .ip
+                                .clone()
+                                .or_else(|| entry.hostname.clone())
+                                .unwrap_or_else(|| "-".into())
+                        }));
+                    }
+
+                    external_values.retain(|value| value != "-");
+                    external_values.sort();
+                    external_values.dedup();
+
+                    let external_ip = if external_values.is_empty() {
+                        "-".into()
+                    } else {
+                        external_values.join(", ")
+                    };
+
+                    let ports = spec
+                        .and_then(|s| s.ports.clone())
+                        .map(|values| {
+                            let rendered: Vec<String> = values
+                                .into_iter()
+                                .map(|port| format!("{}/{}", port.port, port.protocol.unwrap_or_else(|| "TCP".into())))
+                                .collect();
+                            if rendered.is_empty() {
+                                "-".into()
+                            } else {
+                                rendered.join(", ")
+                            }
+                        })
+                        .unwrap_or_else(|| "-".into());
+
+                    let age = svc
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    ServiceItem {
+                        name,
+                        namespace,
+                        service_type,
+                        cluster_ip,
+                        external_ip,
+                        ports,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing services: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_endpoints(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Endpoints;
+
+    let api: Api<Endpoints> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<EndpointItem> = list
+                .items
+                .into_iter()
+                .map(|ep| {
+                    let name = ep.metadata.name.unwrap_or_default();
+                    let namespace = ep.metadata.namespace.unwrap_or_else(|| "default".into());
+
+                    let subsets = ep.subsets.unwrap_or_default();
+                    let addresses = subsets
+                        .iter()
+                        .map(|subset| subset.addresses.as_ref().map_or(0, |a| a.len()))
+                        .sum();
+                    let not_ready = subsets
+                        .iter()
+                        .map(|subset| subset.not_ready_addresses.as_ref().map_or(0, |a| a.len()))
+                        .sum();
+
+                    let mut unique_ports: Vec<String> = subsets
+                        .iter()
+                        .flat_map(|subset| {
+                            subset
+                                .ports
+                                .as_ref()
+                                .map(|ports| {
+                                    ports
+                                        .iter()
+                                        .map(|port| format!("{}/{}", port.port, port.protocol.clone().unwrap_or_else(|| "TCP".into())))
+                                        .collect::<Vec<_>>()
+                                })
+                                .unwrap_or_default()
+                        })
+                        .collect();
+                    unique_ports.sort();
+                    unique_ports.dedup();
+
+                    let ports = if unique_ports.is_empty() {
+                        "-".into()
+                    } else {
+                        unique_ports.join(", ")
+                    };
+
+                    let age = ep
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    EndpointItem {
+                        name,
+                        namespace,
+                        addresses,
+                        not_ready,
+                        ports,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing endpoints: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_ingresses(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::networking::v1::Ingress;
+
+    let api: Api<Ingress> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<IngressItem> = list
+                .items
+                .into_iter()
+                .map(|ing| {
+                    let name = ing.metadata.name.unwrap_or_default();
+                    let namespace = ing.metadata.namespace.unwrap_or_else(|| "default".into());
+                    let spec = ing.spec.as_ref();
+                    let status = ing.status.as_ref();
+
+                    let ingress_class = spec
+                        .and_then(|s| s.ingress_class_name.clone())
+                        .unwrap_or_else(|| "-".into());
+
+                    let rules = spec
+                        .and_then(|s| s.rules.as_ref())
+                        .map_or(0, |values| values.len());
+
+                    let mut hosts: Vec<String> = spec
+                        .and_then(|s| s.rules.as_ref())
+                        .map(|values| {
+                            values
+                                .iter()
+                                .filter_map(|rule| rule.host.clone())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    hosts.sort();
+                    hosts.dedup();
+                    let hosts = if hosts.is_empty() {
+                        "-".into()
+                    } else {
+                        hosts.join(", ")
+                    };
+
+                    let mut addresses: Vec<String> = status
+                        .and_then(|s| s.load_balancer.as_ref())
+                        .and_then(|lb| lb.ingress.as_ref())
+                        .map(|entries| {
+                            entries
+                                .iter()
+                                .map(|entry| {
+                                    entry
+                                        .ip
+                                        .clone()
+                                        .or_else(|| entry.hostname.clone())
+                                        .unwrap_or_else(|| "-".into())
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    addresses.retain(|value| value != "-");
+                    addresses.sort();
+                    addresses.dedup();
+                    let address = if addresses.is_empty() {
+                        "-".into()
+                    } else {
+                        addresses.join(", ")
+                    };
+
+                    let age = ing
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    IngressItem {
+                        name,
+                        namespace,
+                        ingress_class,
+                        hosts,
+                        address,
+                        rules,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing ingresses: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_ingressclasses(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::networking::v1::IngressClass;
+
+    let api: Api<IngressClass> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<IngressClassItem> = list
+                .items
+                .into_iter()
+                .map(|ing_class| {
+                    let name = ing_class.metadata.name.unwrap_or_default();
+                    let controller = ing_class
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.controller.clone())
+                        .unwrap_or_else(|| "-".into());
+                    let parameters = ing_class
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.parameters.as_ref())
+                        .as_ref()
+                        .map(|params| format!("{}/{}", params.kind, params.name))
+                        .unwrap_or_else(|| "-".into());
+
+                    let is_default = ing_class
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|annotations| annotations.get("ingressclass.kubernetes.io/is-default-class"))
+                        .map(|value| value == "true")
+                        .unwrap_or(false);
+
+                    let age = ing_class
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    IngressClassItem {
+                        name,
+                        controller,
+                        is_default,
+                        parameters,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing ingress classes: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_networkpolicies(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
+
+    let api: Api<NetworkPolicy> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<NetworkPolicyItem> = list
+                .items
+                .into_iter()
+                .map(|policy| {
+                    let name = policy.metadata.name.unwrap_or_default();
+                    let namespace = policy.metadata.namespace.unwrap_or_else(|| "default".into());
+
+                    let selector_labels = policy
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.pod_selector.match_labels.as_ref())
+                        .as_ref()
+                        .map(|labels| {
+                            let mut rendered: Vec<String> = labels
+                                .iter()
+                                .map(|(key, value)| format!("{}={}", key, value))
+                                .collect();
+                            rendered.sort();
+                            if rendered.is_empty() {
+                                "All pods".into()
+                            } else {
+                                rendered.join(", ")
+                            }
+                        })
+                        .unwrap_or_else(|| "All pods".into());
+
+                    let policy_types = policy
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.policy_types.clone())
+                        .unwrap_or_default()
+                        .join(", ");
+
+                    let ingress_rules = policy
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.ingress.as_ref())
+                        .map_or(0, |rules| rules.len());
+                    let egress_rules = policy
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.egress.as_ref())
+                        .map_or(0, |rules| rules.len());
+
+                    let age = policy
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    NetworkPolicyItem {
+                        name,
+                        namespace,
+                        pod_selector: selector_labels,
+                        policy_types,
+                        ingress_rules,
+                        egress_rules,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing network policies: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// Storage Resource Handlers
+async fn list_persistent_volumes(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::PersistentVolume;
+
+    let api: Api<PersistentVolume> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<PersistentVolumeItem> = list
+                .items
+                .into_iter()
+                .map(|pv| {
+                    let name = pv.metadata.name.unwrap_or_default();
+                    
+                    let capacity = pv
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.capacity.as_ref())
+                        .and_then(|c| c.get("storage"))
+                        .map(|q| q.0.clone())
+                        .unwrap_or_else(|| "-".into());
+
+                    let access_modes = pv
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.access_modes.as_ref())
+                        .map(|modes| modes.join(", "))
+                        .unwrap_or_else(|| "-".into());
+
+                    let reclaim_policy = pv
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.persistent_volume_reclaim_policy.clone())
+                        .unwrap_or_else(|| "-".into());
+
+                    let status = pv
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.phase.clone())
+                        .unwrap_or_else(|| "Unknown".into());
+
+                    let claim = pv
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.claim_ref.as_ref())
+                        .map(|c| {
+                            format!(
+                                "{}/{}",
+                                c.namespace.clone().unwrap_or_default(),
+                                c.name.clone().unwrap_or_default()
+                            )
+                        })
+                        .unwrap_or_else(|| "-".into());
+
+                    let storage_class = pv
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.storage_class_name.clone())
+                        .unwrap_or_else(|| "-".into());
+
+                    let age = pv
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    PersistentVolumeItem {
+                        name,
+                        capacity,
+                        access_modes,
+                        reclaim_policy,
+                        status,
+                        claim,
+                        storage_class,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing persistent volumes: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_persistent_volume_claims(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::PersistentVolumeClaim;
+
+    let api: Api<PersistentVolumeClaim> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<PersistentVolumeClaimItem> = list
+                .items
+                .into_iter()
+                .map(|pvc| {
+                    let name = pvc.metadata.name.unwrap_or_default();
+                    let namespace = pvc.metadata.namespace.unwrap_or_else(|| "default".into());
+
+                    let status = pvc
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.phase.clone())
+                        .unwrap_or_else(|| "Unknown".into());
+
+                    let volume = pvc
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.volume_name.clone())
+                        .unwrap_or_else(|| "-".into());
+
+                    let capacity = pvc
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.capacity.as_ref())
+                        .and_then(|c| c.get("storage"))
+                        .map(|q| q.0.clone())
+                        .unwrap_or_else(|| "-".into());
+
+                    let access_modes = pvc
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.access_modes.as_ref())
+                        .map(|modes| modes.join(", "))
+                        .unwrap_or_else(|| "-".into());
+
+                    let storage_class = pvc
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.storage_class_name.clone())
+                        .unwrap_or_else(|| "-".into());
+
+                    let age = pvc
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    PersistentVolumeClaimItem {
+                        name,
+                        namespace,
+                        status,
+                        volume,
+                        capacity,
+                        access_modes,
+                        storage_class,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing persistent volume claims: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_storage_classes(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::storage::v1::StorageClass;
+
+    let api: Api<StorageClass> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<StorageClassItem> = list
+                .items
+                .into_iter()
+                .map(|sc| {
+                    let name = sc.metadata.name.unwrap_or_default();
+                    let provisioner = sc.provisioner.clone();
+
+                    let reclaim_policy = sc
+                        .reclaim_policy
+                        .clone()
+                        .unwrap_or_else(|| "-".into());
+
+                    let volume_binding_mode = sc
+                        .volume_binding_mode
+                        .clone()
+                        .unwrap_or_else(|| "-".into());
+
+                    let allow_volume_expansion = sc.allow_volume_expansion.unwrap_or(false);
+
+                    let is_default = sc
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .map(|a| {
+                            a.get("storageclass.kubernetes.io/is-default-class")
+                                .map(|v| v == "true")
+                                .unwrap_or(false)
+                                || a.get("storageclass.beta.kubernetes.io/is-default-class")
+                                    .map(|v| v == "true")
+                                    .unwrap_or(false)
+                        })
+                        .unwrap_or(false);
+
+                    let age = sc
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    StorageClassItem {
+                        name,
+                        provisioner,
+                        reclaim_policy,
+                        volume_binding_mode,
+                        allow_volume_expansion,
+                        is_default,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing storage classes: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// Access Control (RBAC) Resource Handlers
+async fn list_service_accounts(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ServiceAccount;
+
+    let api: Api<ServiceAccount> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<ServiceAccountItem> = list
+                .items
+                .into_iter()
+                .map(|sa| {
+                    let name = sa.metadata.name.unwrap_or_default();
+                    let namespace = sa.metadata.namespace.unwrap_or_else(|| "default".into());
+
+                    let secrets = sa
+                        .secrets
+                        .as_ref()
+                        .map(|s| s.len())
+                        .unwrap_or(0);
+
+                    let age = sa
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    ServiceAccountItem {
+                        name,
+                        namespace,
+                        secrets,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing service accounts: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_roles(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::Role;
+
+    let api: Api<Role> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<RoleItem> = list
+                .items
+                .into_iter()
+                .map(|role| {
+                    let name = role.metadata.name.unwrap_or_default();
+                    let namespace = role.metadata.namespace.unwrap_or_else(|| "default".into());
+
+                    let rules = role
+                        .rules
+                        .as_ref()
+                        .map(|r| r.len())
+                        .unwrap_or(0);
+
+                    let age = role
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    RoleItem {
+                        name,
+                        namespace,
+                        rules,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing roles: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_role_bindings(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::RoleBinding;
+
+    let api: Api<RoleBinding> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<RoleBindingItem> = list
+                .items
+                .into_iter()
+                .map(|rb| {
+                    let name = rb.metadata.name.unwrap_or_default();
+                    let namespace = rb.metadata.namespace.unwrap_or_else(|| "default".into());
+
+                    let role = format!("{}/{}", rb.role_ref.kind, rb.role_ref.name);
+
+                    let subjects = rb
+                        .subjects
+                        .as_ref()
+                        .map(|s| s.len())
+                        .unwrap_or(0);
+
+                    let age = rb
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    RoleBindingItem {
+                        name,
+                        namespace,
+                        role,
+                        subjects,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing role bindings: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_cluster_roles(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::ClusterRole;
+
+    let api: Api<ClusterRole> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<ClusterRoleItem> = list
+                .items
+                .into_iter()
+                .map(|cr| {
+                    let name = cr.metadata.name.unwrap_or_default();
+
+                    let rules = cr
+                        .rules
+                        .as_ref()
+                        .map(|r| r.len())
+                        .unwrap_or(0);
+
+                    let age = cr
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    ClusterRoleItem {
+                        name,
+                        rules,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing cluster roles: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_cluster_role_bindings(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::ClusterRoleBinding;
+
+    let api: Api<ClusterRoleBinding> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<ClusterRoleBindingItem> = list
+                .items
+                .into_iter()
+                .map(|crb| {
+                    let name = crb.metadata.name.unwrap_or_default();
+
+                    let role = format!("{}/{}", crb.role_ref.kind, crb.role_ref.name);
+
+                    let subjects = crb
+                        .subjects
+                        .as_ref()
+                        .map(|s| s.len())
+                        .unwrap_or(0);
+
+                    let age = crb
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
+                    ClusterRoleBindingItem {
+                        name,
+                        role,
+                        subjects,
+                        age,
+                    }
+                })
+                .collect();
+
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing cluster role bindings: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }

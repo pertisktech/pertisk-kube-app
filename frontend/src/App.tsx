@@ -16,10 +16,7 @@ import {
   CronJobsPage,
   EventsPage,
   HelmResourcePage,
-  AccessControlResourcePage,
   ConfigResourcePage,
-  NetworkResourcePage,
-  StorageResourcePage,
   LoginPage,
   ConfigMapsPage,
   SecretsPage,
@@ -30,6 +27,23 @@ import {
   PriorityClassesPage,
   RuntimeClassesPage,
   LeasesPage,
+  ServicesPage,
+  EndpointsPage,
+  IngressesPage,
+  IngressClassesPage,
+  NetworkPoliciesPage,
+  PortForwardingPage,
+  NetworkPage,
+  StoragePage,
+  PersistentVolumesPage,
+  PersistentVolumeClaimsPage,
+  StorageClassesPage,
+  AccessControlPage,
+  ServiceAccountsPage,
+  RolesPage,
+  RoleBindingsPage,
+  ClusterRolesPage,
+  ClusterRoleBindingsPage,
 } from './pages';
 
 export const App = () => {
@@ -78,24 +92,25 @@ export const App = () => {
           <Route path="/config/leases" element={<LeasesPage />} />
           <Route path="/config/mwc" element={<ConfigResourcePage title="MWC" />} />
           <Route path="/config/vwc" element={<ConfigResourcePage title="VWC" />} />
-          <Route path="/network" element={<NetworkResourcePage title="Network" />} />
-          <Route path="/network/services" element={<NetworkResourcePage title="Services" />} />
-          <Route path="/network/endpoints" element={<NetworkResourcePage title="Endpoints" />} />
-          <Route path="/network/ingresses" element={<NetworkResourcePage title="Ingresses" />} />
-          <Route path="/network/ingressclasses" element={<NetworkResourcePage title="Ingress Classes" />} />
-          <Route path="/network/networkpolicies" element={<NetworkResourcePage title="Network Policies" />} />
-          <Route path="/network/portforwarding" element={<NetworkResourcePage title="Port Forwarding" />} />
-          <Route path="/storage" element={<StorageResourcePage title="Storage" />} />
-          <Route path="/storage/pvc" element={<StorageResourcePage title="PVC" />} />
-          <Route path="/storage/pv" element={<StorageResourcePage title="PV" />} />
-          <Route path="/storage/storageclasses" element={<StorageResourcePage title="Storage Classes" />} />
+          <Route path="/network" element={<NetworkPage />} />
+          <Route path="/network/services" element={<ServicesPage />} />
+          <Route path="/network/endpoints" element={<EndpointsPage />} />
+          <Route path="/network/ingresses" element={<IngressesPage />} />
+          <Route path="/network/ingressclasses" element={<IngressClassesPage />} />
+          <Route path="/network/networkpolicies" element={<NetworkPoliciesPage />} />
+          <Route path="/network/portforwarding" element={<PortForwardingPage />} />
+          <Route path="/storage" element={<StoragePage />} />
+          <Route path="/storage/pvc" element={<PersistentVolumeClaimsPage />} />
+          <Route path="/storage/pv" element={<PersistentVolumesPage />} />
+          <Route path="/storage/storageclasses" element={<StorageClassesPage />} />
           <Route path="/helm/charts" element={<HelmResourcePage title="Charts" />} />
           <Route path="/helm/releases" element={<HelmResourcePage title="Releases" />} />
-          <Route path="/access-control/serviceaccounts" element={<AccessControlResourcePage title="Service Accounts" />} />
-          <Route path="/access-control/clusterroles" element={<AccessControlResourcePage title="Cluster Roles" />} />
-          <Route path="/access-control/roles" element={<AccessControlResourcePage title="Roles" />} />
-          <Route path="/access-control/clusterrolebindings" element={<AccessControlResourcePage title="Cluster Role Bindings" />} />
-          <Route path="/access-control/rolebindings" element={<AccessControlResourcePage title="Role Bindings" />} />
+          <Route path="/access-control" element={<AccessControlPage />} />
+          <Route path="/access-control/serviceaccounts" element={<ServiceAccountsPage />} />
+          <Route path="/access-control/clusterroles" element={<ClusterRolesPage />} />
+          <Route path="/access-control/roles" element={<RolesPage />} />
+          <Route path="/access-control/clusterrolebindings" element={<ClusterRoleBindingsPage />} />
+          <Route path="/access-control/rolebindings" element={<RoleBindingsPage />} />
           <Route path="/events" element={<EventsPage />} />
         </Route>
       </Routes>
