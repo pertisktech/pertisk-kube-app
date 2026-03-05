@@ -26,7 +26,7 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
     const xterm = new XTerm({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: '"MesloLGS NF", Menlo, Monaco, "Courier New", monospace',
+      fontFamily: '"Fira Code", Menlo, Monaco, "Courier New", monospace',
       allowProposedApi: true,
       rows: 30,
       cols: 120,
@@ -99,79 +99,6 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
-    let commandBuffer = '';
-    let currentPath = '/';
-    let pendingOutput = '';
-    const pwdMarkerStart = '__PTK_PWD__';
-    const pwdMarkerEnd = '__PTK_END__';
-
-    const renderPromptPath = (path: string) => {
-      const normalized = path?.trim() || '/';
-      const homeDir = '/home/appuser';
-      if (normalized === homeDir) return '~';
-      if (normalized.startsWith(`${homeDir}/`)) {
-        return `~/${normalized.slice(homeDir.length + 1)}`;
-      }
-      return normalized;
-    };
-
-    const writePrompt = () => {
-      const promptPath = renderPromptPath(currentPath);
-      xterm.write(`\x1b[38;5;76m➜\x1b[0m  \x1b[38;5;39m${promptPath}\x1b[0m `);
-    };
-
-    const handleCtrlC = () => {
-      commandBuffer = '';
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send('\u0003');
-      }
-    };
-
-    const normalizeLineEndings = (text: string) =>
-      text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n');
-
-    const processIncomingData = (chunk: string) => {
-      pendingOutput += chunk;
-      const tailReserve = Math.max(0, pwdMarkerStart.length - 1);
-
-      while (true) {
-        const markerStart = pendingOutput.indexOf(pwdMarkerStart);
-
-        if (markerStart === -1) {
-          if (pendingOutput.length > tailReserve) {
-            const safeOutput = pendingOutput.slice(0, pendingOutput.length - tailReserve);
-            xterm.write(normalizeLineEndings(safeOutput));
-            pendingOutput = pendingOutput.slice(pendingOutput.length - tailReserve);
-          }
-          return;
-        }
-
-        if (markerStart > 0) {
-          xterm.write(normalizeLineEndings(pendingOutput.slice(0, markerStart)));
-        }
-
-        const pathStart = markerStart + pwdMarkerStart.length;
-        const markerEnd = pendingOutput.indexOf(pwdMarkerEnd, pathStart);
-
-        if (markerEnd === -1) {
-          pendingOutput = pendingOutput.slice(markerStart);
-          return;
-        }
-
-        const parsedPath = pendingOutput
-          .slice(pathStart, markerEnd)
-          .replace(/\r?\n/g, '')
-          .trim();
-
-        if (parsedPath.length > 0) {
-          currentPath = parsedPath;
-        }
-
-        pendingOutput = pendingOutput.slice(markerEnd + pwdMarkerEnd.length);
-        xterm.write('\r\n');
-        writePrompt();
-      }
-    };
 
     ws.onopen = () => {
       xterm.writeln('\x1b[1;32m✓ Connected to pod shell\x1b[0m');
@@ -180,14 +107,13 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
         xterm.writeln(`\x1b[1;36mContainer:\x1b[0m ${containerName}`);
       }
       xterm.writeln('');
-      ws.send(`printf '${pwdMarkerStart}%s${pwdMarkerEnd}' "$PWD"\n`);
       // Auto-focus terminal after connection
       xterm.focus();
     };
 
     ws.onmessage = (event) => {
       if (typeof event.data === 'string') {
-        processIncomingData(event.data);
+        xterm.write(event.data);
       }
     };
 
@@ -199,50 +125,10 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
       xterm.writeln('\r\n\x1b[1;33m✗ Connection closed\x1b[0m');
     };
 
-    const keyHandlerDisposable = xterm.onKey(({ domEvent }) => {
-      if (
-        domEvent.type === 'keydown' &&
-        !domEvent.repeat &&
-        domEvent.ctrlKey &&
-        domEvent.key.toLowerCase() === 'c'
-      ) {
-        domEvent.preventDefault();
-        handleCtrlC();
-      }
-    });
-
-    // Send terminal input to WebSocket
+    // Send terminal input directly to shell (pass-through mode)
     xterm.onData((data) => {
-      if (ws.readyState !== WebSocket.OPEN) {
-        return;
-      }
-
-      for (const ch of data) {
-        if (ch === '\r' || ch === '\n') {
-          xterm.write('\r\n');
-          ws.send(`${commandBuffer}\nprintf '${pwdMarkerStart}%s${pwdMarkerEnd}' "$PWD"\n`);
-          commandBuffer = '';
-          continue;
-        }
-
-        if (ch === '\x7f') {
-          if (commandBuffer.length > 0) {
-            commandBuffer = commandBuffer.slice(0, -1);
-            xterm.write('\b \b');
-          }
-          continue;
-        }
-
-        if (ch === '\u0003') {
-          continue;
-        }
-
-        const code = ch.charCodeAt(0);
-        const isPrintable = code >= 32 && code !== 127;
-        if (isPrintable) {
-          commandBuffer += ch;
-          xterm.write(ch);
-        }
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
       }
     });
 
@@ -269,7 +155,6 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
     window.addEventListener('resize', handleResize);
 
     return () => {
-      keyHandlerDisposable.dispose();
       terminalRef.current?.removeEventListener('mousedown', handleFocus);
       window.removeEventListener('resize', handleResize);
       ws.close();

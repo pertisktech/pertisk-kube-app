@@ -37,6 +37,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { cn } from '../utils';
+import { APP_VERSION } from '../utils/version';
 import { useTheme } from '../context/ThemeContext';
 
 interface NavItem {
@@ -363,7 +364,14 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
       >
         <div className="flex-1 p-4 overflow-y-auto">
           <div className="flex items-center justify-between mb-8">
-            {!sidebarCollapsed && <h1 className="text-lg font-bold text-primary">Pertisk Kube</h1>}
+            <div className="flex items-center gap-2">
+              {!sidebarCollapsed && (
+                <>
+                  <h1 className="text-lg font-bold text-primary">Pertisk Kube</h1>
+                  <span className="text-xs font-medium text-text-secondary">v{APP_VERSION}</span>
+                </>
+              )}
+            </div>
             <div className="flex items-center gap-1 ml-auto">
               <button
                 onClick={() => setSidebarCollapsed((previous) => !previous)}

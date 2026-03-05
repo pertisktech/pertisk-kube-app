@@ -80,35 +80,32 @@ run-ingress-k3s: tools frontend-build
 #   make release                      — build multi-arch and deploy to k8s
 
 docker-build:
-	docker build -f Dockerfile -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+	docker build -f Dockerfile --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
 	@echo "Built: $(DOCKER_IMAGE):$(DOCKER_TAG)"
 
 docker-build-amd64:
-	docker buildx build --platform linux/amd64 -f Dockerfile --load -t $(DOCKER_IMAGE):$(DOCKER_TAG)-amd64 -t $(DOCKER_IMAGE):amd64 .
+	docker buildx build --platform linux/amd64 -f Dockerfile --build-arg VERSION=$(VERSION) --load -t $(DOCKER_IMAGE):$(DOCKER_TAG)-amd64 -t $(DOCKER_IMAGE):amd64 .
 	@echo "Built: $(DOCKER_IMAGE):$(DOCKER_TAG)-amd64"
 
 docker-build-arm64:
-	docker buildx build --platform linux/arm64 -f Dockerfile --load -t $(DOCKER_IMAGE):$(DOCKER_TAG)-arm64 -t $(DOCKER_IMAGE):arm64 .
+	docker buildx build --platform linux/arm64 -f Dockerfile --build-arg VERSION=$(VERSION) --load -t $(DOCKER_IMAGE):$(DOCKER_TAG)-arm64 -t $(DOCKER_IMAGE):arm64 .
 	@echo "Built: $(DOCKER_IMAGE):$(DOCKER_TAG)-arm64"
 
 docker-build-multi:
 	@echo "Building multi-arch image: $(DOCKER_IMAGE):$(DOCKER_TAG)"
-	@if docker buildx inspect default > /dev/null 2>&1; then \
-		echo "Using buildx for multi-platform build..."; \
-		docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile --push \
-			-t $(DOCKER_IMAGE):$(DOCKER_TAG) \
-			-t $(DOCKER_IMAGE):latest .; \
-		echo "✓ Built and pushed multi-arch: $(DOCKER_IMAGE):$(DOCKER_TAG)"; \
+	@set -e; \
+	if ! docker buildx inspect multiarch > /dev/null 2>&1; then \
+		echo "Creating dedicated multiarch builder (docker-container driver)..."; \
+		docker buildx create --name multiarch --driver docker-container --use; \
 	else \
-		echo "WARNING: docker buildx not available. Falling back to single-platform build."; \
-		echo "To enable multi-platform builds, run:"; \
-		echo "  docker buildx create --use"; \
-		echo ""; \
-		docker build -f Dockerfile --push \
-			-t $(DOCKER_IMAGE):$(DOCKER_TAG) \
-			-t $(DOCKER_IMAGE):latest .; \
-		echo "✓ Built and pushed (single-arch): $(DOCKER_IMAGE):$(DOCKER_TAG)"; \
-	fi
+		docker buildx use multiarch; \
+	fi; \
+	docker buildx inspect multiarch --bootstrap > /dev/null; \
+	echo "Using builder: multiarch"; \
+	docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile --build-arg VERSION=$(VERSION) --push \
+		-t $(DOCKER_IMAGE):$(DOCKER_TAG) \
+		-t $(DOCKER_IMAGE):latest .; \
+	echo "✓ Built and pushed multi-arch: $(DOCKER_IMAGE):$(DOCKER_TAG)"
 
 docker-push:
 	docker push $(DOCKER_IMAGE):$(DOCKER_TAG)
@@ -159,7 +156,7 @@ buildx-setup:
 		docker buildx use multiarch; \
 	else \
 		echo "Creating multiarch builder..."; \
-		docker buildx create --name multiarch --use; \
+		docker buildx create --name multiarch --driver docker-container --use; \
 		docker buildx inspect multiarch --bootstrap; \
 	fi
 	@echo "✓ Buildx ready for multi-platform builds"

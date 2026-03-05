@@ -8,7 +8,9 @@ use axum::{
 };
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use kube::{Api, runtime::watcher};
+use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
+use std::io::{Read, Write};
 use std::process::Stdio;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -54,6 +56,19 @@ pub struct ExecQuery {
     pub container: Option<String>,
 }
 
+enum ShellSession {
+    Pty {
+        reader: Box<dyn std::io::Read + Send>,
+        writer: Box<dyn std::io::Write + Send>,
+    },
+    Piped {
+        child: Child,
+        stdin: ChildStdin,
+        stdout: ChildStdout,
+        stderr: ChildStderr,
+    },
+}
+
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
@@ -77,33 +92,72 @@ pub async fn exec_ws_handler(
 async fn spawn_exec_shell(
     query: &ExecQuery,
     tx: &tokio::sync::mpsc::Sender<String>,
-) -> Option<(Child, ChildStdin, ChildStdout, ChildStderr)> {
+) -> Option<ShellSession> {
     info!(
         "Starting exec shell: namespace={}, pod={}, container={:?}",
         query.namespace, query.pod, query.container
     );
 
-    let mut cmd = if query.namespace == "host" && query.pod == "host" {
-        // Special case: connect to host shell
-        info!("Connecting to host shell");
+    if query.namespace == "host" && query.pod == "host" {
+        // Special case: connect to host shell with PTY
+        info!("Connecting to host shell with PTY");
         
-        // Use sh without -i flag (no job control needed for web terminal)
-        // Just pipe commands in and get output back
-        let mut cmd_sh = Command::new("sh");
-        // No flags - just plain shell reading from stdin
+        let pty_system = NativePtySystem::default();
+        let pair = match pty_system.openpty(PtySize {
+            rows: 30,
+            cols: 120,
+            pixel_width: 0,
+            pixel_height: 0,
+        }) {
+            Ok(pair) => pair,
+            Err(err) => {
+                error!("Failed to create PTY: {}", err);
+                let _ = tx
+                    .send(format!(
+                        "\r\n\u{1b}[1;31mFailed to create PTY: {}\u{1b}[0m\r\n",
+                        err
+                    ))
+                    .await;
+                return None;
+            }
+        };
+
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+        let path = format!("{}/.local/bin:/usr/local/bin:/usr/bin:/bin", home);
         
-        // Set environment for cleaner output
-        cmd_sh.env("PS1", "$ ");
-        cmd_sh.env("PS2", "> ");
-        cmd_sh.env("PS4", "");
-        cmd_sh.env("TERM", "dumb");
+        let mut cmd = CommandBuilder::new("zsh");
+        cmd.arg("-i");
+        cmd.arg("-l");  // Login shell to read /etc/profile and /etc/environment
+        cmd.env("PATH", path);
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("LANG", "en_US.UTF-8");
+        cmd.env("HOME", &home);
         
-        cmd_sh
+        // Spawn the shell process
+        if let Err(err) = pair.slave.spawn_command(cmd) {
+            error!("Failed to spawn zsh: {}", err);
+            let _ = tx
+                .send(format!(
+                    "\r\n\u{1b}[1;31mFailed to spawn zsh: {}\u{1b}[0m\r\n",
+                    err
+                ))
+                .await;
+            return None;
+        }
+
+        info!("PTY shell process spawned successfully");
+        
+        // Get reader and writer from the master side
+        let reader = pair.master.try_clone_reader().unwrap();
+        let writer = pair.master.take_writer().unwrap();
+        
+        Some(ShellSession::Pty { reader, writer })
     } else {
-        // Normal case: kubectl exec to pod
+        // Normal case: kubectl exec to pod with pipes
         let mut cmd = Command::new("kubectl");
         cmd.arg("exec")
             .arg("-i")
+            .arg("-t")  // Add -t for tty allocation
             .arg("-n")
             .arg(&query.namespace)
             .arg(&query.pod);
@@ -112,65 +166,65 @@ async fn spawn_exec_shell(
             cmd.arg("-c").arg(container);
         }
 
-        cmd.arg("--").arg("sh");
-        cmd
-    };
+        // Use zsh with interactive + login shell to load .zshrc
+        cmd.arg("--").arg("zsh").arg("-il");
+        
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-    cmd.stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        let mut child = match cmd.spawn() {
+            Ok(child) => {
+                info!("Kubectl exec process spawned successfully");
+                child
+            }
+            Err(err) => {
+                error!("Failed to spawn kubectl: {}", err);
+                let _ = tx
+                    .send(format!(
+                        "\r\n\u{1b}[1;31mFailed to start kubectl: {}\u{1b}[0m\r\n",
+                        err
+                    ))
+                    .await;
+                return None;
+            }
+        };
 
-    let mut child = match cmd.spawn() {
-        Ok(child) => {
-            info!("Shell process spawned successfully");
-            child
-        }
-        Err(err) => {
-            error!("Failed to spawn shell: {}", err);
-            let _ = tx
-                .send(format!(
-                    "\r\n\u{1b}[1;31mFailed to start shell: {}\u{1b}[0m\r\n",
-                    err
-                ))
-                .await;
-            return None;
-        }
-    };
+        let stdin = match child.stdin.take() {
+            Some(stdin) => stdin,
+            None => {
+                let _ = tx
+                    .send("\r\n\u{1b}[1;31mFailed to open stdin\u{1b}[0m\r\n".to_string())
+                    .await;
+                let _ = child.kill().await;
+                return None;
+            }
+        };
 
-    let child_stdin = match child.stdin.take() {
-        Some(stdin) => stdin,
-        None => {
-            let _ = tx
-                .send("\r\n\u{1b}[1;31mFailed to open stdin for shell\u{1b}[0m\r\n".to_string())
-                .await;
-            let _ = child.kill().await;
-            return None;
-        }
-    };
+        let stdout = match child.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                let _ = tx
+                    .send("\r\n\u{1b}[1;31mFailed to open stdout\u{1b}[0m\r\n".to_string())
+                    .await;
+                let _ = child.kill().await;
+                return None;
+            }
+        };
 
-    let child_stdout = match child.stdout.take() {
-        Some(stdout) => stdout,
-        None => {
-            let _ = tx
-                .send("\r\n\u{1b}[1;31mFailed to open stdout for shell\u{1b}[0m\r\n".to_string())
-                .await;
-            let _ = child.kill().await;
-            return None;
-        }
-    };
+        let stderr = match child.stderr.take() {
+            Some(stderr) => stderr,
+            None => {
+                let _ = tx
+                    .send("\r\n\u{1b}[1;31mFailed to open stderr\u{1b}[0m\r\n".to_string())
+                    .await;
+                let _ = child.kill().await;
+                return None;
+            }
+        };
 
-    let child_stderr = match child.stderr.take() {
-        Some(stderr) => stderr,
-        None => {
-            let _ = tx
-                .send("\r\n\u{1b}[1;31mFailed to open stderr for shell\u{1b}[0m\r\n".to_string())
-                .await;
-            let _ = child.kill().await;
-            return None;
-        }
-    };
-
-    Some((child, child_stdin, child_stdout, child_stderr))
+        Some(ShellSession::Piped { child, stdin, stdout, stderr })
+    }
 }
 
 fn spawn_output_tasks(
@@ -237,100 +291,158 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
         }
     });
 
-    let (mut child, mut child_stdin, child_stdout, child_stderr) =
-        match spawn_exec_shell(&query, &tx).await {
-            Some(parts) => parts,
-            None => {
-                ws_send_task.abort();
-                return;
-            }
-        };
+    let session = match spawn_exec_shell(&query, &tx).await {
+        Some(session) => session,
+        None => {
+            ws_send_task.abort();
+            return;
+        }
+    };
 
-    // Don't send connection status message - just start the shell
-    // The terminal component will show its own connection message
+    match session {
+        ShellSession::Pty { reader, writer } => {
+            handle_pty_session(ws_receiver, reader, writer, tx.clone()).await;
+        }
+        ShellSession::Piped { mut child, mut stdin, stdout, stderr } => {
+            let (mut stdout_task, mut stderr_task) = spawn_output_tasks(stdout, stderr, tx.clone());
 
-    let (mut stdout_task, mut stderr_task) = spawn_output_tasks(child_stdout, child_stderr, tx.clone());
+            while let Some(message) = ws_receiver.next().await {
+                match message {
+                    Ok(Message::Text(text)) => {
+                        if text == "\u{3}" {
+                            let _ = child.kill().await;
+                            stdout_task.abort();
+                            stderr_task.abort();
 
-    while let Some(message) = ws_receiver.next().await {
-        match message {
-            Ok(Message::Text(text)) => {
-                if text == "\u{3}" {
-                    let _ = child.kill().await;
-                    stdout_task.abort();
-                    stderr_task.abort();
+                            let _ = tx.send("\r\n^C\r\n".to_string()).await;
 
-                    let _ = tx.send("\r\n^C\r\n".to_string()).await;
+                            match spawn_exec_shell(&query, &tx).await {
+                                Some(ShellSession::Piped { child: new_child, stdin: new_stdin, stdout: new_stdout, stderr: new_stderr }) => {
+                                    child = new_child;
+                                    stdin = new_stdin;
+                                    let tasks = spawn_output_tasks(new_stdout, new_stderr, tx.clone());
+                                    stdout_task = tasks.0;
+                                    stderr_task = tasks.1;
+                                    continue;
+                                }
+                                _ => break,
+                            }
+                        }
 
-                    let (new_child, mut new_stdin, new_stdout, new_stderr) =
-                        match spawn_exec_shell(&query, &tx).await {
-                            Some(parts) => parts,
-                            None => break,
-                        };
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                            if json
+                                .get("type")
+                                .and_then(|value| value.as_str())
+                                .is_some_and(|value| value == "resize")
+                            {
+                                continue;
+                            }
+                        }
 
-                    if new_stdin
-                        .write_all(b"printf '__PTK_PWD__%s__PTK_END__' \"$PWD\"\n")
-                        .await
-                        .is_err()
-                    {
+                        // xterm sends Enter as "\r"; kubectl expects "\r".
+                        if stdin.write_all(text.as_bytes()).await.is_err() {
+                            error!("Failed to write to stdin");
+                            break;
+                        }
+
+                        if let Err(e) = stdin.flush().await {
+                            error!("Failed to flush stdin: {}", e);
+                            break;
+                        }
+                    }
+                    Ok(Message::Binary(data)) => {
+                        if stdin.write_all(&data).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(Message::Close(_)) => break,
+                    Ok(Message::Ping(_)) => {}
+                    Ok(Message::Pong(_)) => {}
+                    Err(err) => {
+                        warn!("Exec websocket receive error: {}", err);
                         break;
                     }
-                    let _ = new_stdin.flush().await;
-
-                    child = new_child;
-                    child_stdin = new_stdin;
-                    let tasks = spawn_output_tasks(new_stdout, new_stderr, tx.clone());
-                    stdout_task = tasks.0;
-                    stderr_task = tasks.1;
-                    continue;
-                }
-
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if json
-                        .get("type")
-                        .and_then(|value| value.as_str())
-                        .is_some_and(|value| value == "resize")
-                    {
-                        continue;
-                    }
-                }
-
-                // xterm sends Enter as "\r"; shell over pipes expects "\n".
-                let normalized = text.replace('\r', "\n");
-
-                if child_stdin.write_all(normalized.as_bytes()).await.is_err() {
-                    error!("Failed to write to shell stdin");
-                    break;
-                }
-
-                if let Err(e) = child_stdin.flush().await {
-                    error!("Failed to flush stdin: {}", e);
-                    break;
                 }
             }
-            Ok(Message::Binary(data)) => {
-                if child_stdin.write_all(&data).await.is_err() {
-                    break;
-                }
-            }
-            Ok(Message::Close(_)) => break,
-            Ok(Message::Ping(_)) => {}
-            Ok(Message::Pong(_)) => {}
-            Err(err) => {
-                warn!("Exec websocket receive error: {}", err);
-                break;
-            }
+
+            let _ = child.kill().await;
+            stdout_task.abort();
+            stderr_task.abort();
         }
     }
 
-    let _ = child.kill().await;
-    stdout_task.abort();
-    stderr_task.abort();
     ws_send_task.abort();
 
     info!(
         "Exec websocket closed: namespace={}, pod={}, container={:?}",
         query.namespace, query.pod, query.container
     );
+}
+
+async fn handle_pty_session(
+    mut ws_receiver: futures_util::stream::SplitStream<WebSocket>,
+    mut reader: Box<dyn std::io::Read + Send>,
+    mut writer: Box<dyn std::io::Write + Send>,
+    tx: tokio::sync::mpsc::Sender<String>,
+) {
+    // PTY output reading task (blocking I/O in separate thread)
+    let read_task = tokio::task::spawn_blocking(move || {
+        let mut buffer = [0u8; 4096];
+        
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let output = String::from_utf8_lossy(&buffer[..n]).to_string();
+                    if tx.blocking_send(output).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    // Handle WebSocket messages
+    while let Some(message) = ws_receiver.next().await {
+        match message {
+            Ok(Message::Text(text)) => {
+                // Handle resize messages (PTY resize not available without storing PtyMaster)
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if json.get("type").and_then(|v| v.as_str()) == Some("resize") {
+                        // PTY resize would require keeping the PtyMaster reference
+                        // For now, just skip resize messages
+                        continue;
+                    }
+                }
+
+                // Write input to PTY
+                if let Err(e) = writer.write_all(text.as_bytes()) {
+                    error!("Failed to write to PTY: {}", e);
+                    break;
+                }
+                if let Err(e) = writer.flush() {
+                    error!("Failed to flush PTY: {}", e);
+                    break;
+                }
+            }
+            Ok(Message::Binary(data)) => {
+                if let Err(e) = writer.write_all(&data) {
+                    error!("Failed to write binary to PTY: {}", e);
+                    break;
+                }
+                let _ = writer.flush();
+            }
+            Ok(Message::Close(_)) => break,
+            Ok(Message::Ping(_)) | Ok(Message::Pong(_)) => {}
+            Err(err) => {
+                warn!("PTY websocket receive error: {}", err);
+                break;
+            }
+        }
+    }
+
+    read_task.abort();
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState) {

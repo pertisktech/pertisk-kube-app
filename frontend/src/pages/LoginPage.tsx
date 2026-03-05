@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { Moon, Shield, Sun } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { setAuth } from '../utils/auth';
+import { APP_VERSION } from '../utils/version';
 import styles from './LoginPage.module.css';
 
 interface LoginPageProps {
@@ -108,6 +109,10 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
           </button>
         </form>
       </div>
+
+      <footer className={styles.footer}>
+        <p className={styles.version}>Pertisk Kube v{APP_VERSION}</p>
+      </footer>
     </div>
   );
 };

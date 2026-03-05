@@ -1,8 +1,12 @@
 # Multi-stage Dockerfile for Pertisk Kube Web
 # Builds both frontend and backend in a single image
 
+# Build arguments
+ARG VERSION=0.0.1
+
 # Stage 1: Build Frontend
 FROM node:20-alpine AS frontend-builder
+ARG VERSION
 WORKDIR /app/frontend
 
 # Copy frontend package files
@@ -16,7 +20,7 @@ COPY frontend/index.html ./
 COPY frontend/src ./src
 COPY frontend/public ./public
 
-RUN npm run build
+RUN VITE_APP_VERSION=${VERSION} npm run build
 
 # Stage 2: Build Backend
 FROM rust:alpine AS backend-builder
@@ -49,7 +53,14 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend_dist
 # Build the backend
 RUN cargo build --release --bin pertisk-kube-backend
 
-# Stage 3: Runtime
+# Stage 3: Build ktail from source (portable across architectures)
+FROM golang:1.22-alpine AS ktail-builder
+WORKDIR /src
+RUN apk add --no-cache git
+RUN git clone --depth=1 --branch v1.4.0 https://github.com/atombender/ktail.git . && \
+  go build -o /out/ktail .
+
+# Stage 4: Runtime
 FROM alpine:latest
 WORKDIR /app
 ARG TARGETARCH
@@ -67,14 +78,14 @@ RUN apk add --no-cache \
     font-freefont \
     && adduser -D -u 65532 appuser
 
-# Install ktail CLI (multi-arch)
-RUN case "${TARGETARCH}" in \
-        amd64) KTAIL_URL="https://github.com/atombender/ktail/releases/download/v1.4.0/ktail-linux-amd64" ;; \
-        arm64|arm) KTAIL_URL="https://github.com/atombender/ktail/releases/download/v1.4.0/ktail-linux-arm" ;; \
-        *) echo "Unsupported TARGETARCH: ${TARGETARCH}" && exit 1 ;; \
-    esac && \
-    wget -O /usr/local/bin/ktail "${KTAIL_URL}" && \
-    chmod +x /usr/local/bin/ktail
+# Set system-wide PATH to include /usr/local/bin for all shells
+RUN echo 'export PATH=/usr/local/bin:/usr/bin:/bin' >> /etc/profile && \
+    echo 'export PATH=/usr/local/bin:/usr/bin:/bin' > /etc/zsh/zshenv
+
+# Install ktail from source-built artifact
+COPY --from=ktail-builder /out/ktail /usr/local/bin/ktail
+RUN chmod +x /usr/local/bin/ktail && \
+  ln -sf /usr/local/bin/ktail /usr/bin/ktail
 
 # Install Nerd Font (Meslo LG)
 RUN mkdir -p /home/appuser/.local/share/fonts && \
@@ -85,37 +96,37 @@ RUN mkdir -p /home/appuser/.local/share/fonts && \
     rm Meslo.zip && \
     chown -R appuser:appuser /home/appuser/.local
 
-# Install oh-my-zsh for appuser
-RUN HOME=/home/appuser sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
-    chown -R appuser:appuser /home/appuser
+# Install Oh-My-Zsh and plugins
+RUN HOME=/home/appuser sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || true && \
+    git clone https://github.com/zsh-users/zsh-syntax-highlighting.git /home/appuser/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting && \
+    git clone https://github.com/zsh-users/zsh-autosuggestions.git /home/appuser/.oh-my-zsh/custom/plugins/zsh-autosuggestions && \
+    chown -R appuser:appuser /home/appuser/.oh-my-zsh && \
+    chown -R appuser:appuser /home/appuser/.zshrc
 
-# Install powerlevel10k theme
-RUN git clone --depth=1 https://github.com/romkatv/powerlevel10k.git /home/appuser/.oh-my-zsh/custom/themes/powerlevel10k && \
-    chown -R appuser:appuser /home/appuser/.oh-my-zsh
+# Configure .zshrc with proper shell syntax
+RUN /bin/sh -c ' \
+printf "%s\n" \
+  "# Path configuration - must be first" \
+  "export PATH=\"/usr/local/bin:/usr/bin:/bin:\$PATH\"" \
+  "" \
+  "# Oh-My-Zsh configuration" \
+  "export ZSH=\"\$HOME/.oh-my-zsh\"" \
+    "ZSH_THEME=\"robbyrussell\"" \
+  "plugins=(git zsh-syntax-highlighting zsh-autosuggestions kubectl docker docker-compose)" \
+  "ZSH_DISABLE_COMPFIX=true" \
+  "" \
+  "# Load Oh-My-Zsh" \
+  "source \$ZSH/oh-my-zsh.sh" \
+  "" \
+  "# History options" \
+  "setopt HIST_IGNORE_DUPS" \
+  "setopt HIST_IGNORE_SPACE" \
+    "setopt HIST_FIND_NO_DUPS" \
+  > /home/appuser/.zshrc \
+' && chmod 644 /home/appuser/.zshrc && chown appuser:appuser /home/appuser/.zshrc
 
-# Set zsh as default shell and configure oh-my-zsh
-RUN sed -i 's/^ZSH_THEME=.*/ZSH_THEME="powerlevel10k\/powerlevel10k"/' /home/appuser/.zshrc && \
-    chown -R appuser:appuser /home/appuser
-
-# Create minimal zsh config for web terminal (non-PTY environments)
-RUN mkdir -p /tmp/.zsh-terminal && \
-    echo '# Minimal zsh config for web terminal' > /tmp/.zsh-terminal/.zshrc && \
-    echo '# Disable all prompts and interactive features' >> /tmp/.zsh-terminal/.zshrc && \
-    echo 'setopt NO_PROMPT_CR' >> /tmp/.zsh-terminal/.zshrc && \
-    echo 'setopt NO_PROMPT_SP' >> /tmp/.zsh-terminal/.zshrc && \
-    echo 'unsetopt PROMPT_CR' >> /tmp/.zsh-terminal/.zshrc && \
-    echo 'unsetopt PROMPT_SP' >> /tmp/.zsh-terminal/.zshrc && \
-    echo 'unsetopt zle' >> /tmp/.zsh-terminal/.zshrc && \
-    echo 'TERM=dumb' >> /tmp/.zsh-terminal/.zshrc && \
-    echo '# Simple prompt' >> /tmp/.zsh-terminal/.zshrc && \
-    echo 'PS1="$ "' >> /tmp/.zsh-terminal/.zshrc && \
-    echo 'PS2="> "' >> /tmp/.zsh-terminal/.zshrc && \
-    echo 'PS3=""' >> /tmp/.zsh-terminal/.zshrc && \
-    echo 'PS4=""' >> /tmp/.zsh-terminal/.zshrc && \
-    echo '# Disable fancy features' >> /tmp/.zsh-terminal/.zshrc && \
-    echo 'DISABLE_AUTO_TITLE="true"' >> /tmp/.zsh-terminal/.zshrc && \
-    echo 'DISABLE_AUTO_UPDATE="true"' >> /tmp/.zsh-terminal/.zshrc && \
-    chmod 644 /tmp/.zsh-terminal/.zshrc
+# Set zsh as default shell for appuser
+RUN sed -i 's|appuser:.*|appuser:x:65532:65532:appuser:/home/appuser:/bin/zsh|' /etc/passwd
 
 # Copy the backend binary
 COPY --from=backend-builder /app/target/release/pertisk-kube-backend .
