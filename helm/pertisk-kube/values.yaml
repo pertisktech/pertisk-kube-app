@@ -105,6 +105,7 @@ rbac:
       resources:
         [
           "pods",
+          "pods/log",
           "services",
           "nodes",
           "namespaces",

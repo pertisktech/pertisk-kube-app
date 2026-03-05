@@ -83,7 +83,7 @@ rbac:
   serviceAccountName: pertisk-kube-sa
   rules:
     - apiGroups: [""]
-      resources: ["pods", "services", "nodes", "namespaces", "events", "persistentvolumeclaims", "persistentvolumes"]
+      resources: ["pods", "pods/log", "services", "nodes", "namespaces", "events", "persistentvolumeclaims", "persistentvolumes"]
       verbs: ["get", "list", "watch"]
     - apiGroups: ["apps"]
       resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
