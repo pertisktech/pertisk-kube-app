@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-K3S_KUBECONFIG ?= /Users/nat/.kube/talos-omni-hz-cluister-kubeconfig.yaml
+K3S_KUBECONFIG ?= /Users/dotnetnat/.kube/talos-omni-hz-cluister-kubeconfig.yaml
 VERSION ?= $(shell git describe --tags --always 2>/dev/null | sed 's/^v//' || echo "0.0.1")
 DOCKER_REGISTRY ?= harbor.tools.thaidevops.co
 DOCKER_IMAGE ?= $(DOCKER_REGISTRY)/pertisksoft/pertisk-kube/web
@@ -47,6 +47,14 @@ run-monolith: frontend-build
 
 # Simulate running as an ingress-style controller talking to k3s/k8s via kubeconfig.
 run-ingress-k3s: tools frontend-build
+	@pkill -f "cargo-watch watch -x run -p pertisk-kube-backend" 2>/dev/null || true
+	@pkill -f "target/debug/pertisk-kube-backend" 2>/dev/null || true
+	@EXISTING_PIDS=$$(lsof -ti:8091 -ti:50051 2>/dev/null | sort -u); \
+	if [ -n "$$EXISTING_PIDS" ]; then \
+		echo "Stopping existing process(es) on ports 8091/50051: $$EXISTING_PIDS"; \
+		echo "$$EXISTING_PIDS" | xargs kill -9; \
+		sleep 1; \
+	fi
 	@echo "Starting frontend build watcher (npm install && npm run build -- --watch)..."
 	@$(MAKE) frontend-build-watch & FRONTEND_WATCH_PID=$$!; \
 	trap 'kill $$FRONTEND_WATCH_PID 2>/dev/null || true' INT TERM EXIT; \

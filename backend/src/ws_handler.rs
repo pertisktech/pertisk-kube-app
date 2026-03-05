@@ -83,30 +83,50 @@ async fn spawn_exec_shell(
         query.namespace, query.pod, query.container
     );
 
-    let mut cmd = Command::new("kubectl");
-    cmd.arg("exec")
-        .arg("-i")
-        .arg("-n")
-        .arg(&query.namespace)
-        .arg(&query.pod);
+    let mut cmd = if query.namespace == "host" && query.pod == "host" {
+        // Special case: connect to host shell
+        info!("Connecting to host shell");
+        
+        // Use sh without -i flag (no job control needed for web terminal)
+        // Just pipe commands in and get output back
+        let mut cmd_sh = Command::new("sh");
+        // No flags - just plain shell reading from stdin
+        
+        // Set environment for cleaner output
+        cmd_sh.env("PS1", "$ ");
+        cmd_sh.env("PS2", "> ");
+        cmd_sh.env("PS4", "");
+        cmd_sh.env("TERM", "dumb");
+        
+        cmd_sh
+    } else {
+        // Normal case: kubectl exec to pod
+        let mut cmd = Command::new("kubectl");
+        cmd.arg("exec")
+            .arg("-i")
+            .arg("-n")
+            .arg(&query.namespace)
+            .arg(&query.pod);
 
-    if let Some(container) = &query.container {
-        cmd.arg("-c").arg(container);
-    }
+        if let Some(container) = &query.container {
+            cmd.arg("-c").arg(container);
+        }
 
-    cmd.arg("--")
-        .arg("sh")
-        .stdin(Stdio::piped())
+        cmd.arg("--").arg("sh");
+        cmd
+    };
+
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     let mut child = match cmd.spawn() {
         Ok(child) => {
-            info!("kubectl exec process spawned successfully");
+            info!("Shell process spawned successfully");
             child
         }
         Err(err) => {
-            error!("Failed to spawn kubectl exec: {}", err);
+            error!("Failed to spawn shell: {}", err);
             let _ = tx
                 .send(format!(
                     "\r\n\u{1b}[1;31mFailed to start shell: {}\u{1b}[0m\r\n",
@@ -226,21 +246,8 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
             }
         };
 
-    let _ = tx
-        .send(format!(
-            "\u{1b}[1;32mConnected shell: {}/{}\u{1b}[0m\r\n",
-            query.namespace, query.pod
-        ))
-        .await;
-
-    // In non-interactive mode, send initial marker to prime the connection
-    if let Err(err) = child_stdin.write_all(b":\n").await {
-        error!("Failed to prime shell stdin: {}", err);
-        let _ = child.kill().await;
-        ws_send_task.abort();
-        return;
-    }
-    let _ = child_stdin.flush().await;
+    // Don't send connection status message - just start the shell
+    // The terminal component will show its own connection message
 
     let (mut stdout_task, mut stderr_task) = spawn_output_tasks(child_stdout, child_stderr, tx.clone());
 

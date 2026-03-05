@@ -48,6 +48,7 @@ export const App = () => {
         <Routes>
           <Route element={<Layout username={authUser} onLogout={handleLogout} />}>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/terminal" element={null} />
           <Route path="/namespaces" element={<NamespacesPage />} />
           <Route path="/nodes" element={<NodesPage />} />
           <Route path="/pods" element={<PodsPage />} />

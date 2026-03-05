@@ -26,7 +26,7 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
     const xterm = new XTerm({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      fontFamily: '"MesloLGS NF", Menlo, Monaco, "Courier New", monospace',
       allowProposedApi: true,
       rows: 30,
       cols: 120,
@@ -105,8 +105,19 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
     const pwdMarkerStart = '__PTK_PWD__';
     const pwdMarkerEnd = '__PTK_END__';
 
+    const renderPromptPath = (path: string) => {
+      const normalized = path?.trim() || '/';
+      const homeDir = '/home/appuser';
+      if (normalized === homeDir) return '~';
+      if (normalized.startsWith(`${homeDir}/`)) {
+        return `~/${normalized.slice(homeDir.length + 1)}`;
+      }
+      return normalized;
+    };
+
     const writePrompt = () => {
-      xterm.write(`${currentPath} $ `);
+      const promptPath = renderPromptPath(currentPath);
+      xterm.write(`\x1b[38;5;76m➜\x1b[0m  \x1b[38;5;39m${promptPath}\x1b[0m `);
     };
 
     const handleCtrlC = () => {
@@ -206,28 +217,32 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
         return;
       }
 
-      if (data === '\r') {
-        xterm.write('\r\n');
-        ws.send(`${commandBuffer}\nprintf '${pwdMarkerStart}%s${pwdMarkerEnd}' "$PWD"\n`);
-        commandBuffer = '';
-        return;
-      }
-
-      if (data === '\x7f') {
-        if (commandBuffer.length > 0) {
-          commandBuffer = commandBuffer.slice(0, -1);
-          xterm.write('\b \b');
+      for (const ch of data) {
+        if (ch === '\r' || ch === '\n') {
+          xterm.write('\r\n');
+          ws.send(`${commandBuffer}\nprintf '${pwdMarkerStart}%s${pwdMarkerEnd}' "$PWD"\n`);
+          commandBuffer = '';
+          continue;
         }
-        return;
-      }
 
-      if (data === '\u0003') return;
+        if (ch === '\x7f') {
+          if (commandBuffer.length > 0) {
+            commandBuffer = commandBuffer.slice(0, -1);
+            xterm.write('\b \b');
+          }
+          continue;
+        }
 
-      const code = data.length === 1 ? data.charCodeAt(0) : -1;
-      const isPrintable = data.length === 1 && code >= 32 && code !== 127;
-      if (isPrintable) {
-        commandBuffer += data;
-        xterm.write(data);
+        if (ch === '\u0003') {
+          continue;
+        }
+
+        const code = ch.charCodeAt(0);
+        const isPrintable = code >= 32 && code !== 127;
+        if (isPrintable) {
+          commandBuffer += ch;
+          xterm.write(ch);
+        }
       }
     });
 

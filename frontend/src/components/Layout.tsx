@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useNamespace } from '../context/NamespaceContext';
 import { useRealtimeNamespaces } from '../hooks/useRealtimeResources';
-import { useNamespaces } from '../hooks/useKubernetes';
+import { useNamespaces, usePods } from '../hooks/useKubernetes';
 import { Checkbox } from './Checkbox';
+import { Terminal as TerminalComponent } from './Terminal';
 import {
   ChevronDown,
   Menu,
@@ -33,6 +34,7 @@ import {
   Timer,
   SlidersHorizontal,
   Bell,
+  Terminal,
 } from 'lucide-react';
 import { cn } from '../utils';
 import { useTheme } from '../context/ThemeContext';
@@ -134,16 +136,42 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const [networkOpen, setNetworkOpen] = useState(false);
   const [helmOpen, setHelmOpen] = useState(false);
   const [accessControlOpen, setAccessControlOpen] = useState(false);
+  const [backendPod, setBackendPod] = useState<string>('host');
   const userMenuRef = useRef<HTMLDivElement>(null);
   const namespaceMenuRef = useRef<HTMLDivElement>(null);
   const theme = useTheme();
   const location = useLocation();
+  const navigate = useNavigate();
   const { selectedNamespaces, setSelectedNamespaces, toggleNamespace, clearNamespaces, namespaces, setNamespaces } = useNamespace();
   const { data: realtimeNamespaces } = useRealtimeNamespaces();
   const { data: apiNamespaces } = useNamespaces();
+  const { data: allPods } = usePods();
 
   // Hide namespace filter on Dashboard, Nodes, and Namespaces pages
   const shouldShowNamespaceFilter = location.pathname !== '/' && location.pathname !== '/nodes' && location.pathname !== '/namespaces';
+
+  // Connect to host machine or Kubernetes pod
+  useEffect(() => {
+    if (allPods && allPods.length > 0) {
+      // Running on Kubernetes - find the backend pod
+      const backendPods = allPods.filter(
+        (pod) => pod?.namespace === 'default' && pod?.name?.startsWith('pertisk-kube')
+      );
+      if (backendPods.length > 0 && backendPods[0]?.name) {
+        // Found running pod, use it
+        setBackendPod(backendPods[0].name);
+      } else {
+        // No pod found, fall back to host (local development)
+        setBackendPod('host');
+      }
+    } else if (allPods === undefined) {
+      // Still loading, don't set anything yet
+      return;
+    } else {
+      // No pods available, use host (local development)
+      setBackendPod('host');
+    }
+  }, [allPods]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -224,6 +252,11 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const hasActiveAccessControl = ACCESS_CONTROL_ITEMS.some((item) => isActive(item.path));
 
   const breadcrumbs = (() => {
+    // Show Terminal breadcrumb if on terminal route
+    if (location.pathname === '/terminal') {
+      return [{ label: 'Terminal', icon: Terminal }] as BreadcrumbItem[];
+    }
+
     const pathname = location.pathname;
 
     if (pathname === '/') {
@@ -323,12 +356,12 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 bg-sidebar border-r border-border shadow-lg overflow-y-auto transition-all duration-300 md:relative md:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 bg-sidebar border-r border-border shadow-lg overflow-y-auto transition-all duration-300 md:relative md:translate-x-0 flex flex-col',
           sidebarCollapsed ? 'w-[72px]' : 'w-64',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="p-4">
+        <div className="flex-1 p-4 overflow-y-auto">
           <div className="flex items-center justify-between mb-8">
             {!sidebarCollapsed && <h1 className="text-lg font-bold text-primary">Pertisk Kube</h1>}
             <div className="flex items-center gap-1 ml-auto">
@@ -750,6 +783,22 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
             </div>
           </nav>
         </div>
+
+        {/* Terminal button at bottom */}
+        <div className="p-4 border-t border-border">
+          <button
+            onClick={() => navigate('/terminal')}
+            className={cn(
+              'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+              sidebarCollapsed && 'justify-center px-2',
+              'text-text-secondary hover:bg-hover hover:text-text'
+            )}
+            title="Open Terminal"
+          >
+            <Terminal size={18} className="flex-shrink-0" />
+            {!sidebarCollapsed && <span>Terminal</span>}
+          </button>
+        </div>
       </aside>
 
       {/* Main content */}
@@ -910,7 +959,24 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
 
         {/* Content */}
         <main className="flex-1 overflow-auto bg-bg p-6">
-          <Outlet />
+          {location.pathname === '/terminal' ? (
+            <div className="h-full w-full bg-bg rounded-lg border border-border flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                <h2 className="text-lg font-semibold text-text">Terminal</h2>
+              </div>
+              <div className="flex-1 overflow-auto">
+                {backendPod && (
+                  <TerminalComponent
+                    podName={backendPod}
+                    namespace={backendPod === 'host' ? 'host' : 'default'}
+                    onClose={() => navigate(-1)}
+                  />
+                )}
+              </div>
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
     </div>
