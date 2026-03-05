@@ -181,6 +181,88 @@ struct CronJobItem {
     age: String,
 }
 
+// Config Resources Structs
+#[derive(Serialize)]
+struct ConfigMapItem {
+    name: String,
+    namespace: String,
+    data_keys: usize,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct SecretItem {
+    name: String,
+    namespace: String,
+    secret_type: String,
+    data_keys: usize,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct ResourceQuotaItem {
+    name: String,
+    namespace: String,
+    status: String,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct LimitRangeItem {
+    name: String,
+    namespace: String,
+    limits: usize,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct HPAItem {
+    name: String,
+    namespace: String,
+    reference: String,
+    targets: usize,
+    current_replicas: i32,
+    desired_replicas: i32,
+    min_replicas: i32,
+    max_replicas: i32,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct PDBItem {
+    name: String,
+    namespace: String,
+    min_available: String,
+    allowed_disruptions: i32,
+    status: String,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct PriorityClassItem {
+    name: String,
+    value: i32,
+    global_default: bool,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct RuntimeClassItem {
+    name: String,
+    handler: String,
+    scheduling: String,
+    age: String,
+}
+
+#[derive(Serialize)]
+struct LeaseItem {
+    name: String,
+    namespace: String,
+    holder_identity: String,
+    lease_duration_seconds: i32,
+    age: String,
+}
+
 fn format_compact_duration(seconds: i64) -> String {
     if seconds < 60 {
         return format!("{}s", seconds);
@@ -434,6 +516,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/replicasets", get(list_replicasets))
         .route("/jobs", get(list_jobs))
         .route("/cronjobs", get(list_cronjobs))
+        .route("/configmaps", get(list_configmaps))
+        .route("/secrets", get(list_secrets))
+        .route("/resourcequotas", get(list_resourcequotas))
+        .route("/limitranges", get(list_limitranges))
+        .route("/hpa", get(list_hpa))
+        .route("/pdb", get(list_pdb))
+        .route("/priorityclasses", get(list_priorityclasses))
+        .route("/runtimeclasses", get(list_runtimeclasses))
+        .route("/leases", get(list_leases))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_basic_auth,
@@ -1644,6 +1735,390 @@ async fn get_dashboard_summary(State(state): State<AppState>) -> impl IntoRespon
         Ok(summary) => (StatusCode::OK, Json(summary)).into_response(),
         Err(err) => {
             error!("Error building dashboard summary: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// Config Resource Handlers
+async fn list_configmaps(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ConfigMap;
+
+    let api: Api<ConfigMap> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<ConfigMapItem> = list
+                .items
+                .into_iter()
+                .map(|cm| {
+                    let name = cm.metadata.name.unwrap_or_default();
+                    let namespace = cm.metadata.namespace.unwrap_or_else(|| "default".into());
+                    let data_keys = cm.data.as_ref().map(|d| d.len()).unwrap_or(0);
+                    let age = cm
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    ConfigMapItem {
+                        name,
+                        namespace,
+                        data_keys,
+                        age,
+                    }
+                })
+                .collect();
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing configmaps: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_secrets(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Secret;
+
+    let api: Api<Secret> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<SecretItem> = list
+                .items
+                .into_iter()
+                .map(|secret| {
+                    let name = secret.metadata.name.unwrap_or_default();
+                    let namespace = secret.metadata.namespace.unwrap_or_else(|| "default".into());
+                    let secret_type = secret.type_.unwrap_or_default();
+                    let data_keys = secret.data.as_ref().map(|d| d.len()).unwrap_or(0);
+                    let age = secret
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    SecretItem {
+                        name,
+                        namespace,
+                        secret_type,
+                        data_keys,
+                        age,
+                    }
+                })
+                .collect();
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing secrets: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_resourcequotas(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ResourceQuota;
+
+    let api: Api<ResourceQuota> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<ResourceQuotaItem> = list
+                .items
+                .into_iter()
+                .map(|rq| {
+                    let name = rq.metadata.name.unwrap_or_default();
+                    let namespace = rq.metadata.namespace.unwrap_or_else(|| "default".into());
+                    let status = "Active".to_string();
+                    let age = rq
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    ResourceQuotaItem {
+                        name,
+                        namespace,
+                        status,
+                        age,
+                    }
+                })
+                .collect();
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing resourcequotas: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_limitranges(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::LimitRange;
+
+    let api: Api<LimitRange> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<LimitRangeItem> = list
+                .items
+                .into_iter()
+                .map(|lr| {
+                    let name = lr.metadata.name.unwrap_or_default();
+                    let namespace = lr.metadata.namespace.unwrap_or_else(|| "default".into());
+                    let limits = if let Some(spec) = lr.spec.as_ref() {
+                        spec.limits.len()
+                    } else {
+                        0
+                    };
+                    let age = lr
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    LimitRangeItem {
+                        name,
+                        namespace,
+                        limits,
+                        age,
+                    }
+                })
+                .collect();
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing limitranges: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_hpa(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
+
+    let api: Api<HorizontalPodAutoscaler> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<HPAItem> = list
+                .items
+                .into_iter()
+                .map(|hpa| {
+                    let name = hpa.metadata.name.unwrap_or_default();
+                    let namespace = hpa.metadata.namespace.unwrap_or_else(|| "default".into());
+                    let spec = hpa.spec.as_ref();
+                    let status = hpa.status.as_ref();
+                    let reference = spec
+                        .map(|s| format!("{}/{}", s.scale_target_ref.kind, s.scale_target_ref.name))
+                        .unwrap_or_default();
+                    let min_replicas = spec.and_then(|s| s.min_replicas).unwrap_or(1);
+                    let max_replicas = spec.map(|s| s.max_replicas).unwrap_or(0);
+                    let targets = spec
+                        .and_then(|s| s.metrics.as_ref())
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    let current_replicas = status.and_then(|s| s.current_replicas).unwrap_or(0);
+                    let desired_replicas = status.map(|s| s.desired_replicas).unwrap_or(0);
+                    let age = hpa
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    HPAItem {
+                        name,
+                        namespace,
+                        reference,
+                        targets,
+                        current_replicas,
+                        desired_replicas,
+                        min_replicas,
+                        max_replicas,
+                        age,
+                    }
+                })
+                .collect();
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing hpa: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_pdb(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::policy::v1::PodDisruptionBudget;
+
+    let api: Api<PodDisruptionBudget> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<PDBItem> = list
+                .items
+                .into_iter()
+                .map(|pdb| {
+                    let name = pdb.metadata.name.unwrap_or_default();
+                    let namespace = pdb.metadata.namespace.unwrap_or_else(|| "default".into());
+                    let spec = pdb.spec.as_ref();
+                    let min_available = spec
+                        .and_then(|s| s.min_available.as_ref())
+                        .map(|m| format!("{:?}", m))
+                        .unwrap_or_default();
+                    let allowed_disruptions = pdb
+                        .status
+                        .as_ref()
+                        .map(|s| s.disruptions_allowed)
+                        .unwrap_or(0);
+                    let status = if allowed_disruptions > 0 {
+                        "Healthy".to_string()
+                    } else {
+                        "Unhealthy".to_string()
+                    };
+                    let age = pdb
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    PDBItem {
+                        name,
+                        namespace,
+                        min_available,
+                        allowed_disruptions,
+                        status,
+                        age,
+                    }
+                })
+                .collect();
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing pdb: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_priorityclasses(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::scheduling::v1::PriorityClass;
+
+    let api: Api<PriorityClass> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<PriorityClassItem> = list
+                .items
+                .into_iter()
+                .map(|pc| {
+                    let name = pc.metadata.name.unwrap_or_default();
+                    let value = pc.value;
+                    let global_default = pc.global_default.unwrap_or(false);
+                    let age = pc
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    PriorityClassItem {
+                        name,
+                        value,
+                        global_default,
+                        age,
+                    }
+                })
+                .collect();
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing priorityclasses: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_runtimeclasses(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::node::v1::RuntimeClass;
+
+    let api: Api<RuntimeClass> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<RuntimeClassItem> = list
+                .items
+                .into_iter()
+                .map(|rc| {
+                    let name = rc.metadata.name.unwrap_or_default();
+                    let handler = rc.handler;
+                    let scheduling = rc
+                        .scheduling
+                        .as_ref()
+                        .map(|_| "Configured".into())
+                        .unwrap_or_default();
+                    let age = rc
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    RuntimeClassItem {
+                        name,
+                        handler,
+                        scheduling,
+                        age,
+                    }
+                })
+                .collect();
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing runtimeclasses: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn list_leases(State(state): State<AppState>) -> impl IntoResponse {
+    use k8s_openapi::api::coordination::v1::Lease;
+
+    let api: Api<Lease> = Api::all(state.client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<LeaseItem> = list
+                .items
+                .into_iter()
+                .map(|lease| {
+                    let name = lease.metadata.name.unwrap_or_default();
+                    let namespace = lease.metadata.namespace.unwrap_or_else(|| "default".into());
+                    let spec = lease.spec.as_ref();
+                    let holder_identity = spec
+                        .and_then(|s| s.holder_identity.clone())
+                        .unwrap_or_default();
+                    let lease_duration_seconds = spec
+                        .and_then(|s| s.lease_duration_seconds)
+                        .unwrap_or(0);
+                    let age = lease
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+                    LeaseItem {
+                        name,
+                        namespace,
+                        holder_identity,
+                        lease_duration_seconds,
+                        age,
+                    }
+                })
+                .collect();
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            error!("Error listing leases: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }

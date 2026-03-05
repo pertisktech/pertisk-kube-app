@@ -137,3 +137,76 @@ export interface ApiResponse<T> {
   data: T[];
   total: number;
 }
+
+// Config Resources
+export interface ConfigMap {
+  name: string;
+  namespace: string;
+  data_keys: number;
+  age: string;
+}
+
+export interface Secret {
+  name: string;
+  namespace: string;
+  secret_type: string;
+  data_keys: number;
+  age: string;
+}
+
+export interface ResourceQuota {
+  name: string;
+  namespace: string;
+  status: string;
+  age: string;
+}
+
+export interface LimitRange {
+  name: string;
+  namespace: string;
+  limits: number;
+  age: string;
+}
+
+export interface HPA {
+  name: string;
+  namespace: string;
+  reference: string;
+  targets: number;
+  current_replicas: number;
+  desired_replicas: number;
+  min_replicas: number;
+  max_replicas: number;
+  age: string;
+}
+
+export interface PDB {
+  name: string;
+  namespace: string;
+  min_available: string;
+  allowed_disruptions: number;
+  status: string;
+  age: string;
+}
+
+export interface PriorityClass {
+  name: string;
+  value: number;
+  global_default: boolean;
+  age: string;
+}
+
+export interface RuntimeClass {
+  name: string;
+  handler: string;
+  scheduling: string;
+  age: string;
+}
+
+export interface Lease {
+  name: string;
+  namespace: string;
+  holder_identity: string;
+  lease_duration_seconds: number;
+  age: string;
+}

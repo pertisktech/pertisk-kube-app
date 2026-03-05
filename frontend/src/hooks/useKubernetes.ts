@@ -12,6 +12,15 @@ import type {
   K8sNode,
   DashboardSummary,
   ApiResponse,
+  ConfigMap,
+  Secret,
+  ResourceQuota,
+  LimitRange,
+  HPA,
+  PDB,
+  PriorityClass,
+  RuntimeClass,
+  Lease,
 } from '../types';
 import { getAuthToken } from '../utils/auth';
 
@@ -158,6 +167,115 @@ export const useDashboard = () => {
       if (!res.ok) throw new Error('Failed to fetch dashboard summary');
       const data = (await res.json()) as DashboardSummary;
       return data;
+    },
+  });
+};
+
+// Config Resources
+export const useConfigMaps = () => {
+  return useQuery({
+    queryKey: ['configmaps'],
+    queryFn: async () => {
+      const res = await apiFetch('/configmaps');
+      if (!res.ok) throw new Error('Failed to fetch configmaps');
+      const data = (await res.json()) as ApiResponse<ConfigMap>;
+      return data.data;
+    },
+  });
+};
+
+export const useSecrets = () => {
+  return useQuery({
+    queryKey: ['secrets'],
+    queryFn: async () => {
+      const res = await apiFetch('/secrets');
+      if (!res.ok) throw new Error('Failed to fetch secrets');
+      const data = (await res.json()) as ApiResponse<Secret>;
+      return data.data;
+    },
+  });
+};
+
+export const useResourceQuotas = () => {
+  return useQuery({
+    queryKey: ['resourcequotas'],
+    queryFn: async () => {
+      const res = await apiFetch('/resourcequotas');
+      if (!res.ok) throw new Error('Failed to fetch resourcequotas');
+      const data = (await res.json()) as ApiResponse<ResourceQuota>;
+      return data.data;
+    },
+  });
+};
+
+export const useLimitRanges = () => {
+  return useQuery({
+    queryKey: ['limitranges'],
+    queryFn: async () => {
+      const res = await apiFetch('/limitranges');
+      if (!res.ok) throw new Error('Failed to fetch limitranges');
+      const data = (await res.json()) as ApiResponse<LimitRange>;
+      return data.data;
+    },
+  });
+};
+
+export const useHPA = () => {
+  return useQuery({
+    queryKey: ['hpa'],
+    queryFn: async () => {
+      const res = await apiFetch('/hpa');
+      if (!res.ok) throw new Error('Failed to fetch hpa');
+      const data = (await res.json()) as ApiResponse<HPA>;
+      return data.data;
+    },
+  });
+};
+
+export const usePDB = () => {
+  return useQuery({
+    queryKey: ['pdb'],
+    queryFn: async () => {
+      const res = await apiFetch('/pdb');
+      if (!res.ok) throw new Error('Failed to fetch pdb');
+      const data = (await res.json()) as ApiResponse<PDB>;
+      return data.data;
+    },
+  });
+};
+
+export const usePriorityClasses = () => {
+  return useQuery({
+    queryKey: ['priorityclasses'],
+    queryFn: async () => {
+      const res = await apiFetch('/priorityclasses');
+      if (!res.ok) throw new Error('Failed to fetch priorityclasses');
+      const data = (await res.json()) as ApiResponse<PriorityClass>;
+      return data.data;
+    },
+  });
+};
+
+export const useRuntimeClasses = () => {
+  return useQuery({
+    queryKey: ['runtimeclasses'],
+    queryFn: async () => {
+      const res = await apiFetch('/runtimeclasses');
+      if (!res.ok) throw new Error('Failed to fetch runtimeclasses');
+      const data = (await res.json()) as ApiResponse<RuntimeClass>;
+      return data.data;
+    },
+  });
+};
+
+export const useLeases = () => {
+  return useQuery({
+    queryKey: ['leases'],
+    queryFn: async () => {
+      const res = await apiFetch('/leases');
+      if (!res.ok) throw new Error('Failed to fetch leases');
+      const data = (await res.json()) as ApiResponse<Lease>;
+      return data.data;
     },
   });
 };

@@ -21,6 +21,15 @@ import {
   NetworkResourcePage,
   StorageResourcePage,
   LoginPage,
+  ConfigMapsPage,
+  SecretsPage,
+  ResourceQuotasPage,
+  LimitRangesPage,
+  HPAPage,
+  PDBPage,
+  PriorityClassesPage,
+  RuntimeClassesPage,
+  LeasesPage,
 } from './pages';
 
 export const App = () => {
@@ -58,15 +67,15 @@ export const App = () => {
           <Route path="/replicasets" element={<ReplicaSetsPage />} />
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/cronjobs" element={<CronJobsPage />} />
-          <Route path="/config/configmaps" element={<ConfigResourcePage title="Config Maps" />} />
-          <Route path="/config/secrets" element={<ConfigResourcePage title="Secrets" />} />
-          <Route path="/config/resourcequotas" element={<ConfigResourcePage title="Resource Quotas" />} />
-          <Route path="/config/limitranges" element={<ConfigResourcePage title="Limit Ranges" />} />
-          <Route path="/config/hpa" element={<ConfigResourcePage title="HPA" />} />
-          <Route path="/config/pdb" element={<ConfigResourcePage title="PDB" />} />
-          <Route path="/config/priorityclasses" element={<ConfigResourcePage title="Priority CLasses" />} />
-          <Route path="/config/runtimeclasses" element={<ConfigResourcePage title="Runtime Classes" />} />
-          <Route path="/config/leases" element={<ConfigResourcePage title="Leases" />} />
+          <Route path="/config/configmaps" element={<ConfigMapsPage />} />
+          <Route path="/config/secrets" element={<SecretsPage />} />
+          <Route path="/config/resourcequotas" element={<ResourceQuotasPage />} />
+          <Route path="/config/limitranges" element={<LimitRangesPage />} />
+          <Route path="/config/hpa" element={<HPAPage />} />
+          <Route path="/config/pdb" element={<PDBPage />} />
+          <Route path="/config/priorityclasses" element={<PriorityClassesPage />} />
+          <Route path="/config/runtimeclasses" element={<RuntimeClassesPage />} />
+          <Route path="/config/leases" element={<LeasesPage />} />
           <Route path="/config/mwc" element={<ConfigResourcePage title="MWC" />} />
           <Route path="/config/vwc" element={<ConfigResourcePage title="VWC" />} />
           <Route path="/network" element={<NetworkResourcePage title="Network" />} />

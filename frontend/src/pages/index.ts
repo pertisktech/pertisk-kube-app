@@ -16,3 +16,13 @@ export { NetworkResourcePage } from './NetworkResourcePage';
 export { StoragePage } from './StoragePage';
 export { StorageResourcePage } from './StorageResourcePage';
 export { LoginPage } from './LoginPage';
+// Config Pages
+export { ConfigMapsPage } from './ConfigMapsPage';
+export { SecretsPage } from './SecretsPage';
+export { ResourceQuotasPage } from './ResourceQuotasPage';
+export { LimitRangesPage } from './LimitRangesPage';
+export { HPAPage } from './HPAPage';
+export { PDBPage } from './PDBPage';
+export { PriorityClassesPage } from './PriorityClassesPage';
+export { RuntimeClassesPage } from './RuntimeClassesPage';
+export { LeasesPage } from './LeasesPage';
