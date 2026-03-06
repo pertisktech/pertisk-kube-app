@@ -171,33 +171,32 @@ export const MetricsCharts = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <Card title="Metrics Overview">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Pod Status Distribution */}
-          <div className="flex flex-col items-center">
-            <h3 className="text-lg font-semibold text-text mb-4">Pod Status Distribution</h3>
-            <div style={{ position: 'relative', height: '300px', width: '100%' }}>
-              <Doughnut data={podStatusData} options={doughnutOptions} />
-            </div>
-          </div>
-
-          {/* Node Status Distribution */}
-          <div className="flex flex-col items-center">
-            <h3 className="text-lg font-semibold text-text mb-4">Node Status</h3>
-            <div style={{ position: 'relative', height: '300px', width: '100%' }}>
-              <Doughnut data={nodeStatusData} options={doughnutOptions} />
-            </div>
+    <Card title="Metrics Overview">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Pod Status Distribution */}
+        <div className="flex flex-col items-center">
+          <h3 className="text-lg font-semibold text-text mb-4">Pod Status Distribution</h3>
+          <div style={{ position: 'relative', height: '300px', width: '100%' }}>
+            <Doughnut data={podStatusData} options={doughnutOptions} />
           </div>
         </div>
-      </Card>
 
-      {/* Pod Distribution by Namespace */}
-      <Card title="Pod Distribution by Namespace">
-        <div style={{ position: 'relative', height: '350px', width: '100%' }}>
-          <Bar data={podDistributionData} options={chartOptions} />
+        {/* Node Status Distribution */}
+        <div className="flex flex-col items-center">
+          <h3 className="text-lg font-semibold text-text mb-4">Node Status</h3>
+          <div style={{ position: 'relative', height: '300px', width: '100%' }}>
+            <Doughnut data={nodeStatusData} options={doughnutOptions} />
+          </div>
         </div>
-      </Card>
-    </div>
+
+        {/* Pod Distribution by Namespace */}
+        <div className="flex flex-col items-center">
+          <h3 className="text-lg font-semibold text-text mb-4">Pods by Namespace</h3>
+          <div style={{ position: 'relative', height: '300px', width: '100%' }}>
+            <Bar data={podDistributionData} options={chartOptions} />
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 };

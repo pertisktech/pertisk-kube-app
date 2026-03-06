@@ -45,6 +45,19 @@
   --color-icon-warning: #f59e0b;
   --color-icon-danger: #ef4444;
   --color-icon-info: #0ea5e9;
+  /* Dashboard status and metric colors - Dark mode */
+  --color-dashboard-success: #34d399;
+  --color-dashboard-success-bg: rgba(52, 211, 153, 0.1);
+  --color-dashboard-warning: #fbbf24;
+  --color-dashboard-warning-bg: rgba(251, 191, 36, 0.1);
+  --color-dashboard-danger: #f87171;
+  --color-dashboard-danger-bg: rgba(248, 113, 113, 0.1);
+  --color-dashboard-info: #38bdf8;
+  --color-dashboard-info-bg: rgba(56, 189, 248, 0.1);
+  --color-dashboard-metric-primary: #ff8b59;
+  --color-dashboard-metric-secondary: #7c3aed;
+  --color-dashboard-metric-tertiary: #ec4899;
+  --color-dashboard-metric-quaternary: #06b6d4;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -68,12 +81,38 @@ html.dark {
   --shadow-sidebar: 0 0 0 1px rgba(31, 34, 46, 0.95), 8px 0 24px rgba(0, 0, 0, 0.32);
   --error: #f87171;
   --warn: #fbbf24;
+  /* Dashboard status and metric colors - Dark mode adjustments */
+  --color-dashboard-success: #34d399;
+  --color-dashboard-success-bg: rgba(52, 211, 153, 0.12);
+  --color-dashboard-warning: #fbbf24;
+  --color-dashboard-warning-bg: rgba(251, 191, 36, 0.12);
+  --color-dashboard-danger: #f87171;
+  --color-dashboard-danger-bg: rgba(248, 113, 113, 0.12);
+  --color-dashboard-info: #38bdf8;
+  --color-dashboard-info-bg: rgba(56, 189, 248, 0.12);
+  --color-dashboard-metric-primary: #ff8b59;
+  --color-dashboard-metric-secondary: #a78bfa;
+  --color-dashboard-metric-tertiary: #f472b6;
+  --color-dashboard-metric-quaternary: #06b6d4;
 }
 
 /* Keep light class available, but theme stays Omni-like */
 html.light {
   --color-bg: #f5f6f8;
   --color-surface: #ffffff;
+  /* Dashboard status and metric colors - Light mode */
+  --color-dashboard-success: #059669;
+  --color-dashboard-success-bg: rgba(5, 150, 105, 0.08);
+  --color-dashboard-warning: #d97706;
+  --color-dashboard-warning-bg: rgba(217, 119, 6, 0.08);
+  --color-dashboard-danger: #dc2626;
+  --color-dashboard-danger-bg: rgba(220, 38, 38, 0.08);
+  --color-dashboard-info: #0369a1;
+  --color-dashboard-info-bg: rgba(3, 105, 161, 0.08);
+  --color-dashboard-metric-primary: #ea580c;
+  --color-dashboard-metric-secondary: #7c3aed;
+  --color-dashboard-metric-tertiary: #db2777;
+  --color-dashboard-metric-quaternary: #0891b2;
   --color-surface-elevated: #ffffff;
   --color-hover: #eef0f3;
   --color-border: #dde2e8;

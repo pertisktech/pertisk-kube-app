@@ -39,12 +39,12 @@ export const WorkloadSummary = () => {
   };
 
   const workloadItems = [
-    { label: 'Deployments', value: workloadCounts.deployments, color: 'bg-blue-500' },
-    { label: 'StatefulSets', value: workloadCounts.statefulsets, color: 'bg-purple-500' },
-    { label: 'DaemonSets', value: workloadCounts.daemonsets, color: 'bg-green-500' },
-    { label: 'Jobs', value: workloadCounts.jobs, color: 'bg-orange-500' },
-    { label: 'CronJobs', value: workloadCounts.cronjobs, color: 'bg-red-500' },
-    { label: 'ReplicaSets', value: workloadCounts.replicas, color: 'bg-indigo-500' },
+    { label: 'Deployments', value: workloadCounts.deployments, color: 'bg-dashboard-metric-primary' },
+    { label: 'StatefulSets', value: workloadCounts.statefulsets, color: 'bg-dashboard-metric-secondary' },
+    { label: 'DaemonSets', value: workloadCounts.daemonsets, color: 'bg-dashboard-success' },
+    { label: 'Jobs', value: workloadCounts.jobs, color: 'bg-dashboard-metric-tertiary' },
+    { label: 'CronJobs', value: workloadCounts.cronjobs, color: 'bg-dashboard-warning' },
+    { label: 'ReplicaSets', value: workloadCounts.replicas, color: 'bg-dashboard-metric-quaternary' },
   ];
 
   const totalWorkloads = Object.values(workloadCounts).reduce((a, b) => a + b, 0);

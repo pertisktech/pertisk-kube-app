@@ -94,6 +94,8 @@ struct NodeItem {
     external_ip: Option<String>,
     taints: Vec<String>,
     runtime: Option<String>,
+    cpu: Option<String>,
+    memory: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -1120,6 +1122,20 @@ async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         .and_then(|status| status.node_info.as_ref())
                         .map(|info| info.container_runtime_version.clone());
 
+                    let cpu = node
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.allocatable.as_ref())
+                        .and_then(|allocatable| allocatable.get("cpu"))
+                        .map(|cpu_value| cpu_value.0.clone());
+
+                    let memory = node
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.allocatable.as_ref())
+                        .and_then(|allocatable| allocatable.get("memory"))
+                        .map(|mem_value| mem_value.0.clone());
+
                     NodeItem {
                         name,
                         ready,
@@ -1133,6 +1149,8 @@ async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         external_ip,
                         taints,
                         runtime,
+                        cpu,
+                        memory,
                     }
                 })
                 .collect();

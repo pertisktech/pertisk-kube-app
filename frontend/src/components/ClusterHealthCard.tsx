@@ -66,26 +66,26 @@ export const ClusterHealthCard = () => {
 
   const statusIcon =
     clusterHealth.status === 'healthy' ? (
-      <CheckCircle className="w-5 h-5 text-green-500" />
+      <CheckCircle className="w-5 h-5 text-dashboard-success" />
     ) : clusterHealth.status === 'warning' ? (
-      <AlertCircle className="w-5 h-5 text-yellow-500" />
+      <AlertCircle className="w-5 h-5 text-dashboard-warning" />
     ) : (
-      <XCircle className="w-5 h-5 text-red-500" />
+      <XCircle className="w-5 h-5 text-dashboard-danger" />
     );
 
   const statusBgColor =
     clusterHealth.status === 'healthy'
-      ? 'bg-green-500/10'
+      ? 'bg-dashboard-success-bg'
       : clusterHealth.status === 'warning'
-        ? 'bg-yellow-500/10'
-        : 'bg-red-500/10';
+        ? 'bg-dashboard-warning-bg'
+        : 'bg-dashboard-danger-bg';
 
   const statusTextColor =
     clusterHealth.status === 'healthy'
-      ? 'text-green-500'
+      ? 'text-dashboard-success'
       : clusterHealth.status === 'warning'
-        ? 'text-yellow-500'
-        : 'text-red-500';
+        ? 'text-dashboard-warning'
+        : 'text-dashboard-danger';
 
   return (
     <Card title="Cluster Health">
@@ -107,19 +107,19 @@ export const ClusterHealthCard = () => {
 
           <div className="bg-surface-elevated border border-border rounded-lg p-3">
             <p className="text-xs text-text-secondary">Running Pods</p>
-            <p className="text-xl font-bold text-text">{clusterHealth.runningPods}</p>
+            <p className="text-xl font-bold text-dashboard-success">{clusterHealth.runningPods}</p>
           </div>
 
           <div className="bg-surface-elevated border border-border rounded-lg p-3">
             <p className="text-xs text-text-secondary">Failed Pods</p>
-            <p className={`text-xl font-bold ${clusterHealth.failedPods > 0 ? 'text-red-500' : 'text-text'}`}>
+            <p className={`text-xl font-bold ${clusterHealth.failedPods > 0 ? 'text-dashboard-danger' : 'text-text'}`}>
               {clusterHealth.failedPods}
             </p>
           </div>
 
           <div className="bg-surface-elevated border border-border rounded-lg p-3">
             <p className="text-xs text-text-secondary">Pending Pods</p>
-            <p className={`text-xl font-bold ${clusterHealth.pendingPods > 0 ? 'text-yellow-500' : 'text-text'}`}>
+            <p className={`text-xl font-bold ${clusterHealth.pendingPods > 0 ? 'text-dashboard-warning' : 'text-text'}`}>
               {clusterHealth.pendingPods}
             </p>
           </div>

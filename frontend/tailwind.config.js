@@ -24,6 +24,20 @@ export default {
         "icon-warning": "var(--color-icon-warning)",
         "icon-danger": "var(--color-icon-danger)",
         "icon-info": "var(--color-icon-info)",
+        /* Dashboard status colors */
+        "dashboard-success": "var(--color-dashboard-success)",
+        "dashboard-success-bg": "var(--color-dashboard-success-bg)",
+        "dashboard-warning": "var(--color-dashboard-warning)",
+        "dashboard-warning-bg": "var(--color-dashboard-warning-bg)",
+        "dashboard-danger": "var(--color-dashboard-danger)",
+        "dashboard-danger-bg": "var(--color-dashboard-danger-bg)",
+        "dashboard-info": "var(--color-dashboard-info)",
+        "dashboard-info-bg": "var(--color-dashboard-info-bg)",
+        /* Dashboard metric colors */
+        "dashboard-metric-primary": "var(--color-dashboard-metric-primary)",
+        "dashboard-metric-secondary": "var(--color-dashboard-metric-secondary)",
+        "dashboard-metric-tertiary": "var(--color-dashboard-metric-tertiary)",
+        "dashboard-metric-quaternary": "var(--color-dashboard-metric-quaternary)",
       },
       fontFamily: {
         sans: "var(--font-sans)",

@@ -1,10 +1,7 @@
 import { useDashboard, useNodes, usePods } from '../hooks/useKubernetes';
 import { WorkloadSummary } from '../components/WorkloadSummary';
 import { MetricsCharts } from '../components/MetricsCharts';
-import { NodeGroups } from '../components/NodeGroups';
-import { ClusterHealthCard } from '../components/ClusterHealthCard';
 import { GaugeChart } from '../components/GaugeChart';
-import { useTheme } from '../context/ThemeContext';
 import {
   Box,
   Server,
@@ -62,20 +59,38 @@ function formatNodeIPs(node: K8sNode): string {
   return parts.join(' | ');
 }
 
-// Get the styling vars for theme
-function getThemeVars(isDark: boolean) {
-  return {
-    surface: isDark ? '#1f2937' : '#ffffff',
-    bg: isDark ? '#111827' : '#f9fafb',
-    border: isDark ? '#374151' : '#e5e7eb',
-    text: isDark ? '#f3f4f6' : '#111827',
-    muted: isDark ? '#9ca3af' : '#6b7280',
-  };
+// Helper to parse CPU string (e.g., "4" or "4000m")
+function parseCPU(cpuStr?: string): number {
+  if (!cpuStr) return 0;
+  if (cpuStr.endsWith('m')) {
+    return parseInt(cpuStr) / 1000;
+  }
+  return parseFloat(cpuStr);
+}
+
+// Helper to parse Memory string (e.g., "16Gi", "16384Mi")
+function parseMemory(memStr?: string): number {
+  if (!memStr) return 0;
+  const num = parseFloat(memStr);
+  if (memStr.endsWith('Gi')) return num;
+  if (memStr.endsWith('Mi')) return num / 1024;
+  if (memStr.endsWith('Ki')) return num / (1024 * 1024);
+  return num;
+}
+
+// Helper to format CPU display
+function formatCPU(cores: number): string {
+  if (cores === 0) return '0';
+  return cores % 1 === 0 ? cores.toString() : cores.toFixed(2);
+}
+
+// Helper to format Memory display
+function formatMemory(gb: number): string {
+  if (gb === 0) return '0 Gi';
+  return gb % 1 === 0 ? `${gb} Gi` : `${gb.toFixed(2)} Gi`;
 }
 
 export const Dashboard = () => {
-  const theme = useTheme();
-  const isDark = theme?.isDark ?? true;
   const { data: dashboard, isLoading: dashLoading } = useDashboard();
   const { data: nodes, isLoading: nodesLoading } = useNodes();
   const { data: pods, isLoading: podsLoading } = usePods();
@@ -93,18 +108,11 @@ export const Dashboard = () => {
     );
   }
 
-  const themeVars = getThemeVars(isDark);
-
   const totalNodeCount = nodes?.length || 0;
   const readyNodeCount =
     nodes?.filter((node) => {
       if (typeof node.ready === 'boolean') return node.ready;
       return String(node.ready).toLowerCase() === 'true';
-    }).length || 0;
-  const runningPodCount =
-    pods?.filter((pod) => {
-      const state = (pod.status || pod.phase || '').toLowerCase();
-      return state === 'running';
     }).length || 0;
 
   const failedPodCount =
@@ -112,6 +120,16 @@ export const Dashboard = () => {
       const state = (pod.status || pod.phase || '').toLowerCase();
       return state === 'failed' || state === 'crashloopbackoff';
     }).length || 0;
+
+  // Calculate total CPU and Memory allocatable
+  let totalCPU = 0;
+  let totalMemory = 0;
+  if (nodes) {
+    nodes.forEach((node) => {
+      totalCPU += parseCPU(node.cpu);
+      totalMemory += parseMemory(node.memory);
+    });
+  }
 
   // Calculate health status
   const nodeHealthPercent = totalNodeCount > 0 ? (readyNodeCount / totalNodeCount) * 100 : 0;
@@ -128,31 +146,25 @@ export const Dashboard = () => {
   return (
     <div className="space-y-6">
       {/* Enhanced Cluster Overview - matching pertisk-kube style */}
-      <div
-        className="backdrop-blur-sm rounded-xl p-6"
-        style={{
-          backgroundColor: themeVars.surface,
-          border: `1px solid ${themeVars.border}`,
-        }}
-      >
+      <div className="bg-surface border border-border rounded-lg p-6 backdrop-blur-sm">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <Monitor size={24} className="text-blue-400" />
-            <h2 className="text-2xl font-bold text-blue-300">Cluster Overview</h2>
+            <Monitor size={24} className="text-dashboard-metric-primary" />
+            <h2 className="text-2xl font-bold text-text">Cluster Overview</h2>
           </div>
           <div className="flex items-center gap-2">
             {healthStatus === 'healthy' ? (
-              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-green-500/20 text-green-400">
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-dashboard-success-bg text-dashboard-success">
                 <CheckCircle size={16} />
                 <span className="text-sm font-medium">Healthy</span>
               </div>
             ) : healthStatus === 'warning' ? (
-              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-400">
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-dashboard-warning-bg text-dashboard-warning">
                 <AlertCircle size={16} />
                 <span className="text-sm font-medium">Warning</span>
               </div>
             ) : (
-              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/20 text-red-400">
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-dashboard-danger-bg text-dashboard-danger">
                 <XCircle size={16} />
                 <span className="text-sm font-medium">Critical</span>
               </div>
@@ -162,16 +174,13 @@ export const Dashboard = () => {
 
         <div className="space-y-4">
           {/* Cluster Info */}
-          <div
-            className="flex items-center justify-between text-sm"
-            style={{ color: themeVars.muted }}
-          >
+          <div className="flex items-center justify-between text-sm text-text-secondary">
             <span>
-              <span className="font-medium" style={{ color: themeVars.text }}>
+              <span className="font-medium text-text">
                 {dashboard?.cluster_name || 'kubernetes-cluster'}
               </span>
               {' • '}
-              <span style={{ color: '#06b6d4' }} title={dashboard?.api_endpoint || ''}>
+              <span className="text-dashboard-info" title={dashboard?.api_endpoint || ''}>
                 {dashboard?.api_endpoint
                   ? dashboard.api_endpoint.length > 40
                     ? dashboard.api_endpoint.substring(0, 40) + '...'
@@ -179,7 +188,7 @@ export const Dashboard = () => {
                   : 'Unknown'}
               </span>
               {' • '}
-              <span className="font-medium" style={{ color: themeVars.text }}>
+              <span className="font-medium text-text">
                 {dashboard?.kube_version || 'Unknown'}
               </span>
             </span>
@@ -189,208 +198,116 @@ export const Dashboard = () => {
           {/* Resource Grid - CPU, Memory, etc */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
             {/* CPU Resources */}
-            <div
-              className="p-3 rounded-lg"
-              style={{
-                backgroundColor: themeVars.bg,
-                border: `1px solid ${themeVars.border}`,
-              }}
-            >
+            <div className="bg-bg border border-border rounded-lg p-3">
               <div className="flex items-center gap-2 mb-2">
-                <Cpu size={16} className="text-blue-400" />
-                <span className="text-sm font-semibold" style={{ color: themeVars.text }}>
-                  CPU
-                </span>
+                <Cpu size={16} className="text-dashboard-metric-primary" />
+                <span className="text-sm font-semibold text-text">CPU</span>
               </div>
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span style={{ color: themeVars.muted }}>Allocatable</span>
-                  <span className="font-medium text-blue-400">--</span>
+                  <span className="text-text-secondary">Allocatable</span>
+                  <span className="font-medium text-dashboard-metric-primary">{formatCPU(totalCPU)} cores</span>
                 </div>
               </div>
             </div>
 
             {/* Memory Resources */}
-            <div
-              className="p-3 rounded-lg"
-              style={{
-                backgroundColor: themeVars.bg,
-                border: `1px solid ${themeVars.border}`,
-              }}
-            >
+            <div className="bg-bg border border-border rounded-lg p-3">
               <div className="flex items-center gap-2 mb-2">
-                <HardDrive size={16} className="text-purple-400" />
-                <span className="text-sm font-semibold" style={{ color: themeVars.text }}>
-                  Memory
-                </span>
+                <HardDrive size={16} className="text-dashboard-metric-secondary" />
+                <span className="text-sm font-semibold text-text">Memory</span>
               </div>
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span style={{ color: themeVars.muted }}>Allocatable</span>
-                  <span className="font-medium text-purple-400">--</span>
+                  <span className="text-text-secondary">Allocatable</span>
+                  <span className="font-medium text-dashboard-metric-secondary">{formatMemory(totalMemory)}</span>
                 </div>
               </div>
             </div>
 
             {/* Pod Capacity */}
-            <div
-              className="p-3 rounded-lg"
-              style={{
-                backgroundColor: themeVars.bg,
-                border: `1px solid ${themeVars.border}`,
-              }}
-            >
+            <div className="bg-bg border border-border rounded-lg p-3">
               <div className="flex items-center gap-2 mb-2">
-                <Box size={16} className="text-orange-400" />
-                <span className="text-sm font-semibold" style={{ color: themeVars.text }}>
-                  Pods
-                </span>
+                <Box size={16} className="text-dashboard-metric-tertiary" />
+                <span className="text-sm font-semibold text-text">Pods</span>
               </div>
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span style={{ color: themeVars.muted }}>Current</span>
-                  <span className="font-medium text-orange-400">{dashboard?.pods || 0}</span>
+                  <span className="text-text-secondary">Current</span>
+                  <span className="font-medium text-dashboard-metric-tertiary">{dashboard?.pods || 0}</span>
                 </div>
               </div>
             </div>
 
             {/* Nodes */}
-            <div
-              className="p-3 rounded-lg"
-              style={{
-                backgroundColor: themeVars.bg,
-                border: `1px solid ${themeVars.border}`,
-              }}
-            >
+            <div className="bg-bg border border-border rounded-lg p-3">
               <div className="flex items-center gap-2 mb-2">
-                <Server size={16} className="text-cyan-400" />
-                <span className="text-sm font-semibold" style={{ color: themeVars.text }}>
-                  Nodes
-                </span>
+                <Server size={16} className="text-dashboard-metric-quaternary" />
+                <span className="text-sm font-semibold text-text">Nodes</span>
               </div>
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span style={{ color: themeVars.muted }}>Ready</span>
-                  <span className="font-medium text-cyan-400">
+                  <span className="text-text-secondary">Ready</span>
+                  <span className="font-medium text-dashboard-metric-quaternary">
                     {readyNodeCount}/{totalNodeCount}
                   </span>
                 </div>
               </div>
             </div>
           </div>
-
-          {/* Stats Grid - below resources */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="text-center p-3 rounded" style={{ backgroundColor: themeVars.bg }}>
-              <div className="text-2xl font-bold text-blue-400 mb-1">{totalNodeCount}</div>
-              <div className="text-xs" style={{ color: themeVars.muted }}>
-                Total Nodes
-              </div>
-            </div>
-            <div className="text-center p-3 rounded" style={{ backgroundColor: themeVars.bg }}>
-              <div className="text-2xl font-bold text-green-400 mb-1">{readyNodeCount}</div>
-              <div className="text-xs" style={{ color: themeVars.muted }}>
-                Ready Nodes
-              </div>
-            </div>
-            <div className="text-center p-3 rounded" style={{ backgroundColor: themeVars.bg }}>
-              <div className="text-2xl font-bold text-green-400 mb-1">{dashboard?.pods || 0}</div>
-              <div className="text-xs" style={{ color: themeVars.muted }}>
-                Total Pods
-              </div>
-            </div>
-            <div className="text-center p-3 rounded" style={{ backgroundColor: themeVars.bg }}>
-              <div className="text-2xl font-bold text-green-400 mb-1">{runningPodCount}</div>
-              <div className="text-xs" style={{ color: themeVars.muted }}>
-                Running Pods
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* Cluster Health Card */}
-      <ClusterHealthCard />
-
       {/* Workload Summary */}
       <WorkloadSummary />
-
-      {/* Node Groups */}
-      <NodeGroups />
 
       {/* Metrics Charts */}
       <MetricsCharts />
 
       {/* Resource Usage Section - 3 Gauge Charts */}
-      <div
-        className="backdrop-blur-sm rounded-xl p-6"
-        style={{
-          backgroundColor: themeVars.surface,
-          border: `1px solid ${themeVars.border}`,
-        }}
-      >
+      <div className="bg-surface border border-border rounded-lg p-6 backdrop-blur-sm">
         <div className="flex items-center gap-3 mb-6">
-          <TrendingUp size={24} className="text-blue-400" />
-          <h2 className="text-2xl font-bold text-blue-300">Resource Usage</h2>
+          <TrendingUp size={24} className="text-dashboard-metric-primary" />
+          <h2 className="text-2xl font-bold text-text">Resource Usage</h2>
         </div>
 
         {!nodes || nodes.length === 0 ? (
-          <div className="text-center py-8" style={{ color: themeVars.muted }}>
-            No nodes found
-          </div>
+          <div className="text-center py-8 text-text-secondary">No nodes found</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* CPU Panel */}
-            <div
-              className="rounded-lg p-6 transition-all hover:shadow-lg"
-              style={{
-                backgroundColor: themeVars.bg,
-                border: `1px solid ${themeVars.border}`,
-              }}
-            >
+            <div className="bg-bg border border-border rounded-lg p-6 transition-all hover:shadow-md">
               <GaugeChart
                 value={45}
-                color="#3b82f6"
+                color="var(--color-dashboard-metric-primary)"
                 label="CPU"
                 used="4.5 cores"
                 total="10 cores"
-                icon={<Cpu size={20} className="text-blue-400" />}
+                icon={<Cpu size={20} className="text-dashboard-metric-primary" />}
               />
             </div>
 
             {/* Memory Panel */}
-            <div
-              className="rounded-lg p-6 transition-all hover:shadow-lg"
-              style={{
-                backgroundColor: themeVars.bg,
-                border: `1px solid ${themeVars.border}`,
-              }}
-            >
+            <div className="bg-bg border border-border rounded-lg p-6 transition-all hover:shadow-md">
               <GaugeChart
                 value={62}
-                color="#a855f7"
+                color="var(--color-dashboard-metric-secondary)"
                 label="Memory"
                 used="24 Gi"
                 total="40 Gi"
-                icon={<HardDrive size={20} className="text-purple-400" />}
+                icon={<HardDrive size={20} className="text-dashboard-metric-secondary" />}
               />
             </div>
 
             {/* Disk Panel */}
-            <div
-              className="rounded-lg p-6 transition-all hover:shadow-lg"
-              style={{
-                backgroundColor: themeVars.bg,
-                border: `1px solid ${themeVars.border}`,
-              }}
-            >
+            <div className="bg-bg border border-border rounded-lg p-6 transition-all hover:shadow-md">
               <GaugeChart
                 value={38}
-                color="#f97316"
+                color="var(--color-dashboard-metric-tertiary)"
                 label="Disk"
                 used="19 Gi"
                 total="50 Gi"
-                icon={<HardDrive size={20} className="text-orange-400" />}
+                icon={<HardDrive size={20} className="text-dashboard-metric-tertiary" />}
               />
             </div>
           </div>
@@ -398,19 +315,11 @@ export const Dashboard = () => {
       </div>
 
       {/* Enhanced Node Groups Section */}
-      <div
-        className="backdrop-blur-sm rounded-xl p-6"
-        style={{
-          backgroundColor: themeVars.surface,
-          border: `1px solid ${themeVars.border}`,
-        }}
-      >
+      <div className="bg-surface border border-border rounded-lg p-6 backdrop-blur-sm">
         <div className="flex items-center gap-3 mb-6">
-          <Server size={24} className="text-blue-400" />
-          <h2 className="text-2xl font-bold text-blue-300">Nodes</h2>
-          <span className="text-sm ml-auto" style={{ color: themeVars.muted }}>
-            {nodes?.length ?? 0} nodes
-          </span>
+          <Server size={24} className="text-dashboard-metric-primary" />
+          <h2 className="text-2xl font-bold text-text">Nodes</h2>
+          <span className="text-sm ml-auto text-text-secondary">{nodes?.length ?? 0} nodes</span>
         </div>
 
         {nodes && nodes.length > 0 ? (
@@ -424,27 +333,24 @@ export const Dashboard = () => {
               return (
                 <div
                   key={node.name}
-                  className="rounded-lg p-4 transition-all hover:shadow-lg"
-                  style={{
-                    backgroundColor: themeVars.bg,
-                    border: `1px solid ${themeVars.border}`,
-                  }}
+                  className="bg-bg border border-border rounded-lg p-4 transition-all hover:shadow-md"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <div
-                        className={clsx('w-3 h-3 rounded-full', isReady ? 'bg-green-500' : 'bg-red-500')}
+                        className={clsx(
+                          'w-3 h-3 rounded-full',
+                          isReady ? 'bg-dashboard-success' : 'bg-dashboard-danger'
+                        )}
                       />
-                      <h3 className="text-lg font-bold" style={{ color: themeVars.text }}>
-                        {node.name}
-                      </h3>
+                      <h3 className="text-lg font-bold text-text">{node.name}</h3>
                     </div>
                     {isReady ? (
-                      <span className="px-2 py-0.5 rounded-full text-xs bg-green-500/20 text-green-400 flex items-center gap-1">
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-dashboard-success-bg text-dashboard-success flex items-center gap-1">
                         <CheckCircle size={12} /> Ready
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-full text-xs bg-red-500/20 text-red-400 flex items-center gap-1">
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-dashboard-danger-bg text-dashboard-danger flex items-center gap-1">
                         <XCircle size={12} /> NotReady
                       </span>
                     )}
@@ -452,22 +358,16 @@ export const Dashboard = () => {
 
                   <div className="space-y-2 text-sm">
                     <div>
-                      <span style={{ color: themeVars.muted }}>Roles: </span>
-                      <span style={{ color: themeVars.text }}>
-                        {node.roles.join(', ') || 'None'}
-                      </span>
+                      <span className="text-text-secondary">Roles: </span>
+                      <span className="text-text">{node.roles.join(', ') || 'None'}</span>
                     </div>
                     <div>
-                      <span style={{ color: themeVars.muted }}>IP: </span>
-                      <span style={{ color: themeVars.text }} className="text-xs font-mono">
-                        {formatNodeIPs(node)}
-                      </span>
+                      <span className="text-text-secondary">IP: </span>
+                      <span className="text-text text-xs font-mono">{formatNodeIPs(node)}</span>
                     </div>
                     <div>
-                      <span style={{ color: themeVars.muted }}>Kubelet: </span>
-                      <span style={{ color: themeVars.text }} className="text-xs">
-                        {node.kubelet_version}
-                      </span>
+                      <span className="text-text-secondary">Kubelet: </span>
+                      <span className="text-text text-xs">{node.kubelet_version}</span>
                     </div>
                   </div>
                 </div>
@@ -475,9 +375,7 @@ export const Dashboard = () => {
             })}
           </div>
         ) : (
-          <div className="text-center py-8" style={{ color: themeVars.muted }}>
-            No nodes found
-          </div>
+          <div className="text-center py-8 text-text-secondary">No nodes found</div>
         )}
       </div>
     </div>

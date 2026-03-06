@@ -39,10 +39,10 @@ export const NodeGroups = () => {
   });
 
   const colorMap: { [key: string]: string } = {
-    'control-plane': 'bg-red-500',
-    'control-plane-worker': 'bg-yellow-500',
-    'worker': 'bg-green-500',
-    'default': 'bg-blue-500',
+    'control-plane': 'bg-dashboard-danger',
+    'control-plane-worker': 'bg-dashboard-warning',
+    'worker': 'bg-dashboard-success',
+    'default': 'bg-dashboard-metric-primary',
   };
 
   const groups: NodeGroupInfo[] = Array.from(nodeGroups.entries()).map(

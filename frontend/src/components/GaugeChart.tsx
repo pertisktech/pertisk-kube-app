@@ -1,5 +1,4 @@
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
-import { useTheme } from "../context/ThemeContext";
 
 interface GaugeChartProps {
   value: number; // 0-100
@@ -11,19 +10,26 @@ interface GaugeChartProps {
 }
 
 export const GaugeChart = ({ value, color, label, used, total, icon }: GaugeChartProps) => {
-  const theme = useTheme();
-  const isDark = theme?.isDark ?? true;
   const percent = Math.min(Math.max(value, 0), 100);
 
   // Determine status color based on usage
-  const statusColor = percent > 90 ? "#ef4444" : percent > 70 ? "#eab308" : color;
+  const getStatusColor = (): string => {
+    if (percent > 90) {
+      return 'var(--color-dashboard-danger)';
+    } else if (percent > 70) {
+      return 'var(--color-dashboard-warning)';
+    }
+    return color;
+  };
+
+  const statusColor = getStatusColor();
 
   // Create data for the gauge - used portion and remaining portion
   const usedValue = percent;
   const remainingValue = 100 - percent;
 
-  // Use a subtle background color that works with both light and dark themes
-  const remainingColor = isDark ? "rgba(107, 114, 128, 0.15)" : "rgba(209, 213, 219, 0.15)";
+  // Use theme-aware background color
+  const remainingColor = 'var(--color-border)';
 
   const data = [
     { name: "used", value: usedValue, color: statusColor },
@@ -35,19 +41,14 @@ export const GaugeChart = ({ value, color, label, used, total, icon }: GaugeChar
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           {icon}
-          <span
-            className="text-sm font-semibold"
-            style={{ color: isDark ? "#e5e7eb" : "#1f2937" }}
-          >
-            {label}
-          </span>
+          <span className="text-sm font-semibold text-text">{label}</span>
         </div>
         <span className="text-sm font-bold" style={{ color: statusColor }}>
           {percent.toFixed(1)}%
         </span>
       </div>
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-xs" style={{ color: isDark ? "#9ca3af" : "#6b7280" }}>
+        <span className="text-xs text-text-secondary">
           {used} / {total}
         </span>
       </div>
