@@ -451,3 +451,19 @@ export const useClusterRoleBindings = () => {
     },
   });
 };
+
+export const scaleDeployment = async (namespace: string, name: string, replicas: number): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/deployments/${namespace}/${name}/scale`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: token } : {}),
+    },
+    body: JSON.stringify({ replicas }),
+  });
+
+  if (!res.ok) {
+    throw new Error('Failed to scale deployment');
+  }
+};

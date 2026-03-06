@@ -8,7 +8,9 @@ use axum::{
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Utc;
+use chrono::Duration;
 use cron::Schedule;
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use kube::core::{ApiResource, DynamicObject, GroupVersionKind};
 use kube::{api::{ListParams, Patch, PatchParams}, Api, Client};
 use serde::{Deserialize, Serialize};
@@ -31,6 +33,7 @@ struct AppState {
     client: Client,
     username: String,
     password: String,
+    jwt_secret: String,
 }
 
 #[derive(Deserialize)]
@@ -39,9 +42,22 @@ struct LoginRequest {
     password: String,
 }
 
+#[derive(Deserialize)]
+struct ScaleRequest {
+    replicas: i32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Claims {
+    sub: String,
+    exp: i64,
+    iat: i64,
+}
+
 #[derive(Serialize)]
 struct LoginResponse {
     success: bool,
+    token: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -615,10 +631,13 @@ async fn main() -> anyhow::Result<()> {
 
     let username = env::var("USERNAME").unwrap_or_else(|_| "admin".to_string());
     let password = env::var("PASSWORD").unwrap_or_else(|_| "admin".to_string());
+    let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key-change-in-production".to_string());
+    
     let state = AppState {
         client,
         username,
         password,
+        jwt_secret,
     };
 
     let cors = CorsLayer::new()
@@ -645,6 +664,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/events", get(list_events))
         .route("/deployments", get(list_deployments))
+        .route(
+            "/deployments/:namespace/:name/scale",
+            post(scale_deployment),
+        )
         .route(
             "/deployments/:namespace/:name/yaml",
             get(get_deployment_yaml).put(update_deployment_yaml),
@@ -754,10 +777,37 @@ async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn login(State(state): State<AppState>, Json(payload): Json<LoginRequest>) -> impl IntoResponse {
     if payload.username == state.username && payload.password == state.password {
-        return (StatusCode::OK, Json(LoginResponse { success: true })).into_response();
+        // Create JWT token with 1-hour expiration
+        let now = Utc::now();
+        let exp = now + Duration::hours(1);
+        
+        let claims = Claims {
+            sub: payload.username,
+            exp: exp.timestamp(),
+            iat: now.timestamp(),
+        };
+        
+        match encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(state.jwt_secret.as_ref()),
+        ) {
+            Ok(token) => {
+                return (StatusCode::OK, Json(LoginResponse { 
+                    success: true, 
+                    token: Some(token) 
+                })).into_response();
+            }
+            Err(_) => {
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        }
     }
 
-    StatusCode::UNAUTHORIZED.into_response()
+    (StatusCode::UNAUTHORIZED, Json(LoginResponse { 
+        success: false, 
+        token: None 
+    })).into_response()
 }
 
 async fn require_basic_auth(
@@ -765,10 +815,28 @@ async fn require_basic_auth(
     request: Request,
     next: Next,
 ) -> Response {
-    let credentials = request
+    let auth_header = request
         .headers()
         .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.to_str().ok());
+
+    // Check for JWT Bearer token
+    if let Some(auth) = auth_header {
+        if auth.starts_with("Bearer ") {
+            let token = &auth[7..];
+            match decode::<Claims>(
+                token,
+                &DecodingKey::from_secret(state.jwt_secret.as_ref()),
+                &Validation::default(),
+            ) {
+                Ok(_) => return next.run(request).await,
+                Err(_) => return StatusCode::UNAUTHORIZED.into_response(),
+            }
+        }
+    }
+
+    // Fall back to Basic Auth
+    let credentials = auth_header
         .and_then(parse_basic_auth);
 
     match credentials {
@@ -1279,6 +1347,42 @@ async fn list_deployments(State(state): State<AppState>) -> impl IntoResponse {
         Err(err) => {
             error!("Error listing deployments: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn scale_deployment(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    Json(payload): Json<ScaleRequest>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::Deployment;
+
+    let api: Api<Deployment> = Api::namespaced(state.client, &namespace);
+    
+    match api.get(&name).await {
+        Ok(mut deployment) => {
+            if let Some(ref mut spec) = deployment.spec {
+                spec.replicas = Some(payload.replicas);
+            }
+            
+            match api.replace(&name, &Default::default(), &deployment).await {
+                Ok(_) => {
+                    info!("Scaled deployment {}/{} to {} replicas", namespace, name, payload.replicas);
+                    (StatusCode::OK, Json(serde_json::json!({
+                        "success": true,
+                        "replicas": payload.replicas
+                    }))).into_response()
+                }
+                Err(err) => {
+                    error!("Error scaling deployment {}/{}: {:?}", namespace, name, err);
+                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            }
+        }
+        Err(err) => {
+            error!("Error getting deployment {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
         }
     }
 }

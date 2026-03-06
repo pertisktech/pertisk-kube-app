@@ -35,8 +35,14 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
         return;
       }
 
-      setAuth(username, password);
-      onLogin();
+      const data = await response.json() as { success: boolean; token?: string };
+      
+      if (data.success && data.token) {
+        setAuth(data.token, username);
+        onLogin();
+      } else {
+        setError('Login failed');
+      }
     } catch {
       setError('Unable to login. Please try again.');
     } finally {

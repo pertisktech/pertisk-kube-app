@@ -24,7 +24,7 @@ This project is structured as a **single workspace**:
 ### Kubernetes Resources Management
 
 #### Workloads
-- **Deployments** - Full CRUD with YAML editor, real-time pod tracking
+- **Deployments** - Full CRUD with YAML editor, real-time pod tracking, **dynamic scaling (adjust replica count)**
 - **StatefulSets** - Manage stateful applications
 - **DaemonSets** - Monitor daemon pods with node selection
 - **Jobs** - View and manage batch jobs
@@ -74,7 +74,9 @@ This project is structured as a **single workspace**:
 - **Auto-Refresh Metrics** - Automatic dashboard updates every 30 seconds
 
 ### Security & Authentication
-- **Basic Authentication** - Secure login system (HTTP Basic Auth)
+- **JWT Token Authentication** - Secure login system with JWT tokens (1-hour expiration)
+- **Automatic Token Refresh** - Expired tokens trigger re-login automatically
+- **Bearer Token Support** - API endpoints accept Bearer tokens in Authorization header
 - **RBAC Integration** - Respects Kubernetes RBAC policies
 - **Kubernetes-aware Permissions** - Uses service account credentials
 - **Secure YAML Editing** - Safe resource modification with validation
@@ -149,9 +151,9 @@ docker-compose up -d
 ### Public Endpoints
 - `GET /api/health` - Health check
 - `GET /api/readiness` - Readiness check
-- `POST /api/login` - Authentication
+- `POST /api/login` - Authentication (returns JWT token with 1-hour expiration)
 
-### Protected Endpoints (Require Basic Auth)
+### Protected Endpoints (Require JWT Bearer Token or Basic Auth)
 
 #### Cluster
 - `GET /api/dashboard` - Dashboard summary
@@ -164,6 +166,7 @@ docker-compose up -d
 
 #### Workloads
 - `GET /api/deployments` - List deployments
+- `POST /api/deployments/:namespace/:name/scale` - Scale deployment replicas
 - `GET /api/statefulsets` - List statefulsets
 - `GET /api/daemonsets` - List daemonsets
 - `GET /api/replicasets` - List replicasets
@@ -238,6 +241,14 @@ docker-compose up -d
 - `KUBECONFIG` - Path to kubeconfig file (optional, uses in-cluster config if not set)
 - `PORT` - Server port (default: 8091)
 - `RUST_LOG` - Log level (default: info)
+- `USERNAME` - Dashboard login username (default: admin)
+- `PASSWORD` - Dashboard login password (default: admin)
+- `JWT_SECRET` - Secret key for JWT token signing (default: your-secret-key-change-in-production) ⚠️ **Change in production!**
+
+### Token Expiration
+- **JWT Tokens expire after 1 hour** from login
+- Expired tokens automatically redirect to login page
+- Re-login required after expiration
 
 ### Helm Values
 - `image.tag` - Container image tag
@@ -249,10 +260,59 @@ docker-compose up -d
 ## 🔐 Security
 
 - **HTTPS Ready** - Deploy behind reverse proxy for TLS
-- **Basic Auth** - Simple authentication system
+- **JWT Authentication** - Secure login with JWT tokens (1-hour expiration)
+- **Bearer Token Support** - Token-based API authentication
+- **Automatic Session Expiry** - Expired tokens redirect to login
 - **RBAC Compliant** - Respects Kubernetes RBAC
 - **Service Account** - Uses Kubernetes service accounts for API access
 - **Read-Heavy** - Mostly read-only operations (safe for monitoring)
+
+## 💡 Usage Examples
+
+### Scaling a Deployment
+
+1. Navigate to **Deployments** page
+2. Click on a deployment to open the detail panel
+3. Scroll to "Scale Deployment" section
+4. Enter the desired number of replicas (0-N)
+5. Click "Scale" button
+6. Deployment will scale to the specified number of pods
+
+**API Call:**
+```bash
+curl -X POST http://localhost:8091/api/deployments/default/my-app/scale \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"replicas": 2}'
+```
+
+### Authentication & Token Management
+
+**Login and Get Token:**
+```bash
+curl -X POST http://localhost:8091/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin"}'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "token": "eyJ0eXAiOiJKV1QiLCJhbGc..."
+}
+```
+
+**Use Token in API Calls:**
+```bash
+curl http://localhost:8091/api/deployments \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc..."
+```
+
+**Token Expiration:**
+- Tokens expire after **1 hour** from login
+- Frontend automatically detects expiry and redirects to login
+- Return to login page to get a new token
 
 ## 📝 License
 

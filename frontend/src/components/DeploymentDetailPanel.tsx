@@ -1,4 +1,5 @@
 import { Pencil, X } from 'lucide-react';
+import { useState } from 'react';
 import type { Deployment } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 
@@ -6,15 +7,46 @@ interface DeploymentDetailPanelProps {
   deployment: Deployment;
   onClose: () => void;
   onOpenYamlEditor: (deployment: Deployment) => void;
+  onScale?: (namespace: string, name: string, replicas: number) => Promise<void>;
 }
 
-export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor }: DeploymentDetailPanelProps) => {
+export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, onScale }: DeploymentDetailPanelProps) => {
+  const [scaleReplicas, setScaleReplicas] = useState<string>('');
+  const [isScaling, setIsScaling] = useState(false);
+  const [scaleError, setScaleError] = useState('');
+  const [scaleSuccess, setScaleSuccess] = useState('');
+
   const getStatusTextClass = (status: string) => {
     const color = getStatusColor(status);
     if (color === 'green') return 'text-[var(--color-icon-success)]';
     if (color === 'yellow') return 'text-[var(--color-icon-warning)]';
     if (color === 'red') return 'text-[var(--color-icon-danger)]';
     return 'text-text-secondary';
+  };
+
+  const handleScale = async () => {
+    const replicas = parseInt(scaleReplicas);
+    if (isNaN(replicas) || replicas < 0) {
+      setScaleError('Replicas must be a non-negative number');
+      return;
+    }
+
+    setIsScaling(true);
+    setScaleError('');
+    setScaleSuccess('');
+
+    try {
+      if (onScale) {
+        await onScale(deployment.namespace, deployment.name, replicas);
+        setScaleSuccess(`Scaling to ${replicas} replicas...`);
+        setScaleReplicas('');
+        setTimeout(() => setScaleSuccess(''), 3000);
+      }
+    } catch (err) {
+      setScaleError(err instanceof Error ? err.message : 'Failed to scale deployment');
+    } finally {
+      setIsScaling(false);
+    }
   };
 
   return (
@@ -101,6 +133,32 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor }:
                   <p className="text-text">-</p>
                 )}
               </div>
+            </div>
+          </section>
+
+          <section className="min-w-0 bg-surface border border-border rounded-lg p-4 space-y-3">
+            <p className="text-xs uppercase tracking-wide text-text-secondary">Scale Deployment</p>
+            <div className="space-y-2">
+              <div>
+                <label className="text-xs text-text-secondary">Number of Replicas</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={scaleReplicas}
+                  onChange={(e) => setScaleReplicas(e.target.value)}
+                  placeholder="Enter replicas"
+                  className="w-full mt-1 px-3 py-2 rounded-md border border-border bg-bar text-text text-sm"
+                />
+              </div>
+              <button
+                onClick={handleScale}
+                disabled={isScaling || !scaleReplicas}
+                className="w-full px-3 py-2 rounded-md bg-primary text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
+              >
+                {isScaling ? 'Scaling...' : 'Scale'}
+              </button>
+              {scaleError && <p className="text-xs text-red-400">{scaleError}</p>}
+              {scaleSuccess && <p className="text-xs text-green-400">{scaleSuccess}</p>}
             </div>
           </section>
 

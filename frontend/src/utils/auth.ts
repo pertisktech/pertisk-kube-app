@@ -1,28 +1,45 @@
 const AUTH_TOKEN_KEY = 'pertisk_auth_token';
 const AUTH_USER_KEY = 'pertisk_auth_user';
+const AUTH_EXPIRY_KEY = 'pertisk_auth_expiry';
 
-export const encodeBasicAuth = (username: string, password: string) => {
-  return `Basic ${btoa(`${username}:${password}`)}`;
-};
-
-export const setAuth = (username: string, password: string) => {
-  localStorage.setItem(AUTH_TOKEN_KEY, encodeBasicAuth(username, password));
+export const setAuth = (token: string, username: string, expiresIn: number = 3600) => {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
   localStorage.setItem(AUTH_USER_KEY, username);
+  // Store expiry time (current time + expiresIn seconds)
+  const expiryTime = Date.now() + (expiresIn * 1000);
+  localStorage.setItem(AUTH_EXPIRY_KEY, expiryTime.toString());
 };
 
 export const clearAuth = () => {
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(AUTH_USER_KEY);
+  localStorage.removeItem(AUTH_EXPIRY_KEY);
 };
 
 export const getAuthToken = () => {
-  return localStorage.getItem(AUTH_TOKEN_KEY);
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  
+  // Check if token is expired
+  if (token && isTokenExpired()) {
+    clearAuth();
+    return null;
+  }
+  
+  return token ? `Bearer ${token}` : null;
 };
 
 export const getAuthUser = () => {
   return localStorage.getItem(AUTH_USER_KEY);
 };
 
+export const isTokenExpired = (): boolean => {
+  const expiryTime = localStorage.getItem(AUTH_EXPIRY_KEY);
+  if (!expiryTime) return true;
+  
+  return Date.now() > parseInt(expiryTime);
+};
+
 export const isAuthenticated = () => {
-  return Boolean(getAuthToken());
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  return Boolean(token) && !isTokenExpired();
 };
