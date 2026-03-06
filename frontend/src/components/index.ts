@@ -15,3 +15,6 @@ export { CronJobDetailPanel } from './CronJobDetailPanel';
 export { WorkloadSummary } from './WorkloadSummary';
 export { MetricsCharts } from './MetricsCharts';
 export { NodeGroups } from './NodeGroups';
+export { ClusterHealthCard } from './ClusterHealthCard';
+export { ResourceGaugeChart } from './ResourceGaugeChart';
+export { GaugeChart } from './GaugeChart';
