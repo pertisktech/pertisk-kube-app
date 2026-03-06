@@ -258,6 +258,134 @@ export const Dashboard = () => {
         </div>
       </div>
 
+      {/* Enhanced Node Groups Section */}
+      <div className="bg-surface border border-border rounded-lg p-6 backdrop-blur-sm">
+        <div className="flex items-center gap-3 mb-6">
+          <Server size={24} className="text-dashboard-metric-primary" />
+          <h2 className="text-2xl font-bold text-text">Nodes</h2>
+          <span className="text-sm ml-auto text-text-secondary">{nodes?.length ?? 0} nodes</span>
+        </div>
+
+        {nodes && nodes.length > 0 ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            {nodes.map((node) => {
+              const isReady =
+                typeof node.ready === 'boolean'
+                  ? node.ready
+                  : String(node.ready).toLowerCase() === 'true';
+
+              return (
+                <div
+                  key={node.name}
+                  className="bg-bg border border-border rounded-lg p-4 transition-all hover:shadow-md"
+                >
+                  {/* Node Header */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div
+                        className={clsx(
+                          'w-2 h-2 rounded-full flex-shrink-0',
+                          isReady ? 'bg-dashboard-success' : 'bg-dashboard-danger'
+                        )}
+                      />
+                      <h3 className="text-base font-bold text-text truncate">{node.name}</h3>
+                    </div>
+                    {isReady ? (
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-dashboard-success-bg text-dashboard-success flex items-center gap-1 flex-shrink-0">
+                        <CheckCircle size={12} /> Ready
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-dashboard-danger-bg text-dashboard-danger flex items-center gap-1 flex-shrink-0">
+                        <XCircle size={12} /> NotReady
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Roles */}
+                  {node.roles && node.roles.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {node.roles.map((role) => (
+                        <span
+                          key={role}
+                          className="px-2 py-0.5 rounded text-xs bg-dashboard-metric-primary-bg text-dashboard-metric-primary border border-dashboard-metric-primary/20"
+                        >
+                          {role}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Resource Capacity */}
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div className="bg-surface border border-border rounded p-2">
+                      <div className="flex items-center gap-1 mb-1">
+                        <Cpu size={12} className="text-dashboard-metric-primary" />
+                        <span className="text-xs font-semibold text-text-secondary">CPU</span>
+                      </div>
+                      <div className="text-sm font-bold text-dashboard-metric-primary">
+                        {node.cpu ? formatCPU(parseCPU(node.cpu)) : '-'}
+                      </div>
+                    </div>
+                    <div className="bg-surface border border-border rounded p-2">
+                      <div className="flex items-center gap-1 mb-1">
+                        <HardDrive size={12} className="text-dashboard-metric-secondary" />
+                        <span className="text-xs font-semibold text-text-secondary">Memory</span>
+                      </div>
+                      <div className="text-sm font-bold text-dashboard-metric-secondary">
+                        {node.memory ? formatMemory(parseMemory(node.memory)) : '-'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Node Details */}
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between items-start">
+                      <span className="text-text-secondary">IP:</span>
+                      <span className="text-text font-mono text-right break-all max-w-[60%]">
+                        {formatNodeIPs(node)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-start">
+                      <span className="text-text-secondary">Version:</span>
+                      <span className="text-text text-right">{node.kubelet_version || '-'}</span>
+                    </div>
+                    {node.os_image && (
+                      <div className="flex justify-between items-start">
+                        <span className="text-text-secondary">OS:</span>
+                        <span className="text-text text-right break-words max-w-[60%]">{node.os_image}</span>
+                      </div>
+                    )}
+                    {node.runtime && (
+                      <div className="flex justify-between items-start">
+                        <span className="text-text-secondary">Runtime:</span>
+                        <span className="text-text text-right break-words max-w-[60%]">{node.runtime}</span>
+                      </div>
+                    )}
+                    {node.taints && node.taints.length > 0 && (
+                      <div className="pt-1">
+                        <span className="text-text-secondary block mb-1">Taints:</span>
+                        <div className="flex flex-wrap gap-1">
+                          {node.taints.map((taint, idx) => (
+                            <span
+                              key={idx}
+                              className="px-1.5 py-0.5 rounded text-xs bg-dashboard-warning-bg text-dashboard-warning border border-dashboard-warning/20"
+                            >
+                              {taint}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-text-secondary">No nodes found</div>
+        )}
+      </div>
+
       {/* Workload Summary */}
       <WorkloadSummary />
 
@@ -311,71 +439,6 @@ export const Dashboard = () => {
               />
             </div>
           </div>
-        )}
-      </div>
-
-      {/* Enhanced Node Groups Section */}
-      <div className="bg-surface border border-border rounded-lg p-6 backdrop-blur-sm">
-        <div className="flex items-center gap-3 mb-6">
-          <Server size={24} className="text-dashboard-metric-primary" />
-          <h2 className="text-2xl font-bold text-text">Nodes</h2>
-          <span className="text-sm ml-auto text-text-secondary">{nodes?.length ?? 0} nodes</span>
-        </div>
-
-        {nodes && nodes.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {nodes.map((node) => {
-              const isReady =
-                typeof node.ready === 'boolean'
-                  ? node.ready
-                  : String(node.ready).toLowerCase() === 'true';
-
-              return (
-                <div
-                  key={node.name}
-                  className="bg-bg border border-border rounded-lg p-4 transition-all hover:shadow-md"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={clsx(
-                          'w-3 h-3 rounded-full',
-                          isReady ? 'bg-dashboard-success' : 'bg-dashboard-danger'
-                        )}
-                      />
-                      <h3 className="text-lg font-bold text-text">{node.name}</h3>
-                    </div>
-                    {isReady ? (
-                      <span className="px-2 py-0.5 rounded-full text-xs bg-dashboard-success-bg text-dashboard-success flex items-center gap-1">
-                        <CheckCircle size={12} /> Ready
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-xs bg-dashboard-danger-bg text-dashboard-danger flex items-center gap-1">
-                        <XCircle size={12} /> NotReady
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="space-y-2 text-sm">
-                    <div>
-                      <span className="text-text-secondary">Roles: </span>
-                      <span className="text-text">{node.roles.join(', ') || 'None'}</span>
-                    </div>
-                    <div>
-                      <span className="text-text-secondary">IP: </span>
-                      <span className="text-text text-xs font-mono">{formatNodeIPs(node)}</span>
-                    </div>
-                    <div>
-                      <span className="text-text-secondary">Kubelet: </span>
-                      <span className="text-text text-xs">{node.kubelet_version}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-text-secondary">No nodes found</div>
         )}
       </div>
     </div>

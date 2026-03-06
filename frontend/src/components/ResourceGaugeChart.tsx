@@ -62,7 +62,7 @@ export const ResourceGaugeChart = ({
         </span>
       </div>
       <div className="h-40 -mx-4 relative">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={160} minHeight={160} aspect={undefined}>
           <PieChart>
             <Pie
               data={data}

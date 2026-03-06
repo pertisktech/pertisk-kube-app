@@ -53,7 +53,7 @@ export const GaugeChart = ({ value, color, label, used, total, icon }: GaugeChar
         </span>
       </div>
       <div className="h-36 -mx-2 relative">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={144} minHeight={144} aspect={undefined}>
           <PieChart>
             <Pie
               data={data}

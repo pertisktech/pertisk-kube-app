@@ -35,9 +35,13 @@ export default {
         "dashboard-info-bg": "var(--color-dashboard-info-bg)",
         /* Dashboard metric colors */
         "dashboard-metric-primary": "var(--color-dashboard-metric-primary)",
+        "dashboard-metric-primary-bg": "var(--color-dashboard-metric-primary-bg)",
         "dashboard-metric-secondary": "var(--color-dashboard-metric-secondary)",
+        "dashboard-metric-secondary-bg": "var(--color-dashboard-metric-secondary-bg)",
         "dashboard-metric-tertiary": "var(--color-dashboard-metric-tertiary)",
+        "dashboard-metric-tertiary-bg": "var(--color-dashboard-metric-tertiary-bg)",
         "dashboard-metric-quaternary": "var(--color-dashboard-metric-quaternary)",
+        "dashboard-metric-quaternary-bg": "var(--color-dashboard-metric-quaternary-bg)",
       },
       fontFamily: {
         sans: "var(--font-sans)",
