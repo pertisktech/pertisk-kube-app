@@ -1,9 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import AceEditor from 'react-ace';
+import YAML from 'yaml';
+import 'ace-builds/src-noconflict/mode-yaml';
+import 'ace-builds/src-noconflict/theme-github';
+import 'ace-builds/src-noconflict/theme-tomorrow_night';
 import { Trash2 } from 'lucide-react';
 import { useRealtimeDaemonSets } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
+import { useTheme } from '../context/ThemeContext';
 import { DaemonSetDetailPanel, DataTable, ConfirmDialog } from '../components';
 import type { DaemonSet } from '../types';
+import { getAuthToken } from '../utils/auth';
 import { getStatusColor, timeAgo, truncateString } from '../utils';
 import { deleteDaemonSet } from '../hooks/useKubernetes';
 
@@ -18,11 +25,57 @@ type DaemonSetSortKey =
   | 'images'
   | 'age';
 
+const sanitizeDaemonSetYamlForEdit = (yamlText: string) => {
+  try {
+    const parsed = YAML.parse(yamlText) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== 'object') {
+      return yamlText;
+    }
+
+    const metadata = (parsed.metadata as Record<string, unknown> | undefined) ?? undefined;
+    if (metadata && typeof metadata === 'object') {
+      delete metadata.managedFields;
+      delete metadata.resourceVersion;
+      delete metadata.uid;
+      delete metadata.generation;
+      delete metadata.creationTimestamp;
+      delete metadata.selfLink;
+
+      const annotations = metadata.annotations as Record<string, unknown> | undefined;
+      if (annotations && typeof annotations === 'object') {
+        delete annotations['kubectl.kubernetes.io/last-applied-configuration'];
+        if (Object.keys(annotations).length === 0) {
+          delete metadata.annotations;
+        }
+      }
+    }
+
+    delete parsed.status;
+
+    return YAML.stringify(parsed, { lineWidth: 0 });
+  } catch {
+    return yamlText;
+  }
+};
+
 export const DaemonSetsPage = () => {
   const { data, isLoading, error } = useRealtimeDaemonSets();
   const { selectedNamespaces } = useNamespace();
+  const theme = useTheme();
   const [selectedDaemonSet, setSelectedDaemonSet] = useState<DaemonSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [yamlTabs, setYamlTabs] = useState<DaemonSet[]>([]);
+  const [activeYamlTabKey, setActiveYamlTabKey] = useState<string | null>(null);
+  const [yamlDrawerVisible, setYamlDrawerVisible] = useState(true);
+  const [yamlDrawerHeightPx, setYamlDrawerHeightPx] = useState<number | null>(null);
+  const [isResizingYamlDrawer, setIsResizingYamlDrawer] = useState(false);
+  const resizeStartYRef = useRef(0);
+  const resizeStartHeightRef = useRef(0);
+  const [yamlContentsByTab, setYamlContentsByTab] = useState<Record<string, string>>({});
+  const [yamlLoadingTabKey, setYamlLoadingTabKey] = useState<string | null>(null);
+  const [yamlSavingTabKey, setYamlSavingTabKey] = useState<string | null>(null);
+  const [yamlErrorByTab, setYamlErrorByTab] = useState<Record<string, string | null>>({});
+  const [yamlSuccessByTab, setYamlSuccessByTab] = useState<Record<string, string | null>>({});
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -30,6 +83,15 @@ export const DaemonSetsPage = () => {
     key: 'age',
     direction: 'desc',
   });
+
+  const getDaemonSetKey = (daemonSet: DaemonSet) => `${daemonSet.namespace}/${daemonSet.name}`;
+
+  const activeYamlDaemonSet = useMemo(() => {
+    if (!activeYamlTabKey) {
+      return null;
+    }
+    return yamlTabs.find((daemonSet) => getDaemonSetKey(daemonSet) === activeYamlTabKey) ?? null;
+  }, [yamlTabs, activeYamlTabKey]);
 
   useEffect(() => {
     if (!data || data.length === 0) {
@@ -47,6 +109,202 @@ export const DaemonSetsPage = () => {
     );
     setSelectedDaemonSet(updatedSelected ?? data[0]);
   }, [data]);
+
+  useEffect(() => {
+    if (yamlTabs.length === 0) {
+      return;
+    }
+
+    setYamlTabs((previousTabs) =>
+      previousTabs.map(
+        (tab) => data?.find((item) => item.name === tab.name && item.namespace === tab.namespace) ?? tab
+      )
+    );
+  }, [data, yamlTabs.length]);
+
+  useEffect(() => {
+    if (!activeYamlDaemonSet || !activeYamlTabKey) {
+      return;
+    }
+
+    if (yamlContentsByTab[activeYamlTabKey] !== undefined) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const token = getAuthToken();
+
+    const loadYaml = async () => {
+      setYamlLoadingTabKey(activeYamlTabKey);
+      setYamlErrorByTab((previous) => ({ ...previous, [activeYamlTabKey]: null }));
+      setYamlSuccessByTab((previous) => ({ ...previous, [activeYamlTabKey]: null }));
+
+      try {
+        const response = await fetch(
+          `/api/daemonsets/${encodeURIComponent(activeYamlDaemonSet.namespace)}/${encodeURIComponent(activeYamlDaemonSet.name)}/yaml`,
+          {
+            method: 'GET',
+            headers: token ? { Authorization: token } : undefined,
+            signal: controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`Failed to load daemonset YAML (${response.status})`);
+        }
+
+        const yaml = await response.text();
+        const sanitizedYaml = sanitizeDaemonSetYamlForEdit(yaml);
+        setYamlContentsByTab((previous) => ({ ...previous, [activeYamlTabKey]: sanitizedYaml }));
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          setYamlErrorByTab((previous) => ({
+            ...previous,
+            [activeYamlTabKey]: (error as Error).message || 'Failed to load daemonset YAML',
+          }));
+        }
+      } finally {
+        setYamlLoadingTabKey((current) => (current === activeYamlTabKey ? null : current));
+      }
+    };
+
+    loadYaml();
+
+    return () => controller.abort();
+  }, [activeYamlDaemonSet?.namespace, activeYamlDaemonSet?.name, activeYamlTabKey, yamlContentsByTab]);
+
+  const handleCloseYamlEditor = () => {
+    setYamlTabs([]);
+    setActiveYamlTabKey(null);
+    setYamlDrawerVisible(true);
+    setYamlContentsByTab({});
+    setYamlErrorByTab({});
+    setYamlSuccessByTab({});
+    setYamlLoadingTabKey(null);
+    setYamlSavingTabKey(null);
+  };
+
+  const handleOpenYamlEditorFromPanel = (daemonSet: DaemonSet) => {
+    const key = getDaemonSetKey(daemonSet);
+
+    setYamlTabs((previousTabs) => {
+      if (previousTabs.some((tab) => getDaemonSetKey(tab) === key)) {
+        return previousTabs;
+      }
+      return [...previousTabs, daemonSet];
+    });
+
+    setActiveYamlTabKey(key);
+    setYamlDrawerVisible(true);
+    setPanelOpen(false);
+  };
+
+  const handleCloseYamlTab = (tabKey: string) => {
+    setYamlTabs((previousTabs) => {
+      const nextTabs = previousTabs.filter((tab) => getDaemonSetKey(tab) !== tabKey);
+
+      if (activeYamlTabKey === tabKey) {
+        const fallbackTab = nextTabs[nextTabs.length - 1];
+        setActiveYamlTabKey(fallbackTab ? getDaemonSetKey(fallbackTab) : null);
+      }
+
+      return nextTabs;
+    });
+
+    setYamlContentsByTab((previous) => {
+      const next = { ...previous };
+      delete next[tabKey];
+      return next;
+    });
+    setYamlErrorByTab((previous) => {
+      const next = { ...previous };
+      delete next[tabKey];
+      return next;
+    });
+    setYamlSuccessByTab((previous) => {
+      const next = { ...previous };
+      delete next[tabKey];
+      return next;
+    });
+    setYamlLoadingTabKey((current) => (current === tabKey ? null : current));
+    setYamlSavingTabKey((current) => (current === tabKey ? null : current));
+  };
+
+  const handleSaveYaml = async () => {
+    if (!activeYamlDaemonSet || !activeYamlTabKey) {
+      return;
+    }
+
+    const token = getAuthToken();
+    setYamlSavingTabKey(activeYamlTabKey);
+    setYamlErrorByTab((previous) => ({ ...previous, [activeYamlTabKey]: null }));
+    setYamlSuccessByTab((previous) => ({ ...previous, [activeYamlTabKey]: null }));
+
+    try {
+      const response = await fetch(
+        `/api/daemonsets/${encodeURIComponent(activeYamlDaemonSet.namespace)}/${encodeURIComponent(activeYamlDaemonSet.name)}/yaml`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/yaml',
+            ...(token ? { Authorization: token } : {}),
+          },
+          body: yamlContentsByTab[activeYamlTabKey] || '',
+        }
+      );
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `Failed to save daemonset YAML (${response.status})`);
+      }
+
+      setYamlSuccessByTab((previous) => ({
+        ...previous,
+        [activeYamlTabKey]: 'DaemonSet YAML saved successfully',
+      }));
+    } catch (error) {
+      setYamlErrorByTab((previous) => ({
+        ...previous,
+        [activeYamlTabKey]: (error as Error).message || 'Failed to save daemonset YAML',
+      }));
+    } finally {
+      setYamlSavingTabKey((current) => (current === activeYamlTabKey ? null : current));
+    }
+  };
+
+  const handleStartYamlDrawerResize = (clientY: number) => {
+    const initialHeight = yamlDrawerHeightPx ?? Math.floor(window.innerHeight * 0.45);
+    resizeStartYRef.current = clientY;
+    resizeStartHeightRef.current = initialHeight;
+    setYamlDrawerHeightPx(initialHeight);
+    setIsResizingYamlDrawer(true);
+  };
+
+  useEffect(() => {
+    if (!isResizingYamlDrawer) {
+      return;
+    }
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const delta = resizeStartYRef.current - event.clientY;
+      const minHeight = 220;
+      const maxHeight = Math.floor(window.innerHeight * 0.85);
+      const nextHeight = Math.max(minHeight, Math.min(maxHeight, resizeStartHeightRef.current + delta));
+      setYamlDrawerHeightPx(nextHeight);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingYamlDrawer(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingYamlDrawer]);
 
   const handleDeleteSingle = async (namespace: string, name: string) => {
     setConfirmDelete({ keys: [`${namespace}/${name}`], label: name });
@@ -198,7 +456,14 @@ export const DaemonSetsPage = () => {
         <p className="text-text-secondary mt-1">Manage DaemonSet resources</p>
       </div>
 
-      <DataTable
+      <div
+        className="space-y-2"
+        style={{
+          paddingBottom:
+            yamlTabs.length > 0 ? (yamlDrawerVisible ? yamlDrawerHeightPx ?? 420 : 84) : 0,
+        }}
+      >
+        <DataTable
         columns={columns}
         data={sortedDaemonSets}
         isLoading={isLoading}
@@ -216,6 +481,176 @@ export const DaemonSetsPage = () => {
         onRowSelectionChange={(rows) => setSelectedRows(rows)}
       />
 
+        {yamlTabs.length > 0 && !yamlDrawerVisible && (
+          <section className="fixed bottom-0 left-0 md:left-[var(--layout-sidebar-width,16rem)] right-0 z-[96]">
+            <div className="px-6">
+              <div className="bg-surface border border-border rounded-t-lg shadow-2xl p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-text-secondary">YAML tabs hidden ({yamlTabs.length})</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setYamlDrawerVisible(true)}
+                      className="px-3 py-1 text-xs rounded-md bg-[var(--color-primary)] text-bg"
+                    >
+                      Show
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCloseYamlEditor}
+                      className="px-3 py-1 text-xs rounded-md border border-border text-text-secondary hover:text-text"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {yamlTabs.length > 0 && yamlDrawerVisible && activeYamlDaemonSet && activeYamlTabKey && (
+          <section className="fixed bottom-0 left-0 md:left-[var(--layout-sidebar-width,16rem)] right-0 z-[96]">
+            <div className="px-6">
+              <div
+                className="bg-surface border border-border rounded-t-lg shadow-2xl p-3 pt-5 space-y-2 overflow-auto relative"
+                style={{
+                  height: yamlDrawerHeightPx ? `${yamlDrawerHeightPx}px` : 'clamp(220px, 45vh, 620px)',
+                }}
+              >
+                <div
+                  className="absolute top-0 left-0 right-0 h-5 cursor-ns-resize flex items-start justify-center"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    handleStartYamlDrawerResize(event.clientY);
+                  }}
+                  aria-label="Resize YAML drawer"
+                  title="Drag to resize"
+                >
+                  <div className="mt-1.5 h-1.5 w-14 rounded-full bg-border" />
+                </div>
+
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 min-w-0">
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 min-w-0">
+                    {yamlTabs.map((tab) => {
+                      const tabKey = getDaemonSetKey(tab);
+                      const isActive = tabKey === activeYamlTabKey;
+
+                      return (
+                        <div
+                          key={tabKey}
+                          className={`inline-flex items-center rounded-md border text-xs ${
+                            isActive
+                              ? 'border-[var(--color-primary)] bg-hover text-[var(--color-primary)]'
+                              : 'border-border bg-surface-elevated text-text-secondary'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setActiveYamlTabKey(tabKey)}
+                            className="px-3 py-1.5 whitespace-nowrap max-w-[220px] truncate"
+                            title={tabKey}
+                          >
+                            {tab.name}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCloseYamlTab(tabKey)}
+                            className="px-2 py-1.5 border-l border-border"
+                            aria-label={`Close ${tabKey} tab`}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap lg:flex-nowrap">
+                    <span className="px-2 py-1 text-xs rounded bg-hover text-[var(--color-primary)] font-semibold">
+                      Edit YAML
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setYamlDrawerVisible(false)}
+                      className="px-3 py-1.5 text-sm rounded-md border border-border text-text-secondary hover:text-text"
+                      disabled={yamlSavingTabKey === activeYamlTabKey}
+                    >
+                      Hide
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveYaml}
+                      className="px-3 py-1.5 text-sm rounded-md bg-[var(--color-primary)] text-bg disabled:opacity-60"
+                      disabled={
+                        yamlSavingTabKey === activeYamlTabKey ||
+                        yamlLoadingTabKey === activeYamlTabKey ||
+                        !(yamlContentsByTab[activeYamlTabKey] || '').trim()
+                      }
+                    >
+                      {yamlSavingTabKey === activeYamlTabKey ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCloseYamlEditor}
+                      className="px-3 py-1.5 text-sm rounded-md border border-border text-text-secondary hover:text-text"
+                      disabled={yamlSavingTabKey === activeYamlTabKey}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+
+                <>
+                  {yamlErrorByTab[activeYamlTabKey] && (
+                    <div className="px-3 py-2 text-sm text-[var(--color-icon-danger)] border border-border rounded-md bg-surface-elevated">
+                      {yamlErrorByTab[activeYamlTabKey]}
+                    </div>
+                  )}
+
+                  {yamlSuccessByTab[activeYamlTabKey] && (
+                    <div className="px-3 py-2 text-sm text-[var(--color-icon-success)] border border-border rounded-md bg-surface-elevated">
+                      {yamlSuccessByTab[activeYamlTabKey]}
+                    </div>
+                  )}
+
+                  <div className="w-full h-[calc(100%-90px)] min-h-[180px] rounded-md border border-border bg-surface-elevated overflow-hidden">
+                    <AceEditor
+                      mode="yaml"
+                      theme={theme?.isDark ? 'tomorrow_night' : 'github'}
+                      name={`daemonset-yaml-editor-${activeYamlTabKey}`}
+                      value={yamlContentsByTab[activeYamlTabKey] || ''}
+                      onChange={(value) =>
+                        setYamlContentsByTab((previous) => ({
+                          ...previous,
+                          [activeYamlTabKey]: value,
+                        }))
+                      }
+                      readOnly={
+                        yamlLoadingTabKey === activeYamlTabKey || yamlSavingTabKey === activeYamlTabKey
+                      }
+                      width="100%"
+                      height="100%"
+                      fontSize={12}
+                      showPrintMargin={false}
+                      setOptions={{
+                        useWorker: false,
+                        wrap: true,
+                        tabSize: 2,
+                        showLineNumbers: true,
+                      }}
+                      editorProps={{
+                        $blockScrolling: true,
+                      }}
+                    />
+                  </div>
+                </>
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
+
       {panelOpen && selectedDaemonSet && (
         <>
           <div
@@ -225,6 +660,7 @@ export const DaemonSetsPage = () => {
           <DaemonSetDetailPanel
             daemonSet={selectedDaemonSet}
             onClose={() => setPanelOpen(false)}
+            onOpenYamlEditor={handleOpenYamlEditorFromPanel}
             onDelete={handleDeleteSingle}
           />
         </>

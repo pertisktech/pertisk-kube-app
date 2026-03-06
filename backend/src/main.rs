@@ -739,14 +739,34 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/deployments/:namespace/:name", delete(delete_deployment))
         .route("/statefulsets", get(list_statefulsets))
+        .route(
+            "/statefulsets/:namespace/:name/yaml",
+            get(get_statefulset_yaml).put(update_statefulset_yaml),
+        )
         .route("/statefulsets/:namespace/:name", delete(delete_statefulset))
         .route("/daemonsets", get(list_daemonsets))
+        .route(
+            "/daemonsets/:namespace/:name/yaml",
+            get(get_daemonset_yaml).put(update_daemonset_yaml),
+        )
         .route("/daemonsets/:namespace/:name", delete(delete_daemonset))
         .route("/replicasets", get(list_replicasets))
+        .route(
+            "/replicasets/:namespace/:name/yaml",
+            get(get_replicaset_yaml).put(update_replicaset_yaml),
+        )
         .route("/replicasets/:namespace/:name", delete(delete_replicaset))
         .route("/jobs", get(list_jobs))
+        .route(
+            "/jobs/:namespace/:name/yaml",
+            get(get_job_yaml).put(update_job_yaml),
+        )
         .route("/jobs/:namespace/:name", delete(delete_job))
         .route("/cronjobs", get(list_cronjobs))
+        .route(
+            "/cronjobs/:namespace/:name/yaml",
+            get(get_cronjob_yaml).put(update_cronjob_yaml),
+        )
         .route("/cronjobs/:namespace/:name", delete(delete_cronjob))
         .route("/namespaces/:name", delete(delete_namespace))
         .route("/configmaps", get(list_configmaps))
@@ -1086,7 +1106,7 @@ async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
                         .owner_references
                         .as_ref()
                         .and_then(|owners| owners.first())
-                        .map(|owner| owner.kind.clone())
+                        .map(|owner| format!("{}/{}", owner.kind, owner.name))
                         .unwrap_or_else(|| "-".to_string());
                     let creation_timestamp = pod
                         .metadata
@@ -1838,6 +1858,366 @@ async fn update_deployment_yaml(
     }
 }
 
+async fn get_statefulset_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::StatefulSet;
+
+    let api: Api<StatefulSet> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(statefulset) => match serde_yaml::to_string(&statefulset) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize statefulset to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting statefulset YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_statefulset_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::StatefulSet;
+
+    let mut statefulset: StatefulSet = match serde_yaml::from_str(&body) {
+        Ok(statefulset) => statefulset,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    statefulset.metadata.name = Some(name.clone());
+    statefulset.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<StatefulSet> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&statefulset) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting statefulset YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "StatefulSet updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating statefulset YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update statefulset: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn get_daemonset_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::DaemonSet;
+
+    let api: Api<DaemonSet> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(daemonset) => match serde_yaml::to_string(&daemonset) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize daemonset to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting daemonset YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_daemonset_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::DaemonSet;
+
+    let mut daemonset: DaemonSet = match serde_yaml::from_str(&body) {
+        Ok(daemonset) => daemonset,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    daemonset.metadata.name = Some(name.clone());
+    daemonset.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<DaemonSet> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&daemonset) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting daemonset YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "DaemonSet updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating daemonset YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update daemonset: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn get_job_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::batch::v1::Job;
+
+    let api: Api<Job> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(job) => match serde_yaml::to_string(&job) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize job to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting job YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_job_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::batch::v1::Job;
+
+    let mut job: Job = match serde_yaml::from_str(&body) {
+        Ok(job) => job,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    job.metadata.name = Some(name.clone());
+    job.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<Job> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&job) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting job YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "Job updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating job YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update job: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn get_cronjob_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::batch::v1::CronJob;
+
+    let api: Api<CronJob> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(cronjob) => match serde_yaml::to_string(&cronjob) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize cronjob to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting cronjob YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_cronjob_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::batch::v1::CronJob;
+
+    let mut cronjob: CronJob = match serde_yaml::from_str(&body) {
+        Ok(cronjob) => cronjob,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    cronjob.metadata.name = Some(name.clone());
+    cronjob.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<CronJob> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&cronjob) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting cronjob YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "CronJob updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating cronjob YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update cronjob: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
 async fn list_statefulsets(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::apps::v1::StatefulSet;
 
@@ -2080,6 +2460,96 @@ async fn list_replicasets(State(state): State<AppState>) -> impl IntoResponse {
         Err(err) => {
             error!("Error listing replicasets: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn get_replicaset_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::ReplicaSet;
+
+    let api: Api<ReplicaSet> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(replicaset) => match serde_yaml::to_string(&replicaset) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize replicaset to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting replicaset YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_replicaset_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::ReplicaSet;
+
+    let mut replicaset: ReplicaSet = match serde_yaml::from_str(&body) {
+        Ok(replicaset) => replicaset,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    replicaset.metadata.name = Some(name.clone());
+    replicaset.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<ReplicaSet> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&replicaset) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting replicaset YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "ReplicaSet updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating replicaset YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update replicaset: {}", err),
+                })),
+            )
+                .into_response()
         }
     }
 }

@@ -25,12 +25,12 @@ This project is structured as a **single workspace**:
 
 #### Workloads
 - **Deployments** - Full CRUD with YAML editor, real-time pod tracking, **dynamic scaling (adjust replica count)**
-- **StatefulSets** - Manage stateful applications
-- **DaemonSets** - Monitor daemon pods with node selection
-- **Jobs** - View and manage batch jobs
-- **CronJobs** - Scheduled job management
-- **ReplicaSets** - Replica management and pod distribution
-- **Pods** - Pod management with execution terminal (exec into containers)
+- **StatefulSets** - Manage stateful applications with YAML editor
+- **DaemonSets** - Monitor daemon pods with node selection and YAML editor
+- **Jobs** - View and manage batch jobs with YAML editor
+- **CronJobs** - Scheduled job management with YAML editor
+- **ReplicaSets** - Replica management and pod distribution with YAML editor
+- **Pods** - Pod management with YAML editor and execution terminal (exec into containers)
 
 #### Configuration & Secrets
 - **ConfigMaps** - Create and manage configuration files
@@ -167,11 +167,23 @@ docker-compose up -d
 #### Workloads
 - `GET /api/deployments` - List deployments
 - `POST /api/deployments/:namespace/:name/scale` - Scale deployment replicas
+- `GET /api/deployments/:namespace/:name/yaml` - Get deployment YAML
+- `PUT /api/deployments/:namespace/:name/yaml` - Update deployment YAML
 - `GET /api/statefulsets` - List statefulsets
+- `GET /api/statefulsets/:namespace/:name/yaml` - Get statefulset YAML
+- `PUT /api/statefulsets/:namespace/:name/yaml` - Update statefulset YAML
 - `GET /api/daemonsets` - List daemonsets
+- `GET /api/daemonsets/:namespace/:name/yaml` - Get daemonset YAML
+- `PUT /api/daemonsets/:namespace/:name/yaml` - Update daemonset YAML
 - `GET /api/replicasets` - List replicasets
+- `GET /api/replicasets/:namespace/:name/yaml` - Get replicaset YAML
+- `PUT /api/replicasets/:namespace/:name/yaml` - Update replicaset YAML
 - `GET /api/jobs` - List jobs
+- `GET /api/jobs/:namespace/:name/yaml` - Get job YAML
+- `PUT /api/jobs/:namespace/:name/yaml` - Update job YAML
 - `GET /api/cronjobs` - List cronjobs
+- `GET /api/cronjobs/:namespace/:name/yaml` - Get cronjob YAML
+- `PUT /api/cronjobs/:namespace/:name/yaml` - Update cronjob YAML
 
 #### Configuration
 - `GET /api/configmaps` - List configmaps

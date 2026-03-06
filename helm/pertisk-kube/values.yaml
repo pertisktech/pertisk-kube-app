@@ -102,16 +102,13 @@ rbac:
   create: true
   serviceAccountName: pertisk-kube-sa
   rules:
-    # Core resources
+    # Core resources - Read-only for most
     - apiGroups: [""]
       resources:
         [
-          "pods",
-          "pods/log",
           "services",
           "endpoints",
           "nodes",
-          "namespaces",
           "events",
           "persistentvolumeclaims",
           "persistentvolumes",
@@ -122,14 +119,22 @@ rbac:
           "resourcequotas",
         ]
       verbs: ["get", "list", "watch"]
-    # Apps resources
+    # Pods - Allow editing and deleting
+    - apiGroups: [""]
+      resources: ["pods", "pods/log"]
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+    # Namespaces - Allow deleting
+    - apiGroups: [""]
+      resources: ["namespaces"]
+      verbs: ["get", "list", "watch", "delete"]
+    # Apps resources - Allow editing and deleting
     - apiGroups: ["apps"]
       resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
-      verbs: ["get", "list", "watch"]
-    # Batch resources
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+    # Batch resources - Allow editing and deleting
     - apiGroups: ["batch"]
       resources: ["jobs", "cronjobs"]
-      verbs: ["get", "list", "watch"]
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
     # Networking resources
     - apiGroups: ["networking.k8s.io"]
       resources: ["ingresses", "networkpolicies", "ingressclasses"]
