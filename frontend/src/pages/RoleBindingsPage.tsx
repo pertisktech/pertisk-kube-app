@@ -38,9 +38,8 @@ export const RoleBindingsPage = () => {
     },
     {
       header: 'Age',
-      accessor: 'age' as const,
+      accessor: (rb: RoleBinding) => timeAgo(rb.age),
       width: '15%',
-      render: (rb: RoleBinding) => timeAgo(rb.age),
     },
   ];
 

@@ -58,9 +58,8 @@ export const PersistentVolumeClaimsPage = () => {
     },
     {
       header: 'Age',
-      accessor: 'age' as const,
+      accessor: (pvc: PersistentVolumeClaim) => timeAgo(pvc.age),
       width: '10%',
-      render: (pvc: PersistentVolumeClaim) => timeAgo(pvc.age),
     },
   ];
 

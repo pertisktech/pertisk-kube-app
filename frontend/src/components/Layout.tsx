@@ -242,7 +242,9 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
-    return location.pathname.startsWith(path);
+    // Exact match or starts with path followed by '/' or '?'
+    if (location.pathname === path) return true;
+    return location.pathname.startsWith(path + '/');
   };
 
   const hasActiveWorkload = WORKLOAD_ITEMS.some((item) => isActive(item.path));

@@ -33,9 +33,8 @@ export const RolesPage = () => {
     },
     {
       header: 'Age',
-      accessor: 'age' as const,
+      accessor: (role: Role) => timeAgo(role.age),
       width: '25%',
-      render: (role: Role) => timeAgo(role.age),
     },
   ];
 

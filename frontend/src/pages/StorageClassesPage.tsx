@@ -48,9 +48,8 @@ export const StorageClassesPage = () => {
     },
     {
       header: 'Age',
-      accessor: 'age' as const,
+      accessor: (sc: StorageClass) => timeAgo(sc.age),
       width: '10%',
-      render: (sc: StorageClass) => timeAgo(sc.age),
     },
   ];
 

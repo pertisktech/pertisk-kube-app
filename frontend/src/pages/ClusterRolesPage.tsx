@@ -19,9 +19,8 @@ export const ClusterRolesPage = () => {
     },
     {
       header: 'Age',
-      accessor: 'age' as const,
+      accessor: (cr: ClusterRole) => timeAgo(cr.age),
       width: '30%',
-      render: (cr: ClusterRole) => timeAgo(cr.age),
     },
   ];
 

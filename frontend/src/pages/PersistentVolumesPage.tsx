@@ -6,6 +6,9 @@ import { StatusBadge } from '../components/StatusBadge';
 
 export const PersistentVolumesPage = () => {
   const { data, isLoading, error } = usePersistentVolumes();
+  
+  // Note: PersistentVolumes are cluster-wide resources (not namespaced),
+  // so they are not filtered by namespace selection
 
   const columns = [
     {
@@ -49,9 +52,8 @@ export const PersistentVolumesPage = () => {
     },
     {
       header: 'Age',
-      accessor: 'age' as const,
+      accessor: (pv: PersistentVolume) => timeAgo(pv.age),
       width: '10%',
-      render: (pv: PersistentVolume) => timeAgo(pv.age),
     },
   ];
 

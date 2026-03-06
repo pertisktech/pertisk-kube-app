@@ -33,9 +33,8 @@ export const ServiceAccountsPage = () => {
     },
     {
       header: 'Age',
-      accessor: 'age' as const,
+      accessor: (sa: ServiceAccount) => timeAgo(sa.age),
       width: '25%',
-      render: (sa: ServiceAccount) => timeAgo(sa.age),
     },
   ];
 

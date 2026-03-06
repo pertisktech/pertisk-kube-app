@@ -24,9 +24,8 @@ export const ClusterRoleBindingsPage = () => {
     },
     {
       header: 'Age',
-      accessor: 'age' as const,
+      accessor: (crb: ClusterRoleBinding) => timeAgo(crb.age),
       width: '20%',
-      render: (crb: ClusterRoleBinding) => timeAgo(crb.age),
     },
   ];
 
