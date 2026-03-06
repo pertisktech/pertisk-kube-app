@@ -82,12 +82,39 @@ rbac:
   create: true
   serviceAccountName: pertisk-kube-sa
   rules:
+    # Core resources
     - apiGroups: [""]
-      resources: ["pods", "pods/log", "services", "nodes", "namespaces", "events", "persistentvolumeclaims", "persistentvolumes"]
+      resources: ["pods", "pods/log", "services", "endpoints", "nodes", "namespaces", "events", "persistentvolumeclaims", "persistentvolumes", "configmaps", "secrets", "serviceaccounts", "limitranges", "resourcequotas"]
       verbs: ["get", "list", "watch"]
+    # Apps resources
     - apiGroups: ["apps"]
       resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
       verbs: ["get", "list", "watch"]
+    # Batch resources
     - apiGroups: ["batch"]
       resources: ["jobs", "cronjobs"]
+      verbs: ["get", "list", "watch"]
+    # Networking resources
+    - apiGroups: ["networking.k8s.io"]
+      resources: ["ingresses", "networkpolicies", "ingressclasses"]
+      verbs: ["get", "list", "watch"]
+    # Storage resources
+    - apiGroups: ["storage.k8s.io"]
+      resources: ["storageclasses", "volumeattachments", "csinodes", "csidrivers", "csistoragecapacities"]
+      verbs: ["get", "list", "watch"]
+    # RBAC Access Control resources
+    - apiGroups: ["rbac.authorization.k8s.io"]
+      resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+      verbs: ["get", "list", "watch"]
+    # Autoscaling resources
+    - apiGroups: ["autoscaling"]
+      resources: ["horizontalpodautoscalers"]
+      verbs: ["get", "list", "watch"]
+    # Policy resources
+    - apiGroups: ["policy"]
+      resources: ["poddisruptionbudgets", "podsecuritypolicies"]
+      verbs: ["get", "list", "watch"]
+    # Metrics
+    - apiGroups: ["metrics.k8s.io"]
+      resources: ["pods", "nodes"]
       verbs: ["get", "list", "watch"]
