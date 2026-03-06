@@ -596,6 +596,12 @@ struct DashboardSummary {
     jobs: usize,
     cronjobs: usize,
     events: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cluster_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    api_endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kube_version: Option<String>,
 }
 
 #[tokio::main]
@@ -1847,7 +1853,7 @@ async fn get_dashboard_summary(State(state): State<AppState>) -> impl IntoRespon
     let replicasets_api: Api<ReplicaSet> = Api::all(state.client.clone());
     let jobs_api: Api<Job> = Api::all(state.client.clone());
     let cronjobs_api: Api<CronJob> = Api::all(state.client.clone());
-    let events_api: Api<Event> = Api::all(state.client);
+    let events_api: Api<Event> = Api::all(state.client.clone());
 
     let result = async {
         let namespaces = namespaces_api.list(&ListParams::default()).await?.items.len();
@@ -1860,6 +1866,26 @@ async fn get_dashboard_summary(State(state): State<AppState>) -> impl IntoRespon
         let cronjobs = cronjobs_api.list(&ListParams::default()).await?.items.len();
         let events = events_api.list(&ListParams::default()).await?.items.len();
 
+        // Get cluster version info
+        let kube_version = state.client.apiserver_version().await.ok().map(|v| v.git_version);
+        
+        // Try to get cluster name from kubeconfig or default
+        let cluster_name = Some(env::var("CLUSTER_NAME").unwrap_or_else(|_| {
+            let kubeconfig = env::var("KUBECONFIG").unwrap_or_else(|_| "~/.kube/config".to_string());
+            if kubeconfig.contains("talos") {
+                "talos-cluster".to_string()
+            } else if kubeconfig.contains("omni") {
+                "omni-cluster".to_string()
+            } else {
+                "kubernetes-cluster".to_string()
+            }
+        }));
+
+        // Get API endpoint from environment or default
+        let api_endpoint = Some(env::var("KUBERNETES_SERVICE_HOST")
+            .unwrap_or_else(|_| "kubernetes.default.svc.cluster.local".to_string()));
+
+
         Ok::<DashboardSummary, kube::Error>(DashboardSummary {
             namespaces,
             pods,
@@ -1870,6 +1896,9 @@ async fn get_dashboard_summary(State(state): State<AppState>) -> impl IntoRespon
             jobs,
             cronjobs,
             events,
+            cluster_name,
+            api_endpoint,
+            kube_version,
         })
     }
     .await;

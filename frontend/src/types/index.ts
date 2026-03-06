@@ -131,6 +131,16 @@ export interface DashboardSummary {
   jobs: number;
   cronjobs: number;
   events: number;
+  cluster_name?: string;
+  api_endpoint?: string;
+  kube_version?: string;
+}
+
+export interface NodeGroup {
+  name: string;
+  node_count: number;
+  ready_count: number;
+  roles: string[];
 }
 
 export interface ApiResponse<T> {

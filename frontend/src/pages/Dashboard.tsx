@@ -1,5 +1,8 @@
 import { useDashboard, useNodes, usePods } from '../hooks/useKubernetes';
 import { Card, Stat } from '../components/Card';
+import { WorkloadSummary } from '../components/WorkloadSummary';
+import { MetricsCharts } from '../components/MetricsCharts';
+import { NodeGroups } from '../components/NodeGroups';
 import { Loader } from 'lucide-react';
 
 export const Dashboard = () => {
@@ -41,28 +44,47 @@ export const Dashboard = () => {
 
       {/* Cluster Overview */}
       <Card title="Cluster Overview">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Stat label="Total Nodes" value={totalNodeCount} />
-          <Stat label="Ready Nodes" value={readyNodeCount} />
-          <Stat label="Total Pods" value={dashboard?.pods || 0} />
-          <Stat label="Running Pods" value={runningPodCount} />
-        </div>
-      </Card>
+        <div className="space-y-4">
+          {/* Cluster Info */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4 border-b border-border">
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-text-secondary">Cluster Name</span>
+              <span className="text-lg font-semibold text-text">
+                {dashboard?.cluster_name || 'kubernetes-cluster'}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-text-secondary">API Endpoint</span>
+              <span className="text-sm font-mono text-text break-all">
+                {dashboard?.api_endpoint || 'kubernetes.default.svc'}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-text-secondary">Kube Version</span>
+              <span className="text-lg font-semibold text-text">
+                {dashboard?.kube_version || 'unknown'}
+              </span>
+            </div>
+          </div>
 
-      {/* Resource Summary */}
-      <Card title="Resource Summary">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Stat label="Deployments" value={dashboard?.deployments || 0} />
-          <Stat label="Namespaces" value={dashboard?.namespaces || 0} />
-          <Stat label="StatefulSets" value={dashboard?.statefulsets || 0} />
-          <div className="flex flex-col gap-1 p-3">
-            <span className="text-sm text-text-secondary">Events</span>
-            <span className="text-lg font-semibold text-text">
-              {dashboard?.events || 0}
-            </span>
+          {/* Stats Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Stat label="Total Nodes" value={totalNodeCount} />
+            <Stat label="Ready Nodes" value={readyNodeCount} />
+            <Stat label="Total Pods" value={dashboard?.pods || 0} />
+            <Stat label="Running Pods" value={runningPodCount} />
           </div>
         </div>
       </Card>
+
+      {/* Workload Summary */}
+      <WorkloadSummary />
+
+      {/* Node Groups */}
+      <NodeGroups />
+
+      {/* Metrics Charts */}
+      <MetricsCharts />
 
       {/* Node Status */}
       {nodes && nodes.length > 0 && (

@@ -12,3 +12,6 @@ export { ReplicaSetDetailPanel } from './ReplicaSetDetailPanel';
 export { StatefulSetDetailPanel } from './StatefulSetDetailPanel';
 export { JobDetailPanel } from './JobDetailPanel';
 export { CronJobDetailPanel } from './CronJobDetailPanel';
+export { WorkloadSummary } from './WorkloadSummary';
+export { MetricsCharts } from './MetricsCharts';
+export { NodeGroups } from './NodeGroups';
