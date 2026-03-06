@@ -7,7 +7,7 @@ import { StatusBadge } from '../components/StatusBadge';
 
 export const PersistentVolumesPage = () => {
   const { data, isLoading, error } = usePersistentVolumes();
-  const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>({ key: 'age', direction: 'desc' });
   
   // Note: PersistentVolumes are cluster-wide resources (not namespaced),
   // so they are not filtered by namespace selection

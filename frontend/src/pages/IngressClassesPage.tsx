@@ -6,7 +6,7 @@ import { timeAgo } from '../utils';
 
 export const IngressClassesPage = () => {
   const { data, isLoading, error } = useIngressClasses();
-  const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>({ key: 'age', direction: 'desc' });
 
   const sortedData = useMemo(() => {
     if (!data) return [];

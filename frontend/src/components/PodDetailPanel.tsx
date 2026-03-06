@@ -182,12 +182,6 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             </div>
           </section>
 
-          <section className="min-w-0 bg-surface border border-border rounded-lg p-4 space-y-3">
-            <p className="text-xs uppercase tracking-wide text-text-secondary">Manifest</p>
-            <div className="px-3 py-2 text-sm text-text-secondary border border-border rounded-md bg-surface-elevated">
-              Use the pencil icon in the top-right corner to edit pod YAML in the bottom content tab.
-            </div>
-          </section>
         </div>
       </div>
     </aside>

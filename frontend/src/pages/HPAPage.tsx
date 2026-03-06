@@ -8,7 +8,7 @@ import { timeAgo } from '../utils';
 export const HPAPage = () => {
   const { data, isLoading, error } = useHPA();
   const { selectedNamespaces } = useNamespace();
-  const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>({ key: 'age', direction: 'desc' });
 
   const sortedAndFilteredData = useMemo(() => {
     if (!data) return [];

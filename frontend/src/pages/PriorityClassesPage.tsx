@@ -6,7 +6,7 @@ import { timeAgo } from '../utils';
 
 export const PriorityClassesPage = () => {
   const { data, isLoading, error } = usePriorityClasses();
-  const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>({ key: 'age', direction: 'desc' });
 
   const sortedData = useMemo(() => {
     if (!data) return [];

@@ -8,7 +8,7 @@ import { timeAgo } from '../utils';
 export const SecretsPage = () => {
   const { data, isLoading, error } = useSecrets();
   const { selectedNamespaces } = useNamespace();
-  const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>({ key: 'age', direction: 'desc' });
 
   const sortedAndFilteredData = useMemo(() => {
     if (!data) return [];

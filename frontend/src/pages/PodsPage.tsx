@@ -89,8 +89,8 @@ export const PodsPage = () => {
   const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [sortState, setSortState] = useState<{ key: PodSortKey; direction: 'asc' | 'desc' }>({
-    key: 'name',
-    direction: 'asc',
+    key: 'age',
+    direction: 'desc',
   });
 
   // Combined editor drawer with mixed YAML and Shell tabs

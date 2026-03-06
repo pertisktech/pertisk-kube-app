@@ -8,7 +8,7 @@ import { useNamespace } from '../context/NamespaceContext';
 export const ServiceAccountsPage = () => {
   const { data, isLoading, error } = useServiceAccounts();
   const { selectedNamespaces } = useNamespace();
-  const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>({ key: 'age', direction: 'desc' });
 
   const filteredAndSortedData = useMemo(() => {
     if (!data) return [];

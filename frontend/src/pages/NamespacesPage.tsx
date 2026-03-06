@@ -18,8 +18,8 @@ export const NamespacesPage = () => {
   const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [sortState, setSortState] = useState<{ key: NamespaceSortKey; direction: 'asc' | 'desc' }>({
-    key: 'name',
-    direction: 'asc',
+    key: 'age',
+    direction: 'desc',
   });
 
   useEffect(() => {

@@ -7,7 +7,7 @@ import { StatusBadge } from '../components/StatusBadge';
 
 export const StorageClassesPage = () => {
   const { data, isLoading, error } = useStorageClasses();
-  const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>({ key: 'age', direction: 'desc' });
 
   const sortedData = useMemo(() => {
     if (!data) return [];

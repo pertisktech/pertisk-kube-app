@@ -9,7 +9,7 @@ import { useNamespace } from '../context/NamespaceContext';
 export const PersistentVolumeClaimsPage = () => {
   const { data, isLoading, error } = usePersistentVolumeClaims();
   const { selectedNamespaces } = useNamespace();
-  const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
+  const [sortState, setSortState] = useState<SortState>({ key: 'age', direction: 'desc' });
 
   const filteredAndSortedData = useMemo(() => {
     if (!data) return [];
