@@ -4,8 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        VERSION: local
-    image: pertisk-kube-web:local
+        VERSION: ${VERSION:-1.0.0-dev}
+    image: pertisk-kube-web:${VERSION:-1.0.0-dev}
     container_name: pertisk-kube-web
     ports:
       - "8092:8091"

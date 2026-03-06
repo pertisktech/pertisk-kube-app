@@ -18,6 +18,7 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
   const wsRef = useRef<WebSocket | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const lastSentDimensionsRef = useRef<{ cols: number; rows: number } | null>(null);
+  const resizeTimeoutRef = useRef<number | null>(null);
   const theme = useTheme();
 
   const sendResize = () => {
@@ -44,6 +45,23 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
         cols: xterm.cols,
       })
     );
+  };
+
+  const handleResize = () => {
+    if (resizeTimeoutRef.current) {
+      window.clearTimeout(resizeTimeoutRef.current);
+    }
+    
+    resizeTimeoutRef.current = window.setTimeout(() => {
+      if (fitAddonRef.current && xtermRef.current) {
+        try {
+          fitAddonRef.current.fit();
+          sendResize();
+        } catch (error) {
+          console.error('Error during terminal resize:', error);
+        }
+      }
+    }, 50);
   };
 
   useEffect(() => {
@@ -114,11 +132,23 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
 
     // Open terminal in DOM
     xterm.open(terminalRef.current);
-    fitAddon.fit();
-    xterm.focus();
-
+    
     xtermRef.current = xterm;
     fitAddonRef.current = fitAddon;
+
+    // Fit multiple times to ensure proper sizing before connection
+    const performInitialFit = () => {
+      requestAnimationFrame(() => {
+        fitAddon.fit();
+        // Fit again to handle any layout shifts
+        requestAnimationFrame(() => {
+          fitAddon.fit();
+        });
+      });
+    };
+    
+    performInitialFit();
+    xterm.focus();
 
     // Connect WebSocket for shell
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -138,7 +168,17 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
       xterm.writeln('');
       // Auto-focus terminal after connection
       xterm.focus();
-      sendResize();
+      
+      // Ensure terminal is properly sized before sending dimensions
+      fitAddon.fit();
+      setTimeout(() => {
+        fitAddon.fit();
+        sendResize();
+      }, 50);
+      setTimeout(() => {
+        fitAddon.fit();
+        sendResize();
+      }, 150);
     };
 
     ws.onmessage = (event) => {
@@ -168,33 +208,41 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
 
     terminalRef.current.addEventListener('mousedown', handleFocus);
 
-    // Keep terminal dimensions synchronized so right-side shell prompt stays aligned.
-    const handleResize = () => {
-      fitAddon.fit();
-      sendResize();
-    };
-
+    // Observe container size changes for responsive terminal
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
-      sendResize();
+      handleResize();
     });
 
-    resizeObserver.observe(terminalRef.current);
+    if (terminalRef.current) {
+      resizeObserver.observe(terminalRef.current);
+    }
 
-    // Run additional fits after first layout to avoid stale width calculations.
-    const timers = [
-      window.setTimeout(handleResize, 10),
-      window.setTimeout(handleResize, 60),
-      window.setTimeout(handleResize, 150),
+    // Additional resize attempts to handle initial layout
+    const layoutTimers = [
+      window.setTimeout(() => {
+        if (fitAddonRef.current) {
+          fitAddonRef.current.fit();
+          sendResize();
+        }
+      }, 250),
+      window.setTimeout(() => {
+        if (fitAddonRef.current) {
+          fitAddonRef.current.fit();
+          sendResize();
+        }
+      }, 500),
     ];
 
     window.addEventListener('resize', handleResize);
 
     return () => {
+      if (resizeTimeoutRef.current) {
+        window.clearTimeout(resizeTimeoutRef.current);
+      }
       terminalRef.current?.removeEventListener('mousedown', handleFocus);
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
-      timers.forEach((timer) => window.clearTimeout(timer));
+      layoutTimers.forEach((timer) => window.clearTimeout(timer));
       ws.close();
       xterm.dispose();
     };
@@ -203,8 +251,12 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
   return (
     <div
       ref={terminalRef}
-      className="w-full h-full bg-[#1e1e1e] dark:bg-[#1e1e1e] rounded-md overflow-hidden"
-      style={{ minHeight: '200px' }}
+      className="w-full h-full bg-[#1e1e1e] dark:bg-[#1e1e1e] rounded-md"
+      style={{ 
+        minHeight: '200px',
+        position: 'relative',
+        overflow: 'hidden'
+      }}
     />
   );
 };

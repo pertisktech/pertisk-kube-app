@@ -8,7 +8,7 @@ use axum::{
 };
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use kube::{Api, runtime::watcher};
-use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::process::Stdio;
@@ -77,6 +77,7 @@ fn parse_resize_message(text: &str) -> Option<(u16, u16)> {
 
 enum ShellSession {
     Pty {
+        master: Box<dyn MasterPty + Send>,
         reader: Box<dyn std::io::Read + Send>,
         writer: Box<dyn std::io::Write + Send>,
     },
@@ -124,7 +125,7 @@ async fn spawn_exec_shell(
         let pty_system = NativePtySystem::default();
         let pair = match pty_system.openpty(PtySize {
             rows: 30,
-            cols: 285,
+            cols: 120,
             pixel_width: 0,
             pixel_height: 0,
         }) {
@@ -170,7 +171,11 @@ async fn spawn_exec_shell(
         let reader = pair.master.try_clone_reader().unwrap();
         let writer = pair.master.take_writer().unwrap();
         
-        Some(ShellSession::Pty { reader, writer })
+        Some(ShellSession::Pty { 
+            master: pair.master,
+            reader, 
+            writer,
+        })
     } else {
         // Normal case: kubectl exec to pod with pipes
         let mut cmd = Command::new("kubectl");
@@ -319,8 +324,8 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
     };
 
     match session {
-        ShellSession::Pty { reader, writer } => {
-            handle_pty_session(ws_receiver, reader, writer, tx.clone()).await;
+        ShellSession::Pty { master, reader, writer } => {
+            handle_pty_session(ws_receiver, master, reader, writer, tx.clone()).await;
         }
         ShellSession::Piped { mut child, mut stdin, stdout, stderr } => {
             let (mut stdout_task, mut stderr_task) = spawn_output_tasks(stdout, stderr, tx.clone());
@@ -397,6 +402,7 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
 
 async fn handle_pty_session(
     mut ws_receiver: futures_util::stream::SplitStream<WebSocket>,
+    master: Box<dyn MasterPty + Send>,
     mut reader: Box<dyn std::io::Read + Send>,
     mut writer: Box<dyn std::io::Write + Send>,
     tx: tokio::sync::mpsc::Sender<String>,
@@ -423,10 +429,17 @@ async fn handle_pty_session(
     while let Some(message) = ws_receiver.next().await {
         match message {
             Ok(Message::Text(text)) => {
-                if let Some(_) = parse_resize_message(&text) {
-                    // Skip resize messages for PTY sessions
-                    // The stty command would be echoed back by the shell
-                    // PTY size is set at creation time (30 rows x 120 cols)
+                if let Some((cols, rows)) = parse_resize_message(&text) {
+                    // Handle terminal resize
+                    info!("Resizing PTY to {}x{}", cols, rows);
+                    if let Err(e) = master.resize(PtySize {
+                        rows,
+                        cols,
+                        pixel_width: 0,
+                        pixel_height: 0,
+                    }) {
+                        warn!("Failed to resize PTY: {}", e);
+                    }
                     continue;
                 }
 
