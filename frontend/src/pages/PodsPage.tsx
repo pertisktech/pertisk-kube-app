@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { useRealtimePods } from '../hooks/useRealtimePods';
 import { useNamespace } from '../context/NamespaceContext';
 import { useTheme } from '../context/ThemeContext';
 import { DataTable } from '../components/DataTable';
 import { PodDetailPanel } from '../components/PodDetailPanel';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { StatusBadge } from '../components/StatusBadge';
 import { Terminal } from '../components/Terminal';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';
 import { getAuthToken } from '../utils/auth';
+import { deletePod } from '../hooks/useKubernetes';
 import { GripHorizontal, X, Eye, EyeOff, Save, RefreshCw } from 'lucide-react';
 import AceEditor from 'react-ace';
 import YAML from 'yaml';
@@ -83,6 +86,8 @@ export const PodsPage = () => {
   const [selectedPod, setSelectedPod] = useState<Pod | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
+  const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [sortState, setSortState] = useState<{ key: PodSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
@@ -374,6 +379,36 @@ export const PodsPage = () => {
       setYamlErrorByTab((previous) => ({ ...previous, [tabKey]: message }));
     } finally {
       setYamlSavingTabKey(null);
+    }
+  };
+
+  const handleDeleteSingle = async (namespace: string, name: string) => {
+    setConfirmDelete({ keys: [`${namespace}/${name}`], label: name });
+    setPanelOpen(false);
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedRows.length === 0) return;
+    setConfirmDelete({
+      keys: selectedRows,
+      label: selectedRows.length === 1 ? selectedRows[0].split('/')[1] : `${selectedRows.length} pods`,
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDelete) return;
+    setIsDeleting(true);
+    try {
+      await Promise.all(
+        confirmDelete.keys.map((key) => {
+          const [ns, name] = key.split('/');
+          return deletePod(ns, name);
+        })
+      );
+      setSelectedRows([]);
+      setConfirmDelete(null);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -820,9 +855,49 @@ export const PodsPage = () => {
             onOpenYamlEditor={handleOpenYamlTab}
             onOpenShell={handleOpenShellTab}
             onOpenLogs={handleOpenLogsTab}
+            onDelete={handleDeleteSingle}
           />
         </>
       )}
+
+      {selectedRows.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-3 px-4 py-3 bg-surface border border-border rounded-xl shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <span className="text-sm text-text-secondary font-medium">
+            {selectedRows.length} selected
+          </span>
+          <div className="w-px h-4 bg-border" />
+          <button
+            type="button"
+            onClick={handleDeleteSelected}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-[var(--color-icon-danger)]/10 text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/20 font-medium transition-colors"
+          >
+            <Trash2 size={14} />
+            Delete
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedRows([])}
+            className="text-xs text-text-secondary hover:text-text transition-colors"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title={`Delete ${confirmDelete?.label ?? ''}`}
+        description={
+          confirmDelete && confirmDelete.keys.length === 1
+            ? `Are you sure you want to delete "${confirmDelete.label}"? This action cannot be undone.`
+            : `Are you sure you want to delete ${confirmDelete?.keys.length} pods? This action cannot be undone.`
+        }
+        confirmLabel="Delete"
+        destructive
+        isLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   );
 };

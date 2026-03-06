@@ -3,7 +3,7 @@ use axum::{
     http::{header, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -12,7 +12,7 @@ use chrono::Duration;
 use cron::Schedule;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use kube::core::{ApiResource, DynamicObject, GroupVersionKind};
-use kube::{api::{ListParams, Patch, PatchParams}, Api, Client};
+use kube::{api::{DeleteParams, ListParams, Patch, PatchParams}, Api, Client};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -721,6 +721,7 @@ async fn main() -> anyhow::Result<()> {
             "/pods/:namespace/:name/yaml",
             get(get_pod_yaml).put(update_pod_yaml),
         )
+        .route("/pods/:namespace/:name", delete(delete_pod))
         .route("/pods/:namespace/:name/logs", get(get_pod_logs))
         .route("/events", get(list_events))
         .route("/deployments", get(list_deployments))
@@ -736,11 +737,18 @@ async fn main() -> anyhow::Result<()> {
             "/deployments/:namespace/:name/yaml",
             get(get_deployment_yaml).put(update_deployment_yaml),
         )
+        .route("/deployments/:namespace/:name", delete(delete_deployment))
         .route("/statefulsets", get(list_statefulsets))
+        .route("/statefulsets/:namespace/:name", delete(delete_statefulset))
         .route("/daemonsets", get(list_daemonsets))
+        .route("/daemonsets/:namespace/:name", delete(delete_daemonset))
         .route("/replicasets", get(list_replicasets))
+        .route("/replicasets/:namespace/:name", delete(delete_replicaset))
         .route("/jobs", get(list_jobs))
+        .route("/jobs/:namespace/:name", delete(delete_job))
         .route("/cronjobs", get(list_cronjobs))
+        .route("/cronjobs/:namespace/:name", delete(delete_cronjob))
+        .route("/namespaces/:name", delete(delete_namespace))
         .route("/configmaps", get(list_configmaps))
         .route("/secrets", get(list_secrets))
         .route("/resourcequotas", get(list_resourcequotas))
@@ -3568,6 +3576,150 @@ async fn list_cluster_role_bindings(State(state): State<AppState>) -> impl IntoR
         }
         Err(err) => {
             error!("Error listing cluster role bindings: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn delete_pod(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Pod;
+    let api: Api<Pod> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted pod {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting pod {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn delete_deployment(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::Deployment;
+    let api: Api<Deployment> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted deployment {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting deployment {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn delete_statefulset(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::StatefulSet;
+    let api: Api<StatefulSet> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted statefulset {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting statefulset {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn delete_daemonset(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::DaemonSet;
+    let api: Api<DaemonSet> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted daemonset {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting daemonset {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn delete_replicaset(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::ReplicaSet;
+    let api: Api<ReplicaSet> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted replicaset {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting replicaset {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn delete_job(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::batch::v1::Job;
+    let api: Api<Job> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted job {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting job {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn delete_cronjob(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::batch::v1::CronJob;
+    let api: Api<CronJob> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted cronjob {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting cronjob {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn delete_namespace(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Namespace;
+    let api: Api<Namespace> = Api::all(state.client);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted namespace {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting namespace {}: {:?}", name, err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }

@@ -4,14 +4,16 @@ import YAML from 'yaml';
 import 'ace-builds/src-noconflict/mode-yaml';
 import 'ace-builds/src-noconflict/theme-github';
 import 'ace-builds/src-noconflict/theme-tomorrow_night';
+import { Trash2 } from 'lucide-react';
 import { useRealtimeDeployments } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { useTheme } from '../context/ThemeContext';
 import { DataTable } from '../components/DataTable';
 import { DeploymentDetailPanel } from '../components/DeploymentDetailPanel';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { Deployment } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { restartDeployment, scaleDeployment } from '../hooks/useKubernetes';
+import { restartDeployment, scaleDeployment, deleteDeployment } from '../hooks/useKubernetes';
 import { getStatusColor, timeAgo } from '../utils';
 
 type DeploymentSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'updated' | 'available' | 'images' | 'age';
@@ -72,6 +74,8 @@ export const DeploymentsPage = () => {
   const [yamlErrorByTab, setYamlErrorByTab] = useState<Record<string, string | null>>({});
   const [yamlSuccessByTab, setYamlSuccessByTab] = useState<Record<string, string | null>>({});
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
+  const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [sortState, setSortState] = useState<{ key: DeploymentSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc',
@@ -299,6 +303,36 @@ export const DeploymentsPage = () => {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isResizingYamlDrawer]);
+
+  const handleDeleteSingle = async (namespace: string, name: string) => {
+    setConfirmDelete({ keys: [`${namespace}/${name}`], label: name });
+    setPanelOpen(false);
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedRows.length === 0) return;
+    setConfirmDelete({
+      keys: selectedRows,
+      label: selectedRows.length === 1 ? selectedRows[0].split('/')[1] : `${selectedRows.length} deployments`,
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDelete) return;
+    setIsDeleting(true);
+    try {
+      await Promise.all(
+        confirmDelete.keys.map((key) => {
+          const [ns, name] = key.split('/');
+          return deleteDeployment(ns, name);
+        })
+      );
+      setSelectedRows([]);
+      setConfirmDelete(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const getStatusTextClass = (status: string) => {
     const color = getStatusColor(status);
@@ -620,9 +654,49 @@ export const DeploymentsPage = () => {
             onOpenYamlEditor={handleOpenYamlEditorFromPanel}
             onScale={scaleDeployment}
             onRestart={restartDeployment}
+            onDelete={handleDeleteSingle}
           />
         </>
       )}
+
+      {selectedRows.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-3 px-4 py-3 bg-surface border border-border rounded-xl shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <span className="text-sm text-text-secondary font-medium">
+            {selectedRows.length} selected
+          </span>
+          <div className="w-px h-4 bg-border" />
+          <button
+            type="button"
+            onClick={handleDeleteSelected}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-[var(--color-icon-danger)]/10 text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/20 font-medium transition-colors"
+          >
+            <Trash2 size={14} />
+            Delete
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedRows([])}
+            className="text-xs text-text-secondary hover:text-text transition-colors"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title={`Delete ${confirmDelete?.label ?? ''}`}
+        description={
+          confirmDelete && confirmDelete.keys.length === 1
+            ? `Are you sure you want to delete "${confirmDelete.label}"? This action cannot be undone.`
+            : `Are you sure you want to delete ${confirmDelete?.keys.length} deployments? This action cannot be undone.`
+        }
+        confirmLabel="Delete"
+        destructive
+        isLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   );
 };

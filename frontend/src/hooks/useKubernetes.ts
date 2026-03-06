@@ -479,3 +479,39 @@ export const restartDeployment = async (namespace: string, name: string): Promis
     throw new Error('Failed to restart deployment');
   }
 };
+
+const apiDelete = async (path: string): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'DELETE',
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `Delete failed (${res.status})`);
+  }
+};
+
+export const deletePod = (namespace: string, name: string) =>
+  apiDelete(`/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteDeployment = (namespace: string, name: string) =>
+  apiDelete(`/deployments/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteStatefulSet = (namespace: string, name: string) =>
+  apiDelete(`/statefulsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteDaemonSet = (namespace: string, name: string) =>
+  apiDelete(`/daemonsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteReplicaSet = (namespace: string, name: string) =>
+  apiDelete(`/replicasets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteJob = (namespace: string, name: string) =>
+  apiDelete(`/jobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteCronJob = (namespace: string, name: string) =>
+  apiDelete(`/cronjobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteNamespace = (name: string) =>
+  apiDelete(`/namespaces/${encodeURIComponent(name)}`);
