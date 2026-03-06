@@ -19,7 +19,9 @@ const transformPod = (rawPod: any): any => {
   const initContainerStatuses = status.initContainerStatuses || [];
   const containers = spec.containers || [];
   const ownerReferences = metadata.ownerReferences || [];
-  const controlledBy = ownerReferences[0]?.kind || '-';
+  const ownerKind = ownerReferences[0]?.kind;
+  const ownerName = ownerReferences[0]?.name;
+  const controlledBy = ownerKind && ownerName ? `${ownerKind}/${ownerName}` : ownerKind || '-';
   const qos = status.qosClass || '-';
   const cpu = '-';
   const memory = '-';
@@ -186,6 +188,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 10;
   const deletionTimeoutsRef = useRef<Map<string, number>>(new Map()); // Track deletion timeouts
+  const deletedPodsRef = useRef<Set<string>>(new Set()); // Track deleted pods to prevent re-adding
 
   const syncPodDetails = useCallback(async () => {
     const token = getAuthToken();
@@ -207,27 +210,27 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
         const keyOf = (item: any) => `${item.namespace}/${item.name}`;
         const apiByKey = new Map<string, any>(apiPods.map((item: any) => [keyOf(item), item]));
 
-        const merged = prevData.map((item: any) => {
-          const apiItem = apiByKey.get(keyOf(item));
-          if (!apiItem) return item;
+        // Use API response as source of truth for existence, so deleted pods are
+        // removed even if a websocket DELETED event is missed.
+        const merged = prevData
+          .filter((item: any) => apiByKey.has(keyOf(item)))
+          .map((item: any) => {
+            const apiItem = apiByKey.get(keyOf(item));
 
-          return {
-            ...item,
-            cpu: apiItem.cpu ?? item.cpu,
-            memory: apiItem.memory ?? item.memory,
-            controlled_by: apiItem.controlled_by ?? item.controlled_by,
-            qos: apiItem.qos ?? item.qos,
-          };
-        });
-
-        if (merged.length === 0 && apiPods.length > 0) {
-          return apiPods as T[];
-        }
+            return {
+              ...item,
+              cpu: apiItem.cpu ?? item.cpu,
+              memory: apiItem.memory ?? item.memory,
+              controlled_by: apiItem.controlled_by ?? item.controlled_by,
+              qos: apiItem.qos ?? item.qos,
+            };
+          });
 
         const existingKeys = new Set(merged.map((item: any) => keyOf(item)));
         for (const apiItem of apiPods) {
           const key = keyOf(apiItem);
-          if (!existingKeys.has(key)) {
+          // Don't re-add pods that were recently deleted
+          if (!existingKeys.has(key) && !deletedPodsRef.current.has(key)) {
             merged.push(apiItem as T);
           }
         }
@@ -281,6 +284,14 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
             setData((prevData) => {
               switch (action) {
                 case 'ADDED':
+                  const podKey = `${transformedPod.namespace}/${transformedPod.name}`;
+                  
+                  // Don't add if pod was deleted
+                  if (deletedPodsRef.current.has(podKey)) {
+                    console.log(`[useRealtimePods] Ignoring ADDED for deleted pod: ${podKey}`);
+                    return prevData;
+                  }
+                  
                   // Check if already exists
                   const exists = prevData.some((item: any) => {
                     const itemRaw = item as any;
@@ -300,14 +311,20 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                   return [...prevData, transformedPod as T];
                 
                 case 'MODIFIED':
+                  const modPodKey = `${transformedPod.namespace}/${transformedPod.name}`;
+                  
+                  // Don't modify if pod was deleted
+                  if (deletedPodsRef.current.has(modPodKey)) {
+                    console.log(`[useRealtimePods] Ignoring MODIFIED for deleted pod: ${modPodKey}`);
+                    return prevData;
+                  }
+                  
                   // Upsert pattern: update if exists, add if not
                   const foundIndex = prevData.findIndex((item: any) => {
                     const itemRaw = item as any;
                     return itemRaw.name === transformedPod.name && 
                            itemRaw.namespace === transformedPod.namespace;
                   });
-                  
-                  const podKey = `${transformedPod.namespace}/${transformedPod.name}`;
                   
                   if (foundIndex >= 0) {
                     // Update existing
@@ -326,54 +343,32 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                     
                     // Log status transitions
                     if (oldStatus !== mergedPod.status) {
-                      console.log(`[useRealtimePods] Status transition for ${podKey}: ${oldStatus} -> ${mergedPod.status}`);
+                      console.log(`[useRealtimePods] Status transition for ${modPodKey}: ${oldStatus} -> ${mergedPod.status}`);
                       
-                      // If transitioning to Terminating, set a cleanup timeout
+                      // If transitioning to Terminating, keep it visible until DELETED event
                       if (mergedPod.status === 'Terminating') {
                         // Clear any existing timeout
-                        const existingTimeout = deletionTimeoutsRef.current.get(podKey);
-                        if (existingTimeout) clearTimeout(existingTimeout);
-                        
-                        const terminatingCount = updated.filter((item: any) => (item as any).status === 'Terminating').length;
-                        console.log(`[useRealtimePods] Total Terminating pods: ${terminatingCount}`);
-                        
-                        // Auto-remove after 10 seconds if not explicitly deleted
-                        const timeout = window.setTimeout(() => {
-                          console.log(`[useRealtimePods] Auto-removing Terminating pod after timeout: ${podKey}`);
-                          deletionTimeoutsRef.current.delete(podKey);
-                          setData((finalData) => 
-                            finalData.filter((item: any) => !(item.namespace === transformedPod.namespace && item.name === transformedPod.name))
-                          );
-                        }, 10000);
-                        
-                        deletionTimeoutsRef.current.set(podKey, timeout);
+                        const existingTimeout = deletionTimeoutsRef.current.get(modPodKey);
+                        if (existingTimeout) {
+                          clearTimeout(existingTimeout);
+                          deletionTimeoutsRef.current.delete(modPodKey);
+                        }
                       }
                     }
                     
                     return updated;
                   } else {
                     // Add new (pod wasn't in initial list)
-                    console.log(`[useRealtimePods] Adding pod from MODIFIED: ${podKey} (status: ${transformedPod.status})`);
+                    console.log(`[useRealtimePods] Adding pod from MODIFIED: ${modPodKey} (status: ${transformedPod.status})`);
                     const newList = [...prevData, transformedPod as T];
                     
-                    // Show total terminating pods after adding
+                    // Keep terminating pods until DELETED event
                     if (transformedPod.status === 'Terminating') {
-                      const existingTimeout = deletionTimeoutsRef.current.get(podKey);
-                      if (existingTimeout) clearTimeout(existingTimeout);
-                      
-                      const terminatingCount = newList.filter((item: any) => (item as any).status === 'Terminating').length;
-                      console.log(`[useRealtimePods] Total Terminating pods: ${terminatingCount}`);
-                      
-                      // Auto-remove after 10 seconds if not explicitly deleted
-                      const timeout = window.setTimeout(() => {
-                        console.log(`[useRealtimePods] Auto-removing Terminating pod after timeout: ${podKey}`);
-                        deletionTimeoutsRef.current.delete(podKey);
-                        setData((finalData) => 
-                          finalData.filter((item: any) => !(item.namespace === transformedPod.namespace && item.name === transformedPod.name))
-                        );
-                      }, 10000);
-                      
-                      deletionTimeoutsRef.current.set(podKey, timeout);
+                      const existingTimeout = deletionTimeoutsRef.current.get(modPodKey);
+                      if (existingTimeout) {
+                        clearTimeout(existingTimeout);
+                        deletionTimeoutsRef.current.delete(modPodKey);
+                      }
                     }
                     
                     return newList;
@@ -381,7 +376,10 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                 
                 case 'DELETED':
                   const podKeyForDeletion = `${transformedPod.namespace}/${transformedPod.name}`;
-                  console.log(`[useRealtimePods] Scheduled deletion of pod: ${podKeyForDeletion}`);
+                  console.log(`[useRealtimePods] Deleting pod immediately: ${podKeyForDeletion}`);
+                  
+                  // Mark as deleted to prevent re-adding
+                  deletedPodsRef.current.add(podKeyForDeletion);
                   
                   // Clear any pending auto-removal timeout
                   const existingTimeout = deletionTimeoutsRef.current.get(podKeyForDeletion);
@@ -390,23 +388,22 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                     deletionTimeoutsRef.current.delete(podKeyForDeletion);
                   }
                   
-                  // Add a small delay before removing to allow UI to show Terminating status
-                  setTimeout(() => {
-                    setData((currentData) => {
-                      const finalFiltered = currentData.filter((item: any) => {
-                        const itemRaw = item as any;
-                        return !(itemRaw.name === transformedPod.name && 
-                                itemRaw.namespace === transformedPod.namespace);
-                      });
-                      
-                      console.log(`[useRealtimePods] Actually removing pod: ${podKeyForDeletion}`);
-                      console.log(`[useRealtimePods] Pod count: ${currentData.length} -> ${finalFiltered.length}`);
-                      
-                      return finalFiltered;
-                    });
-                  }, 500); // 500ms delay to show Terminating status
+                  // Remove immediately - no delay
+                  const finalFiltered = prevData.filter((item: any) => {
+                    const itemRaw = item as any;
+                    return !(itemRaw.name === transformedPod.name && 
+                            itemRaw.namespace === transformedPod.namespace);
+                  });
                   
-                  return prevData;
+                  console.log(`[useRealtimePods] Pod count: ${prevData.length} -> ${finalFiltered.length}`);
+                  
+                  // Keep deleted marker very briefly so stale events do not re-add old pod,
+                  // but new same-name pod can appear quickly.
+                  setTimeout(() => {
+                    deletedPodsRef.current.delete(podKeyForDeletion);
+                  }, 500);
+                  
+                  return finalFiltered;
                 
                 default:
                   return prevData;
@@ -492,7 +489,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
     syncPodDetails();
     const interval = window.setInterval(() => {
       syncPodDetails();
-    }, 15000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [enabled, syncPodDetails]);

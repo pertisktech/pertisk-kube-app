@@ -447,6 +447,17 @@ export const PodsPage = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Clean up selected rows when pods are removed from data
+  useEffect(() => {
+    if (!data || data.length === 0) {
+      setSelectedRows([]);
+      return;
+    }
+
+    const currentKeys = new Set(data.map(pod => `${pod.namespace}/${pod.name}`));
+    setSelectedRows(prev => prev.filter(key => currentKeys.has(key)));
+  }, [data]);
+
   useEffect(() => {
     if (!data || data.length === 0) {
       setSelectedPod(null);
@@ -454,13 +465,16 @@ export const PodsPage = () => {
     }
 
     if (!selectedPod) {
-      setSelectedPod(data[0]);
-      return;
+      return; // Don't auto-select first pod
     }
 
     const updatedSelected = data.find((item) => item.name === selectedPod.name && item.namespace === selectedPod.namespace);
-    setSelectedPod(updatedSelected ?? data[0]);
-  }, [data]);
+    if (!updatedSelected) {
+      setSelectedPod(null); // Clear selection if pod was deleted
+    } else {
+      setSelectedPod(updatedSelected); // Update with fresh data
+    }
+  }, [data, selectedPod]);
 
   const columns = [
     {
