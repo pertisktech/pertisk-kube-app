@@ -114,6 +114,18 @@ rbac:
     - apiGroups: ["policy"]
       resources: ["poddisruptionbudgets", "podsecuritypolicies"]
       verbs: ["get", "list", "watch"]
+    # Scheduling resources
+    - apiGroups: ["scheduling.k8s.io"]
+      resources: ["priorityclasses"]
+      verbs: ["get", "list", "watch"]
+    # Node resources
+    - apiGroups: ["node.k8s.io"]
+      resources: ["runtimeclasses"]
+      verbs: ["get", "list", "watch"]
+    # Coordination resources
+    - apiGroups: ["coordination.k8s.io"]
+      resources: ["leases"]
+      verbs: ["get", "list", "watch"]
     # Metrics
     - apiGroups: ["metrics.k8s.io"]
       resources: ["pods", "nodes"]

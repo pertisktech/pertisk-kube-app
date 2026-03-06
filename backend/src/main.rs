@@ -2327,6 +2327,16 @@ async fn list_priorityclasses(State(state): State<AppState>) -> impl IntoRespons
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let kube::Error::Api(api_err) = &err {
+                if api_err.code == 403 || api_err.code == 404 {
+                    warn!(
+                        "PriorityClass API unavailable or forbidden (code {}): {}",
+                        api_err.code, api_err.message
+                    );
+                    return (StatusCode::OK, Json(ApiResponse::<PriorityClassItem> { data: vec![], total: 0 }))
+                        .into_response();
+                }
+            }
             error!("Error listing priorityclasses: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -2368,6 +2378,16 @@ async fn list_runtimeclasses(State(state): State<AppState>) -> impl IntoResponse
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let kube::Error::Api(api_err) = &err {
+                if api_err.code == 403 || api_err.code == 404 {
+                    warn!(
+                        "RuntimeClass API unavailable or forbidden (code {}): {}",
+                        api_err.code, api_err.message
+                    );
+                    return (StatusCode::OK, Json(ApiResponse::<RuntimeClassItem> { data: vec![], total: 0 }))
+                        .into_response();
+                }
+            }
             error!("Error listing runtimeclasses: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -2412,6 +2432,16 @@ async fn list_leases(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let kube::Error::Api(api_err) = &err {
+                if api_err.code == 403 || api_err.code == 404 {
+                    warn!(
+                        "Lease API unavailable or forbidden (code {}): {}",
+                        api_err.code, api_err.message
+                    );
+                    return (StatusCode::OK, Json(ApiResponse::<LeaseItem> { data: vec![], total: 0 }))
+                        .into_response();
+                }
+            }
             error!("Error listing leases: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
