@@ -78,19 +78,28 @@ export const NamespacesPage = () => {
   const sortedNamespaces = useMemo(() => {
     const source = [...(data || [])];
     const directionFactor = sortState.direction === 'asc' ? 1 : -1;
+    const compareText = (left: unknown, right: unknown) =>
+      String(left ?? '').localeCompare(String(right ?? ''), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      });
 
     return source.sort((first, second) => {
       if (sortState.key === 'name') {
-        return first.name.localeCompare(second.name) * directionFactor;
+        return compareText(first.name, second.name) * directionFactor;
       }
 
       if (sortState.key === 'status') {
-        return first.phase.localeCompare(second.phase) * directionFactor;
+        const result = compareText(first.phase, second.phase);
+        return (result !== 0 ? result : compareText(first.name, second.name)) * directionFactor;
       }
 
       const firstTime = Date.parse(first.age);
       const secondTime = Date.parse(second.age);
-      return (firstTime - secondTime) * directionFactor;
+      const firstValue = Number.isNaN(firstTime) ? 0 : firstTime;
+      const secondValue = Number.isNaN(secondTime) ? 0 : secondTime;
+      const result = firstValue - secondValue;
+      return (result !== 0 ? result : compareText(first.name, second.name)) * directionFactor;
     });
   }, [data, sortState]);
 

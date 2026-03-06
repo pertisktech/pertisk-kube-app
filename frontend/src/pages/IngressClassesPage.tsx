@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { DataTable, type SortState } from '../components/DataTable';
 import { useIngressClasses } from '../hooks/useKubernetes';
 import type { IngressClass } from '../types';
@@ -7,6 +7,28 @@ import { timeAgo } from '../utils';
 export const IngressClassesPage = () => {
   const { data, isLoading, error } = useIngressClasses();
   const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
+
+  const sortedData = useMemo(() => {
+    if (!data) return [];
+    const sorted = [...data];
+    const factor = sortState.direction === 'asc' ? 1 : -1;
+    sorted.sort((a, b) => {
+      if (sortState.key === 'name') return String(a.name || '').localeCompare(String(b.name || '')) * factor;
+      if (sortState.key === 'controller') {
+        return String(a.controller || '').localeCompare(String(b.controller || '')) * factor;
+      }
+      if (sortState.key === 'parameters') {
+        return String(a.parameters || '').localeCompare(String(b.parameters || '')) * factor;
+      }
+      if (sortState.key === 'age') {
+        const aTime = Date.parse(a.age || '');
+        const bTime = Date.parse(b.age || '');
+        return ((Number.isNaN(aTime) ? 0 : aTime) - (Number.isNaN(bTime) ? 0 : bTime)) * factor;
+      }
+      return 0;
+    });
+    return sorted;
+  }, [data, sortState]);
 
   const columns = [
     {
@@ -57,7 +79,7 @@ export const IngressClassesPage = () => {
 
       <DataTable
         columns={columns}
-        data={data || []}
+        data={sortedData}
         rowKey="name"
         isLoading={isLoading}
         error={error?.message || null}

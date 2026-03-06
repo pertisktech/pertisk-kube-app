@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSecrets } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, type SortState } from '../components/DataTable';
@@ -10,9 +10,45 @@ export const SecretsPage = () => {
   const { selectedNamespaces } = useNamespace();
   const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
 
-  const filteredData = data?.filter((secret) =>
-    selectedNamespaces.length === 0 || selectedNamespaces.includes(secret.namespace)
-  ) ?? [];
+  const sortedAndFilteredData = useMemo(() => {
+    if (!data) return [];
+    const filtered = data.filter((secret) =>
+      selectedNamespaces.length === 0 || selectedNamespaces.includes(secret.namespace)
+    );
+    const sorted = [...filtered];
+    const factor = sortState.direction === 'asc' ? 1 : -1;
+    const compareText = (left: unknown, right: unknown) =>
+      String(left ?? '').localeCompare(String(right ?? ''), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      });
+
+    sorted.sort((a, b) => {
+      if (sortState.key === 'name') return compareText(a.name, b.name) * factor;
+      if (sortState.key === 'namespace') {
+        const result = compareText(a.namespace, b.namespace);
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      if (sortState.key === 'secret_type') {
+        const result = compareText(a.secret_type, b.secret_type);
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      if (sortState.key === 'data_keys') {
+        const result = (a.data_keys || 0) - (b.data_keys || 0);
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      if (sortState.key === 'age') {
+        const aTime = Date.parse(a.age || '');
+        const bTime = Date.parse(b.age || '');
+        const aValue = Number.isNaN(aTime) ? 0 : aTime;
+        const bValue = Number.isNaN(bTime) ? 0 : bTime;
+        const result = aValue - bValue;
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      return 0;
+    });
+    return sorted;
+  }, [data, sortState, selectedNamespaces]);
 
   const columns = [
     {
@@ -63,8 +99,8 @@ export const SecretsPage = () => {
 
       <DataTable
         columns={columns}
-        data={filteredData}
-        rowKey="name"
+        data={sortedAndFilteredData}
+        rowKey={(row) => `${row.namespace}/${row.name}`}
         isLoading={isLoading}
         error={error?.message || null}
         sortState={sortState}

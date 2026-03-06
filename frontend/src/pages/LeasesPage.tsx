@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLeases } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, type SortState } from '../components/DataTable';
@@ -10,9 +10,46 @@ export const LeasesPage = () => {
   const { selectedNamespaces } = useNamespace();
   const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
 
-  const filteredData = data?.filter((lease) =>
-    selectedNamespaces.length === 0 || selectedNamespaces.includes(lease.namespace)
-  ) ?? [];
+  const sortedAndFilteredData = useMemo(() => {
+    if (!data) return [];
+    const filtered = data.filter((lease) =>
+      selectedNamespaces.length === 0 || selectedNamespaces.includes(lease.namespace)
+    );
+    const sorted = [...filtered];
+    const factor = sortState.direction === 'asc' ? 1 : -1;
+    const compareText = (left: unknown, right: unknown) =>
+      String(left ?? '').localeCompare(String(right ?? ''), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      });
+
+    sorted.sort((a, b) => {
+      if (sortState.key === 'name') return compareText(a.name, b.name) * factor;
+      if (sortState.key === 'namespace') {
+        const result = compareText(a.namespace, b.namespace);
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      if (sortState.key === 'holder_identity') {
+        const result = compareText(a.holder_identity, b.holder_identity);
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      if (sortState.key === 'lease_duration_seconds') {
+        const result = (a.lease_duration_seconds || 0) - (b.lease_duration_seconds || 0);
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      if (sortState.key === 'age') {
+        const aTime = Date.parse(a.age || '');
+        const bTime = Date.parse(b.age || '');
+        const aValue = Number.isNaN(aTime) ? 0 : aTime;
+        const bValue = Number.isNaN(bTime) ? 0 : bTime;
+        const result = aValue - bValue;
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      return 0;
+    });
+
+    return sorted;
+  }, [data, sortState, selectedNamespaces]);
 
   const columns = [
     {
@@ -65,8 +102,8 @@ export const LeasesPage = () => {
 
       <DataTable
         columns={columns}
-        data={filteredData}
-        rowKey="name"
+        data={sortedAndFilteredData}
+        rowKey={(row) => `${row.namespace}/${row.name}`}
         isLoading={isLoading}
         error={error?.message || null}
         sortState={sortState}

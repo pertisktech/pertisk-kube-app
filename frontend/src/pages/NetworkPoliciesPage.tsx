@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { DataTable, type SortState } from '../components/DataTable';
 import { useNamespace } from '../context/NamespaceContext';
 import { useNetworkPolicies } from '../hooks/useKubernetes';
@@ -10,9 +10,37 @@ export const NetworkPoliciesPage = () => {
   const { selectedNamespaces } = useNamespace();
   const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
 
-  const filteredData = data?.filter((item) =>
-    selectedNamespaces.length === 0 || selectedNamespaces.includes(item.namespace)
-  ) ?? [];
+  const sortedAndFilteredData = useMemo(() => {
+    if (!data) return [];
+    const filtered = data.filter((item) =>
+      selectedNamespaces.length === 0 || selectedNamespaces.includes(item.namespace)
+    );
+    const sorted = [...filtered];
+    const factor = sortState.direction === 'asc' ? 1 : -1;
+    sorted.sort((a, b) => {
+      if (sortState.key === 'name') return String(a.name || '').localeCompare(String(b.name || '')) * factor;
+      if (sortState.key === 'namespace') return String(a.namespace || '').localeCompare(String(b.namespace || '')) * factor;
+      if (sortState.key === 'pod_selector') {
+        return String(a.pod_selector || '').localeCompare(String(b.pod_selector || '')) * factor;
+      }
+      if (sortState.key === 'policy_types') {
+        return String(a.policy_types || '').localeCompare(String(b.policy_types || '')) * factor;
+      }
+      if (sortState.key === 'ingress_rules') {
+        return ((a.ingress_rules || 0) - (b.ingress_rules || 0)) * factor;
+      }
+      if (sortState.key === 'egress_rules') {
+        return ((a.egress_rules || 0) - (b.egress_rules || 0)) * factor;
+      }
+      if (sortState.key === 'age') {
+        const aTime = Date.parse(a.age || '');
+        const bTime = Date.parse(b.age || '');
+        return ((Number.isNaN(aTime) ? 0 : aTime) - (Number.isNaN(bTime) ? 0 : bTime)) * factor;
+      }
+      return 0;
+    });
+    return sorted;
+  }, [data, sortState, selectedNamespaces]);
 
   const columns = [
     {
@@ -77,8 +105,8 @@ export const NetworkPoliciesPage = () => {
 
       <DataTable
         columns={columns}
-        data={filteredData}
-        rowKey="name"
+        data={sortedAndFilteredData}
+        rowKey={(row) => `${row.namespace}/${row.name}`}
         isLoading={isLoading}
         error={error?.message || null}
         sortState={sortState}

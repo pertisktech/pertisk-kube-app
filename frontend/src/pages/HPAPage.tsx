@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useHPA } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, type SortState } from '../components/DataTable';
@@ -10,9 +10,49 @@ export const HPAPage = () => {
   const { selectedNamespaces } = useNamespace();
   const [sortState, setSortState] = useState<SortState>({ key: 'name', direction: 'asc' });
 
-  const filteredData = data?.filter((hpa) =>
-    selectedNamespaces.length === 0 || selectedNamespaces.includes(hpa.namespace)
-  ) ?? [];
+  const sortedAndFilteredData = useMemo(() => {
+    if (!data) return [];
+    const filtered = data.filter((hpa) =>
+      selectedNamespaces.length === 0 || selectedNamespaces.includes(hpa.namespace)
+    );
+    const sorted = [...filtered];
+    const factor = sortState.direction === 'asc' ? 1 : -1;
+    const compareText = (left: unknown, right: unknown) =>
+      String(left ?? '').localeCompare(String(right ?? ''), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      });
+
+    sorted.sort((a, b) => {
+      if (sortState.key === 'name') return compareText(a.name, b.name) * factor;
+      if (sortState.key === 'namespace') {
+        const result = compareText(a.namespace, b.namespace);
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      if (sortState.key === 'reference') {
+        const result = compareText(a.reference, b.reference);
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      if (sortState.key === 'current_replicas') {
+        const result = (a.current_replicas || 0) - (b.current_replicas || 0);
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      if (sortState.key === 'targets') {
+        const result = (a.targets || 0) - (b.targets || 0);
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      if (sortState.key === 'age') {
+        const aTime = Date.parse(a.age || '');
+        const bTime = Date.parse(b.age || '');
+        const aValue = Number.isNaN(aTime) ? 0 : aTime;
+        const bValue = Number.isNaN(bTime) ? 0 : bTime;
+        const result = aValue - bValue;
+        return (result !== 0 ? result : compareText(a.name, b.name)) * factor;
+      }
+      return 0;
+    });
+    return sorted;
+  }, [data, sortState, selectedNamespaces]);
 
   const columns = [
     {
@@ -74,8 +114,8 @@ export const HPAPage = () => {
 
       <DataTable
         columns={columns}
-        data={filteredData}
-        rowKey="name"
+        data={sortedAndFilteredData}
+        rowKey={(row) => `${row.namespace}/${row.name}`}
         isLoading={isLoading}
         error={error?.message || null}
         sortState={sortState}

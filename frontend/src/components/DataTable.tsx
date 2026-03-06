@@ -23,7 +23,7 @@ interface DataTableProps<T> {
   data: T[];
   isLoading: boolean;
   error?: string | null;
-  rowKey: keyof T;
+  rowKey: keyof T | ((row: T) => string);
   onRowClick?: (row: T) => void;
   selectedRowKey?: string;
   sortState?: SortState;
@@ -47,6 +47,9 @@ export const DataTable = <T extends Record<string, any>>({
   onRowSelectionChange,
   enableRowSelection = false,
 }: DataTableProps<T>) => {
+  const getRowKeyValue = (row: T) =>
+    typeof rowKey === 'function' ? rowKey(row) : String(row[rowKey]);
+
   if (error) {
     return (
       <div className="status-red border rounded-lg p-4">
@@ -68,8 +71,13 @@ export const DataTable = <T extends Record<string, any>>({
 
   if (data.length === 0) {
     return (
-      <div className="bg-surface border border-border rounded-lg p-8 text-center">
-        <p className="text-text-secondary">No data available</p>
+      <div className="bg-surface border border-border rounded-lg overflow-hidden">
+        <div className="px-3 py-2 border-b border-border bg-surface-elevated text-xs text-text-secondary">
+          Total: 0 records
+        </div>
+        <div className="p-8 text-center">
+          <p className="text-text-secondary">No data available</p>
+        </div>
       </div>
     );
   }
@@ -77,7 +85,7 @@ export const DataTable = <T extends Record<string, any>>({
   const handleSelectAll = (checked: boolean) => {
     if (onRowSelectionChange) {
       if (checked) {
-        const allKeys = data.map((row) => String(row[rowKey]));
+        const allKeys = data.map((row) => getRowKeyValue(row));
         onRowSelectionChange(allKeys);
       } else {
         onRowSelectionChange([]);
@@ -100,6 +108,9 @@ export const DataTable = <T extends Record<string, any>>({
 
   return (
     <div className="bg-surface border border-border rounded-lg overflow-hidden">
+      <div className="px-3 py-2 border-b border-border bg-surface-elevated text-xs text-text-secondary">
+        Total: {data.length} records
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -152,7 +163,7 @@ export const DataTable = <T extends Record<string, any>>({
           </thead>
           <tbody>
             {data.map((row, rowIdx) => {
-              const rowKeyValue = String(row[rowKey]);
+              const rowKeyValue = getRowKeyValue(row);
               const isSelected = selectedRows.includes(rowKeyValue);
 
               return (
@@ -168,7 +179,7 @@ export const DataTable = <T extends Record<string, any>>({
                   )}
                 >
                   {enableRowSelection && (
-                    <td className="w-8 pl-2 pr-0 py-2">
+                    <td className="w-8 pl-2 pr-0 py-2" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={isSelected}
                         onChange={(e) => handleRowSelect(rowKeyValue, e.target.checked)}
@@ -189,7 +200,9 @@ export const DataTable = <T extends Record<string, any>>({
                         const cellValue =
                           typeof col.accessor === 'function'
                             ? col.accessor(row)
-                            : row[col.accessor] != null ? String(row[col.accessor]) : '-';
+                            : row[col.accessor] != null
+                              ? String(row[col.accessor])
+                              : '-';
 
                         if (col.header === 'Age') {
                           return <span className="whitespace-nowrap">{cellValue}</span>;
