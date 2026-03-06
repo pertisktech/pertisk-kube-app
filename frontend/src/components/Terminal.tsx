@@ -67,6 +67,11 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
   useEffect(() => {
     if (!terminalRef.current) return;
 
+    // Get actual theme colors from CSS variables
+    const computedStyle = getComputedStyle(document.documentElement);
+    const surfaceElevated = computedStyle.getPropertyValue('--color-surface-elevated').trim() || (theme?.isDark ? '#15161e' : '#f5f5f5');
+    const textColor = computedStyle.getPropertyValue('--color-text').trim() || (theme?.isDark ? '#e8e8e9' : '#1a1a1a');
+
     // Create terminal instance
     const xterm = new XTerm({
       cursorBlink: true,
@@ -78,49 +83,27 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
       rows: 30,
       cols: 120,
       scrollback: 1000,
-      theme: theme?.isDark
-        ? {
-            background: '#1e1e1e',
-            foreground: '#d4d4d4',
-            cursor: '#ffffff',
-            black: '#000000',
-            red: '#cd3131',
-            green: '#0dbc79',
-            yellow: '#e5e510',
-            blue: '#2472c8',
-            magenta: '#bc3fbc',
-            cyan: '#11a8cd',
-            white: '#e5e5e5',
-            brightBlack: '#666666',
-            brightRed: '#f14c4c',
-            brightGreen: '#23d18b',
-            brightYellow: '#f5f543',
-            brightBlue: '#3b8eea',
-            brightMagenta: '#d670d6',
-            brightCyan: '#29b8db',
-            brightWhite: '#ffffff',
-          }
-        : {
-            background: '#ffffff',
-            foreground: '#000000',
-            cursor: '#000000',
-            black: '#000000',
-            red: '#cd3131',
-            green: '#00bc00',
-            yellow: '#949800',
-            blue: '#0451a5',
-            magenta: '#bc05bc',
-            cyan: '#0598bc',
-            white: '#555555',
-            brightBlack: '#666666',
-            brightRed: '#cd3131',
-            brightGreen: '#14ce14',
-            brightYellow: '#b5ba00',
-            brightBlue: '#0451a5',
-            brightMagenta: '#bc05bc',
-            brightCyan: '#0598bc',
-            brightWhite: '#a5a5a5',
-          },
+      theme: {
+        background: surfaceElevated,
+        foreground: textColor,
+        cursor: textColor,
+        black: '#000000',
+        red: '#cd3131',
+        green: theme?.isDark ? '#0dbc79' : '#00bc00',
+        yellow: theme?.isDark ? '#e5e510' : '#949800',
+        blue: theme?.isDark ? '#2472c8' : '#0451a5',
+        magenta: theme?.isDark ? '#bc3fbc' : '#bc05bc',
+        cyan: theme?.isDark ? '#11a8cd' : '#0598bc',
+        white: theme?.isDark ? '#e5e5e5' : '#555555',
+        brightBlack: '#666666',
+        brightRed: theme?.isDark ? '#f14c4c' : '#cd3131',
+        brightGreen: theme?.isDark ? '#23d18b' : '#14ce14',
+        brightYellow: theme?.isDark ? '#f5f543' : '#b5ba00',
+        brightBlue: theme?.isDark ? '#3b8eea' : '#0451a5',
+        brightMagenta: theme?.isDark ? '#d670d6' : '#bc05bc',
+        brightCyan: theme?.isDark ? '#29b8db' : '#0598bc',
+        brightWhite: theme?.isDark ? '#ffffff' : '#a5a5a5',
+      },
     });
 
     // Add addons
@@ -251,7 +234,7 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
   return (
     <div
       ref={terminalRef}
-      className="w-full h-full bg-[#1e1e1e] dark:bg-[#1e1e1e] rounded-md"
+      className="w-full h-full bg-surface-elevated rounded-md"
       style={{ 
         minHeight: '200px',
         position: 'relative',

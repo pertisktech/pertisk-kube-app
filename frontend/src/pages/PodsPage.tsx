@@ -768,15 +768,15 @@ export const PodsPage = () => {
                     />
                   ) : activeTab && activeTab.type === 'logs' ? (
                     // Pod Logs
-                    <div className="h-full flex flex-col bg-[#1e1e1e]">
+                    <div className="h-full flex flex-col bg-surface-elevated">
                       {/* Logs toolbar */}
-                      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700 bg-[#252526]">
-                        <div className="text-xs text-gray-400">Pod Logs (last 1000 lines)</div>
+                      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-surface">
+                        <div className="text-xs text-text-secondary">Pod Logs (last 1000 lines)</div>
                         <button
                           type="button"
                           onClick={handleRefreshLogs}
                           disabled={logsLoadingTabKey === activeTabKey}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-gray-600 text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-border text-text hover:bg-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                           title="Refresh logs"
                         >
                           <RefreshCw size={12} className={logsLoadingTabKey === activeTabKey ? 'animate-spin' : ''} />
@@ -787,14 +787,14 @@ export const PodsPage = () => {
                       <div className="flex-1 overflow-auto p-4 font-mono text-xs leading-relaxed">
                         {logsLoadingTabKey === activeTabKey ? (
                           <div className="flex items-center justify-center h-full">
-                            <div className="text-gray-400">Loading logs...</div>
+                            <div className="text-text-secondary">Loading logs...</div>
                           </div>
                         ) : activeTabKey && logsErrorByTab[activeTabKey] ? (
                           <div className="flex items-center justify-center h-full">
-                            <div className="text-red-400">{logsErrorByTab[activeTabKey]}</div>
+                            <div className="text-red-500">{logsErrorByTab[activeTabKey]}</div>
                           </div>
                         ) : (
-                          <pre className="text-gray-300 whitespace-pre-wrap break-words">
+                          <pre className="text-text whitespace-pre-wrap break-words">
                             {activeTabKey ? logsContentsByTab[activeTabKey] || 'No logs available' : 'No logs available'}
                           </pre>
                         )}
