@@ -8,11 +8,11 @@ import { Checkbox } from './Checkbox';
 import { Terminal as TerminalComponent } from './Terminal';
 import {
   ChevronDown,
+  ChevronRight,
+  ChevronLeft,
   Menu,
   Moon,
   X,
-  PanelLeft,
-  PanelLeftClose,
   Sun,
   LayoutDashboard,
   Network,
@@ -380,7 +380,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                 className="hidden md:inline-flex p-2 hover:bg-hover rounded text-text-secondary"
                 title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
-                {sidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
+                {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
               </button>
               <button
                 onClick={() => setSidebarOpen(false)}

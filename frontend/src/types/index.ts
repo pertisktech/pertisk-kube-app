@@ -18,6 +18,10 @@ export interface Pod {
   pod_ip?: string;
   cpu?: string;
   memory?: string;
+  cpu_capacity?: string;
+  memory_capacity?: string;
+  cpu_usage_percent?: number;
+  memory_usage_percent?: number;
   controlled_by?: string;
   qos?: string;
 }
@@ -119,6 +123,10 @@ export interface K8sNode {
   age?: string;
   cpu?: string;
   memory?: string;
+  cpu_used?: string;
+  memory_used?: string;
+  cpu_usage_percent?: number;
+  memory_usage_percent?: number;
 }
 
 export interface DashboardSummary {

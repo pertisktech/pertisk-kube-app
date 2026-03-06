@@ -10,8 +10,28 @@ interface PodDetailPanelProps {
   onOpenShell: (pod: Pod) => void;
 }
 
+const usageBarColor = (percent: number) => {
+  if (percent >= 90) return '#ef4444';
+  if (percent >= 70) return '#f59e0b';
+  return '#3b82f6';
+};
+
+const toPercent = (value?: number) => {
+  if (value == null || Number.isNaN(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+};
+
+const usageBarWidth = (percent: number) => {
+  if (percent <= 0) return 0;
+  return Math.max(percent, 6);
+};
+
 export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell }: PodDetailPanelProps) => {
   const status = pod.status || pod.phase || 'Unknown';
+  const hasCpuMetrics = pod.cpu_usage_percent != null;
+  const hasMemoryMetrics = pod.memory_usage_percent != null;
+  const cpuPercent = toPercent(pod.cpu_usage_percent);
+  const memoryPercent = toPercent(pod.memory_usage_percent);
 
   return (
     <aside className="fixed top-0 right-0 z-[100] h-screen w-[420px] max-w-[94vw] bg-surface-elevated border-l border-border shadow-2xl">
@@ -95,11 +115,41 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell }: 
               </div>
               <div>
                 <p className="text-text-secondary">CPU</p>
-                <p className="text-text break-all">{pod.cpu || '-'}</p>
+                <p className="text-text break-all">
+                  {hasCpuMetrics
+                    ? `${pod.cpu || '-'} / ${pod.cpu_capacity || '-'} (${Math.round(cpuPercent)}%)`
+                    : pod.cpu || '-'}
+                </p>
+                {hasCpuMetrics && (
+                  <div className="mt-2 h-2 rounded-full bg-hover overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${usageBarWidth(cpuPercent)}%`,
+                        backgroundColor: usageBarColor(cpuPercent),
+                      }}
+                    />
+                  </div>
+                )}
               </div>
               <div>
                 <p className="text-text-secondary">Memory</p>
-                <p className="text-text break-all">{pod.memory || '-'}</p>
+                <p className="text-text break-all">
+                  {hasMemoryMetrics
+                    ? `${pod.memory || '-'} / ${pod.memory_capacity || '-'} (${Math.round(memoryPercent)}%)`
+                    : pod.memory || '-'}
+                </p>
+                {hasMemoryMetrics && (
+                  <div className="mt-2 h-2 rounded-full bg-hover overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${usageBarWidth(memoryPercent)}%`,
+                        backgroundColor: usageBarColor(memoryPercent),
+                      }}
+                    />
+                  </div>
+                )}
               </div>
               <div>
                 <p className="text-text-secondary">Controlled By</p>

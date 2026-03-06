@@ -92,6 +92,10 @@ struct PodItem {
     pod_ip: Option<String>,
     cpu: String,
     memory: String,
+    cpu_capacity: Option<String>,
+    memory_capacity: Option<String>,
+    cpu_usage_percent: Option<f64>,
+    memory_usage_percent: Option<f64>,
     controlled_by: String,
     qos: String,
 }
@@ -112,6 +116,10 @@ struct NodeItem {
     runtime: Option<String>,
     cpu: Option<String>,
     memory: Option<String>,
+    cpu_used: Option<String>,
+    memory_used: Option<String>,
+    cpu_usage_percent: Option<f64>,
+    memory_usage_percent: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -603,6 +611,57 @@ async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (String,
     metrics_map
 }
 
+async fn fetch_node_metrics(client: Client) -> HashMap<String, (String, String)> {
+    let mut metrics_map: HashMap<String, (String, String)> = HashMap::new();
+
+    let node_metrics_resource =
+        ApiResource::from_gvk(&GroupVersionKind::gvk("metrics.k8s.io", "v1beta1", "NodeMetrics"));
+    let metrics_api: Api<DynamicObject> = Api::all_with(client, &node_metrics_resource);
+
+    let metrics_list = match metrics_api.list(&ListParams::default()).await {
+        Ok(list) => list,
+        Err(err) => {
+            error!("Error fetching node metrics from metrics.k8s.io: {:?}", err);
+            return metrics_map;
+        }
+    };
+
+    for metric in metrics_list.items {
+        let name = metric.metadata.name.clone().unwrap_or_default();
+        if name.is_empty() {
+            continue;
+        }
+
+        let metric_value = match serde_json::to_value(&metric) {
+            Ok(value) => value,
+            Err(e) => {
+                error!("Failed to serialize node metric for {}: {}", name, e);
+                continue;
+            }
+        };
+
+        let cpu = metric_value
+            .get("usage")
+            .and_then(|value| value.get("cpu"))
+            .and_then(|value| value.as_str())
+            .and_then(parse_cpu_millicores)
+            .map(format_millicores)
+            .unwrap_or_else(|| "-".to_string());
+
+        let memory = metric_value
+            .get("usage")
+            .and_then(|value| value.get("memory"))
+            .and_then(|value| value.as_str())
+            .and_then(parse_memory_bytes)
+            .map(format_binary_bytes)
+            .unwrap_or_else(|| "-".to_string());
+
+        metrics_map.insert(name, (cpu, memory));
+    }
+
+    metrics_map
+}
+
 #[derive(Serialize)]
 struct DashboardSummary {
     namespaces: usize,
@@ -926,6 +985,89 @@ async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
                         .get(&(namespace.clone(), name.clone()))
                         .cloned()
                         .unwrap_or_else(|| ("-".to_string(), "-".to_string()));
+
+                    let mut cpu_request_millicores_total = 0.0;
+                    let mut memory_request_bytes_total = 0.0;
+                    let mut cpu_limit_millicores_total = 0.0;
+                    let mut memory_limit_bytes_total = 0.0;
+
+                    if let Some(spec) = &pod.spec {
+                        for container in &spec.containers {
+                            if let Some(resources) = &container.resources {
+                                if let Some(requests) = &resources.requests {
+                                    if let Some(cpu_request) = requests
+                                        .get("cpu")
+                                        .and_then(|quantity| parse_cpu_millicores(&quantity.0))
+                                    {
+                                        cpu_request_millicores_total += cpu_request;
+                                    }
+
+                                    if let Some(memory_request) = requests
+                                        .get("memory")
+                                        .and_then(|quantity| parse_memory_bytes(&quantity.0))
+                                    {
+                                        memory_request_bytes_total += memory_request;
+                                    }
+                                }
+
+                                if let Some(limits) = &resources.limits {
+                                    if let Some(cpu_limit) = limits
+                                        .get("cpu")
+                                        .and_then(|quantity| parse_cpu_millicores(&quantity.0))
+                                    {
+                                        cpu_limit_millicores_total += cpu_limit;
+                                    }
+
+                                    if let Some(memory_limit) = limits
+                                        .get("memory")
+                                        .and_then(|quantity| parse_memory_bytes(&quantity.0))
+                                    {
+                                        memory_limit_bytes_total += memory_limit;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let cpu_capacity_millicores = if cpu_limit_millicores_total > 0.0 {
+                        Some(cpu_limit_millicores_total)
+                    } else if cpu_request_millicores_total > 0.0 {
+                        Some(cpu_request_millicores_total)
+                    } else {
+                        None
+                    };
+
+                    let memory_capacity_bytes = if memory_limit_bytes_total > 0.0 {
+                        Some(memory_limit_bytes_total)
+                    } else if memory_request_bytes_total > 0.0 {
+                        Some(memory_request_bytes_total)
+                    } else {
+                        None
+                    };
+
+                    let cpu_usage_percent = match (
+                        parse_cpu_millicores(&cpu),
+                        cpu_capacity_millicores,
+                    ) {
+                        (Some(used), Some(capacity)) if capacity > 0.0 => {
+                            Some((used / capacity * 100.0).min(100.0))
+                        }
+                        _ => None,
+                    };
+
+                    let memory_usage_percent = match (
+                        parse_memory_bytes(&memory),
+                        memory_capacity_bytes,
+                    ) {
+                        (Some(used), Some(capacity)) if capacity > 0.0 => {
+                            Some((used / capacity * 100.0).min(100.0))
+                        }
+                        _ => None,
+                    };
+
+                    let cpu_capacity = cpu_capacity_millicores.map(format_millicores);
+                    let memory_capacity = memory_capacity_bytes.map(format_binary_bytes);
+
                     let controlled_by = pod
                         .metadata
                         .owner_references
@@ -1036,6 +1178,10 @@ async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
                         pod_ip,
                         cpu,
                         memory,
+                        cpu_capacity,
+                        memory_capacity,
+                        cpu_usage_percent,
+                        memory_usage_percent,
                         controlled_by,
                         qos,
                     }
@@ -1054,7 +1200,9 @@ async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
 async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Node;
 
-    let api: Api<Node> = Api::all(state.client);
+    let client = state.client.clone();
+    let api: Api<Node> = Api::all(client.clone());
+    let node_metrics_map = fetch_node_metrics(client).await;
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<NodeItem> = list
@@ -1204,6 +1352,43 @@ async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         .and_then(|allocatable| allocatable.get("memory"))
                         .map(|mem_value| mem_value.0.clone());
 
+                    let (cpu_used_raw, memory_used_raw) = node_metrics_map
+                        .get(&name)
+                        .cloned()
+                        .unwrap_or_else(|| ("-".to_string(), "-".to_string()));
+
+                    let cpu_usage_percent = match (
+                        cpu.as_deref().and_then(parse_cpu_millicores),
+                        parse_cpu_millicores(&cpu_used_raw),
+                    ) {
+                        (Some(capacity), Some(used)) if capacity > 0.0 => {
+                            Some((used / capacity * 100.0).min(100.0))
+                        }
+                        _ => None,
+                    };
+
+                    let memory_usage_percent = match (
+                        memory.as_deref().and_then(parse_memory_bytes),
+                        parse_memory_bytes(&memory_used_raw),
+                    ) {
+                        (Some(capacity), Some(used)) if capacity > 0.0 => {
+                            Some((used / capacity * 100.0).min(100.0))
+                        }
+                        _ => None,
+                    };
+
+                    let cpu_used = if cpu_used_raw == "-" {
+                        None
+                    } else {
+                        Some(cpu_used_raw)
+                    };
+
+                    let memory_used = if memory_used_raw == "-" {
+                        None
+                    } else {
+                        Some(memory_used_raw)
+                    };
+
                     NodeItem {
                         name,
                         ready,
@@ -1219,6 +1404,10 @@ async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         runtime,
                         cpu,
                         memory,
+                        cpu_used,
+                        memory_used,
+                        cpu_usage_percent,
+                        memory_usage_percent,
                     }
                 })
                 .collect();

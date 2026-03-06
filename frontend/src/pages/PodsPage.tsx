@@ -23,10 +23,28 @@ type PodSortKey =
   | 'ready'
   | 'restarts'
   | 'cpu'
+  | 'cpu_pct'
   | 'memory'
+  | 'memory_pct'
   | 'controlled_by'
   | 'qos'
   | 'age';
+
+const usageBarColor = (percent: number) => {
+  if (percent >= 90) return '#ef4444';
+  if (percent >= 70) return '#f59e0b';
+  return '#3b82f6';
+};
+
+const toPercent = (value?: number) => {
+  if (value == null || Number.isNaN(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+};
+
+const usageBarWidth = (percent: number) => {
+  if (percent <= 0) return 0;
+  return Math.max(percent, 6);
+};
 
 const sanitizePodYamlForEdit = (yamlText: string) => {
   try {
@@ -368,11 +386,69 @@ export const PodsPage = () => {
       sortKey: 'cpu',
     },
     {
+      header: 'CPU(%)',
+      accessor: (row: Pod) => {
+        const hasMetrics = row.cpu_usage_percent != null;
+        const percent = toPercent(row.cpu_usage_percent);
+
+        if (!hasMetrics) {
+          return <span className="text-text-secondary">-</span>;
+        }
+
+        return (
+          <div className="flex items-center gap-2 min-w-[120px]">
+            <div className="h-2 flex-1 rounded-full bg-hover overflow-hidden">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${usageBarWidth(percent)}%`,
+                  backgroundColor: usageBarColor(percent),
+                }}
+              />
+            </div>
+            <span className="text-xs font-medium text-text w-10 text-right">{Math.round(percent)}%</span>
+          </div>
+        );
+      },
+      width: '12%',
+      sortable: true,
+      sortKey: 'cpu_pct',
+    },
+    {
       header: 'Memory',
       accessor: (row: Pod) => row.memory || '-',
       width: '10%',
       sortable: true,
       sortKey: 'memory',
+    },
+    {
+      header: 'MEMORY(%)',
+      accessor: (row: Pod) => {
+        const hasMetrics = row.memory_usage_percent != null;
+        const percent = toPercent(row.memory_usage_percent);
+
+        if (!hasMetrics) {
+          return <span className="text-text-secondary">-</span>;
+        }
+
+        return (
+          <div className="flex items-center gap-2 min-w-[120px]">
+            <div className="h-2 flex-1 rounded-full bg-hover overflow-hidden">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${usageBarWidth(percent)}%`,
+                  backgroundColor: usageBarColor(percent),
+                }}
+              />
+            </div>
+            <span className="text-xs font-medium text-text w-10 text-right">{Math.round(percent)}%</span>
+          </div>
+        );
+      },
+      width: '12%',
+      sortable: true,
+      sortKey: 'memory_pct',
     },
     {
       header: 'Controlled By',
@@ -424,8 +500,18 @@ export const PodsPage = () => {
       if (sortState.key === 'status') return firstStatus.localeCompare(secondStatus) * factor;
       if (sortState.key === 'ready') return (first.ready || '').localeCompare(second.ready || '') * factor;
       if (sortState.key === 'restarts') return ((first.restarts ?? 0) - (second.restarts ?? 0)) * factor;
-      if (sortState.key === 'cpu') return (first.cpu || '').localeCompare(second.cpu || '') * factor;
-      if (sortState.key === 'memory') return (first.memory || '').localeCompare(second.memory || '') * factor;
+      if (sortState.key === 'cpu') {
+        return (first.cpu || '').localeCompare(second.cpu || '', undefined, { numeric: true, sensitivity: 'base' }) * factor;
+      }
+      if (sortState.key === 'cpu_pct') {
+        return (toPercent(first.cpu_usage_percent) - toPercent(second.cpu_usage_percent)) * factor;
+      }
+      if (sortState.key === 'memory') {
+        return (first.memory || '').localeCompare(second.memory || '', undefined, { numeric: true, sensitivity: 'base' }) * factor;
+      }
+      if (sortState.key === 'memory_pct') {
+        return (toPercent(first.memory_usage_percent) - toPercent(second.memory_usage_percent)) * factor;
+      }
       if (sortState.key === 'controlled_by') return (first.controlled_by || '').localeCompare(second.controlled_by || '') * factor;
       if (sortState.key === 'qos') return (first.qos || '').localeCompare(second.qos || '') * factor;
       

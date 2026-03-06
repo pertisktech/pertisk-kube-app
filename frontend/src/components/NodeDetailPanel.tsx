@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { X, Cpu, HardDrive } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import type { K8sNode } from '../types';
 
@@ -7,9 +7,29 @@ interface NodeDetailPanelProps {
   onClose: () => void;
 }
 
+const usageBarColor = (percent: number) => {
+  if (percent >= 90) return '#ef4444';
+  if (percent >= 70) return '#f59e0b';
+  return '#3b82f6';
+};
+
+const toPercent = (value?: number) => {
+  if (value == null || Number.isNaN(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+};
+
+const usageBarWidth = (percent: number) => {
+  if (percent <= 0) return 0;
+  return Math.max(percent, 6);
+};
+
 export const NodeDetailPanel = ({ node, onClose }: NodeDetailPanelProps) => {
   const status = String(node.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady';
   const taints = node.taints?.length ? node.taints : [];
+  const cpuPercent = toPercent(node.cpu_usage_percent);
+  const memoryPercent = toPercent(node.memory_usage_percent);
+  const hasCpuMetrics = node.cpu_used != null && node.cpu_usage_percent != null;
+  const hasMemoryMetrics = node.memory_used != null && node.memory_usage_percent != null;
 
   return (
     <aside className="fixed top-0 right-0 z-[100] h-screen w-[420px] max-w-[94vw] bg-surface-elevated border-l border-border shadow-2xl">
@@ -101,6 +121,67 @@ export const NodeDetailPanel = ({ node, onClose }: NodeDetailPanelProps) => {
               </div>
             </div>
           </section>
+
+          {(node.cpu || node.memory || hasCpuMetrics || hasMemoryMetrics) && (
+            <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
+              <p className="text-xs uppercase tracking-wide text-text-secondary mb-3">Metrics</p>
+              <div className="space-y-4">
+                {(node.cpu || hasCpuMetrics) && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Cpu size={16} className="text-primary" />
+                      <p className="text-sm font-medium text-text">CPU</p>
+                    </div>
+                    <p className="text-sm text-text-secondary ml-6">
+                      {hasCpuMetrics
+                        ? `${node.cpu_used} / ${node.cpu || '-'} (${Math.round(cpuPercent)}%)`
+                        : `Allocatable: ${node.cpu || '-'}`}
+                    </p>
+                    {hasCpuMetrics && (
+                      <div className="ml-6 mt-2 h-2 rounded-full bg-hover overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${usageBarWidth(cpuPercent)}%`,
+                            backgroundColor: usageBarColor(cpuPercent),
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {(node.memory || hasMemoryMetrics) && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <HardDrive size={16} className="text-primary" />
+                      <p className="text-sm font-medium text-text">Memory</p>
+                    </div>
+                    <p className="text-sm text-text-secondary ml-6">
+                      {hasMemoryMetrics
+                        ? `${node.memory_used} / ${node.memory || '-'} (${Math.round(memoryPercent)}%)`
+                        : `Allocatable: ${node.memory || '-'}`}
+                    </p>
+                    {hasMemoryMetrics && (
+                      <div className="ml-6 mt-2 h-2 rounded-full bg-hover overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${usageBarWidth(memoryPercent)}%`,
+                            backgroundColor: usageBarColor(memoryPercent),
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!hasCpuMetrics && !hasMemoryMetrics && (
+                  <p className="text-xs text-text-secondary ml-6">
+                    Live usage metrics unavailable. Showing allocatable values only.
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </aside>
