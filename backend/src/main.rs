@@ -721,6 +721,7 @@ async fn main() -> anyhow::Result<()> {
             "/pods/:namespace/:name/yaml",
             get(get_pod_yaml).put(update_pod_yaml),
         )
+        .route("/pods/:namespace/:name/logs", get(get_pod_logs))
         .route("/events", get(list_events))
         .route("/deployments", get(list_deployments))
         .route(
@@ -1602,6 +1603,35 @@ async fn get_pod_yaml(
         Err(err) => {
             error!("Error getting pod YAML {}/{}: {:?}", namespace, name, err);
             StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn get_pod_logs(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Pod;
+    use kube::api::LogParams;
+
+    let api: Api<Pod> = Api::namespaced(state.client, &namespace);
+    
+    let log_params = LogParams {
+        tail_lines: Some(1000),
+        timestamps: true,
+        ..Default::default()
+    };
+
+    match api.logs(&name, &log_params).await {
+        Ok(logs) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            logs,
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error getting pod logs {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
 }

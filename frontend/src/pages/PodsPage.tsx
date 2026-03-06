@@ -9,7 +9,7 @@ import { Terminal } from '../components/Terminal';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';
 import { getAuthToken } from '../utils/auth';
-import { GripHorizontal, X, Eye, EyeOff, Save } from 'lucide-react';
+import { GripHorizontal, X, Eye, EyeOff, Save, RefreshCw } from 'lucide-react';
 import AceEditor from 'react-ace';
 import YAML from 'yaml';
 import 'ace-builds/src-noconflict/mode-yaml';
@@ -23,28 +23,10 @@ type PodSortKey =
   | 'ready'
   | 'restarts'
   | 'cpu'
-  | 'cpu_pct'
   | 'memory'
-  | 'memory_pct'
   | 'controlled_by'
   | 'qos'
   | 'age';
-
-const usageBarColor = (percent: number) => {
-  if (percent >= 90) return '#ef4444';
-  if (percent >= 70) return '#f59e0b';
-  return '#3b82f6';
-};
-
-const toPercent = (value?: number) => {
-  if (value == null || Number.isNaN(value)) return 0;
-  return Math.max(0, Math.min(100, value));
-};
-
-const usageBarWidth = (percent: number) => {
-  if (percent <= 0) return 0;
-  return Math.max(percent, 6);
-};
 
 const sanitizePodYamlForEdit = (yamlText: string) => {
   try {
@@ -81,7 +63,7 @@ const getPodKey = (pod: Pod) => `${pod.namespace}/${pod.name}`;
 type EditorTab = {
   podKey: string;
   pod: Pod;
-  type: 'yaml' | 'shell';
+  type: 'yaml' | 'shell' | 'logs';
 };
 
 const getTabKey = (tab: EditorTab) => `${tab.podKey}:${tab.type}`;
@@ -118,6 +100,11 @@ export const PodsPage = () => {
   const [yamlSuccessByTab, setYamlSuccessByTab] = useState<Record<string, string | null>>({});
   const [yamlLoadingTabKey, setYamlLoadingTabKey] = useState<string | null>(null);
   const [yamlSavingTabKey, setYamlSavingTabKey] = useState<string | null>(null);
+
+  // Logs content and state
+  const [logsContentsByTab, setLogsContentsByTab] = useState<Record<string, string>>({});
+  const [logsLoadingTabKey, setLogsLoadingTabKey] = useState<string | null>(null);
+  const [logsErrorByTab, setLogsErrorByTab] = useState<Record<string, string | null>>({});
 
   const resizeStartYRef = useRef<number | null>(null);
   const resizeStartHeightRef = useRef<number | null>(null);
@@ -171,6 +158,48 @@ export const PodsPage = () => {
     return () => controller.abort();
   }, [activeTab?.pod.namespace, activeTab?.pod.name, activeTab?.type, activeTabKey, yamlContentsByTab]);
 
+  // Load logs when active tab changes
+  useEffect(() => {
+    if (!activeTab || activeTab.type !== 'logs') return;
+    const tabKey = getTabKey(activeTab);
+    if (logsContentsByTab[tabKey]) return;
+
+    const controller = new AbortController();
+    setLogsLoadingTabKey(tabKey);
+    setLogsErrorByTab((previous) => ({ ...previous, [tabKey]: null }));
+
+    const fetchLogs = async () => {
+      try {
+        const token = getAuthToken();
+        const response = await fetch(
+          `/api/pods/${activeTab.pod.namespace}/${activeTab.pod.name}/logs`,
+          {
+            signal: controller.signal,
+            headers: token ? { Authorization: token } : {},
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`Failed to load logs: ${response.statusText}`);
+        }
+
+        const logs = await response.text();
+        setLogsContentsByTab((previous) => ({ ...previous, [tabKey]: logs }));
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'name' in err && err.name !== 'AbortError') {
+          const message = err && typeof err === 'object' && 'message' in err ? String(err.message) : 'Unknown error';
+          setLogsErrorByTab((previous) => ({ ...previous, [tabKey]: message }));
+        }
+      } finally {
+        setLogsLoadingTabKey(null);
+      }
+    };
+
+    void fetchLogs();
+
+    return () => controller.abort();
+  }, [activeTab?.pod.namespace, activeTab?.pod.name, activeTab?.type, activeTabKey, logsContentsByTab]);
+
   const handleOpenYamlTab = (pod: Pod) => {
     const newTab: EditorTab = {
       podKey: getPodKey(pod),
@@ -209,6 +238,55 @@ export const PodsPage = () => {
     setPanelOpen(false);
   };
 
+  const handleOpenLogsTab = (pod: Pod) => {
+    const newTab: EditorTab = {
+      podKey: getPodKey(pod),
+      pod,
+      type: 'logs',
+    };
+
+    setEditorTabs((previous) => {
+      if (previous.some((tab) => getTabKey(tab) === getTabKey(newTab))) {
+        return previous;
+      }
+      return [...previous, newTab];
+    });
+
+    setActiveTabKey(getTabKey(newTab));
+    setEditorDrawerVisible(true);
+    setPanelOpen(false);
+  };
+
+  const handleRefreshLogs = async () => {
+    if (!activeTab || activeTab.type !== 'logs') return;
+    const tabKey = getTabKey(activeTab);
+
+    setLogsLoadingTabKey(tabKey);
+    setLogsErrorByTab((previous) => ({ ...previous, [tabKey]: null }));
+
+    try {
+      const token = getAuthToken();
+      const response = await fetch(
+        `/api/pods/${activeTab.pod.namespace}/${activeTab.pod.name}/logs`,
+        {
+          headers: token ? { Authorization: token } : {},
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to load logs: ${response.statusText}`);
+      }
+
+      const logs = await response.text();
+      setLogsContentsByTab((previous) => ({ ...previous, [tabKey]: logs }));
+    } catch (err: unknown) {
+      const message = err && typeof err === 'object' && 'message' in err ? String(err.message) : 'Unknown error';
+      setLogsErrorByTab((previous) => ({ ...previous, [tabKey]: message }));
+    } finally {
+      setLogsLoadingTabKey(null);
+    }
+  };
+
   const handleCloseTab = (tabKey: string) => {
     setEditorTabs((previous) => {
       const nextTabs = previous.filter((tab) => getTabKey(tab) !== tabKey);
@@ -235,6 +313,19 @@ export const PodsPage = () => {
     });
 
     setYamlSuccessByTab((previous) => {
+      const next = { ...previous };
+      delete next[tabKey];
+      return next;
+    });
+
+    // Clean up logs content if it was a logs tab
+    setLogsContentsByTab((previous) => {
+      const next = { ...previous };
+      delete next[tabKey];
+      return next;
+    });
+
+    setLogsErrorByTab((previous) => {
       const next = { ...previous };
       delete next[tabKey];
       return next;
@@ -379,76 +470,18 @@ export const PodsPage = () => {
       sortKey: 'restarts',
     },
     {
-      header: 'CPU',
+      header: 'CPU(cores)',
       accessor: (row: Pod) => row.cpu || '-',
-      width: '10%',
+      width: '11%',
       sortable: true,
       sortKey: 'cpu',
     },
     {
-      header: 'CPU(%)',
-      accessor: (row: Pod) => {
-        const hasMetrics = row.cpu_usage_percent != null;
-        const percent = toPercent(row.cpu_usage_percent);
-
-        if (!hasMetrics) {
-          return <span className="text-text-secondary">-</span>;
-        }
-
-        return (
-          <div className="flex items-center gap-2 min-w-[120px]">
-            <div className="h-2 flex-1 rounded-full bg-hover overflow-hidden">
-              <div
-                className="h-full rounded-full"
-                style={{
-                  width: `${usageBarWidth(percent)}%`,
-                  backgroundColor: usageBarColor(percent),
-                }}
-              />
-            </div>
-            <span className="text-xs font-medium text-text w-10 text-right">{Math.round(percent)}%</span>
-          </div>
-        );
-      },
-      width: '12%',
-      sortable: true,
-      sortKey: 'cpu_pct',
-    },
-    {
-      header: 'Memory',
+      header: 'MEMORY(bytes)',
       accessor: (row: Pod) => row.memory || '-',
-      width: '10%',
+      width: '11%',
       sortable: true,
       sortKey: 'memory',
-    },
-    {
-      header: 'MEMORY(%)',
-      accessor: (row: Pod) => {
-        const hasMetrics = row.memory_usage_percent != null;
-        const percent = toPercent(row.memory_usage_percent);
-
-        if (!hasMetrics) {
-          return <span className="text-text-secondary">-</span>;
-        }
-
-        return (
-          <div className="flex items-center gap-2 min-w-[120px]">
-            <div className="h-2 flex-1 rounded-full bg-hover overflow-hidden">
-              <div
-                className="h-full rounded-full"
-                style={{
-                  width: `${usageBarWidth(percent)}%`,
-                  backgroundColor: usageBarColor(percent),
-                }}
-              />
-            </div>
-            <span className="text-xs font-medium text-text w-10 text-right">{Math.round(percent)}%</span>
-          </div>
-        );
-      },
-      width: '12%',
-      sortable: true,
-      sortKey: 'memory_pct',
     },
     {
       header: 'Controlled By',
@@ -503,14 +536,8 @@ export const PodsPage = () => {
       if (sortState.key === 'cpu') {
         return (first.cpu || '').localeCompare(second.cpu || '', undefined, { numeric: true, sensitivity: 'base' }) * factor;
       }
-      if (sortState.key === 'cpu_pct') {
-        return (toPercent(first.cpu_usage_percent) - toPercent(second.cpu_usage_percent)) * factor;
-      }
       if (sortState.key === 'memory') {
         return (first.memory || '').localeCompare(second.memory || '', undefined, { numeric: true, sensitivity: 'base' }) * factor;
-      }
-      if (sortState.key === 'memory_pct') {
-        return (toPercent(first.memory_usage_percent) - toPercent(second.memory_usage_percent)) * factor;
       }
       if (sortState.key === 'controlled_by') return (first.controlled_by || '').localeCompare(second.controlled_by || '') * factor;
       if (sortState.key === 'qos') return (first.qos || '').localeCompare(second.qos || '') * factor;
@@ -615,7 +642,7 @@ export const PodsPage = () => {
                     {editorTabs.map((tab) => {
                       const tabKey = getTabKey(tab);
                       const isActive = tabKey === activeTabKey;
-                      const typeLabel = tab.type === 'yaml' ? 'YAML' : 'Shell';
+                      const typeLabel = tab.type === 'yaml' ? 'YAML' : tab.type === 'shell' ? 'Shell' : 'Logs';
                       return (
                         <button
                           key={tabKey}
@@ -739,6 +766,40 @@ export const PodsPage = () => {
                       podName={activeTab.pod.name}
                       namespace={activeTab.pod.namespace}
                     />
+                  ) : activeTab && activeTab.type === 'logs' ? (
+                    // Pod Logs
+                    <div className="h-full flex flex-col bg-[#1e1e1e]">
+                      {/* Logs toolbar */}
+                      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700 bg-[#252526]">
+                        <div className="text-xs text-gray-400">Pod Logs (last 1000 lines)</div>
+                        <button
+                          type="button"
+                          onClick={handleRefreshLogs}
+                          disabled={logsLoadingTabKey === activeTabKey}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-gray-600 text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Refresh logs"
+                        >
+                          <RefreshCw size={12} className={logsLoadingTabKey === activeTabKey ? 'animate-spin' : ''} />
+                          Refresh
+                        </button>
+                      </div>
+                      {/* Logs content */}
+                      <div className="flex-1 overflow-auto p-4 font-mono text-xs leading-relaxed">
+                        {logsLoadingTabKey === activeTabKey ? (
+                          <div className="flex items-center justify-center h-full">
+                            <div className="text-gray-400">Loading logs...</div>
+                          </div>
+                        ) : activeTabKey && logsErrorByTab[activeTabKey] ? (
+                          <div className="flex items-center justify-center h-full">
+                            <div className="text-red-400">{logsErrorByTab[activeTabKey]}</div>
+                          </div>
+                        ) : (
+                          <pre className="text-gray-300 whitespace-pre-wrap break-words">
+                            {activeTabKey ? logsContentsByTab[activeTabKey] || 'No logs available' : 'No logs available'}
+                          </pre>
+                        )}
+                      </div>
+                    </div>
                   ) : null}
                 </div>
               </div>
@@ -758,6 +819,7 @@ export const PodsPage = () => {
             onClose={() => setPanelOpen(false)}
             onOpenYamlEditor={handleOpenYamlTab}
             onOpenShell={handleOpenShellTab}
+            onOpenLogs={handleOpenLogsTab}
           />
         </>
       )}

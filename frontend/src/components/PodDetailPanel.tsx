@@ -1,4 +1,4 @@
-import { X, Pencil, Terminal } from 'lucide-react';
+import { X, Pencil, Terminal, ScrollText } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';
@@ -8,6 +8,7 @@ interface PodDetailPanelProps {
   onClose: () => void;
   onOpenYamlEditor: (pod: Pod) => void;
   onOpenShell: (pod: Pod) => void;
+  onOpenLogs: (pod: Pod) => void;
 }
 
 const usageBarColor = (percent: number) => {
@@ -26,7 +27,7 @@ const usageBarWidth = (percent: number) => {
   return Math.max(percent, 6);
 };
 
-export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell }: PodDetailPanelProps) => {
+export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, onOpenLogs }: PodDetailPanelProps) => {
   const status = pod.status || pod.phase || 'Unknown';
   const hasCpuMetrics = pod.cpu_usage_percent != null;
   const hasMemoryMetrics = pod.memory_usage_percent != null;
@@ -48,11 +49,20 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell }: 
           </button>
         </div>
 
-        <div className="px-5 py-2 border-b border-border flex items-center justify-end">
+        <div className="px-5 py-2 border-b border-border flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => onOpenLogs(pod)}
+            className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
+            aria-label="View pod logs"
+            title="View Logs"
+          >
+            <ScrollText size={15} />
+          </button>
           <button
             type="button"
             onClick={() => onOpenShell(pod)}
-            className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover mr-2"
+            className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
             aria-label="Open pod shell"
             title="Open Shell"
           >
