@@ -729,6 +729,10 @@ async fn main() -> anyhow::Result<()> {
             post(scale_deployment),
         )
         .route(
+            "/deployments/:namespace/:name/restart",
+            post(restart_deployment),
+        )
+        .route(
             "/deployments/:namespace/:name/yaml",
             get(get_deployment_yaml).put(update_deployment_yaml),
         )
@@ -1573,6 +1577,46 @@ async fn scale_deployment(
         Err(err) => {
             error!("Error getting deployment {}/{}: {:?}", namespace, name, err);
             StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn restart_deployment(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::Deployment;
+
+    let api: Api<Deployment> = Api::namespaced(state.client, &namespace);
+    let restarted_at = Utc::now().to_rfc3339();
+
+    let patch = serde_json::json!({
+        "spec": {
+            "template": {
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/restartedAt": restarted_at
+                    }
+                }
+            }
+        }
+    });
+
+    match api
+        .patch(
+            &name,
+            &PatchParams::default(),
+            &Patch::Merge(&patch),
+        )
+        .await
+    {
+        Ok(_) => {
+            info!("Restarted deployment {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error restarting deployment {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
 }

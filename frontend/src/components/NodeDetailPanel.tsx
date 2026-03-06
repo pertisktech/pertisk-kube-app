@@ -1,10 +1,12 @@
-import { X, Cpu, HardDrive } from 'lucide-react';
+import { X, Pencil, Cpu, HardDrive, Trash2 } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import type { K8sNode } from '../types';
 
 interface NodeDetailPanelProps {
   node: K8sNode;
   onClose: () => void;
+  onOpenYamlEditor?: (node: K8sNode) => void;
+  onDelete?: (name: string) => Promise<void>;
 }
 
 const usageBarColor = (percent: number) => {
@@ -23,7 +25,7 @@ const usageBarWidth = (percent: number) => {
   return Math.max(percent, 6);
 };
 
-export const NodeDetailPanel = ({ node, onClose }: NodeDetailPanelProps) => {
+export const NodeDetailPanel = ({ node, onClose, onOpenYamlEditor, onDelete }: NodeDetailPanelProps) => {
   const status = String(node.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady';
   const taints = node.taints?.length ? node.taints : [];
   const cpuPercent = toPercent(node.cpu_usage_percent);
@@ -46,9 +48,31 @@ export const NodeDetailPanel = ({ node, onClose }: NodeDetailPanelProps) => {
           </button>
         </div>
 
+        <div className="px-5 py-3 border-b border-border">
+          <div className="bg-surface border border-border rounded-lg p-1.5 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenYamlEditor?.(node)}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
+              aria-label="Edit node YAML"
+              title="Edit YAML"
+            >
+              <Pencil size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete?.(node.name)}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
+              aria-label="Delete node"
+              title="Delete Node"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </div>
+
         <div className="flex-1 overflow-auto overflow-x-hidden p-5 space-y-5 text-sm">
           <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
-            <p className="text-xs uppercase tracking-wide text-text-secondary mb-3">Item</p>
             <div className="space-y-3">
               <div>
                 <p className="text-text-secondary">Name</p>
@@ -68,7 +92,6 @@ export const NodeDetailPanel = ({ node, onClose }: NodeDetailPanelProps) => {
           </section>
 
           <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
-            <p className="text-xs uppercase tracking-wide text-text-secondary mb-3">Detail</p>
             <div className="space-y-3">
               <div>
                 <p className="text-text-secondary">IP</p>

@@ -1,13 +1,15 @@
-import { X } from 'lucide-react';
+import { X, Pencil, Trash2 } from 'lucide-react';
 import type { Job } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 
 interface JobDetailPanelProps {
   job: Job;
   onClose: () => void;
+  onOpenYamlEditor?: (job: Job) => void;
+  onDelete?: (namespace: string, name: string) => Promise<void>;
 }
 
-export const JobDetailPanel = ({ job, onClose }: JobDetailPanelProps) => {
+export const JobDetailPanel = ({ job, onClose, onOpenYamlEditor, onDelete }: JobDetailPanelProps) => {
   const getStatusTextClass = (status: string) => {
     const color = getStatusColor(status);
     if (color === 'green') return 'text-[var(--color-icon-success)]';
@@ -31,9 +33,31 @@ export const JobDetailPanel = ({ job, onClose }: JobDetailPanelProps) => {
           </button>
         </div>
 
+        <div className="px-5 py-3 border-b border-border">
+          <div className="bg-surface border border-border rounded-lg p-1.5 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenYamlEditor?.(job)}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
+              aria-label="Edit job YAML"
+              title="Edit YAML"
+            >
+              <Pencil size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete?.(job.namespace, job.name)}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
+              aria-label="Delete job"
+              title="Delete Job"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </div>
+
         <div className="flex-1 overflow-auto overflow-x-hidden p-5 space-y-5 text-sm">
           <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
-            <p className="text-xs uppercase tracking-wide text-text-secondary mb-3">Item</p>
             <div className="space-y-3">
               <div>
                 <p className="text-text-secondary">Name</p>
@@ -53,7 +77,6 @@ export const JobDetailPanel = ({ job, onClose }: JobDetailPanelProps) => {
           </section>
 
           <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
-            <p className="text-xs uppercase tracking-wide text-text-secondary mb-3">Detail</p>
             <div className="space-y-3">
               <div>
                 <p className="text-text-secondary">Completions</p>

@@ -11,7 +11,7 @@ import { DataTable } from '../components/DataTable';
 import { DeploymentDetailPanel } from '../components/DeploymentDetailPanel';
 import type { Deployment } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { scaleDeployment } from '../hooks/useKubernetes';
+import { restartDeployment, scaleDeployment } from '../hooks/useKubernetes';
 import { getStatusColor, timeAgo } from '../utils';
 
 type DeploymentSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'updated' | 'available' | 'images' | 'age';
@@ -619,6 +619,7 @@ export const DeploymentsPage = () => {
             onClose={() => setPanelOpen(false)}
             onOpenYamlEditor={handleOpenYamlEditorFromPanel}
             onScale={scaleDeployment}
+            onRestart={restartDeployment}
           />
         </>
       )}

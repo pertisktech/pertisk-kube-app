@@ -467,3 +467,15 @@ export const scaleDeployment = async (namespace: string, name: string, replicas:
     throw new Error('Failed to scale deployment');
   }
 };
+
+export const restartDeployment = async (namespace: string, name: string): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/deployments/${namespace}/${name}/restart`, {
+    method: 'POST',
+    headers: token ? { Authorization: token } : undefined,
+  });
+
+  if (!res.ok) {
+    throw new Error('Failed to restart deployment');
+  }
+};

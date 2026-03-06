@@ -1,4 +1,4 @@
-import { X, Pencil, Terminal, ScrollText } from 'lucide-react';
+import { X, Pencil, Terminal, ScrollText, Trash2 } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';
@@ -9,6 +9,7 @@ interface PodDetailPanelProps {
   onOpenYamlEditor: (pod: Pod) => void;
   onOpenShell: (pod: Pod) => void;
   onOpenLogs: (pod: Pod) => void;
+  onDelete?: (namespace: string, name: string) => Promise<void>;
 }
 
 const usageBarColor = (percent: number) => {
@@ -27,7 +28,7 @@ const usageBarWidth = (percent: number) => {
   return Math.max(percent, 6);
 };
 
-export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, onOpenLogs }: PodDetailPanelProps) => {
+export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, onOpenLogs, onDelete }: PodDetailPanelProps) => {
   const status = pod.status || pod.phase || 'Unknown';
   const hasCpuMetrics = pod.cpu_usage_percent != null;
   const hasMemoryMetrics = pod.memory_usage_percent != null;
@@ -49,39 +50,49 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           </button>
         </div>
 
-        <div className="px-5 py-2 border-b border-border flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => onOpenLogs(pod)}
-            className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
-            aria-label="View pod logs"
-            title="View Logs"
-          >
-            <ScrollText size={15} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onOpenShell(pod)}
-            className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
-            aria-label="Open pod shell"
-            title="Open Shell"
-          >
-            <Terminal size={15} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onOpenYamlEditor(pod)}
-            className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
-            aria-label="Edit pod YAML"
-            title="Edit YAML"
-          >
-            <Pencil size={15} />
-          </button>
+        <div className="px-5 py-3 border-b border-border">
+          <div className="bg-surface border border-border rounded-lg p-1.5 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenLogs(pod)}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
+              aria-label="View pod logs"
+              title="View Logs"
+            >
+              <ScrollText size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenShell(pod)}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
+              aria-label="Open pod shell"
+              title="Open Shell"
+            >
+              <Terminal size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenYamlEditor(pod)}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
+              aria-label="Edit pod YAML"
+              title="Edit YAML"
+            >
+              <Pencil size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete?.(pod.namespace, pod.name)}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
+              aria-label="Delete pod"
+              title="Delete Pod"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-auto overflow-x-hidden p-5 space-y-5 text-sm">
           <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
-            <p className="text-xs uppercase tracking-wide text-text-secondary mb-3">Item</p>
             <div className="space-y-3">
               <div>
                 <p className="text-text-secondary">Name</p>
@@ -101,7 +112,6 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           </section>
 
           <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
-            <p className="text-xs uppercase tracking-wide text-text-secondary mb-3">Detail</p>
             <div className="space-y-3">
               <div>
                 <p className="text-text-secondary">Ready</p>
