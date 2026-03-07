@@ -19,6 +19,9 @@ FROM ${BASE_REGISTRY}/web-base-frontend:${BASE_TAG} AS frontend-builder
 ARG VERSION
 WORKDIR /app/frontend
 
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm install --prefer-offline --no-audit --no-fund
+
 COPY frontend/tsconfig.json frontend/tsconfig.node.json ./
 COPY frontend/vite.config.mts frontend/postcss.config.js frontend/tailwind.config.js ./
 COPY frontend/index.html ./
