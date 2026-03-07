@@ -140,16 +140,19 @@ async fn spawn_exec_shell(
             }
         };
 
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/appuser".to_string());
         let path = format!("{}/.local/bin:/usr/local/bin:/usr/bin:/bin", home);
         
         let mut cmd = CommandBuilder::new("zsh");
         cmd.arg("-i");
         cmd.arg("-l");  // Login shell to read /etc/profile and /etc/environment
+        cmd.env("HOME", &home);
+        cmd.env("ZSH", format!("{}/.oh-my-zsh", home));
         cmd.env("PATH", path);
         cmd.env("TERM", "xterm-256color");
         cmd.env("LANG", "en_US.UTF-8");
-        cmd.env("HOME", &home);
+        cmd.env("POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD", "true");
+        cmd.env("ZDOTDIR", &home);
         
         // Spawn the shell process
         if let Err(err) = pair.slave.spawn_command(cmd) {
@@ -216,36 +219,20 @@ async fn spawn_exec_shell(
             stderr,
         })
     } else {
-        // Normal case: kubectl exec to pod with pipes
-        let mut cmd = Command::new("kubectl");
-        cmd.arg("exec")
-            .arg("-i")
-            .arg("-t")  // Add -t for tty allocation
-            .arg("-n")
-            .arg(&query.namespace)
-            .arg(&query.pod);
-
-        if let Some(container) = &query.container {
-            cmd.arg("-c").arg(container);
-        }
-
-        // Use zsh with interactive + login shell to load .zshrc
-        cmd.arg("--").arg("zsh").arg("-il");
-        
-        cmd.stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let mut child = match cmd.spawn() {
-            Ok(child) => {
-                info!("Kubectl exec process spawned successfully");
-                child
-            }
+        // Normal case: kubectl exec to pod with PTY so zsh/p10k get a real terminal
+        let pty_system = NativePtySystem::default();
+        let pair = match pty_system.openpty(PtySize {
+            rows: 30,
+            cols: 120,
+            pixel_width: 0,
+            pixel_height: 0,
+        }) {
+            Ok(pair) => pair,
             Err(err) => {
-                error!("Failed to spawn kubectl: {}", err);
+                error!("Failed to create PTY for kubectl exec: {}", err);
                 let _ = tx
                     .send(format!(
-                        "\r\n\u{1b}[1;31mFailed to start kubectl: {}\u{1b}[0m\r\n",
+                        "\r\n\u{1b}[1;31mFailed to create PTY: {}\u{1b}[0m\r\n",
                         err
                     ))
                     .await;
@@ -253,40 +240,57 @@ async fn spawn_exec_shell(
             }
         };
 
-        let stdin = match child.stdin.take() {
-            Some(stdin) => stdin,
-            None => {
-                let _ = tx
-                    .send("\r\n\u{1b}[1;31mFailed to open stdin\u{1b}[0m\r\n".to_string())
-                    .await;
-                let _ = child.kill().await;
+        let mut cmd = CommandBuilder::new("kubectl");
+        cmd.arg("exec");
+        cmd.arg("-i");
+        cmd.arg("-t"); // Works now — we have a real local PTY
+        cmd.arg("-n");
+        cmd.arg(&query.namespace);
+        cmd.arg(&query.pod);
+
+        if let Some(container) = &query.container {
+            cmd.arg("-c");
+            cmd.arg(container);
+        }
+
+        cmd.arg("--");
+        cmd.arg("zsh");
+        cmd.arg("-il");
+        cmd.env("TERM", "xterm-256color");
+
+        if let Err(err) = pair.slave.spawn_command(cmd) {
+            error!("Failed to spawn kubectl exec: {}", err);
+            let _ = tx
+                .send(format!(
+                    "\r\n\u{1b}[1;31mFailed to start kubectl exec: {}\u{1b}[0m\r\n",
+                    err
+                ))
+                .await;
+            return None;
+        }
+
+        info!("kubectl exec PTY process spawned successfully");
+
+        let reader = match pair.master.try_clone_reader() {
+            Ok(r) => r,
+            Err(err) => {
+                error!("Failed to clone PTY reader: {}", err);
+                return None;
+            }
+        };
+        let writer = match pair.master.take_writer() {
+            Ok(w) => w,
+            Err(err) => {
+                error!("Failed to take PTY writer: {}", err);
                 return None;
             }
         };
 
-        let stdout = match child.stdout.take() {
-            Some(stdout) => stdout,
-            None => {
-                let _ = tx
-                    .send("\r\n\u{1b}[1;31mFailed to open stdout\u{1b}[0m\r\n".to_string())
-                    .await;
-                let _ = child.kill().await;
-                return None;
-            }
-        };
-
-        let stderr = match child.stderr.take() {
-            Some(stderr) => stderr,
-            None => {
-                let _ = tx
-                    .send("\r\n\u{1b}[1;31mFailed to open stderr\u{1b}[0m\r\n".to_string())
-                    .await;
-                let _ = child.kill().await;
-                return None;
-            }
-        };
-
-        Some(ShellSession::Piped { child, stdin, stdout, stderr })
+        Some(ShellSession::Pty {
+            master: pair.master,
+            reader,
+            writer,
+        })
     }
 }
 

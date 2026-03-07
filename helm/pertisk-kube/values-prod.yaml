@@ -36,8 +36,8 @@ app:
       memory: 512Mi
   podSecurityContext:
     runAsNonRoot: true
-    runAsUser: 65534
-    runAsGroup: 65534
+    runAsUser: 65532
+    runAsGroup: 65532
     seccompProfile:
       type: RuntimeDefault
   securityContext:
@@ -46,7 +46,7 @@ app:
       drop:
         - ALL
     runAsNonRoot: true
-    runAsUser: 65534
+    runAsUser: 65532
     seccompProfile:
       type: RuntimeDefault
   startupProbe:
