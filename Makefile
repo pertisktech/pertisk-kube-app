@@ -16,6 +16,7 @@ HELM_NAMESPACE ?= pertisk-rproxy
 .PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run-monolith run-ingress-k3s
 .PHONY: docker-build docker-build-amd64 docker-build-arm64 docker-build-multi docker-push docker-push-multi
 .PHONY: helm-install helm-upgrade helm-uninstall helm-template helm-deploy
+.PHONY: skaffold-run skaffold-run-prod skaffold-dev skaffold-delete skaffold-build
 .PHONY: release version
 
 # Development targets
@@ -148,6 +149,29 @@ helm-deploy: docker-build-multi
 # Complete release: build multi-arch and deploy
 release: docker-build-multi helm-deploy
 	@echo "✓ Released version $(VERSION)"
+
+# Skaffold targets
+# Run once: build, push, and deploy to Kubernetes
+skaffold-run:
+	@FOUR_DIGIT_TAG=$$(( (RANDOM % 9000) + 1000 )); \
+	echo "Using FOUR_DIGIT_TAG=$$FOUR_DIGIT_TAG"; \
+	FOUR_DIGIT_TAG=$$FOUR_DIGIT_TAG skaffold run --kubeconfig=$(K3S_KUBECONFIG)
+
+# Run once with production profile (git tag versioning + prod values)
+skaffold-run-prod:
+	skaffold run -p prod --kubeconfig=$(K3S_KUBECONFIG)
+
+# Watch mode: rebuild and redeploy on source changes
+skaffold-dev:
+	skaffold dev --kubeconfig=$(K3S_KUBECONFIG)
+
+# Build and push the image only (no deploy)
+skaffold-build:
+	skaffold build
+
+# Tear down the Helm release deployed by Skaffold
+skaffold-delete:
+	skaffold delete --kubeconfig=$(K3S_KUBECONFIG)
 
 # Show current version from git
 version:

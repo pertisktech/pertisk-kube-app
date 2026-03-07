@@ -12,12 +12,12 @@ namespace:
 # Unified application configuration
 app:
   name: pertisk-kube
-  replicaCount: 1
+  replicaCount: 3
   image:
     registry: harbor.tools.thaidevops.co
     repository: pertisksoft/pertisk-kube/web
     tag: "v0.0.4"
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   service:
     type: ClusterIP
     port: 8091

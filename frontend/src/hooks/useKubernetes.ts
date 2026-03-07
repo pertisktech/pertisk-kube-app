@@ -544,3 +544,20 @@ export const deletePriorityClass = (name: string) =>
 
 export const deleteRuntimeClass = (name: string) =>
   apiDelete(`/runtimeclasses/${encodeURIComponent(name)}`);
+
+// Network resources
+export const deleteService = (namespace: string, name: string) =>
+  apiDelete(`/services/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteEndpoint = (namespace: string, name: string) =>
+  apiDelete(`/endpoints/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteIngress = (namespace: string, name: string) =>
+  apiDelete(`/ingresses/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteNetworkPolicy = (namespace: string, name: string) =>
+  apiDelete(`/networkpolicies/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+// Cluster-scoped network resources
+export const deleteIngressClass = (name: string) =>
+  apiDelete(`/ingressclasses/${encodeURIComponent(name)}`);

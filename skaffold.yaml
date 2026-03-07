@@ -1,0 +1,47 @@
+apiVersion: skaffold/v4beta11
+kind: Config
+metadata:
+  name: pertisk-kube
+
+build:
+  artifacts:
+    - image: harbor.tools.thaidevops.co/pertisksoft/pertisk-kube/web
+      docker:
+        dockerfile: Dockerfile
+        buildArgs:
+          VERSION: "{{.IMAGE_TAG}}"
+  tagPolicy:
+    envTemplate:
+      template: "{{.FOUR_DIGIT_TAG}}"
+  local:
+    push: true
+
+deploy:
+  helm:
+    releases:
+      - name: pertisk-kube
+        chartPath: ./helm/pertisk-kube
+        namespace: pertisk-rproxy
+        createNamespace: true
+        setValueTemplates:
+          app.image.tag: "{{.IMAGE_TAG_harbor_tools_thaidevops_co_pertisksoft_pertisk_kube_web}}"
+
+# Profiles
+profiles:
+  # Production: uses git tags for versioning and prod values
+  - name: prod
+    build:
+      tagPolicy:
+        gitCommit:
+          variant: Tags
+    deploy:
+      helm:
+        releases:
+          - name: pertisk-kube
+            chartPath: ./helm/pertisk-kube
+            namespace: pertisk-rproxy
+            createNamespace: true
+            valuesFiles:
+              - helm/pertisk-kube/values-prod.yaml
+            setValueTemplates:
+              app.image.tag: "{{.IMAGE_TAG_harbor_tools_thaidevops_co_pertisksoft_pertisk_kube_web}}"

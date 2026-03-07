@@ -11,7 +11,7 @@ namespace:
 
 app:
   name: pertisk-kube
-  replicaCount: 2  # Increase replicas for HA
+  replicaCount: 3  # Increase replicas for HA
   image:
     registry: harbor.tools.thaidevops.co
     repository: pertisksoft/pertisk-kube/web
