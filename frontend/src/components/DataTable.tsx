@@ -115,22 +115,50 @@ export const DataTable = <T extends Record<string, any>>({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-surface-elevated">
-              {enableRowSelection && (
-                <th className="w-8 pl-2 pr-0 py-2 text-left">
-                  <Checkbox
-                    checked={allSelected}
-                    indeterminate={someSelected}
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                  />
-                </th>
-              )}
               {columns.map((col, idx) => (
                 <th
                   key={idx}
                   className="px-3 py-2 text-left font-semibold text-text"
                   style={{ width: col.width }}
                 >
-                  {col.sortable && col.sortKey && onSortChange ? (
+                  {enableRowSelection && idx === 0 ? (
+                    <div className="inline-flex items-center gap-2">
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={allSelected}
+                          indeterminate={someSelected}
+                          onChange={(e) => handleSelectAll(e.target.checked)}
+                        />
+                      </span>
+                      {col.sortable && col.sortKey && onSortChange ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentKey = col.sortKey!;
+                            const nextDirection: SortDirection =
+                              sortState?.key === currentKey && sortState?.direction === 'asc'
+                                ? 'desc'
+                                : 'asc';
+                            onSortChange({ key: currentKey, direction: nextDirection });
+                          }}
+                          className="inline-flex items-center gap-1 hover:text-primary"
+                        >
+                          <span>{col.header}</span>
+                          {sortState?.key === col.sortKey ? (
+                            sortState.direction === 'asc' ? (
+                              <ArrowUp size={14} className="text-primary" />
+                            ) : (
+                              <ArrowDown size={14} className="text-primary" />
+                            )
+                          ) : (
+                            <ArrowUpDown size={14} className="text-text-secondary" />
+                          )}
+                        </button>
+                      ) : (
+                        col.header
+                      )}
+                    </div>
+                  ) : col.sortable && col.sortKey && onSortChange ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -178,14 +206,6 @@ export const DataTable = <T extends Record<string, any>>({
                     isSelected && 'bg-hover'
                   )}
                 >
-                  {enableRowSelection && (
-                    <td className="w-8 pl-2 pr-0 py-2" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={isSelected}
-                        onChange={(e) => handleRowSelect(rowKeyValue, e.target.checked)}
-                      />
-                    </td>
-                  )}
                   {columns.map((col, colIdx) => (
                     <td
                       key={colIdx}
@@ -204,11 +224,25 @@ export const DataTable = <T extends Record<string, any>>({
                               ? String(row[col.accessor])
                               : '-';
 
-                        if (col.header === 'Age') {
-                          return <span className="whitespace-nowrap">{cellValue}</span>;
+                        const content = col.header === 'Age'
+                          ? <span className="whitespace-nowrap">{cellValue}</span>
+                          : cellValue;
+
+                        if (enableRowSelection && colIdx === 0) {
+                          return (
+                            <div className="inline-flex items-center gap-2">
+                              <span onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={isSelected}
+                                  onChange={(e) => handleRowSelect(rowKeyValue, e.target.checked)}
+                                />
+                              </span>
+                              {content}
+                            </div>
+                          );
                         }
 
-                        return cellValue;
+                        return content;
                       })()}
                     </td>
                   ))}
