@@ -118,11 +118,11 @@ export const DataTable = <T extends Record<string, any>>({
               {columns.map((col, idx) => (
                 <th
                   key={idx}
-                  className="px-3 py-2 text-left font-semibold text-text"
+                  className="px-3 py-2 text-left font-semibold text-text align-middle"
                   style={{ width: col.width }}
                 >
                   {enableRowSelection && idx === 0 ? (
-                    <div className="inline-flex items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <span onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={allSelected}
@@ -210,7 +210,7 @@ export const DataTable = <T extends Record<string, any>>({
                     <td
                       key={colIdx}
                       className={cn(
-                        'px-3 py-2',
+                        'px-3 py-2 align-middle',
                         col.header === 'Name' && typeof col.accessor !== 'function'
                           ? 'text-text font-medium'
                           : 'text-text'
@@ -230,7 +230,7 @@ export const DataTable = <T extends Record<string, any>>({
 
                         if (enableRowSelection && colIdx === 0) {
                           return (
-                            <div className="inline-flex items-center gap-2">
+                            <div className="flex items-center gap-2">
                               <span onClick={(e) => e.stopPropagation()}>
                                 <Checkbox
                                   checked={isSelected}
