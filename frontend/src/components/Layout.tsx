@@ -5,7 +5,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { useRealtimeNamespaces } from '../hooks/useRealtimeResources';
 import { useNamespaces } from '../hooks/useKubernetes';
 import { Checkbox } from './Checkbox';
-import { BottomPanel, openPanelTab } from './BottomPanel';
+import { BottomPanel } from './BottomPanel';
 import {
   ChevronDown,
   ChevronRight,
