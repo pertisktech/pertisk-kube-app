@@ -831,6 +831,45 @@ async fn main() -> anyhow::Result<()> {
         .route("/persistentvolumes", get(list_persistent_volumes))
         .route("/persistentvolumeclaims", get(list_persistent_volume_claims))
         .route("/storageclasses", get(list_storage_classes))
+        .route("/serviceaccounts/:namespace/:name/yaml",
+            get(get_serviceaccount_yaml).put(update_serviceaccount_yaml),
+        )
+        .route("/serviceaccounts/:namespace/:name", delete(delete_serviceaccount))
+        .route(
+            "/roles/:namespace/:name/yaml",
+            get(get_role_yaml).put(update_role_yaml),
+        )
+        .route("/roles/:namespace/:name", delete(delete_role))
+        .route(
+            "/rolebindings/:namespace/:name/yaml",
+            get(get_rolebinding_yaml).put(update_rolebinding_yaml),
+        )
+        .route("/rolebindings/:namespace/:name", delete(delete_rolebinding))
+        .route(
+            "/clusterroles/:name/yaml",
+            get(get_clusterrole_yaml).put(update_clusterrole_yaml),
+        )
+        .route("/clusterroles/:name", delete(delete_clusterrole))
+        .route(
+            "/clusterrolebindings/:name/yaml",
+            get(get_clusterrolebinding_yaml).put(update_clusterrolebinding_yaml),
+        )
+        .route("/clusterrolebindings/:name", delete(delete_clusterrolebinding))
+        .route(
+            "/persistentvolumes/:name/yaml",
+            get(get_persistentvolume_yaml).put(update_persistentvolume_yaml),
+        )
+        .route("/persistentvolumes/:name", delete(delete_persistentvolume))
+        .route(
+            "/persistentvolumeclaims/:namespace/:name/yaml",
+            get(get_persistentvolumeclaim_yaml).put(update_persistentvolumeclaim_yaml),
+        )
+        .route("/persistentvolumeclaims/:namespace/:name", delete(delete_persistentvolumeclaim))
+        .route(
+            "/storageclasses/:name/yaml",
+            get(get_storageclass_yaml).put(update_storageclass_yaml),
+        )
+        .route("/storageclasses/:name", delete(delete_storageclass))
         .route("/serviceaccounts", get(list_service_accounts))
         .route("/roles", get(list_roles))
         .route("/rolebindings", get(list_role_bindings))
@@ -5214,6 +5253,850 @@ async fn delete_lease(
         }
         Err(err) => {
             error!("Error deleting lease {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// ServiceAccount YAML handlers (namespaced)
+async fn get_serviceaccount_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ServiceAccount;
+
+    let api: Api<ServiceAccount> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize serviceaccount to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting serviceaccount YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_serviceaccount_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ServiceAccount;
+
+    let mut obj: ServiceAccount = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+    obj.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<ServiceAccount> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!(
+                "Failed converting serviceaccount YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "ServiceAccount updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating serviceaccount YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update serviceaccount: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_serviceaccount(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ServiceAccount;
+    let api: Api<ServiceAccount> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted serviceaccount {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting serviceaccount {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// Role YAML handlers (namespaced)
+async fn get_role_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::Role;
+
+    let api: Api<Role> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize role to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting role YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_role_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::Role;
+
+    let mut obj: Role = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+    obj.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<Role> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!(
+                "Failed converting role YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "Role updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating role YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update role: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_role(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::Role;
+    let api: Api<Role> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted role {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting role {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// RoleBinding YAML handlers (namespaced)
+async fn get_rolebinding_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::RoleBinding;
+
+    let api: Api<RoleBinding> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize rolebinding to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting rolebinding YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_rolebinding_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::RoleBinding;
+
+    let mut obj: RoleBinding = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+    obj.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<RoleBinding> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!(
+                "Failed converting rolebinding YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "RoleBinding updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating rolebinding YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update rolebinding: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_rolebinding(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::RoleBinding;
+    let api: Api<RoleBinding> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted rolebinding {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting rolebinding {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// ClusterRole YAML handlers (cluster-scoped)
+async fn get_clusterrole_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::ClusterRole;
+
+    let api: Api<ClusterRole> = Api::all(state.client);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!("Failed to serialize clusterrole to YAML {}: {:?}", name, err);
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting clusterrole YAML {}: {:?}", name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_clusterrole_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::ClusterRole;
+
+    let mut obj: ClusterRole = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+
+    let api: Api<ClusterRole> = Api::all(state.client);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!("Failed converting clusterrole YAML to JSON {}: {:?}", name, err);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "ClusterRole updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating clusterrole YAML {}: {:?}", name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update clusterrole: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_clusterrole(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::ClusterRole;
+    let api: Api<ClusterRole> = Api::all(state.client);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted clusterrole {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting clusterrole {}: {:?}", name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// ClusterRoleBinding YAML handlers (cluster-scoped)
+async fn get_clusterrolebinding_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::ClusterRoleBinding;
+
+    let api: Api<ClusterRoleBinding> = Api::all(state.client);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!("Failed to serialize clusterrolebinding to YAML {}: {:?}", name, err);
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting clusterrolebinding YAML {}: {:?}", name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_clusterrolebinding_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::ClusterRoleBinding;
+
+    let mut obj: ClusterRoleBinding = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+
+    let api: Api<ClusterRoleBinding> = Api::all(state.client);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!("Failed converting clusterrolebinding YAML to JSON {}: {:?}", name, err);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "ClusterRoleBinding updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating clusterrolebinding YAML {}: {:?}", name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update clusterrolebinding: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_clusterrolebinding(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::rbac::v1::ClusterRoleBinding;
+    let api: Api<ClusterRoleBinding> = Api::all(state.client);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted clusterrolebinding {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting clusterrolebinding {}: {:?}", name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// PersistentVolume YAML handlers (cluster-scoped)
+async fn get_persistentvolume_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::PersistentVolume;
+
+    let api: Api<PersistentVolume> = Api::all(state.client);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!("Failed to serialize persistentvolume to YAML {}: {:?}", name, err);
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting persistentvolume YAML {}: {:?}", name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_persistentvolume_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::PersistentVolume;
+
+    let mut obj: PersistentVolume = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+
+    let api: Api<PersistentVolume> = Api::all(state.client);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!("Failed converting persistentvolume YAML to JSON {}: {:?}", name, err);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "PersistentVolume updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating persistentvolume YAML {}: {:?}", name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update persistentvolume: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_persistentvolume(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::PersistentVolume;
+    let api: Api<PersistentVolume> = Api::all(state.client);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted persistentvolume {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting persistentvolume {}: {:?}", name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// PersistentVolumeClaim YAML handlers (namespaced)
+async fn get_persistentvolumeclaim_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::PersistentVolumeClaim;
+
+    let api: Api<PersistentVolumeClaim> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize persistentvolumeclaim to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting persistentvolumeclaim YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_persistentvolumeclaim_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::PersistentVolumeClaim;
+
+    let mut obj: PersistentVolumeClaim = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+    obj.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<PersistentVolumeClaim> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!(
+                "Failed converting persistentvolumeclaim YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "PersistentVolumeClaim updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating persistentvolumeclaim YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update persistentvolumeclaim: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_persistentvolumeclaim(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::PersistentVolumeClaim;
+    let api: Api<PersistentVolumeClaim> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted persistentvolumeclaim {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting persistentvolumeclaim {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// StorageClass YAML handlers (cluster-scoped)
+async fn get_storageclass_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::storage::v1::StorageClass;
+
+    let api: Api<StorageClass> = Api::all(state.client);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!("Failed to serialize storageclass to YAML {}: {:?}", name, err);
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting storageclass YAML {}: {:?}", name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_storageclass_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::storage::v1::StorageClass;
+
+    let mut obj: StorageClass = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+
+    let api: Api<StorageClass> = Api::all(state.client);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!("Failed converting storageclass YAML to JSON {}: {:?}", name, err);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "StorageClass updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating storageclass YAML {}: {:?}", name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update storageclass: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_storageclass(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::storage::v1::StorageClass;
+    let api: Api<StorageClass> = Api::all(state.client);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted storageclass {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting storageclass {}: {:?}", name, err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }

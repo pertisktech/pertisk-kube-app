@@ -36,3 +36,8 @@ export { NodeGroups } from './NodeGroups';
 export { ClusterHealthCard } from './ClusterHealthCard';
 export { ResourceGaugeChart } from './ResourceGaugeChart';
 export { GaugeChart } from './GaugeChart';
+export { ServiceAccountDetailPanel } from './ServiceAccountDetailPanel';
+export { RoleDetailPanel } from './RoleDetailPanel';
+export { RoleBindingDetailPanel } from './RoleBindingDetailPanel';
+export { ClusterRoleDetailPanel } from './ClusterRoleDetailPanel';
+export { ClusterRoleBindingDetailPanel } from './ClusterRoleBindingDetailPanel';
