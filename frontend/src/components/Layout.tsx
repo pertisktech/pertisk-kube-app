@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useNamespace } from '../context/NamespaceContext';
@@ -939,9 +939,10 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
 
         {/* Content */}
         <main className="flex-1 overflow-auto bg-bg p-4 min-h-0">
-          <Outlet />
+          <Suspense fallback={null}>
+            <Outlet />
+          </Suspense>
         </main>
-
         {/* Bottom panel — VS Code style tabs for shells, logs, YAML */}
         <BottomPanel />
       </div>

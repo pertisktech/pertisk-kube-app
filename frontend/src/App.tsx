@@ -105,7 +105,6 @@ export const App = () => {
   return (
     <NamespaceProvider>
       <Router>
-        <Suspense fallback={null}>
           <Routes>
             <Route element={<Layout username={authUser} onLogout={handleLogout} />}>
           <Route path="/" element={<Dashboard />} />
@@ -152,7 +151,6 @@ export const App = () => {
           <Route path="/events" element={<EventsPage />} />
         </Route>
       </Routes>
-        </Suspense>
       </Router>
     </NamespaceProvider>
   );
