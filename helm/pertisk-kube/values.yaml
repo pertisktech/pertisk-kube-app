@@ -37,6 +37,9 @@ app:
     requests:
       cpu: 250m
       memory: 256Mi
+  minReadySeconds: 10
+  terminationGracePeriodSeconds: 30
+  podAntiAffinity: true
   podSecurityContext:
     runAsNonRoot: true
     runAsUser: 65534
@@ -98,6 +101,16 @@ ingress:
 
 ingressGrpc:
   enabled: false
+
+# PodDisruptionBudget — keeps at least 1 pod available during node drains / rolling updates
+pdb:
+  enabled: true
+  minAvailable: 1
+
+# Leader election via Kubernetes Lease — allows one pod to act as leader for singleton tasks
+leaderElection:
+  enabled: true
+  leaseName: pertisk-kube-leader
   className: nginx
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -178,7 +191,7 @@ rbac:
     - apiGroups: ["node.k8s.io"]
       resources: ["runtimeclasses"]
       verbs: ["get", "list", "watch"]
-    # Coordination resources
+    # Coordination resources - read cluster-wide leases
     - apiGroups: ["coordination.k8s.io"]
       resources: ["leases"]
       verbs: ["get", "list", "watch"]
