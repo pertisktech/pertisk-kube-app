@@ -5,8 +5,10 @@ import 'ace-builds/src-noconflict/mode-yaml';
 import 'ace-builds/src-noconflict/theme-github';
 import 'ace-builds/src-noconflict/theme-tomorrow_night';
 import {
+  Circle,
   ChevronDown,
   ChevronUp,
+  Dot,
   FileText,
   Plus,
   RotateCw,
@@ -52,6 +54,8 @@ interface PanelTab {
   label: string;
   target?: TabTarget;
   yamlContent?: string;
+  yamlSavedContent?: string;
+  yamlDirty?: boolean;
   title?: string;
   yamlActionLabel?: 'Apply' | 'Upgrade';
 }
@@ -434,6 +438,7 @@ export const BottomPanel = () => {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const isActiveYamlTab = !!activeTab && activeTab.type === 'yaml-editor';
   const activeYamlActionLabel = isActiveYamlTab ? (activeTab.yamlActionLabel ?? 'Apply') : 'Apply';
+  const activeYamlDirty = !!(isActiveYamlTab && activeTab?.yamlDirty);
 
   // ── External open events (e.g. sidebar Terminal button) ───────────────────
   const doAddTab = useCallback((type: PanelTabType, opts?: Partial<OpenPanelTabOptions>) => {
@@ -443,10 +448,15 @@ export const BottomPanel = () => {
       {
         id,
         type,
-        label: opts?.podName ?? LABEL_MAP[type],
+        label:
+          type === 'yaml-editor'
+            ? (opts?.title?.trim() || LABEL_MAP[type])
+            : (opts?.podName ?? LABEL_MAP[type]),
         ...(type === 'yaml-editor'
           ? {
               yamlContent: opts?.yamlContent ?? DEFAULT_YAML,
+              yamlSavedContent: opts?.yamlContent ?? DEFAULT_YAML,
+              yamlDirty: false,
               title: opts?.title,
               yamlActionLabel: opts?.yamlActionLabel ?? 'Apply',
             }
@@ -503,12 +513,26 @@ export const BottomPanel = () => {
   };
 
   const updateYaml = (id: string, content: string) => {
-    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, yamlContent: content } : t)));
+    setTabs((prev) =>
+      prev.map((t) => {
+        if (t.id !== id || t.type !== 'yaml-editor') return t;
+        const yamlSavedContent = t.yamlSavedContent ?? '';
+        return {
+          ...t,
+          yamlContent: content,
+          yamlDirty: content !== yamlSavedContent,
+        };
+      })
+    );
+    if (yamlActionResult?.tabId === id) {
+      setYamlActionResult(null);
+    }
   };
 
   const handleYamlPrimaryAction = async () => {
     if (!activeTab || activeTab.type !== 'yaml-editor') return;
-    const yaml = (activeTab.yamlContent ?? '').trim();
+    const rawYaml = activeTab.yamlContent ?? '';
+    const yaml = rawYaml.trim();
     if (!yaml) return;
 
     setYamlActionLoading(true);
@@ -537,6 +561,16 @@ export const BottomPanel = () => {
         toast.success(message);
       } else {
         toast.error(message);
+      }
+
+      if (res.ok) {
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === activeTab.id && t.type === 'yaml-editor'
+              ? { ...t, yamlSavedContent: rawYaml, yamlDirty: false }
+              : t
+          )
+        );
       }
 
       setYamlActionResult({ ok: res.ok, tabId: activeTab.id });
@@ -596,6 +630,14 @@ export const BottomPanel = () => {
               >
                 <TabIcon type={tab.type} size={12} />
                 <span className="max-w-[7rem] truncate">{tab.label}</span>
+                {tab.type === 'yaml-editor' && tab.yamlDirty && (
+                  <span title="Unsaved changes" className="-ml-1">
+                    <Dot
+                      size={16}
+                      className="text-amber-400"
+                    />
+                  </span>
+                )}
                 <span
                   role="button" tabIndex={0}
                   onClick={(e) => closeTab(tab.id, e)}
@@ -631,13 +673,22 @@ export const BottomPanel = () => {
               <button
                 type="button"
                 onClick={handleYamlPrimaryAction}
-                disabled={yamlActionLoading}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 disabled:opacity-40"
+                disabled={yamlActionLoading || !activeYamlDirty}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors border disabled:opacity-40',
+                  activeYamlDirty
+                    ? 'bg-primary/20 hover:bg-primary/30 text-primary border-primary/40'
+                    : 'bg-hover text-text-secondary border-border'
+                )}
                 title={activeYamlActionLabel}
               >
+                <Circle
+                  size={10}
+                  className={cn(activeYamlDirty ? 'text-amber-400 fill-current' : 'text-text-secondary')}
+                />
                 {yamlActionLoading
                   ? (activeYamlActionLabel === 'Upgrade' ? 'Upgrading…' : 'Applying…')
-                  : activeYamlActionLabel}
+                  : (activeYamlDirty ? activeYamlActionLabel : 'Saved')}
               </button>
             </>
           )}
