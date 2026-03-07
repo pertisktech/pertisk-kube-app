@@ -64,6 +64,7 @@ pub struct NodeItem {
     pub architecture: Option<String>,
     pub operating_system: Option<String>,
     pub kernel_version: Option<String>,
+    pub age: Option<String>,
     pub cpu: Option<String>,
     pub memory: Option<String>,
     pub ephemeral_storage: Option<String>,

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Cpu, HardDrive, FileCode2, Terminal, PauseCircle, PlayCircle, AlertTriangle, Trash2, Loader, ChevronDown, FileText, Lock, Unlock, Droplet } from 'lucide-react';
+import { X, Terminal, Trash2, Loader, ChevronDown, FileText, Lock, Unlock, Droplet } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import { usePods } from '../hooks/useKubernetes';
-import type { K8sNode, Pod } from '../types';
+import type { K8sNode } from '../types';
 
 interface NodeDetailPanelProps {
   node: K8sNode;
@@ -14,22 +14,6 @@ interface NodeDetailPanelProps {
   onDelete?: (node: K8sNode) => void;
   cordonLoading?: boolean;
 }
-
-const usageBarColor = (percent: number) => {
-  if (percent >= 90) return '#ef4444';
-  if (percent >= 70) return '#f59e0b';
-  return '#3b82f6';
-};
-
-const toPercent = (value?: number) => {
-  if (value == null || Number.isNaN(value)) return 0;
-  return Math.max(0, Math.min(100, value));
-};
-
-const usageBarWidth = (percent: number) => {
-  if (percent <= 0) return 0;
-  return Math.max(percent, 6);
-};
 
 const ResourceCard = ({ title, resources }: { title: string; resources: { cpu?: string; memory?: string; ephemeral_storage?: string; pods?: string } }) => {
   const resourceLabels: Record<string, string> = {
@@ -116,10 +100,6 @@ export const NodeDetailPanel = ({ node, onClose, onEditYaml, onOpenShell, onCord
 
   const status = String(node.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady';
   const taints = node.taints?.length ? node.taints : [];
-  const cpuPercent = toPercent(node.cpu_usage_percent);
-  const memoryPercent = toPercent(node.memory_usage_percent);
-  const hasCpuMetrics = node.cpu_used != null && node.cpu_usage_percent != null;
-  const hasMemoryMetrics = node.memory_used != null && node.memory_usage_percent != null;
 
   // Filter pods running on this node
   const nodePods = (allPods || []).filter((pod) => pod.node === node.name);

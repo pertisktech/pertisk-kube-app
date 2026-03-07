@@ -404,6 +404,13 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         .and_then(|status| status.node_info.as_ref())
                         .map(|info| info.kernel_version.clone());
 
+                    let age = node
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default();
+
                     let cpu = node
                         .status
                         .as_ref()
@@ -507,6 +514,7 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         architecture,
                         operating_system,
                         kernel_version,
+                        age: Some(age),
                         cpu,
                         memory,
                         ephemeral_storage,

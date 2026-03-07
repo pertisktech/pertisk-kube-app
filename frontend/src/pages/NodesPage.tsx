@@ -7,6 +7,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { StatusBadge } from '../components/StatusBadge';
 import { openPanelTab } from '../components/BottomPanel';
 import { getAuthToken } from '../utils/auth';
+import { timeAgo } from '../utils';
 import type { K8sNode } from '../types';
 
 type NodeSortKey =
@@ -16,16 +17,11 @@ type NodeSortKey =
   | 'ipv6'
   | 'taints'
   | 'runtime'
+  | 'age'
   | 'cpu_used'
   | 'cpu_pct'
   | 'memory_used'
   | 'memory_pct';
-
-const usageBarColor = (percent: number) => {
-  if (percent >= 90) return '#ef4444';
-  if (percent >= 70) return '#f59e0b';
-  return '#3b82f6';
-};
 
 const usageBarWidth = (percent: number) => {
   if (percent <= 0) return 0;
@@ -205,28 +201,27 @@ export const NodesPage = () => {
         const hasMetrics = row.cpu_usage_percent != null;
 
         return (
-          <div className="flex flex-col gap-1 min-w-[110px]">
-            <span className="text-xs text-text-secondary">{cores}</span>
+          <div className="flex items-center gap-2" style={{ minWidth: '160px', maxWidth: '160px' }}>
+            <span className="text-xs text-text-secondary w-14 flex-shrink-0 truncate">{cores}</span>
             {hasMetrics ? (
-              <div className="flex items-center gap-2">
+              <>
                 <div className="h-1.5 flex-1 rounded-full bg-hover overflow-hidden">
                   <div
-                    className="h-full rounded-full"
+                    className="h-full rounded-full bg-blue-500"
                     style={{
                       width: `${usageBarWidth(percent)}%`,
-                      backgroundColor: usageBarColor(percent),
                     }}
                   />
                 </div>
-                <span className="text-xs font-medium text-text w-8 text-right">{Math.round(percent)}%</span>
-              </div>
+                <span className="text-xs font-medium text-text w-9 text-right flex-shrink-0">{Math.round(percent)}%</span>
+              </>
             ) : (
               <span className="text-xs text-text-secondary">-</span>
             )}
           </div>
         );
       },
-      width: '14%',
+      width: '15%',
       sortable: true,
       sortKey: 'cpu_pct',
     },
@@ -238,30 +233,36 @@ export const NodesPage = () => {
         const hasMetrics = row.memory_usage_percent != null;
 
         return (
-          <div className="flex flex-col gap-1 min-w-[110px]">
-            <span className="text-xs text-text-secondary">{bytes}</span>
+          <div className="flex items-center gap-2" style={{ minWidth: '160px', maxWidth: '160px' }}>
+            <span className="text-xs text-text-secondary w-14 flex-shrink-0 truncate">{bytes}</span>
             {hasMetrics ? (
-              <div className="flex items-center gap-2">
+              <>
                 <div className="h-1.5 flex-1 rounded-full bg-hover overflow-hidden">
                   <div
-                    className="h-full rounded-full"
+                    className="h-full rounded-full bg-purple-500"
                     style={{
                       width: `${usageBarWidth(percent)}%`,
-                      backgroundColor: usageBarColor(percent),
                     }}
                   />
                 </div>
-                <span className="text-xs font-medium text-text w-8 text-right">{Math.round(percent)}%</span>
-              </div>
+                <span className="text-xs font-medium text-text w-9 text-right flex-shrink-0">{Math.round(percent)}%</span>
+              </>
             ) : (
               <span className="text-xs text-text-secondary">-</span>
             )}
           </div>
         );
       },
-      width: '14%',
+      width: '15%',
       sortable: true,
       sortKey: 'memory_pct',
+    },
+    {
+      header: 'Age',
+      accessor: (row: K8sNode) => timeAgo(row.age),
+      width: '10%',
+      sortable: true,
+      sortKey: 'age',
     },
   ];
 
@@ -297,6 +298,9 @@ export const NodesPage = () => {
       }
       if (sortState.key === 'taints') {
         return ((first.taints?.length ?? 0) - (second.taints?.length ?? 0)) * factor;
+      }
+      if (sortState.key === 'age') {
+        return (first.age || '').localeCompare(second.age || '') * factor;
       }
 
       return (first.runtime || '').localeCompare(second.runtime || '') * factor;
