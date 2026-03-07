@@ -199,3 +199,11 @@ rbac:
     - apiGroups: ["metrics.k8s.io"]
       resources: ["pods", "nodes"]
       verbs: ["get", "list", "watch"]
+    # CRD definitions - needed to list/read CustomResourceDefinitions
+    - apiGroups: ["apiextensions.k8s.io"]
+      resources: ["customresourcedefinitions"]
+      verbs: ["get", "list", "watch"]
+    # CRD instances - allow reading and managing custom resources across all groups
+    - apiGroups: ["*"]
+      resources: ["*"]
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
