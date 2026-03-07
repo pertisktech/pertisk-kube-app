@@ -1,12 +1,16 @@
-import { X, Pencil, Cpu, HardDrive, Trash2 } from 'lucide-react';
+import { X, Cpu, HardDrive, FileCode2, Terminal, PauseCircle, PlayCircle, AlertTriangle, Trash2, Loader } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import type { K8sNode } from '../types';
 
 interface NodeDetailPanelProps {
   node: K8sNode;
   onClose: () => void;
-  onOpenYamlEditor?: (node: K8sNode) => void;
-  onDelete?: (name: string) => Promise<void>;
+  onEditYaml?: (node: K8sNode) => void;
+  onOpenShell?: (node: K8sNode) => void;
+  onCordonToggle?: (node: K8sNode) => void;
+  onDrain?: (node: K8sNode) => void;
+  onDelete?: (node: K8sNode) => void;
+  cordonLoading?: boolean;
 }
 
 const usageBarColor = (percent: number) => {
@@ -25,7 +29,7 @@ const usageBarWidth = (percent: number) => {
   return Math.max(percent, 6);
 };
 
-export const NodeDetailPanel = ({ node, onClose, onOpenYamlEditor, onDelete }: NodeDetailPanelProps) => {
+export const NodeDetailPanel = ({ node, onClose, onEditYaml, onOpenShell, onCordonToggle, onDrain, onDelete, cordonLoading }: NodeDetailPanelProps) => {
   const status = String(node.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady';
   const taints = node.taints?.length ? node.taints : [];
   const cpuPercent = toPercent(node.cpu_usage_percent);
@@ -41,7 +45,7 @@ export const NodeDetailPanel = ({ node, onClose, onOpenYamlEditor, onDelete }: N
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-md hover:bg-hover text-text-secondary"
+            className="p-1.5 rounded-md hover:bg-hover text-text-secondary transition-colors"
             aria-label="Close node panel"
           >
             <X size={16} />
@@ -50,24 +54,31 @@ export const NodeDetailPanel = ({ node, onClose, onOpenYamlEditor, onDelete }: N
 
         <div className="px-5 py-3 border-b border-border">
           <div className="bg-surface border border-border rounded-lg p-1.5 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onOpenYamlEditor?.(node)}
-              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
-              aria-label="Edit node YAML"
-              title="Edit YAML"
-            >
-              <Pencil size={13} />
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete?.(node.name)}
-              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
-              aria-label="Delete node"
-              title="Delete Node"
-            >
-              <Trash2 size={13} />
-            </button>
+            {onEditYaml && (
+              <button type="button" onClick={() => onEditYaml(node)} className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover" data-tooltip="Edit YAML">
+                <FileCode2 size={13} />
+              </button>
+            )}
+            {onOpenShell && (
+              <button type="button" onClick={() => onOpenShell(node)} className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover" data-tooltip="Node Shell">
+                <Terminal size={13} />
+              </button>
+            )}
+            {onCordonToggle && (
+              <button type="button" onClick={() => onCordonToggle(node)} disabled={cordonLoading} className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover disabled:opacity-50" data-tooltip={node.unschedulable ? 'Uncordon' : 'Cordon'}>
+                {cordonLoading ? <Loader size={13} className="animate-spin" /> : node.unschedulable ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
+              </button>
+            )}
+            {onDrain && (
+              <button type="button" onClick={() => onDrain(node)} className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover" data-tooltip="Drain">
+                <AlertTriangle size={13} />
+              </button>
+            )}
+            {onDelete && (
+              <button type="button" onClick={() => onDelete(node)} className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover" data-tooltip="Delete node">
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
         </div>
 

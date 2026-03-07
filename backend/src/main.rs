@@ -24,7 +24,7 @@ pub mod handlers;
 pub mod models;
 pub mod utils;
 
-use auth::{login, require_basic_auth};
+use auth::{login, refresh_token, require_basic_auth};
 use handlers::{
     config::*,
     namespaces::*,
@@ -74,9 +74,24 @@ async fn main() -> anyhow::Result<()> {
         .route("/readiness", get(readiness))
         .route("/login", post(login));
 
+    let refresh_api = Router::new()
+        .route("/refresh", post(refresh_token))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_basic_auth,
+        ));
+
     let protected_api = Router::new()
         .route("/dashboard", get(get_dashboard_summary))
         .route("/nodes", get(list_nodes))
+        .route(
+            "/nodes/:name/yaml",
+            get(get_node_yaml).put(update_node_yaml),
+        )
+        .route("/nodes/:name", delete(delete_node))
+        .route("/nodes/:name/cordon", post(cordon_node))
+        .route("/nodes/:name/uncordon", post(uncordon_node))
+        .route("/nodes/:name/drain", post(drain_node))
         .route("/namespaces", get(list_namespaces))
         .route("/pods", get(list_pods))
         .route(
@@ -242,7 +257,7 @@ async fn main() -> anyhow::Result<()> {
             require_basic_auth,
         ));
 
-    let api = public_api.merge(protected_api);
+    let api = public_api.merge(refresh_api).merge(protected_api);
 
     let index_html = static_dir.join("index.html");
     let assets_dir = static_dir.join("assets");

@@ -40,7 +40,7 @@ export const StatefulSetDetailPanel = ({ statefulSet, onClose, onOpenYamlEditor,
               onClick={() => onOpenYamlEditor?.(statefulSet)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
               aria-label="Edit statefulset YAML"
-              title="Edit YAML"
+              data-tooltip="Edit YAML"
             >
               <Pencil size={13} />
             </button>
@@ -49,7 +49,7 @@ export const StatefulSetDetailPanel = ({ statefulSet, onClose, onOpenYamlEditor,
               onClick={() => onDelete?.(statefulSet.namespace, statefulSet.name)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
               aria-label="Delete statefulset"
-              title="Delete StatefulSet"
+              data-tooltip="Delete StatefulSet"
             >
               <Trash2 size={13} />
             </button>

@@ -48,7 +48,9 @@ const apiFetch = async (path: string) => {
         }
       : undefined,
   });
-
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+  }
   return res;
 };
 
@@ -486,6 +488,10 @@ const apiDelete = async (path: string): Promise<void> => {
     method: 'DELETE',
     headers: token ? { Authorization: token } : undefined,
   });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    return;
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(text || `Delete failed (${res.status})`);
@@ -587,3 +593,43 @@ export const deletePersistentVolume = (name: string) =>
 
 export const deleteStorageClass = (name: string) =>
   apiDelete(`/storageclasses/${encodeURIComponent(name)}`);
+
+// Node operations
+export const deleteNode = (name: string) =>
+  apiDelete(`/nodes/${encodeURIComponent(name)}`);
+
+export const cordonNode = async (name: string): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/nodes/${encodeURIComponent(name)}/cordon`, {
+    method: 'POST',
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `Cordon failed (${res.status})`);
+  }
+};
+
+export const uncordonNode = async (name: string): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/nodes/${encodeURIComponent(name)}/uncordon`, {
+    method: 'POST',
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `Uncordon failed (${res.status})`);
+  }
+};
+
+export const drainNode = async (name: string): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/nodes/${encodeURIComponent(name)}/drain`, {
+    method: 'POST',
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `Drain failed (${res.status})`);
+  }
+};

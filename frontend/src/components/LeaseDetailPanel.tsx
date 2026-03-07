@@ -32,7 +32,7 @@ export const LeaseDetailPanel = ({ lease, onClose, onOpenYamlEditor, onDelete }:
               onClick={() => onOpenYamlEditor?.(lease)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
               aria-label="Edit lease YAML"
-              title="Edit YAML"
+              data-tooltip="Edit YAML"
             >
               <Pencil size={13} />
             </button>
@@ -41,7 +41,7 @@ export const LeaseDetailPanel = ({ lease, onClose, onOpenYamlEditor, onDelete }:
               onClick={() => onDelete?.(lease.namespace, lease.name)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
               aria-label="Delete lease"
-              title="Delete Lease"
+              data-tooltip="Delete Lease"
             >
               <Trash2 size={13} />
             </button>

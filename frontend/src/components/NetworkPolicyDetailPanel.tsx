@@ -32,7 +32,7 @@ export const NetworkPolicyDetailPanel = ({ networkPolicy, onClose, onOpenYamlEdi
               onClick={() => onOpenYamlEditor?.(networkPolicy)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
               aria-label="Edit network policy YAML"
-              title="Edit YAML"
+              data-tooltip="Edit YAML"
             >
               <Pencil size={13} />
             </button>
@@ -41,7 +41,7 @@ export const NetworkPolicyDetailPanel = ({ networkPolicy, onClose, onOpenYamlEdi
               onClick={() => onDelete?.(networkPolicy.namespace, networkPolicy.name)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
               aria-label="Delete network policy"
-              title="Delete Network Policy"
+              data-tooltip="Delete Network Policy"
             >
               <Trash2 size={13} />
             </button>

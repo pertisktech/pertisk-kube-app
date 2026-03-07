@@ -40,7 +40,7 @@ export const JobDetailPanel = ({ job, onClose, onOpenYamlEditor, onDelete }: Job
               onClick={() => onOpenYamlEditor?.(job)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
               aria-label="Edit job YAML"
-              title="Edit YAML"
+              data-tooltip="Edit YAML"
             >
               <Pencil size={13} />
             </button>
@@ -49,7 +49,7 @@ export const JobDetailPanel = ({ job, onClose, onOpenYamlEditor, onDelete }: Job
               onClick={() => onDelete?.(job.namespace, job.name)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
               aria-label="Delete job"
-              title="Delete Job"
+              data-tooltip="Delete Job"
             >
               <Trash2 size={13} />
             </button>

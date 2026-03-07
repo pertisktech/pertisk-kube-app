@@ -33,7 +33,7 @@ export const PVDetailPanel = ({ pv, onClose, onOpenYamlEditor, onDelete }: PVDet
               onClick={() => onOpenYamlEditor?.(pv)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
               aria-label="Edit PV YAML"
-              title="Edit YAML"
+              data-tooltip="Edit YAML"
             >
               <Pencil size={13} />
             </button>
@@ -42,7 +42,7 @@ export const PVDetailPanel = ({ pv, onClose, onOpenYamlEditor, onDelete }: PVDet
               onClick={() => onDelete?.(pv.name)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
               aria-label="Delete PV"
-              title="Delete PV"
+              data-tooltip="Delete PV"
             >
               <Trash2 size={13} />
             </button>

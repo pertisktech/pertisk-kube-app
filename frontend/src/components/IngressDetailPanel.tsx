@@ -32,7 +32,7 @@ export const IngressDetailPanel = ({ ingress, onClose, onOpenYamlEditor, onDelet
               onClick={() => onOpenYamlEditor?.(ingress)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
               aria-label="Edit ingress YAML"
-              title="Edit YAML"
+              data-tooltip="Edit YAML"
             >
               <Pencil size={13} />
             </button>
@@ -41,7 +41,7 @@ export const IngressDetailPanel = ({ ingress, onClose, onOpenYamlEditor, onDelet
               onClick={() => onDelete?.(ingress.namespace, ingress.name)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
               aria-label="Delete ingress"
-              title="Delete Ingress"
+              data-tooltip="Delete Ingress"
             >
               <Trash2 size={13} />
             </button>

@@ -103,6 +103,44 @@ pub async fn require_basic_auth(
     }
 }
 
+pub async fn refresh_token(State(state): State<AppState>, headers: axum::http::HeaderMap) -> impl IntoResponse {
+    let auth_header = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+
+    let username = match auth_header {
+        Some(auth) if auth.starts_with("Bearer ") => {
+            let token = &auth[7..];
+            match decode::<Claims>(
+                token,
+                &DecodingKey::from_secret(state.jwt_secret.as_ref()),
+                &Validation::default(),
+            ) {
+                Ok(data) => data.claims.sub,
+                Err(_) => return StatusCode::UNAUTHORIZED.into_response(),
+            }
+        }
+        _ => return StatusCode::UNAUTHORIZED.into_response(),
+    };
+
+    let now = Utc::now();
+    let exp = now + Duration::hours(1);
+    let claims = Claims {
+        sub: username,
+        exp: exp.timestamp(),
+        iat: now.timestamp(),
+    };
+
+    match encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(state.jwt_secret.as_ref()),
+    ) {
+        Ok(token) => (StatusCode::OK, Json(LoginResponse { success: true, token: Some(token) })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 pub fn parse_basic_auth(value: &str) -> Option<(String, String)> {
     let encoded = value.strip_prefix("Basic ")?;
     let decoded = STANDARD.decode(encoded).ok()?;

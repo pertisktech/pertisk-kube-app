@@ -127,6 +127,7 @@ export interface K8sNode {
   memory_used?: string;
   cpu_usage_percent?: number;
   memory_usage_percent?: number;
+  unschedulable?: boolean;
 }
 
 export interface DashboardSummary {

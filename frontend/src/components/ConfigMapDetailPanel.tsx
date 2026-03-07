@@ -32,7 +32,7 @@ export const ConfigMapDetailPanel = ({ configMap, onClose, onOpenYamlEditor, onD
               onClick={() => onOpenYamlEditor?.(configMap)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
               aria-label="Edit configmap YAML"
-              title="Edit YAML"
+              data-tooltip="Edit YAML"
             >
               <Pencil size={13} />
             </button>
@@ -41,7 +41,7 @@ export const ConfigMapDetailPanel = ({ configMap, onClose, onOpenYamlEditor, onD
               onClick={() => onDelete?.(configMap.namespace, configMap.name)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
               aria-label="Delete configmap"
-              title="Delete ConfigMap"
+              data-tooltip="Delete ConfigMap"
             >
               <Trash2 size={13} />
             </button>

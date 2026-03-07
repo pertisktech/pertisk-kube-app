@@ -65,6 +65,7 @@ pub struct NodeItem {
     pub memory_used: Option<String>,
     pub cpu_usage_percent: Option<f64>,
     pub memory_usage_percent: Option<f64>,
+    pub unschedulable: bool,
 }
 
 #[derive(Serialize)]

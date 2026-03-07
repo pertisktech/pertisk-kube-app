@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Layout } from './components';
 import { NamespaceProvider } from './context/NamespaceContext';
-import { clearAuth, getAuthUser, isAuthenticated } from './utils/auth';
+import { clearAuth, getAuthUser, getTokenExpiry, isAuthenticated, refreshToken } from './utils/auth';
 import {
   Dashboard,
   NamespacesPage,
@@ -49,17 +49,50 @@ import {
 export const App = () => {
   const [authenticated, setAuthenticated] = useState(() => isAuthenticated());
   const [authUser, setAuthUser] = useState(() => getAuthUser() ?? '');
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleLogin = () => {
-    setAuthenticated(true);
-    setAuthUser(getAuthUser() ?? '');
-  };
-
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     clearAuth();
     setAuthenticated(false);
     setAuthUser('');
-  };
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+  }, []);
+
+  const scheduleRefresh = useCallback((expiryMs: number) => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    // Refresh 5 minutes before expiry, minimum 10 seconds from now
+    const msUntilExpiry = expiryMs - Date.now();
+    const delay = Math.max(10_000, msUntilExpiry - 5 * 60 * 1000);
+    refreshTimerRef.current = setTimeout(async () => {
+      const newExpiry = await refreshToken();
+      if (newExpiry) {
+        scheduleRefresh(newExpiry);
+      } else {
+        handleLogout();
+      }
+    }, delay);
+  }, [handleLogout]);
+
+  const handleLogin = useCallback(() => {
+    setAuthenticated(true);
+    setAuthUser(getAuthUser() ?? '');
+    const expiry = getTokenExpiry();
+    if (expiry) scheduleRefresh(expiry);
+  }, [scheduleRefresh]);
+
+  // On mount: schedule refresh if already authenticated, listen for 401 events
+  useEffect(() => {
+    if (authenticated) {
+      const expiry = getTokenExpiry();
+      if (expiry) scheduleRefresh(expiry);
+    }
+    const onExpired = () => handleLogout();
+    window.addEventListener('auth:expired', onExpired);
+    return () => {
+      window.removeEventListener('auth:expired', onExpired);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
+  }, []);
 
   if (!authenticated) {
     return <LoginPage onLogin={handleLogin} />;

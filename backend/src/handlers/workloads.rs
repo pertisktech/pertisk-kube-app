@@ -437,6 +437,12 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         Some(memory_used_raw)
                     };
 
+                    let unschedulable = node
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.unschedulable)
+                        .unwrap_or(false);
+
                     NodeItem {
                         name,
                         ready,
@@ -456,6 +462,7 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         memory_used,
                         cpu_usage_percent,
                         memory_usage_percent,
+                        unschedulable,
                     }
                 })
                 .collect();
@@ -1911,6 +1918,184 @@ pub async fn delete_cronjob(
         }
         Err(err) => {
             error!("Error deleting cronjob {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn get_node_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Node;
+    let api: Api<Node> = Api::all(state.client);
+    match api.get(&name).await {
+        Ok(node) => match serde_yaml::to_string(&node) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!("Failed to serialize node to YAML {}: {:?}", name, err);
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting node YAML {}: {:?}", name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+pub async fn update_node_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Node;
+    let api: Api<Node> = Api::all(state.client);
+    let parsed: serde_json::Value = match serde_yaml::from_str(&body) {
+        Ok(value) => value,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid YAML: {}", err),
+            )
+                .into_response();
+        }
+    };
+    match api
+        .patch(
+            &name,
+            &PatchParams::apply("pertisk-kube").force(),
+            &Patch::Apply(parsed),
+        )
+        .await
+    {
+        Ok(_) => {
+            info!("Updated node YAML {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error updating node YAML {}: {:?}", name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to apply YAML: {}", err),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn delete_node(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Node;
+    let api: Api<Node> = Api::all(state.client);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted node {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting node {}: {:?}", name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn cordon_node(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Node;
+    let api: Api<Node> = Api::all(state.client);
+    let patch = serde_json::json!({ "spec": { "unschedulable": true } });
+    match api
+        .patch(&name, &PatchParams::default(), &Patch::Merge(patch))
+        .await
+    {
+        Ok(_) => {
+            info!("Cordoned node {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error cordoning node {}: {:?}", name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn uncordon_node(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Node;
+    let api: Api<Node> = Api::all(state.client);
+    let patch = serde_json::json!({ "spec": { "unschedulable": false } });
+    match api
+        .patch(&name, &PatchParams::default(), &Patch::Merge(patch))
+        .await
+    {
+        Ok(_) => {
+            info!("Uncordoned node {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error uncordoning node {}: {:?}", name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn drain_node(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Node;
+    use std::process::Command as SysCommand;
+
+    // First cordon the node via the k8s API
+    let api: Api<Node> = Api::all(state.client);
+    let patch = serde_json::json!({ "spec": { "unschedulable": true } });
+    if let Err(err) = api
+        .patch(&name, &PatchParams::default(), &Patch::Merge(patch))
+        .await
+    {
+        error!("Error cordoning node during drain {}: {:?}", name, err);
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    // Then drain via kubectl
+    let output = SysCommand::new("kubectl")
+        .arg("drain")
+        .arg(&name)
+        .arg("--ignore-daemonsets")
+        .arg("--delete-emptydir-data")
+        .arg("--force")
+        .arg("--timeout=120s")
+        .output();
+
+    match output {
+        Ok(out) => {
+            if out.status.success() {
+                info!("Drained node {}", name);
+                (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+            } else {
+                let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                error!("kubectl drain failed for {}: {}", name, stderr);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": stderr })),
+                )
+                    .into_response()
+            }
+        }
+        Err(err) => {
+            error!("Failed to run kubectl drain for {}: {:?}", name, err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }

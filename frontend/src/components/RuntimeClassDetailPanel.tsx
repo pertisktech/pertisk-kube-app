@@ -32,7 +32,7 @@ export const RuntimeClassDetailPanel = ({ runtimeClass, onClose, onOpenYamlEdito
               onClick={() => onOpenYamlEditor?.(runtimeClass)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
               aria-label="Edit runtimeclass YAML"
-              title="Edit YAML"
+              data-tooltip="Edit YAML"
             >
               <Pencil size={13} />
             </button>
@@ -41,7 +41,7 @@ export const RuntimeClassDetailPanel = ({ runtimeClass, onClose, onOpenYamlEdito
               onClick={() => onDelete?.(runtimeClass.name)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
               aria-label="Delete runtimeclass"
-              title="Delete RuntimeClass"
+              data-tooltip="Delete RuntimeClass"
             >
               <Trash2 size={13} />
             </button>

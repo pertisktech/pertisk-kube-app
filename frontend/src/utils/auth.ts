@@ -43,3 +43,30 @@ export const isAuthenticated = () => {
   const token = localStorage.getItem(AUTH_TOKEN_KEY);
   return Boolean(token) && !isTokenExpired();
 };
+
+export const getTokenExpiry = (): number | null => {
+  const expiry = localStorage.getItem(AUTH_EXPIRY_KEY);
+  return expiry ? parseInt(expiry, 10) : null;
+};
+
+// Returns the new expiry timestamp on success, null on failure
+export const refreshToken = async (): Promise<number | null> => {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (!token) return null;
+  try {
+    const res = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { success: boolean; token?: string };
+    if (data.success && data.token) {
+      const user = localStorage.getItem(AUTH_USER_KEY) ?? '';
+      setAuth(data.token, user);
+      return getTokenExpiry();
+    }
+  } catch {
+    // network error
+  }
+  return null;
+};

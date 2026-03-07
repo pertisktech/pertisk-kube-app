@@ -120,10 +120,8 @@ async fn spawn_exec_shell(
 
     if query.namespace == "host" && query.pod == "host" {
         // Special case: connect to host shell with PTY
-        info!("Connecting to host shell with PTY");
-        
-        let pty_system = NativePtySystem::default();
-        let pair = match pty_system.openpty(PtySize {
+        info!("Connecting to host shell with PTY");        
+        let pty_system = NativePtySystem::default();        let pair = match pty_system.openpty(PtySize {
             rows: 30,
             cols: 120,
             pixel_width: 0,
@@ -175,6 +173,47 @@ async fn spawn_exec_shell(
             master: pair.master,
             reader, 
             writer,
+        })
+    } else if query.namespace == "node" {
+        // Node shell: kubectl debug node/<nodename> with a privileged alpine pod
+        info!("Connecting to node shell for node: {}", query.pod);
+        let mut cmd = Command::new("kubectl");
+        cmd.arg("debug")
+            .arg(format!("node/{}", query.pod))
+            .arg("-it")
+            .arg("--image=alpine")
+            .arg("--")
+            .arg("chroot")
+            .arg("/host")
+            .arg("sh");
+
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(err) => {
+                error!("Failed to spawn kubectl debug node: {}", err);
+                let _ = tx
+                    .send(format!(
+                        "\r\n\u{1b}[1;31mFailed to start node shell: {}\u{1b}[0m\r\n",
+                        err
+                    ))
+                    .await;
+                return None;
+            }
+        };
+
+        let stdin = child.stdin.take()?;
+        let stdout = child.stdout.take()?;
+        let stderr = child.stderr.take()?;
+
+        Some(ShellSession::Piped {
+            child,
+            stdin,
+            stdout,
+            stderr,
         })
     } else {
         // Normal case: kubectl exec to pod with pipes

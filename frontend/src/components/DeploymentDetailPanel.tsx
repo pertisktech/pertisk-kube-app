@@ -139,7 +139,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
                 disabled={isRestarting}
                 className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="Restart deployment"
-                title="Restart Deployment"
+                data-tooltip="Restart Deployment"
               >
                 <RotateCcw size={13} className={isRestarting ? 'animate-spin' : ''} />
               </button>
@@ -148,7 +148,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
                 onClick={() => onOpenYamlEditor(deployment)}
                 className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
                 aria-label="Edit deployment YAML"
-                title="Edit YAML"
+                data-tooltip="Edit YAML"
               >
                 <Pencil size={13} />
               </button>
@@ -157,7 +157,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
                 onClick={() => onDelete?.(deployment.namespace, deployment.name)}
                 className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
                 aria-label="Delete deployment"
-                title="Delete Deployment"
+                data-tooltip="Delete Deployment"
               >
                 <Trash2 size={13} />
               </button>
@@ -175,7 +175,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
                   disabled={isScaling}
                   className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-border text-text hover:bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="Decrease replicas"
-                  title="Decrease replicas"
+                  data-tooltip="Decrease replicas"
                 >
                   -
                 </button>
@@ -208,7 +208,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
                   }}
                   className="w-14 h-8 px-1 text-center rounded-md border border-border bg-surface-elevated text-text text-sm outline-none focus:ring-1 focus:ring-[var(--color-primary)] focus:border-[var(--color-primary)]"
                   aria-label="Replicas"
-                  title="Replicas"
+                  data-tooltip="Replicas"
                 />
                 <button
                   type="button"
@@ -216,7 +216,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
                   disabled={isScaling}
                   className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-border text-text hover:bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="Increase replicas"
-                  title="Increase replicas"
+                  data-tooltip="Increase replicas"
                 >
                   +
                 </button>
