@@ -32,6 +32,7 @@ export interface OpenPanelTabOptions {
   containerName?: string;
   yamlContent?: string;
   title?: string;
+  yamlActionLabel?: 'Apply' | 'Upgrade';
 }
 
 /** Open a tab in the bottom panel from anywhere in the app */
@@ -52,6 +53,7 @@ interface PanelTab {
   target?: TabTarget;
   yamlContent?: string;
   title?: string;
+  yamlActionLabel?: 'Apply' | 'Upgrade';
 }
 
 const DEFAULT_YAML = `apiVersion: apps/v1
@@ -275,10 +277,12 @@ const LogViewer = ({ namespace, podName }: { namespace: string; podName: string 
 const YamlEditorTab = ({
   initialContent,
   title,
+  actionLabel = 'Apply',
   onContentChange,
 }: {
   initialContent: string;
   title?: string;
+  actionLabel?: 'Apply' | 'Upgrade';
   onContentChange: (content: string) => void;
 }) => {
   const [yaml, setYaml] = useState(initialContent);
@@ -333,7 +337,7 @@ const YamlEditorTab = ({
         <span className="text-xs text-white/50">{title ?? 'New Resource'}</span>
         {result && (
           <span className={cn('text-xs', result.ok ? 'text-green-400' : 'text-red-400')}>
-            {result.ok ? 'Applied ✓' : 'Failed ✗'}
+            {result.ok ? (actionLabel === 'Upgrade' ? 'Upgraded ✓' : 'Applied ✓') : 'Failed ✗'}
           </span>
         )}
         <button
@@ -342,7 +346,7 @@ const YamlEditorTab = ({
           disabled={applying}
           className="ml-auto px-3 py-0.5 rounded bg-primary text-white text-xs font-medium disabled:opacity-40 hover:opacity-90"
         >
-          {applying ? 'Applying…' : 'Apply'}
+          {applying ? (actionLabel === 'Upgrade' ? 'Upgrading…' : 'Applying…') : actionLabel}
         </button>
       </div>
       <div className="flex-1 overflow-hidden">
@@ -460,6 +464,7 @@ const TabContent = ({
         <YamlEditorTab
           initialContent={tab.yamlContent ?? DEFAULT_YAML}
           title={tab.title}
+          actionLabel={tab.yamlActionLabel}
           onContentChange={onYamlChange}
         />
       );
@@ -488,7 +493,13 @@ export const BottomPanel = () => {
         id,
         type,
         label: opts?.podName ?? LABEL_MAP[type],
-        ...(type === 'yaml-editor' ? { yamlContent: opts?.yamlContent ?? DEFAULT_YAML, title: opts?.title } : {}),
+        ...(type === 'yaml-editor'
+          ? {
+              yamlContent: opts?.yamlContent ?? DEFAULT_YAML,
+              title: opts?.title,
+              yamlActionLabel: opts?.yamlActionLabel ?? 'Apply',
+            }
+          : {}),
         ...(opts?.podName
           ? { target: { namespace: opts.namespace ?? 'default', podName: opts.podName, containerName: opts.containerName } }
           : {}),

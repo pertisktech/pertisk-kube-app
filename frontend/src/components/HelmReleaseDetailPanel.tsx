@@ -1,4 +1,4 @@
-import { Pencil, Trash2, X } from 'lucide-react';
+import { Upload, Trash2, X } from 'lucide-react';
 import type { HelmRelease } from '../types';
 import { timeAgo } from '../utils';
 
@@ -47,10 +47,10 @@ export const HelmReleaseDetailPanel = ({
               type="button"
               onClick={() => onOpenYaml(release)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
-              aria-label="View release YAML"
-              data-tooltip="View YAML"
+              aria-label="Upgrade release values"
+              data-tooltip="Upgrade Release"
             >
-              <Pencil size={13} />
+              <Upload size={13} />
             </button>
             <button
               type="button"

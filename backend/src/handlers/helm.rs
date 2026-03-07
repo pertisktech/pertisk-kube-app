@@ -216,12 +216,13 @@ pub async fn list_helm_charts(_state: State<AppState>) -> impl IntoResponse {
     let url =
         "https://artifacthub.io/api/v1/packages/search?kind=0&limit=30&sort=relevance&page=0";
 
-    match http
+    let result = http
         .get(url)
         .header("Accept", "application/json")
         .send()
-        .await
-    {
+        .await;
+
+    match result {
         Ok(resp) if resp.status().is_success() => {
             match resp.json::<ArtifactHubSearchResponse>().await {
                 Ok(hub) => {
