@@ -561,3 +561,29 @@ export const deleteNetworkPolicy = (namespace: string, name: string) =>
 // Cluster-scoped network resources
 export const deleteIngressClass = (name: string) =>
   apiDelete(`/ingressclasses/${encodeURIComponent(name)}`);
+
+// RBAC resources
+export const deleteServiceAccount = (namespace: string, name: string) =>
+  apiDelete(`/serviceaccounts/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteRole = (namespace: string, name: string) =>
+  apiDelete(`/roles/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteRoleBinding = (namespace: string, name: string) =>
+  apiDelete(`/rolebindings/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteClusterRole = (name: string) =>
+  apiDelete(`/clusterroles/${encodeURIComponent(name)}`);
+
+export const deleteClusterRoleBinding = (name: string) =>
+  apiDelete(`/clusterrolebindings/${encodeURIComponent(name)}`);
+
+// Storage resources
+export const deletePersistentVolumeClaim = (namespace: string, name: string) =>
+  apiDelete(`/persistentvolumeclaims/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deletePersistentVolume = (name: string) =>
+  apiDelete(`/persistentvolumes/${encodeURIComponent(name)}`);
+
+export const deleteStorageClass = (name: string) =>
+  apiDelete(`/storageclasses/${encodeURIComponent(name)}`);

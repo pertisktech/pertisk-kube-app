@@ -1,106 +1,252 @@
-import { useMemo, useState } from 'react';
-import { useStorageClasses } from '../hooks/useKubernetes';
-import { DataTable, type SortState } from '../components/DataTable';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import AceEditor from 'react-ace';
+import YAML from 'yaml';
+import 'ace-builds/src-noconflict/mode-yaml';
+import 'ace-builds/src-noconflict/theme-github';
+import 'ace-builds/src-noconflict/theme-tomorrow_night';
+import { Trash2 } from 'lucide-react';
+import { useStorageClasses, deleteStorageClass } from '../hooks/useKubernetes';
+import { useTheme } from '../context/ThemeContext';
+import { DataTable, StorageClassDetailPanel, ConfirmDialog } from '../components';
 import type { StorageClass } from '../types';
+import { getAuthToken } from '../utils/auth';
 import { timeAgo } from '../utils';
 import { StatusBadge } from '../components/StatusBadge';
 
+type StorageClassSortKey = 'name' | 'provisioner' | 'reclaim_policy' | 'volume_binding_mode' | 'age';
+
+const sanitizeYamlForEdit = (yamlText: string) => {
+  try {
+    const parsed = YAML.parse(yamlText) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== 'object') return yamlText;
+    const metadata = parsed.metadata as Record<string, unknown> | undefined;
+    if (metadata) {
+      delete metadata.managedFields; delete metadata.resourceVersion; delete metadata.uid;
+      delete metadata.generation; delete metadata.creationTimestamp; delete metadata.selfLink;
+      const annotations = metadata.annotations as Record<string, unknown> | undefined;
+      if (annotations) { delete annotations['kubectl.kubernetes.io/last-applied-configuration']; if (Object.keys(annotations).length === 0) delete metadata.annotations; }
+    }
+    delete parsed.status;
+    return YAML.stringify(parsed, { lineWidth: 0 });
+  } catch { return yamlText; }
+};
+
 export const StorageClassesPage = () => {
   const { data, isLoading, error } = useStorageClasses();
-  const [sortState, setSortState] = useState<SortState>({ key: 'age', direction: 'desc' });
+  const theme = useTheme();
+  const [selectedItem, setSelectedItem] = useState<StorageClass | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [yamlTabs, setYamlTabs] = useState<StorageClass[]>([]);
+  const [activeYamlTabKey, setActiveYamlTabKey] = useState<string | null>(null);
+  const [yamlDrawerVisible, setYamlDrawerVisible] = useState(true);
+  const [yamlDrawerHeightPx, setYamlDrawerHeightPx] = useState<number | null>(null);
+  const [isResizingYamlDrawer, setIsResizingYamlDrawer] = useState(false);
+  const resizeStartYRef = useRef(0);
+  const resizeStartHeightRef = useRef(0);
+  const [yamlContentsByTab, setYamlContentsByTab] = useState<Record<string, string>>({});
+  const [yamlLoadingTabKey, setYamlLoadingTabKey] = useState<string | null>(null);
+  const [yamlSavingTabKey, setYamlSavingTabKey] = useState<string | null>(null);
+  const [yamlErrorByTab, setYamlErrorByTab] = useState<Record<string, string | null>>({});
+  const [yamlSuccessByTab, setYamlSuccessByTab] = useState<Record<string, string | null>>({});
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
+  const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [sortState, setSortState] = useState<{ key: StorageClassSortKey; direction: 'asc' | 'desc' }>({ key: 'age', direction: 'desc' });
 
-  const sortedData = useMemo(() => {
-    if (!data) return [];
-    const source = [...data];
-    const factor = sortState.direction === 'asc' ? 1 : -1;
-    
-    return source.sort((first, second) => {
-      if (sortState.key === 'name') return first.name.localeCompare(second.name) * factor;
-      if (sortState.key === 'provisioner') return first.provisioner.localeCompare(second.provisioner) * factor;
-      if (sortState.key === 'reclaim_policy') return first.reclaim_policy.localeCompare(second.reclaim_policy) * factor;
-      if (sortState.key === 'volume_binding_mode') return first.volume_binding_mode.localeCompare(second.volume_binding_mode) * factor;
-      if (sortState.key === 'age') {
-        const firstAge = Date.parse(first.age || '');
-        const secondAge = Date.parse(second.age || '');
-        return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
-      }
-      return 0;
-    });
-  }, [data, sortState]);
+  const activeYamlItem = useMemo(() => activeYamlTabKey ? yamlTabs.find((t) => t.name === activeYamlTabKey) ?? null : null, [yamlTabs, activeYamlTabKey]);
+
+  useEffect(() => {
+    if (!activeYamlItem || !activeYamlTabKey) return;
+    if (yamlContentsByTab[activeYamlTabKey] !== undefined) return;
+    const controller = new AbortController();
+    const token = getAuthToken();
+    setYamlLoadingTabKey(activeYamlTabKey);
+    setYamlErrorByTab((p) => ({ ...p, [activeYamlTabKey]: null }));
+    setYamlSuccessByTab((p) => ({ ...p, [activeYamlTabKey]: null }));
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/storageclasses/${encodeURIComponent(activeYamlItem.name)}/yaml`, { method: 'GET', headers: token ? { Authorization: token } : undefined, signal: controller.signal });
+        if (!res.ok) throw new Error(`Failed to load YAML (${res.status})`);
+        const text = await res.text();
+        setYamlContentsByTab((p) => ({ ...p, [activeYamlTabKey]: sanitizeYamlForEdit(text) }));
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') setYamlErrorByTab((p) => ({ ...p, [activeYamlTabKey]: (e as Error).message }));
+      } finally { setYamlLoadingTabKey((c) => (c === activeYamlTabKey ? null : c)); }
+    };
+    load();
+    return () => controller.abort();
+  }, [activeYamlItem?.name, activeYamlTabKey, yamlContentsByTab]);
+
+  const handleCloseYamlEditor = () => { setYamlTabs([]); setActiveYamlTabKey(null); setYamlDrawerVisible(true); setYamlContentsByTab({}); setYamlErrorByTab({}); setYamlSuccessByTab({}); setYamlLoadingTabKey(null); setYamlSavingTabKey(null); };
+
+  const handleOpenYamlEditorFromPanel = (item: StorageClass) => {
+    setYamlTabs((p) => p.some((t) => t.name === item.name) ? p : [...p, item]);
+    setActiveYamlTabKey(item.name); setYamlDrawerVisible(true); setPanelOpen(false);
+  };
+
+  const handleCloseYamlTab = (tabKey: string) => {
+    setYamlTabs((p) => { const next = p.filter((t) => t.name !== tabKey); if (activeYamlTabKey === tabKey) setActiveYamlTabKey(next[next.length - 1]?.name ?? null); return next; });
+    setYamlContentsByTab((p) => { const n = { ...p }; delete n[tabKey]; return n; });
+    setYamlErrorByTab((p) => { const n = { ...p }; delete n[tabKey]; return n; });
+    setYamlSuccessByTab((p) => { const n = { ...p }; delete n[tabKey]; return n; });
+    setYamlLoadingTabKey((c) => (c === tabKey ? null : c)); setYamlSavingTabKey((c) => (c === tabKey ? null : c));
+  };
+
+  const handleSaveYaml = async () => {
+    if (!activeYamlItem || !activeYamlTabKey) return;
+    const token = getAuthToken();
+    setYamlSavingTabKey(activeYamlTabKey);
+    setYamlErrorByTab((p) => ({ ...p, [activeYamlTabKey]: null }));
+    setYamlSuccessByTab((p) => ({ ...p, [activeYamlTabKey]: null }));
+    try {
+      const res = await fetch(`/api/storageclasses/${encodeURIComponent(activeYamlItem.name)}/yaml`, { method: 'PUT', headers: { 'Content-Type': 'application/yaml', ...(token ? { Authorization: token } : {}) }, body: yamlContentsByTab[activeYamlTabKey] || '' });
+      if (!res.ok) { const msg = await res.text(); throw new Error(msg || `Failed to save (${res.status})`); }
+      setYamlSuccessByTab((p) => ({ ...p, [activeYamlTabKey]: 'Storage Class saved successfully' }));
+    } catch (e) { setYamlErrorByTab((p) => ({ ...p, [activeYamlTabKey]: (e as Error).message })); }
+    finally { setYamlSavingTabKey((c) => (c === activeYamlTabKey ? null : c)); }
+  };
+
+  const handleStartYamlDrawerResize = (clientY: number) => {
+    const h = yamlDrawerHeightPx ?? Math.floor(window.innerHeight * 0.45);
+    resizeStartYRef.current = clientY; resizeStartHeightRef.current = h; setYamlDrawerHeightPx(h); setIsResizingYamlDrawer(true);
+  };
+
+  useEffect(() => {
+    if (!isResizingYamlDrawer) return;
+    const onMove = (e: MouseEvent) => setYamlDrawerHeightPx(Math.max(220, Math.min(Math.floor(window.innerHeight * 0.85), resizeStartHeightRef.current + resizeStartYRef.current - e.clientY)));
+    const onUp = () => setIsResizingYamlDrawer(false);
+    window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [isResizingYamlDrawer]);
+
+  const handleDeleteSingle = async (name: string) => { setConfirmDelete({ keys: [name], label: name }); setPanelOpen(false); };
+  const handleDeleteSelected = () => { if (!selectedRows.length) return; setConfirmDelete({ keys: selectedRows, label: selectedRows.length === 1 ? selectedRows[0] : `${selectedRows.length} storage classes` }); };
+  const handleConfirmDelete = async () => {
+    if (!confirmDelete) return;
+    setIsDeleting(true);
+    try { await Promise.all(confirmDelete.keys.map((name) => deleteStorageClass(name))); setSelectedRows([]); setConfirmDelete(null); }
+    finally { setIsDeleting(false); }
+  };
 
   const columns = [
     {
       header: 'Name',
-      accessor: 'name' as const,
-      width: '18%',
-      sortable: true,
-      sortKey: 'name',
-    },
-    {
-      header: 'Provisioner',
-      accessor: 'provisioner' as const,
-      width: '20%',
-      sortable: true,
-      sortKey: 'provisioner',
-    },
-    {
-      header: 'Reclaim Policy',
-      accessor: 'reclaim_policy' as const,
-      width: '12%',
-      sortable: true,
-      sortKey: 'reclaim_policy',
-    },
-    {
-      header: 'Volume Binding Mode',
-      accessor: 'volume_binding_mode' as const,
-      width: '15%',
-      sortable: true,
-      sortKey: 'volume_binding_mode',
-    },
-    {
-      header: 'Allow Volume Expansion',
-      accessor: 'allow_volume_expansion' as const,
-      width: '12%',
-      render: (sc: StorageClass) => (
-        <StatusBadge 
-          status={sc.allow_volume_expansion ? 'Yes' : 'No'} 
-        />
+      accessor: (row: StorageClass) => (
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-text">{row.name}</span>
+          {row.is_default && <span className="inline-block px-2 py-0.5 rounded text-xs bg-green-100 text-green-800">Default</span>}
+        </div>
       ),
+      width: '20%', sortable: true, sortKey: 'name',
     },
+    { header: 'Provisioner', accessor: 'provisioner' as const, width: '22%', sortable: true, sortKey: 'provisioner' },
+    { header: 'Reclaim Policy', accessor: 'reclaim_policy' as const, width: '13%', sortable: true, sortKey: 'reclaim_policy' },
+    { header: 'Binding Mode', accessor: 'volume_binding_mode' as const, width: '15%', sortable: true, sortKey: 'volume_binding_mode' },
     {
-      header: 'Default',
-      accessor: 'is_default' as const,
-      width: '10%',
-      render: (sc: StorageClass) => (
-        sc.is_default ? <StatusBadge status="Default" /> : '-'
-      ),
+      header: 'Expansion', accessor: 'allow_volume_expansion' as const, width: '11%',
+      render: (sc: StorageClass) => <StatusBadge status={sc.allow_volume_expansion ? 'Yes' : 'No'} />,
     },
-    {
-      header: 'Age',
-      accessor: (sc: StorageClass) => timeAgo(sc.age),
-      width: '10%',
-      sortable: true,
-      sortKey: 'age',
-    },
+    { header: 'Age', accessor: (sc: StorageClass) => timeAgo(sc.age), width: '10%', sortable: true, sortKey: 'age' },
   ];
+
+  const sortedData = useMemo(() => {
+    const withId = (data || []).map((sc) => ({ ...sc, id: sc.name }));
+    const f = sortState.direction === 'asc' ? 1 : -1;
+    return withId.sort((a, b) => {
+      if (sortState.key === 'name') return a.name.localeCompare(b.name) * f;
+      if (sortState.key === 'provisioner') return (a.provisioner || '').localeCompare(b.provisioner || '') * f;
+      if (sortState.key === 'reclaim_policy') return (a.reclaim_policy || '').localeCompare(b.reclaim_policy || '') * f;
+      if (sortState.key === 'volume_binding_mode') return (a.volume_binding_mode || '').localeCompare(b.volume_binding_mode || '') * f;
+      const at = Date.parse(a.age || ''); const bt = Date.parse(b.age || '');
+      return ((Number.isNaN(at) ? 0 : at) - (Number.isNaN(bt) ? 0 : bt)) * f;
+    });
+  }, [data, sortState]);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-text">Storage Classes</h1>
-        <p className="text-text-secondary mt-1">
-          Manage cluster-wide StorageClass resources.
-        </p>
+        <p className="text-text-secondary mt-1">Manage cluster-wide StorageClass resources.</p>
       </div>
 
-      <DataTable
-        data={sortedData}
-        columns={columns}
-        isLoading={isLoading}
-        error={error?.message}
-        rowKey="name"
-        sortState={sortState}
-        onSortChange={(newSort) => setSortState(newSort)}
+      <div className="space-y-2" style={{ paddingBottom: yamlTabs.length > 0 ? (yamlDrawerVisible ? yamlDrawerHeightPx ?? 420 : 84) : 0 }}>
+        <DataTable
+          columns={columns} data={sortedData} isLoading={isLoading} error={error?.message || null} rowKey="id"
+          onRowClick={(row) => { setSelectedItem(row); setPanelOpen(true); }}
+          selectedRowKey={panelOpen && selectedItem ? selectedItem.name : undefined}
+          sortState={sortState} onSortChange={(s) => setSortState(s as { key: StorageClassSortKey; direction: 'asc' | 'desc' })}
+          enableRowSelection={true} selectedRows={selectedRows} onRowSelectionChange={setSelectedRows}
+        />
+
+        {yamlTabs.length > 0 && !yamlDrawerVisible && (
+          <section className="fixed bottom-0 left-0 md:left-[var(--layout-sidebar-width,16rem)] right-0 z-[96]">
+            <div className="px-6"><div className="bg-surface border border-border rounded-t-lg shadow-2xl p-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-text-secondary">YAML tabs hidden ({yamlTabs.length})</span>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setYamlDrawerVisible(true)} className="px-3 py-1 text-xs rounded-md bg-[var(--color-primary)] text-bg">Show</button>
+                  <button type="button" onClick={handleCloseYamlEditor} className="px-3 py-1 text-xs rounded-md border border-border text-text-secondary hover:text-text">Close</button>
+                </div>
+              </div>
+            </div></div>
+          </section>
+        )}
+
+        {yamlTabs.length > 0 && yamlDrawerVisible && activeYamlItem && activeYamlTabKey && (
+          <section className="fixed bottom-0 left-0 md:left-[var(--layout-sidebar-width,16rem)] right-0 z-[96]">
+            <div className="px-6">
+              <div className="bg-surface border border-border rounded-t-lg shadow-2xl p-3 pt-5 space-y-2 overflow-auto relative" style={{ height: yamlDrawerHeightPx ? `${yamlDrawerHeightPx}px` : 'clamp(220px, 45vh, 620px)' }}>
+                <div className="absolute top-0 left-0 right-0 h-5 cursor-ns-resize flex items-start justify-center" onMouseDown={(e) => { e.preventDefault(); handleStartYamlDrawerResize(e.clientY); }}><div className="mt-1.5 h-1.5 w-14 rounded-full bg-border" /></div>
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 min-w-0">
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 min-w-0">
+                    {yamlTabs.map((tab) => { const isActive = tab.name === activeYamlTabKey; return (
+                      <div key={tab.name} className={`inline-flex items-center rounded-md border text-xs ${isActive ? 'border-[var(--color-primary)] bg-hover text-[var(--color-primary)]' : 'border-border bg-surface-elevated text-text-secondary'}`}>
+                        <button type="button" onClick={() => setActiveYamlTabKey(tab.name)} className="px-3 py-1.5 whitespace-nowrap max-w-[220px] truncate" title={tab.name}>{tab.name}</button>
+                        <button type="button" onClick={() => handleCloseYamlTab(tab.name)} className="px-2 py-1.5 border-l border-border">×</button>
+                      </div>
+                    ); })}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap lg:flex-nowrap">
+                    <span className="px-2 py-1 text-xs rounded bg-hover text-[var(--color-primary)] font-semibold">Edit YAML</span>
+                    <button type="button" onClick={() => setYamlDrawerVisible(false)} className="px-3 py-1.5 text-sm rounded-md border border-border text-text-secondary hover:text-text" disabled={yamlSavingTabKey === activeYamlTabKey}>Hide</button>
+                    <button type="button" onClick={handleSaveYaml} className="px-3 py-1.5 text-sm rounded-md bg-[var(--color-primary)] text-bg disabled:opacity-60" disabled={yamlSavingTabKey === activeYamlTabKey || yamlLoadingTabKey === activeYamlTabKey || !(yamlContentsByTab[activeYamlTabKey] || '').trim()}>{yamlSavingTabKey === activeYamlTabKey ? 'Saving...' : 'Save'}</button>
+                    <button type="button" onClick={handleCloseYamlEditor} className="px-3 py-1.5 text-sm rounded-md border border-border text-text-secondary hover:text-text" disabled={yamlSavingTabKey === activeYamlTabKey}>Close</button>
+                  </div>
+                </div>
+                <>
+                  {yamlErrorByTab[activeYamlTabKey] && <div className="px-3 py-2 text-sm text-[var(--color-icon-danger)] border border-border rounded-md bg-surface-elevated">{yamlErrorByTab[activeYamlTabKey]}</div>}
+                  {yamlSuccessByTab[activeYamlTabKey] && <div className="px-3 py-2 text-sm text-[var(--color-icon-success)] border border-border rounded-md bg-surface-elevated">{yamlSuccessByTab[activeYamlTabKey]}</div>}
+                  <div className="w-full h-[calc(100%-90px)] min-h-[180px] rounded-md border border-border bg-surface-elevated overflow-hidden">
+                    <AceEditor mode="yaml" theme={theme?.isDark ? 'tomorrow_night' : 'github'} name={`sc-yaml-editor-${activeYamlTabKey}`} value={yamlContentsByTab[activeYamlTabKey] || ''} onChange={(v) => setYamlContentsByTab((p) => ({ ...p, [activeYamlTabKey]: v }))} readOnly={yamlLoadingTabKey === activeYamlTabKey || yamlSavingTabKey === activeYamlTabKey} width="100%" height="100%" fontSize={12} showPrintMargin={false} setOptions={{ useWorker: false, wrap: true, tabSize: 2, showLineNumbers: true }} editorProps={{ $blockScrolling: true }} />
+                  </div>
+                </>
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
+
+      {panelOpen && selectedItem && (
+        <>
+          <div className="fixed inset-0 z-[95] bg-black/20" onClick={() => setPanelOpen(false)} />
+          <StorageClassDetailPanel storageClass={selectedItem} onClose={() => setPanelOpen(false)} onOpenYamlEditor={handleOpenYamlEditorFromPanel} onDelete={handleDeleteSingle} />
+        </>
+      )}
+
+      {selectedRows.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-3 px-4 py-3 bg-surface border-2 border-orange-500 rounded-xl shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <span className="text-sm text-text-secondary font-medium">{selectedRows.length} selected</span>
+          <div className="w-px h-4 bg-border" />
+          <button type="button" onClick={handleDeleteSelected} className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-[var(--color-icon-danger)]/10 text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/20 font-medium transition-colors"><Trash2 size={14} />Delete</button>
+          <button type="button" onClick={() => setSelectedRows([])} className="text-xs text-text-secondary hover:text-text transition-colors">Clear</button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title={`Delete ${confirmDelete?.label ?? ''}`}
+        description={confirmDelete?.keys.length === 1 ? `Are you sure you want to delete "${confirmDelete?.label}"? This action cannot be undone.` : `Are you sure you want to delete ${confirmDelete?.keys.length} storage classes? This action cannot be undone.`}
+        confirmLabel="Delete" destructive isLoading={isDeleting} onConfirm={handleConfirmDelete} onCancel={() => setConfirmDelete(null)}
       />
     </div>
   );
