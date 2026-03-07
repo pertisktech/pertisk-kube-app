@@ -106,6 +106,20 @@ export const PersistentVolumesPage = () => {
     finally { setYamlSavingTabKey((c) => (c === activeYamlTabKey ? null : c)); }
   };
 
+
+  const handleVerifyYaml = () => {
+    if (!activeYamlTabKey) return;
+    const content = yamlContentsByTab[activeYamlTabKey] || '';
+    try {
+      YAML.parse(content);
+      setYamlSuccessByTab((p) => ({ ...p, [activeYamlTabKey]: 'YAML syntax is valid ✓' }));
+      setYamlErrorByTab((p) => ({ ...p, [activeYamlTabKey]: null }));
+    } catch (err) {
+      setYamlErrorByTab((p) => ({ ...p, [activeYamlTabKey]: `Invalid YAML: ${(err as Error).message}` }));
+      setYamlSuccessByTab((p) => ({ ...p, [activeYamlTabKey]: null }));
+    }
+  };
+
   const handleStartYamlDrawerResize = (clientY: number) => {
     const h = yamlDrawerHeightPx ?? Math.floor(window.innerHeight * 0.45);
     resizeStartYRef.current = clientY; resizeStartHeightRef.current = h; setYamlDrawerHeightPx(h); setIsResizingYamlDrawer(true);
@@ -200,6 +214,7 @@ export const PersistentVolumesPage = () => {
                   </div>
                   <div className="flex items-center gap-2 shrink-0 flex-wrap lg:flex-nowrap">
                     <span className="px-2 py-1 text-xs rounded bg-hover text-[var(--color-primary)] font-semibold">Edit YAML</span>
+                    <button type="button" onClick={handleVerifyYaml} className="px-3 py-1.5 text-sm rounded-md border border-border text-text-secondary hover:text-text" disabled={yamlLoadingTabKey === activeYamlTabKey || !(yamlContentsByTab[activeYamlTabKey] || '').trim()}>Verify</button>
                     <button type="button" onClick={() => setYamlDrawerVisible(false)} className="px-3 py-1.5 text-sm rounded-md border border-border text-text-secondary hover:text-text" disabled={yamlSavingTabKey === activeYamlTabKey}>Hide</button>
                     <button type="button" onClick={handleSaveYaml} className="px-3 py-1.5 text-sm rounded-md bg-[var(--color-primary)] text-bg disabled:opacity-60" disabled={yamlSavingTabKey === activeYamlTabKey || yamlLoadingTabKey === activeYamlTabKey || !(yamlContentsByTab[activeYamlTabKey] || '').trim()}>{yamlSavingTabKey === activeYamlTabKey ? 'Saving...' : 'Save'}</button>
                     <button type="button" onClick={handleCloseYamlEditor} className="px-3 py-1.5 text-sm rounded-md border border-border text-text-secondary hover:text-text" disabled={yamlSavingTabKey === activeYamlTabKey}>Close</button>

@@ -232,6 +232,7 @@ async fn main() -> anyhow::Result<()> {
             get(get_clusterrolebinding_yaml).put(update_clusterrolebinding_yaml),
         )
         .route("/clusterrolebindings/:name", delete(delete_clusterrolebinding))
+        .route("/apply", post(apply_yaml))
         .route(
             "/persistentvolumes/:name/yaml",
             get(get_persistentvolume_yaml).put(update_persistentvolume_yaml),

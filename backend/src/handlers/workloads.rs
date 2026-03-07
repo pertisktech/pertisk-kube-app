@@ -2100,3 +2100,172 @@ pub async fn drain_node(
         }
     }
 }
+
+pub async fn apply_yaml(
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use kube::api::DynamicObject;
+    use kube::discovery::{Discovery, Scope};
+    use kube::core::GroupVersionKind;
+
+    // Parse the YAML body into a JSON value to extract GVK and metadata
+    let value: serde_json::Value = match serde_yaml::from_str(&body) {
+        Ok(v) => v,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let api_version = match value["apiVersion"].as_str() {
+        Some(v) if !v.is_empty() => v.to_string(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"success": false, "message": "Missing apiVersion"})),
+            )
+                .into_response();
+        }
+    };
+
+    let kind = match value["kind"].as_str() {
+        Some(k) if !k.is_empty() => k.to_string(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"success": false, "message": "Missing kind"})),
+            )
+                .into_response();
+        }
+    };
+
+    let name = match value["metadata"]["name"].as_str() {
+        Some(n) if !n.is_empty() => n.to_string(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"success": false, "message": "Missing metadata.name"})),
+            )
+                .into_response();
+        }
+    };
+
+    let namespace = value["metadata"]["namespace"]
+        .as_str()
+        .map(|s| s.to_string());
+
+    // Parse group/version from apiVersion (e.g. "apps/v1" -> group="apps", version="v1")
+    let (group, version) = if let Some(slash) = api_version.find('/') {
+        (
+            api_version[..slash].to_string(),
+            api_version[slash + 1..].to_string(),
+        )
+    } else {
+        (String::new(), api_version.clone())
+    };
+
+    // Run API discovery to resolve the GroupVersionKind to an ApiResource
+    let discovery = match Discovery::new(state.client.clone()).run().await {
+        Ok(d) => d,
+        Err(err) => {
+            error!("API discovery failed: {:?}", err);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"success": false, "message": "API discovery failed"})),
+            )
+                .into_response();
+        }
+    };
+
+    let gvk = GroupVersionKind {
+        group,
+        version,
+        kind: kind.clone(),
+    };
+
+    let (ar, caps) = match discovery.resolve_gvk(&gvk) {
+        Some(r) => r,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Unknown resource type: {}/{}", api_version, kind)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let dynamic_obj: DynamicObject = match serde_json::from_value(value) {
+        Ok(obj) => obj,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid resource structure: {}", err)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+
+    if caps.scope == Scope::Namespaced {
+        let ns = namespace.as_deref().unwrap_or("default");
+        let api: Api<DynamicObject> = Api::namespaced_with(state.client.clone(), ns, &ar);
+        match api
+            .patch(&name, &patch_params, &Patch::Apply(dynamic_obj))
+            .await
+        {
+            Ok(_) => (
+                StatusCode::OK,
+                Json(serde_json::json!({"success": true, "message": "Resource applied successfully"})),
+            )
+                .into_response(),
+            Err(err) => {
+                error!("Error applying resource {}/{}: {:?}", kind, name, err);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "success": false,
+                        "message": format!("Failed to apply resource: {}", err)
+                    })),
+                )
+                    .into_response()
+            }
+        }
+    } else {
+        let api: Api<DynamicObject> = Api::all_with(state.client.clone(), &ar);
+        match api
+            .patch(&name, &patch_params, &Patch::Apply(dynamic_obj))
+            .await
+        {
+            Ok(_) => (
+                StatusCode::OK,
+                Json(serde_json::json!({"success": true, "message": "Resource applied successfully"})),
+            )
+                .into_response(),
+            Err(err) => {
+                error!("Error applying cluster resource {}/{}: {:?}", kind, name, err);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "success": false,
+                        "message": format!("Failed to apply resource: {}", err)
+                    })),
+                )
+                    .into_response()
+            }
+        }
+    }
+}

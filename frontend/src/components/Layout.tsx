@@ -35,10 +35,12 @@ import {
   SlidersHorizontal,
   Bell,
   Terminal,
+  FileCode,
 } from 'lucide-react';
 import { cn } from '../utils';
 import { APP_VERSION } from '../utils/version';
 import { useTheme } from '../context/ThemeContext';
+import { ApplyYamlDialog } from './ApplyYamlDialog';
 
 interface NavItem {
   label: string;
@@ -138,6 +140,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const [helmOpen, setHelmOpen] = useState(false);
   const [accessControlOpen, setAccessControlOpen] = useState(false);
   const [backendPod, setBackendPod] = useState<string>('host');
+  const [applyYamlOpen, setApplyYamlOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const namespaceMenuRef = useRef<HTMLDivElement>(null);
   const theme = useTheme();
@@ -918,6 +921,16 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                 )}
               </div>
             )}
+            <button
+              type="button"
+              onClick={() => setApplyYamlOpen(true)}
+              title="Apply YAML"
+              aria-label="Apply YAML"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border text-sm hover:bg-hover text-text-secondary"
+            >
+              <FileCode size={15} />
+              <span className="hidden sm:inline">Apply YAML</span>
+            </button>
             {theme && (
               <button
                 type="button"
@@ -989,6 +1002,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
           )}
         </main>
       </div>
+      {applyYamlOpen && <ApplyYamlDialog onClose={() => setApplyYamlOpen(false)} />}
     </div>
   );
 };

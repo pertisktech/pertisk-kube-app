@@ -270,6 +270,20 @@ export const DeploymentsPage = () => {
     }
   };
 
+
+  const handleVerifyYaml = () => {
+    if (!activeYamlTabKey) return;
+    const content = yamlContentsByTab[activeYamlTabKey] || '';
+    try {
+      YAML.parse(content);
+      setYamlSuccessByTab((p) => ({ ...p, [activeYamlTabKey]: 'YAML syntax is valid ✓' }));
+      setYamlErrorByTab((p) => ({ ...p, [activeYamlTabKey]: null }));
+    } catch (err) {
+      setYamlErrorByTab((p) => ({ ...p, [activeYamlTabKey]: `Invalid YAML: ${(err as Error).message}` }));
+      setYamlSuccessByTab((p) => ({ ...p, [activeYamlTabKey]: null }));
+    }
+  };
+
   const handleStartYamlDrawerResize = (clientY: number) => {
     const initialHeight = yamlDrawerHeightPx ?? Math.floor(window.innerHeight * 0.45);
     resizeStartYRef.current = clientY;
@@ -567,6 +581,14 @@ export const DeploymentsPage = () => {
               <span className="px-2 py-1 text-xs rounded bg-hover text-[var(--color-primary)] font-semibold">
                 Edit YAML
               </span>
+              <button
+                type="button"
+                onClick={handleVerifyYaml}
+                className="px-3 py-1.5 text-sm rounded-md border border-border text-text-secondary hover:text-text"
+                disabled={yamlLoadingTabKey === activeYamlTabKey || !(yamlContentsByTab[activeYamlTabKey] || '').trim()}
+              >
+                Verify
+              </button>
               <button
                 type="button"
                 onClick={() => setYamlDrawerVisible(false)}

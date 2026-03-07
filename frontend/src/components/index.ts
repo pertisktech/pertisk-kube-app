@@ -1,4 +1,5 @@
 export { Layout } from './Layout';
+export { ApplyYamlDialog } from './ApplyYamlDialog';
 export { DataTable } from './DataTable';
 export { StatusBadge } from './StatusBadge';
 export { Checkbox } from './Checkbox';
