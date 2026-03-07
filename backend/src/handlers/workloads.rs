@@ -386,6 +386,24 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         .and_then(|status| status.node_info.as_ref())
                         .map(|info| info.container_runtime_version.clone());
 
+                    let architecture = node
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.node_info.as_ref())
+                        .map(|info| info.architecture.clone());
+
+                    let operating_system = node
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.node_info.as_ref())
+                        .map(|info| info.operating_system.clone());
+
+                    let kernel_version = node
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.node_info.as_ref())
+                        .map(|info| info.kernel_version.clone());
+
                     let cpu = node
                         .status
                         .as_ref()
@@ -399,6 +417,20 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         .and_then(|status| status.allocatable.as_ref())
                         .and_then(|allocatable| allocatable.get("memory"))
                         .map(|mem_value| mem_value.0.clone());
+
+                    let ephemeral_storage = node
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.allocatable.as_ref())
+                        .and_then(|allocatable| allocatable.get("ephemeral-storage"))
+                        .map(|storage_value| storage_value.0.clone());
+
+                    let pods = node
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.allocatable.as_ref())
+                        .and_then(|allocatable| allocatable.get("pods"))
+                        .map(|pods_value| pods_value.0.clone());
 
                     let (cpu_used_raw, memory_used_raw) = node_metrics_map
                         .get(&name)
@@ -443,6 +475,20 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         .and_then(|spec| spec.unschedulable)
                         .unwrap_or(false);
 
+                    let labels = node
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|labels| serde_json::to_value(labels).ok())
+                        .and_then(|value| value.as_object().cloned());
+
+                    let annotations = node
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|annotations| serde_json::to_value(annotations).ok())
+                        .and_then(|value| value.as_object().cloned());
+
                     NodeItem {
                         name,
                         ready,
@@ -455,9 +501,16 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         internal_ip,
                         external_ip,
                         taints,
+                        labels,
+                        annotations,
                         runtime,
+                        architecture,
+                        operating_system,
+                        kernel_version,
                         cpu,
                         memory,
+                        ephemeral_storage,
+                        pods,
                         cpu_used,
                         memory_used,
                         cpu_usage_percent,
@@ -1930,18 +1983,38 @@ pub async fn get_node_yaml(
     use k8s_openapi::api::core::v1::Node;
     let api: Api<Node> = Api::all(state.client);
     match api.get(&name).await {
-        Ok(node) => match serde_yaml::to_string(&node) {
-            Ok(yaml) => (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
-                yaml,
-            )
-                .into_response(),
-            Err(err) => {
-                error!("Failed to serialize node to YAML {}: {:?}", name, err);
-                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        Ok(node) => {
+            // Convert node to JSON value for filtering
+            let mut json = match serde_json::to_value(&node) {
+                Ok(v) => v,
+                Err(err) => {
+                    error!("Failed to serialize node to JSON {}: {:?}", name, err);
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            };
+
+            // Remove status and managedFields from the object
+            if let Some(obj) = json.as_object_mut() {
+                obj.remove("status");
+                // Remove managedFields from metadata
+                if let Some(metadata) = obj.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+                    metadata.remove("managedFields");
+                }
             }
-        },
+
+            match serde_yaml::to_string(&json) {
+                Ok(yaml) => (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                    yaml,
+                )
+                    .into_response(),
+                Err(err) => {
+                    error!("Failed to serialize node to YAML {}: {:?}", name, err);
+                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            }
+        }
         Err(err) => {
             error!("Error getting node YAML {}: {:?}", name, err);
             StatusCode::NOT_FOUND.into_response()
