@@ -211,8 +211,7 @@ export const HPAPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">HPA</h1>
-        <p className="text-text-secondary mt-1">Manage Horizontal Pod Autoscalers</p>
+        <h1 className="text-xl font-semibold text-text">HPA <span className="text-base font-normal text-text-secondary">(Manage Horizontal Pod Autoscalers)</span></h1>
       </div>
 
       <div

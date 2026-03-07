@@ -114,8 +114,7 @@ export const ServicesPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Services</h1>
-        <p className="text-text-secondary mt-1">Manage Kubernetes services</p>
+        <h1 className="text-xl font-semibold text-text">Services <span className="text-base font-normal text-text-secondary">(Manage Kubernetes services)</span></h1>
       </div>
 
       <div className="space-y-2">

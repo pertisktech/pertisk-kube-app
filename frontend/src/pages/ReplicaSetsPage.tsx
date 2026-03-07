@@ -247,8 +247,7 @@ export const ReplicaSetsPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">ReplicaSets</h1>
-        <p className="text-text-secondary mt-1">Manage ReplicaSet resources</p>
+        <h1 className="text-xl font-semibold text-text">ReplicaSets <span className="text-base font-normal text-text-secondary">(Manage ReplicaSet resources)</span></h1>
       </div>
 
       <div

@@ -189,8 +189,7 @@ export const PDBPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Pod Disruption Budgets</h1>
-        <p className="text-text-secondary mt-1">Manage Kubernetes PodDisruptionBudgets</p>
+        <h1 className="text-xl font-semibold text-text">Pod Disruption Budgets <span className="text-base font-normal text-text-secondary">(Manage Kubernetes PodDisruptionBudgets)</span></h1>
       </div>
 
       <div

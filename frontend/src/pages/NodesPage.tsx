@@ -292,8 +292,7 @@ export const NodesPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Nodes</h1>
-        <p className="text-text-secondary mt-1">View cluster nodes</p>
+        <h1 className="text-xl font-semibold text-text">Nodes <span className="text-base font-normal text-text-secondary">(View cluster nodes)</span></h1>
       </div>
 
       <DataTable

@@ -115,8 +115,7 @@ export const EventsPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Events</h1>
-        <p className="text-text-secondary mt-1">View cluster events in real-time</p>
+        <h1 className="text-xl font-semibold text-text">Events <span className="text-base font-normal text-text-secondary">(View cluster events in real-time)</span></h1>
       </div>
 
       <DataTable

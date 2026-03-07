@@ -91,8 +91,7 @@ export const IngressClassesPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Ingress Classes</h1>
-        <p className="text-text-secondary mt-1">Manage cluster ingress class definitions</p>
+        <h1 className="text-xl font-semibold text-text">Ingress Classes <span className="text-base font-normal text-text-secondary">(Manage cluster ingress class definitions)</span></h1>
       </div>
 
       <div className="space-y-2">

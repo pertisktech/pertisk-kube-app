@@ -229,8 +229,7 @@ export const StatefulSetsPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">StatefulSets</h1>
-        <p className="text-text-secondary mt-1">Manage StatefulSet resources</p>
+        <h1 className="text-xl font-semibold text-text">StatefulSets <span className="text-base font-normal text-text-secondary">(Manage StatefulSet resources)</span></h1>
       </div>
 
       <div

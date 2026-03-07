@@ -94,8 +94,7 @@ export const IngressesPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Ingresses</h1>
-        <p className="text-text-secondary mt-1">View ingress hosts, addresses, and rules</p>
+        <h1 className="text-xl font-semibold text-text">Ingresses <span className="text-base font-normal text-text-secondary">(View ingress hosts, addresses, and rules)</span></h1>
       </div>
 
       <div className="space-y-2">

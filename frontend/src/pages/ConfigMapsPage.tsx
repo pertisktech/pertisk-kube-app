@@ -180,8 +180,7 @@ export const ConfigMapsPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">ConfigMaps</h1>
-        <p className="text-text-secondary mt-1">Manage Kubernetes ConfigMaps</p>
+        <h1 className="text-xl font-semibold text-text">ConfigMaps <span className="text-base font-normal text-text-secondary">(Manage Kubernetes ConfigMaps)</span></h1>
       </div>
 
       <div

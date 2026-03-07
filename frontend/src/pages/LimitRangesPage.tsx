@@ -189,8 +189,7 @@ export const LimitRangesPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Limit Ranges</h1>
-        <p className="text-text-secondary mt-1">Manage Kubernetes Limit Ranges</p>
+        <h1 className="text-xl font-semibold text-text">Limit Ranges <span className="text-base font-normal text-text-secondary">(Manage Kubernetes Limit Ranges)</span></h1>
       </div>
 
       <div

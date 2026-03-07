@@ -545,7 +545,7 @@ export const BottomPanel = () => {
 
   return (
     <div
-      className="relative flex-shrink-0 flex flex-col border-t border-border bg-sidebar"
+      className="relative flex-shrink-0 flex flex-col border-t-2 border-primary/60 bg-surface"
       style={(needsHeight ? { height: showContent ? panelHeight : Math.max(panelHeight, ADD_OPTIONS.length * MENU_ITEM_HEIGHT + 40) } : {}) as CSSProperties}
     >
       {/* Drag handle */}
@@ -554,7 +554,7 @@ export const BottomPanel = () => {
       )}
 
       {/* Tab bar */}
-      <div className="flex items-center h-8 flex-shrink-0 border-b border-border">
+      <div className="flex items-center h-8 flex-shrink-0 border-b border-border bg-surface-elevated">
         {/* Scrollable tabs */}
         <div className="flex-1 flex items-center overflow-x-auto gap-0.5 px-1 min-w-0">
           {tabs.map((tab) => {
@@ -586,14 +586,19 @@ export const BottomPanel = () => {
         </div>
 
         {/* Fixed right controls */}
-        <div className="flex-shrink-0 flex items-center gap-0.5 px-1.5 border-l border-border">
+        <div className="flex-shrink-0 flex items-center gap-1 px-2 border-l border-border">
           <button
             type="button"
             onClick={handleAddClick}
-            className={cn('p-1 rounded hover:bg-hover text-text-secondary transition-colors', showAddMenu && 'bg-hover text-text')}
+            className={cn(
+              'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+              'bg-accent/15 hover:bg-accent/30 text-accent border border-accent/30 hover:border-accent/60',
+              showAddMenu && 'bg-accent/30 border-accent/60'
+            )}
             title="Add tab"
           >
-            <Plus size={14} />
+            <Plus size={13} strokeWidth={2.5} />
+            <span>New Tab</span>
           </button>
           {tabs.length > 0 && (
             <button

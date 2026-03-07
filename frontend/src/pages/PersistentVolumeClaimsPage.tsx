@@ -103,8 +103,7 @@ export const PersistentVolumeClaimsPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Persistent Volume Claims</h1>
-        <p className="text-text-secondary mt-1">Manage PersistentVolumeClaim resources in your namespaces.</p>
+        <h1 className="text-xl font-semibold text-text">Persistent Volume Claims <span className="text-base font-normal text-text-secondary">(Manage PersistentVolumeClaim resources in your namespaces.)</span></h1>
       </div>
 
       <div className="space-y-2">

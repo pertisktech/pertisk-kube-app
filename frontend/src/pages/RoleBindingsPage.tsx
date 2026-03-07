@@ -90,8 +90,7 @@ export const RoleBindingsPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Role Bindings</h1>
-        <p className="text-text-secondary mt-1">Namespace-scoped bindings connecting roles to subjects.</p>
+        <h1 className="text-xl font-semibold text-text">Role Bindings <span className="text-base font-normal text-text-secondary">(Namespace-scoped bindings connecting roles to subjects.)</span></h1>
       </div>
 
       <div className="space-y-2">

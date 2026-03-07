@@ -90,8 +90,7 @@ export const PersistentVolumesPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Persistent Volumes</h1>
-        <p className="text-text-secondary mt-1">Manage cluster-wide PersistentVolume resources.</p>
+        <h1 className="text-xl font-semibold text-text">Persistent Volumes <span className="text-base font-normal text-text-secondary">(Manage cluster-wide PersistentVolume resources.)</span></h1>
       </div>
 
       <div className="space-y-2">

@@ -4,8 +4,7 @@ export const PortForwardingPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Port Forwarding</h1>
-        <p className="text-text-secondary mt-1">Create and manage kubectl port-forward sessions.</p>
+        <h1 className="text-xl font-semibold text-text">Port Forwarding <span className="text-base font-normal text-text-secondary">(Create and manage kubectl port-forward sessions.)</span></h1>
       </div>
 
       <Card title="Port Forward Sessions">

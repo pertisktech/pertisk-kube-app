@@ -190,8 +190,7 @@ export const SecretsPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Secrets</h1>
-        <p className="text-text-secondary mt-1">Manage Kubernetes Secrets</p>
+        <h1 className="text-xl font-semibold text-text">Secrets <span className="text-base font-normal text-text-secondary">(Manage Kubernetes Secrets)</span></h1>
       </div>
 
       <div

@@ -297,8 +297,7 @@ export const PodsPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Pods</h1>
-        <p className="text-text-secondary mt-1">Real-time pod monitoring</p>
+        <h1 className="text-xl font-semibold text-text">Pods <span className="text-base font-normal text-text-secondary">(Real-time pod monitoring)</span></h1>
       </div>
 
       <div className="space-y-2">

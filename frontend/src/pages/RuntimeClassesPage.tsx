@@ -143,8 +143,7 @@ export const RuntimeClassesPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Runtime Classes</h1>
-        <p className="text-text-secondary mt-1">Manage Kubernetes Runtime Classes</p>
+        <h1 className="text-xl font-semibold text-text">Runtime Classes <span className="text-base font-normal text-text-secondary">(Manage Kubernetes Runtime Classes)</span></h1>
       </div>
 
       <DataTable

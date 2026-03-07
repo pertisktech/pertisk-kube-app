@@ -98,8 +98,7 @@ export const StorageClassesPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-text">Storage Classes</h1>
-        <p className="text-text-secondary mt-1">Manage cluster-wide StorageClass resources.</p>
+        <h1 className="text-xl font-semibold text-text">Storage Classes <span className="text-base font-normal text-text-secondary">(Manage cluster-wide StorageClass resources.)</span></h1>
       </div>
 
       <div className="space-y-2">
