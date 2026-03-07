@@ -84,7 +84,7 @@ export const PDBPage = () => {
       });
       if (!res.ok) throw new Error(`Failed to load YAML: ${res.statusText}`);
       const yaml = await res.text();
-      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizePDBYamlForEdit(yaml) });
+      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizePDBYamlForEdit(yaml), title: pdb.name });
     } catch {
       openPanelTab({ type: 'yaml-editor' });
     }

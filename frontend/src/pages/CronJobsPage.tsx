@@ -94,7 +94,7 @@ export const CronJobsPage = () => {
       });
       if (!res.ok) throw new Error(`Failed to load YAML: ${res.statusText}`);
       const yaml = await res.text();
-      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeCronJobYamlForEdit(yaml) });
+      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeCronJobYamlForEdit(yaml), title: cronJob.name });
     } catch {
       openPanelTab({ type: 'yaml-editor' });
     }

@@ -1,9 +1,9 @@
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useNamespace } from '../context/NamespaceContext';
 import { useRealtimeNamespaces } from '../hooks/useRealtimeResources';
-import { useNamespaces } from '../hooks/useKubernetes';
+import { useNamespaces, useCrds } from '../hooks/useKubernetes';
 import { Checkbox } from './Checkbox';
 import { BottomPanel } from './BottomPanel';
 import {
@@ -35,6 +35,7 @@ import {
   SlidersHorizontal,
   Bell,
   Terminal,
+  Layers,
 } from 'lucide-react';
 import { cn } from '../utils';
 import { APP_VERSION } from '../utils/version';
@@ -138,6 +139,25 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const [networkOpen, setNetworkOpen] = useState(false);
   const [helmOpen, setHelmOpen] = useState(false);
   const [accessControlOpen, setAccessControlOpen] = useState(false);
+  const [customResourcesOpen, setCustomResourcesOpen] = useState(false);
+  const [expandedCrdGroups, setExpandedCrdGroups] = useState<Record<string, boolean>>({});
+
+  const { data: crds } = useCrds();
+
+  const crdGroups = useMemo(() => {
+    if (!crds) return [];
+    const groupMap = new Map<string, typeof crds>();
+    for (const crd of crds) {
+      if (!groupMap.has(crd.group)) groupMap.set(crd.group, []);
+      groupMap.get(crd.group)!.push(crd);
+    }
+    return Array.from(groupMap.entries())
+      .map(([group, items]) => ({
+        group,
+        crds: [...items].sort((a, b) => a.kind.localeCompare(b.kind)),
+      }))
+      .sort((a, b) => a.group.localeCompare(b.group));
+  }, [crds]);
 
   const userMenuRef = useRef<HTMLDivElement>(null);
   const namespaceMenuRef = useRef<HTMLDivElement>(null);
@@ -188,7 +208,16 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     if (ACCESS_CONTROL_ITEMS.some((item) => pathname.startsWith(item.path)) || pathname === '/access-control') {
       setAccessControlOpen(true);
     }
-  }, [location.pathname]);
+    if (pathname.startsWith('/crds')) {
+      setCustomResourcesOpen(true);
+      // Also open the group that contains this CRD
+      const crdName = decodeURIComponent(pathname.replace('/crds/', ''));
+      if (crdName && crds) {
+        const found = crds.find((c) => c.name === crdName);
+        if (found) setExpandedCrdGroups((prev) => ({ ...prev, [found.group]: true }));
+      }
+    }
+  }, [location.pathname, crds]);
 
   useEffect(() => {
     const merged = new Set<string>();
@@ -232,6 +261,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const hasActiveNetwork = NETWORK_ITEMS.some((item) => isActive(item.path));
   const hasActiveHelm = HELM_ITEMS.some((item) => isActive(item.path));
   const hasActiveAccessControl = ACCESS_CONTROL_ITEMS.some((item) => isActive(item.path));
+  const hasActiveCustomResources = location.pathname.startsWith('/crds');
 
   const breadcrumbs = (() => {
     // Show Terminal breadcrumb if on terminal route
@@ -315,6 +345,25 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     }
     if (pathname === '/access-control') {
       return [{ label: 'Access Control', icon: Shield }] as BreadcrumbItem[];
+    }
+
+    if (pathname.startsWith('/crds/')) {
+      const crdName = decodeURIComponent(pathname.replace('/crds/', ''));
+      const crd = crds?.find((c) => c.name === crdName);
+      if (crd) {
+        return [
+          { label: 'Custom Resources', icon: Layers },
+          { label: crd.group },
+          { label: crd.kind },
+        ] as BreadcrumbItem[];
+      }
+      return [
+        { label: 'Custom Resources', icon: Layers },
+        { label: crdName },
+      ] as BreadcrumbItem[];
+    }
+    if (pathname === '/crds') {
+      return [{ label: 'Custom Resources', icon: Layers }] as BreadcrumbItem[];
     }
 
     return [{ label: 'Dashboard', path: '/', icon: LayoutDashboard }] as BreadcrumbItem[];
@@ -770,6 +819,87 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                 </div>
               )}
             </div>
+
+            {/* Custom Resources — dynamic, grouped by API group */}
+            {crdGroups.length > 0 && (
+              <div className="space-y-1 order-10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (sidebarCollapsed) setSidebarCollapsed(false);
+                    setCustomResourcesOpen((p) => !p);
+                  }}
+                  className={cn(
+                    'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                    sidebarCollapsed && 'justify-center px-2',
+                    hasActiveCustomResources
+                      ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                      : 'text-text-secondary hover:bg-hover hover:text-text'
+                  )}
+                  title="Custom Resources"
+                >
+                  <Layers size={18} className="flex-shrink-0" />
+                  {!sidebarCollapsed && (
+                    <>
+                      <span className="flex-1 text-left">Custom Resources</span>
+                      <ChevronDown
+                        size={16}
+                        className={cn('transition-transform', customResourcesOpen && 'rotate-180')}
+                      />
+                    </>
+                  )}
+                </button>
+
+                {!sidebarCollapsed && customResourcesOpen && (
+                  <div className="space-y-1">
+                    {crdGroups.map(({ group, crds: groupCrds }) => {
+                      const isGroupOpen = expandedCrdGroups[group] ?? false;
+                      return (
+                        <div key={group} className="space-y-0.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedCrdGroups((p) => ({ ...p, [group]: !p[group] }))
+                            }
+                            className="w-full flex items-center gap-3 px-4 py-2 pl-7 text-sm text-text-secondary hover:text-text transition-colors"
+                          >
+                            <span className="flex-1 truncate text-left">{group}</span>
+                            <ChevronDown
+                              size={16}
+                              className={cn('transition-transform flex-shrink-0', isGroupOpen && 'rotate-180')}
+                            />
+                          </button>
+                          {isGroupOpen && (
+                            <div className="space-y-0.5">
+                              {groupCrds.map((crd) => {
+                                const crdPath = `/crds/${encodeURIComponent(crd.name)}`;
+                                const active = location.pathname === crdPath;
+                                return (
+                                  <Link
+                                    key={crd.name}
+                                    to={crdPath}
+                                    onClick={() => setSidebarOpen(false)}
+                                    className={cn(
+                                      'flex items-center gap-3 px-4 py-2 pl-12 rounded-lg transition-colors text-sm font-medium',
+                                      active
+                                        ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                                        : 'text-text-secondary hover:bg-hover hover:text-text'
+                                    )}
+                                    title={crd.name}
+                                  >
+                                    <span className="truncate">{crd.kind}</span>
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </nav>
         </div>
 

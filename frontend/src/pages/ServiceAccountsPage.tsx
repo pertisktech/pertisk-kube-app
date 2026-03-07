@@ -81,7 +81,7 @@ export const ServiceAccountsPage = () => {
       });
       if (!res.ok) throw new Error(`Failed to load YAML: ${res.statusText}`);
       const yaml = await res.text();
-      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeYamlForEdit(yaml) });
+      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeYamlForEdit(yaml), title: item.name });
     } catch {
       openPanelTab({ type: 'yaml-editor' });
     }

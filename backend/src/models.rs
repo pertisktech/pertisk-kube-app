@@ -362,6 +362,35 @@ pub struct ClusterRoleBindingItem {
 }
 
 #[derive(Serialize)]
+pub struct CrdVersionItem {
+    pub name: String,
+    pub served: bool,
+    pub storage: bool,
+}
+
+#[derive(Serialize)]
+pub struct CrdItem {
+    pub name: String,
+    pub group: String,
+    pub scope: String,
+    pub kind: String,
+    pub singular: String,
+    pub plural: String,
+    pub short_names: Vec<String>,
+    pub versions: Vec<CrdVersionItem>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct CustomResourceItem {
+    pub name: String,
+    pub namespace: Option<String>,
+    pub created_at: Option<String>,
+    pub spec: serde_json::Value,
+    pub status: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
 pub struct DashboardSummary {
     pub namespaces: usize,
     pub pods: usize,

@@ -84,7 +84,7 @@ export const PodsPage = () => {
       });
       if (!response.ok) throw new Error(`Failed to load YAML: ${response.statusText}`);
       const yaml = await response.text();
-      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizePodYamlForEdit(yaml) });
+      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizePodYamlForEdit(yaml), title: pod.name });
     } catch {
       // silently ignore — the YAML editor will start empty
       openPanelTab({ type: 'yaml-editor' });

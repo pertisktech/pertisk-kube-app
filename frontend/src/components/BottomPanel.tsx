@@ -31,6 +31,7 @@ export interface OpenPanelTabOptions {
   namespace?: string;
   containerName?: string;
   yamlContent?: string;
+  title?: string;
 }
 
 /** Open a tab in the bottom panel from anywhere in the app */
@@ -50,6 +51,7 @@ interface PanelTab {
   label: string;
   target?: TabTarget;
   yamlContent?: string;
+  title?: string;
 }
 
 const DEFAULT_YAML = `apiVersion: apps/v1
@@ -272,9 +274,11 @@ const LogViewer = ({ namespace, podName }: { namespace: string; podName: string 
 
 const YamlEditorTab = ({
   initialContent,
+  title,
   onContentChange,
 }: {
   initialContent: string;
+  title?: string;
   onContentChange: (content: string) => void;
 }) => {
   const theme = useTheme();
@@ -316,7 +320,7 @@ const YamlEditorTab = ({
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center gap-2 px-3 py-1 border-b border-border flex-shrink-0 bg-surface">
-        <span className="text-xs text-text-secondary">New Resource</span>
+        <span className="text-xs text-text-secondary">{title ?? 'New Resource'}</span>
         {result && (
           <span className={cn('text-xs truncate max-w-xs', result.ok ? 'text-green-500' : 'text-red-400')}>
             {result.message.slice(0, 100)}
@@ -445,6 +449,7 @@ const TabContent = ({
       return (
         <YamlEditorTab
           initialContent={tab.yamlContent ?? DEFAULT_YAML}
+          title={tab.title}
           onContentChange={onYamlChange}
         />
       );
@@ -473,7 +478,7 @@ export const BottomPanel = () => {
         id,
         type,
         label: opts?.podName ?? LABEL_MAP[type],
-        ...(type === 'yaml-editor' ? { yamlContent: opts?.yamlContent ?? DEFAULT_YAML } : {}),
+        ...(type === 'yaml-editor' ? { yamlContent: opts?.yamlContent ?? DEFAULT_YAML, title: opts?.title } : {}),
         ...(opts?.podName
           ? { target: { namespace: opts.namespace ?? 'default', podName: opts.podName, containerName: opts.containerName } }
           : {}),

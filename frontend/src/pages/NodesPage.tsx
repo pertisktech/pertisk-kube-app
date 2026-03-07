@@ -82,7 +82,7 @@ export const NodesPage = () => {
       });
       if (!res.ok) throw new Error(`Failed: ${res.statusText}`);
       const yaml = await res.text();
-      openPanelTab({ type: 'yaml-editor', yamlContent: yaml });
+      openPanelTab({ type: 'yaml-editor', yamlContent: yaml, title: node.name });
     } catch {
       openPanelTab({ type: 'yaml-editor' });
     }

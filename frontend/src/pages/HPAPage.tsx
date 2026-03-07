@@ -87,7 +87,7 @@ export const HPAPage = () => {
       });
       if (!res.ok) throw new Error(`Failed to load YAML: ${res.statusText}`);
       const yaml = await res.text();
-      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeHPAYamlForEdit(yaml) });
+      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeHPAYamlForEdit(yaml), title: hpa.name });
     } catch {
       openPanelTab({ type: 'yaml-editor' });
     }

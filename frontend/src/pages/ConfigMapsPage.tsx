@@ -84,7 +84,7 @@ export const ConfigMapsPage = () => {
       });
       if (!res.ok) throw new Error(`Failed to load YAML: ${res.statusText}`);
       const yaml = await res.text();
-      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeConfigMapYamlForEdit(yaml) });
+      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeConfigMapYamlForEdit(yaml), title: configMap.name });
     } catch {
       openPanelTab({ type: 'yaml-editor' });
     }

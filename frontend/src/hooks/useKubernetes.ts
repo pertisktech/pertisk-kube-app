@@ -34,6 +34,8 @@ import type {
   RoleBinding,
   ClusterRole,
   ClusterRoleBinding,
+  Crd,
+  CustomResource,
 } from '../types';
 import { getAuthToken } from '../utils/auth';
 
@@ -632,4 +634,37 @@ export const drainNode = async (name: string): Promise<void> => {
     const text = await res.text().catch(() => '');
     throw new Error(text || `Drain failed (${res.status})`);
   }
+};
+
+// CRD hooks
+export const useCrds = () => {
+  return useQuery({
+    queryKey: ['crds'],
+    queryFn: async () => {
+      const res = await apiFetch('/crds');
+      if (!res.ok) throw new Error('Failed to fetch CRDs');
+      const data = (await res.json()) as ApiResponse<Crd>;
+      return data.data;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+};
+
+export const useCustomResources = (crdName: string, namespace?: string) => {
+  return useQuery({
+    queryKey: ['custom-resources', crdName, namespace],
+    queryFn: async () => {
+      const params = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+      const res = await apiFetch(`/crds/${encodeURIComponent(crdName)}/resources${params}`);
+      if (!res.ok) throw new Error('Failed to fetch custom resources');
+      const data = (await res.json()) as ApiResponse<CustomResource>;
+      return data.data;
+    },
+    enabled: Boolean(crdName),
+  });
+};
+
+export const deleteCustomResource = (crdName: string, name: string, namespace?: string) => {
+  const params = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+  return apiDelete(`/crds/${encodeURIComponent(crdName)}/resources/${encodeURIComponent(name)}${params}`);
 };

@@ -1,4 +1,30 @@
 // Kubernetes resource types
+export interface CrdVersion {
+  name: string;
+  served: boolean;
+  storage: boolean;
+}
+
+export interface Crd {
+  name: string;
+  group: string;
+  scope: string;
+  kind: string;
+  singular: string;
+  plural: string;
+  short_names: string[];
+  versions: CrdVersion[];
+  created_at: string | null;
+}
+
+export interface CustomResource {
+  name: string;
+  namespace: string | null;
+  created_at: string | null;
+  spec: Record<string, unknown>;
+  status: Record<string, unknown> | null;
+}
+
 export interface Namespace {
   name: string;
   phase: string;

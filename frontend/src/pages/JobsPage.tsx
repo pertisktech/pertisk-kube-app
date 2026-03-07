@@ -85,7 +85,7 @@ export const JobsPage = () => {
       });
       if (!res.ok) throw new Error(`Failed to load YAML: ${res.statusText}`);
       const yaml = await res.text();
-      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeJobYamlForEdit(yaml) });
+      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeJobYamlForEdit(yaml), title: job.name });
     } catch {
       openPanelTab({ type: 'yaml-editor' });
     }
