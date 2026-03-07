@@ -1,0 +1,250 @@
+use kube::{
+    api::ListParams,
+    core::{ApiResource, DynamicObject, GroupVersionKind},
+    Api, Client,
+};
+use std::collections::HashMap;
+use tracing::{error, info, warn};
+
+pub fn format_compact_duration(seconds: i64) -> String {
+    if seconds < 60 {
+        return format!("{}s", seconds);
+    }
+
+    if seconds < 3600 {
+        return format!("{}m", seconds / 60);
+    }
+
+    if seconds < 86_400 {
+        return format!("{}h", seconds / 3600);
+    }
+
+    format!("{}d", seconds / 86_400)
+}
+
+pub fn parse_cpu_millicores(value: &str) -> Option<f64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Handle millicore format: "5m" -> 5
+    if let Some(number) = trimmed.strip_suffix('m') {
+        return number.parse::<f64>().ok();
+    }
+
+    // Handle nanosecond format: "1063320n" -> 1.06332 millicores
+    if let Some(number) = trimmed.strip_suffix('n') {
+        return number.parse::<f64>().ok().map(|nanos| nanos / 1_000_000.0);
+    }
+
+    // Handle microsecond format: "1234u" -> 1.234 millicores
+    if let Some(number) = trimmed.strip_suffix('u') {
+        return number.parse::<f64>().ok().map(|micros| micros / 1000.0);
+    }
+
+    // Handle raw cores: "0.5" -> 500 millicores
+    trimmed.parse::<f64>().ok().map(|cores| cores * 1000.0)
+}
+
+pub fn parse_memory_bytes(value: &str) -> Option<f64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let unit_start = trimmed
+        .find(|char: char| !char.is_ascii_digit() && char != '.')
+        .unwrap_or(trimmed.len());
+
+    let (number_part, unit_part) = trimmed.split_at(unit_start);
+    let number = number_part.parse::<f64>().ok()?;
+
+    let factor = match unit_part {
+        "" => 1.0,
+        "Ki" => 1024.0,
+        "Mi" => 1024.0_f64.powi(2),
+        "Gi" => 1024.0_f64.powi(3),
+        "Ti" => 1024.0_f64.powi(4),
+        "K" | "k" => 1000.0,
+        "M" => 1000.0_f64.powi(2),
+        "G" => 1000.0_f64.powi(3),
+        "T" => 1000.0_f64.powi(4),
+        "n" => 1.0 / 1_000_000_000.0,
+        "u" => 1.0 / 1_000_000.0,
+        "m" => 1.0 / 1000.0,
+        _ => return None,
+    };
+
+    Some(number * factor)
+}
+
+pub fn format_millicores(value: f64) -> String {
+    if value < 1000.0 {
+        return format!("{}m", value.round() as i64);
+    }
+
+    let cores = value / 1000.0;
+    if (cores.fract()).abs() < f64::EPSILON {
+        format!("{}", cores as i64)
+    } else {
+        format!("{cores:.2}").trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
+pub fn format_binary_bytes(bytes: f64) -> String {
+    let units = ["B", "Ki", "Mi", "Gi", "Ti"];
+    let mut value = bytes;
+    let mut index = 0;
+
+    while value >= 1024.0 && index < units.len() - 1 {
+        value /= 1024.0;
+        index += 1;
+    }
+
+    if value >= 10.0 {
+        format!("{value:.0}{}", units[index])
+    } else {
+        format!("{value:.1}{}", units[index]).replace(".0", "")
+    }
+}
+
+pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (String, String)> {
+    let mut metrics_map: HashMap<(String, String), (String, String)> = HashMap::new();
+
+    let pod_metrics_resource =
+        ApiResource::from_gvk(&GroupVersionKind::gvk("metrics.k8s.io", "v1beta1", "PodMetrics"));
+    let metrics_api: Api<DynamicObject> = Api::all_with(client, &pod_metrics_resource);
+
+    let metrics_list = match metrics_api.list(&ListParams::default()).await {
+        Ok(list) => list,
+        Err(err) => {
+            error!("Error fetching pod metrics from metrics.k8s.io: {:?}", err);
+            return metrics_map;
+        }
+    };
+
+    info!("Fetched {} pod metrics", metrics_list.items.len());
+
+    for metric in metrics_list.items {
+        let namespace = metric.metadata.namespace.clone().unwrap_or_default();
+        let name = metric.metadata.name.clone().unwrap_or_default();
+        if namespace.is_empty() || name.is_empty() {
+            continue;
+        }
+
+        let metric_value = match serde_json::to_value(&metric) {
+            Ok(value) => value,
+            Err(e) => {
+                error!("Failed to serialize metric for {}/{}: {}", namespace, name, e);
+                continue;
+            }
+        };
+
+        let containers = match metric_value.get("containers").and_then(|value| value.as_array()) {
+            Some(containers) => containers,
+            None => {
+                warn!("No containers found in metrics for {}/{}", namespace, name);
+                continue;
+            }
+        };
+
+        let mut cpu_millicores_total = 0.0;
+        let mut memory_bytes_total = 0.0;
+        let mut has_cpu = false;
+        let mut has_memory = false;
+
+        for (idx, container) in containers.iter().enumerate() {
+            if let Some(cpu_value) = container
+                .get("usage")
+                .and_then(|value| value.get("cpu"))
+                .and_then(|value| value.as_str())
+                .and_then(parse_cpu_millicores)
+            {
+                has_cpu = true;
+                cpu_millicores_total += cpu_value;
+                info!("Container {} {}/{} CPU: {}m", idx, namespace, name, cpu_value);
+            }
+
+            if let Some(memory_value) = container
+                .get("usage")
+                .and_then(|value| value.get("memory"))
+                .and_then(|value| value.as_str())
+                .and_then(parse_memory_bytes)
+            {
+                has_memory = true;
+                memory_bytes_total += memory_value;
+                info!("Container {} {}/{} Memory: {} bytes", idx, namespace, name, memory_value);
+            }
+        }
+
+        let cpu = if has_cpu {
+            format_millicores(cpu_millicores_total)
+        } else {
+            "-".to_string()
+        };
+
+        let memory = if has_memory {
+            format_binary_bytes(memory_bytes_total)
+        } else {
+            "-".to_string()
+        };
+
+        info!("Metrics for {}/{}: CPU={}, Memory={}", namespace, name, cpu, memory);
+        metrics_map.insert((namespace, name), (cpu, memory));
+    }
+
+    info!("Total metrics collected: {}", metrics_map.len());
+    metrics_map
+}
+
+pub async fn fetch_node_metrics(client: Client) -> HashMap<String, (String, String)> {
+    let mut metrics_map: HashMap<String, (String, String)> = HashMap::new();
+
+    let node_metrics_resource =
+        ApiResource::from_gvk(&GroupVersionKind::gvk("metrics.k8s.io", "v1beta1", "NodeMetrics"));
+    let metrics_api: Api<DynamicObject> = Api::all_with(client, &node_metrics_resource);
+
+    let metrics_list = match metrics_api.list(&ListParams::default()).await {
+        Ok(list) => list,
+        Err(err) => {
+            error!("Error fetching node metrics from metrics.k8s.io: {:?}", err);
+            return metrics_map;
+        }
+    };
+
+    for metric in metrics_list.items {
+        let name = metric.metadata.name.clone().unwrap_or_default();
+        if name.is_empty() {
+            continue;
+        }
+
+        let metric_value = match serde_json::to_value(&metric) {
+            Ok(value) => value,
+            Err(e) => {
+                error!("Failed to serialize node metric for {}: {}", name, e);
+                continue;
+            }
+        };
+
+        let cpu = metric_value
+            .get("usage")
+            .and_then(|value| value.get("cpu"))
+            .and_then(|value| value.as_str())
+            .and_then(parse_cpu_millicores)
+            .map(format_millicores)
+            .unwrap_or_else(|| "-".to_string());
+
+        let memory = metric_value
+            .get("usage")
+            .and_then(|value| value.get("memory"))
+            .and_then(|value| value.as_str())
+            .and_then(parse_memory_bytes)
+            .map(format_binary_bytes)
+            .unwrap_or_else(|| "-".to_string());
+
+        metrics_map.insert(name, (cpu, memory));
+    }
+
+    metrics_map
+}
