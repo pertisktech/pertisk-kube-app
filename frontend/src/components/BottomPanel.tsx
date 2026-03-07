@@ -539,24 +539,22 @@ export const BottomPanel = () => {
     document.addEventListener('mouseup', onUp);
   };
 
-  const activeTab = tabs.find((t) => t.id === activeTabId);
-  const showContent = !collapsed && tabs.length > 0 && !!activeTab;
   // Panel needs explicit height when showing content or the dropdown menu
-  const needsHeight = showContent || showAddMenu;
+  const needsHeight = (!collapsed && tabs.length > 0) || showAddMenu;
 
   return (
     <div
       className="relative flex-shrink-0 flex flex-col mx-2 mb-2 rounded-xl overflow-hidden bg-sidebar"
       style={{
         boxShadow: '0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent), 0 -4px 24px rgba(0,0,0,0.25)',
-        ...(needsHeight ? { height: showContent ? panelHeight : Math.max(panelHeight, ADD_OPTIONS.length * MENU_ITEM_HEIGHT + 40) } : {}),
+        ...(needsHeight ? { height: (!collapsed && tabs.length > 0) ? panelHeight : Math.max(panelHeight, ADD_OPTIONS.length * MENU_ITEM_HEIGHT + 40) } : {}),
       } as CSSProperties}
     >
       {/* Accent top strip */}
       <div className="h-0.5 flex-shrink-0 bg-gradient-to-r from-primary/40 via-primary to-primary/40" />
 
       {/* Drag handle */}
-      {showContent && (
+      {!collapsed && tabs.length > 0 && (
         <div onMouseDown={handleDragStart} className="h-1 flex-shrink-0 cursor-ns-resize hover:bg-primary/20 transition-colors" />
       )}
 
@@ -623,15 +621,18 @@ export const BottomPanel = () => {
       {/* Inline add menu — absolutely positioned inside panel, overlays content */}
       {showAddMenu && <AddMenu onSelect={(type) => doAddTab(type)} />}
 
-      {/* Content area */}
-      {showContent && (
+      {/* Content area — all tabs stay mounted; only active one is visible */}
+      {tabs.length > 0 && !collapsed && (
         <div className="flex-1 min-h-0 overflow-hidden bg-sidebar">
-          <TabContent
-            key={activeTab.id}
-            tab={activeTab}
-            onConnect={(target) => connectTab(activeTab.id, target)}
-            onYamlChange={(content) => updateYaml(activeTab.id, content)}
-          />
+          {tabs.map((tab) => (
+            <div key={tab.id} className="h-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
+              <TabContent
+                tab={tab}
+                onConnect={(target) => connectTab(tab.id, target)}
+                onYamlChange={(content) => updateYaml(tab.id, content)}
+              />
+            </div>
+          ))}
         </div>
       )}
     </div>
