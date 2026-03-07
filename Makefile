@@ -10,11 +10,14 @@ VERSION ?= $(shell V=$$(git describe --tags --always --abbrev=7 2>/dev/null || e
 DOCKER_REGISTRY ?= harbor.tools.thaidevops.co
 DOCKER_IMAGE ?= $(DOCKER_REGISTRY)/pertisksoft/pertisk-kube/web
 DOCKER_TAG ?= $(VERSION)
+BASE_IMAGE_PREFIX ?= $(DOCKER_REGISTRY)/pertisksoft/pertisk-kube/web-base
+BASE_TAG ?= latest
 HELM_RELEASE ?= pertisk-kube
 HELM_NAMESPACE ?= pertisk-rproxy
 
 .PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run-monolith run-ingress-k3s
 .PHONY: docker-build docker-build-amd64 docker-build-arm64 docker-build-multi docker-push docker-push-multi
+.PHONY: docker-base-build docker-base-push docker-base-push-multi
 .PHONY: helm-install helm-upgrade helm-uninstall helm-template helm-deploy
 .PHONY: skaffold-run skaffold-run-prod skaffold-dev skaffold-delete skaffold-build
 .PHONY: release version
@@ -75,26 +78,64 @@ run-ingress-k3s: tools frontend-build
 		cargo watch -x 'run -p pertisk-kube-backend'; \
 	fi
 
-# Docker targets - multi-architecture support
-# Usage examples:
-#   make docker-build                 — build for current platform (quick local test)
-#   make docker-build-amd64           — build linux/amd64 image
-#   make docker-build-arm64           — build linux/arm64 image
-#   make docker-build-multi           — build and push multi-arch (amd64 + arm64)
-#   make docker-build-multi VERSION=v1.0.0  — build with specific version
-#   make docker-push                  — push single-platform image
-#   make release                      — build multi-arch and deploy to k8s
+# ── Base image targets ────────────────────────────────────────────────────────
+# Rebuild & push only when package.json, Cargo.toml, proto, or system tools change.
+# Each stage is pushed as an independent image via --target.
 
+docker-base-build:
+	@echo "Building base images (single-arch)..."
+	docker buildx build --target frontend-deps -f Dockerfile.base \
+		-t $(BASE_IMAGE_PREFIX)-frontend:$(BASE_TAG) --load .
+	docker buildx build --target backend-deps  -f Dockerfile.base \
+		-t $(BASE_IMAGE_PREFIX)-backend:$(BASE_TAG)  --load .
+	docker buildx build --target runtime        -f Dockerfile.base \
+		-t $(BASE_IMAGE_PREFIX)-runtime:$(BASE_TAG)  --load .
+	@echo "✓ Base images built (local): frontend / backend / runtime :$(BASE_TAG)"
+
+docker-base-push: docker-base-build
+	docker push $(BASE_IMAGE_PREFIX)-frontend:$(BASE_TAG)
+	docker push $(BASE_IMAGE_PREFIX)-backend:$(BASE_TAG)
+	docker push $(BASE_IMAGE_PREFIX)-runtime:$(BASE_TAG)
+	@echo "✓ Base images pushed: $(BASE_IMAGE_PREFIX)-{frontend,backend,runtime}:$(BASE_TAG)"
+
+docker-base-push-multi:
+	@echo "Building & pushing multi-arch base images..."
+	@set -e; \
+	if ! docker buildx inspect multiarch > /dev/null 2>&1; then \
+		docker buildx create --name multiarch --driver docker-container --use; \
+	else \
+		docker buildx use multiarch; \
+	fi; \
+	docker buildx inspect multiarch --bootstrap > /dev/null; \
+	docker buildx build --platform linux/amd64,linux/arm64 --target frontend-deps \
+		-f Dockerfile.base --push \
+		-t $(BASE_IMAGE_PREFIX)-frontend:$(BASE_TAG) .; \
+	docker buildx build --platform linux/amd64,linux/arm64 --target backend-deps \
+		-f Dockerfile.base --push \
+		-t $(BASE_IMAGE_PREFIX)-backend:$(BASE_TAG) .; \
+	docker buildx build --platform linux/amd64,linux/arm64 --target runtime \
+		-f Dockerfile.base --push \
+		-t $(BASE_IMAGE_PREFIX)-runtime:$(BASE_TAG) .; \
+	echo "✓ Multi-arch base images pushed: $(BASE_IMAGE_PREFIX)-{frontend,backend,runtime}:$(BASE_TAG)"
+
+# ── Application image targets (fast — only recompiles changed code) ───────────
 docker-build:
-	docker build -f Dockerfile --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+	docker build -f Dockerfile \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg BASE_TAG=$(BASE_TAG) \
+		-t $(DOCKER_IMAGE):$(DOCKER_TAG) .
 	@echo "Built: $(DOCKER_IMAGE):$(DOCKER_TAG)"
 
 docker-build-amd64:
-	docker buildx build --platform linux/amd64 -f Dockerfile --build-arg VERSION=$(VERSION) --load -t $(DOCKER_IMAGE):$(DOCKER_TAG)-amd64 -t $(DOCKER_IMAGE):amd64 .
+	docker buildx build --platform linux/amd64 -f Dockerfile \
+		--build-arg VERSION=$(VERSION) --build-arg BASE_TAG=$(BASE_TAG) \
+		--load -t $(DOCKER_IMAGE):$(DOCKER_TAG)-amd64 -t $(DOCKER_IMAGE):amd64 .
 	@echo "Built: $(DOCKER_IMAGE):$(DOCKER_TAG)-amd64"
 
 docker-build-arm64:
-	docker buildx build --platform linux/arm64 -f Dockerfile --build-arg VERSION=$(VERSION) --load -t $(DOCKER_IMAGE):$(DOCKER_TAG)-arm64 -t $(DOCKER_IMAGE):arm64 .
+	docker buildx build --platform linux/arm64 -f Dockerfile \
+		--build-arg VERSION=$(VERSION) --build-arg BASE_TAG=$(BASE_TAG) \
+		--load -t $(DOCKER_IMAGE):$(DOCKER_TAG)-arm64 -t $(DOCKER_IMAGE):arm64 .
 	@echo "Built: $(DOCKER_IMAGE):$(DOCKER_TAG)-arm64"
 
 docker-build-multi:
@@ -108,7 +149,8 @@ docker-build-multi:
 	fi; \
 	docker buildx inspect multiarch --bootstrap > /dev/null; \
 	echo "Using builder: multiarch"; \
-	docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile --build-arg VERSION=$(VERSION) --push \
+	docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile \
+		--build-arg VERSION=$(VERSION) --build-arg BASE_TAG=$(BASE_TAG) --push \
 		-t $(DOCKER_IMAGE):$(DOCKER_TAG) \
 		-t $(DOCKER_IMAGE):latest .; \
 	echo "✓ Built and pushed multi-arch: $(DOCKER_IMAGE):$(DOCKER_TAG)"

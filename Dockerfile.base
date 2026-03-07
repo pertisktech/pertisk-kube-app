@@ -1,0 +1,133 @@
+# Dockerfile.base — Heavy dependency layer, rebuilt only when deps change.
+#
+# Build & push once (or when package.json / Cargo.toml / system tools change):
+#   make docker-base-push        — single-arch
+#   make docker-base-push-multi  — multi-arch (amd64 + arm64)
+#
+# Three independently-pushable stages (use --target):
+#   frontend-deps   →  web-base-frontend:latest
+#   backend-deps    →  web-base-backend:latest
+#   runtime         →  web-base-runtime:latest
+
+# ─── Stage 1: Frontend npm dependencies ──────────────────────────────────────
+FROM node:20-alpine AS frontend-deps
+WORKDIR /app/frontend
+
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm install
+
+# ─── Stage 2: Rust dependency cache ──────────────────────────────────────────
+FROM rust:alpine AS backend-deps
+WORKDIR /app
+
+RUN apk add --no-cache build-base pkgconfig openssl-dev protobuf-dev
+
+# Workspace manifest
+COPY Cargo.toml ./Cargo.toml
+
+# Backend manifest + build script + proto (build.rs needs them at compile time)
+RUN mkdir -p backend/src
+COPY backend/Cargo.toml   ./backend/Cargo.toml
+COPY backend/build.rs     ./backend/build.rs
+COPY proto                ./proto
+
+# Dummy main so `cargo build` can pre-compile every dependency crate
+RUN echo "fn main() {}" > backend/src/main.rs
+
+# Fetch registry index + compile all dependency crates
+RUN cargo build --release 2>&1 | tail -10 || true
+
+# Remove the dummy app artifact so the real build re-links cleanly,
+# but keep all compiled .rlib / .rmeta files inside target/
+RUN find target/release -maxdepth 1 -name 'pertisk-kube-backend*' -delete 2>/dev/null; \
+    find target/release/.fingerprint -name 'pertisk-kube-backend-*' -exec rm -rf {} + 2>/dev/null; \
+    true
+
+# ─── Stage 3: ktail (statically linked, built once) ──────────────────────────
+FROM golang:1.25-alpine AS ktail-builder
+WORKDIR /src
+RUN apk add --no-cache git
+RUN git clone --depth=1 --branch v1.4.0 https://github.com/atombender/ktail.git . && \
+    go build -o /out/ktail .
+
+# ─── Stage 4: Runtime environment (system tools, shell, fonts) ───────────────
+FROM alpine:latest AS runtime
+
+WORKDIR /app
+
+RUN apk add --no-cache \
+    ca-certificates \
+    kubectl \
+    aws-cli \
+    zsh \
+    git \
+    curl \
+    wget \
+    bash \
+    unzip \
+    fontconfig \
+    font-freefont \
+    && adduser -D -u 65532 appuser
+
+# System-wide PATH for all shell types
+RUN echo 'export PATH=/usr/local/bin:/usr/bin:/bin' >> /etc/profile && \
+    echo 'export PATH=/usr/local/bin:/usr/bin:/bin' > /etc/zsh/zshenv
+
+# ktail from build stage
+COPY --from=ktail-builder /out/ktail /usr/local/bin/ktail
+RUN chmod +x /usr/local/bin/ktail && \
+    ln -sf /usr/local/bin/ktail /usr/bin/ktail
+
+# Nerd Font (Meslo LG)
+RUN mkdir -p /home/appuser/.local/share/fonts && \
+    cd /tmp && \
+    wget https://github.com/ryanoasis/nerd-fonts/releases/download/v3.0.2/Meslo.zip && \
+    unzip Meslo.zip -d /home/appuser/.local/share/fonts/ && \
+    fc-cache -fv /home/appuser/.local/share/fonts && \
+    rm Meslo.zip && \
+    chown -R appuser:appuser /home/appuser/.local
+
+# Oh-My-Zsh + plugins + theme
+RUN HOME=/home/appuser RUNZSH=no CHSH=no KEEP_ZSHRC=yes \
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
+    git clone --depth=1 https://github.com/romkatv/powerlevel10k.git \
+        /home/appuser/.oh-my-zsh/custom/themes/powerlevel10k && \
+    git clone https://github.com/zsh-users/zsh-syntax-highlighting.git \
+        /home/appuser/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting && \
+    git clone https://github.com/zsh-users/zsh-autosuggestions.git \
+        /home/appuser/.oh-my-zsh/custom/plugins/zsh-autosuggestions && \
+    chown -R appuser:appuser /home/appuser/.oh-my-zsh && \
+    chown -R appuser:appuser /home/appuser/.zshrc
+
+# .zshrc
+RUN /bin/sh -c ' \
+printf "%s\n" \
+  "# Path configuration - must be first" \
+  "export PATH=\"/usr/local/bin:/usr/bin:/bin:\$PATH\"" \
+  "" \
+  "# Oh-My-Zsh configuration" \
+  "export ZSH=\"\$HOME/.oh-my-zsh\"" \
+  "export POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD=true" \
+  "ZSH_THEME=\"powerlevel10k/powerlevel10k\"" \
+  "plugins=(git zsh-syntax-highlighting zsh-autosuggestions kubectl docker docker-compose)" \
+  "ZSH_DISABLE_COMPFIX=true" \
+  "" \
+  "# Load Oh-My-Zsh" \
+  "source \$ZSH/oh-my-zsh.sh" \
+  "" \
+  "# History options" \
+  "setopt HIST_IGNORE_DUPS" \
+  "setopt HIST_IGNORE_SPACE" \
+  "setopt HIST_FIND_NO_DUPS" \
+  > /home/appuser/.zshrc \
+' && chmod 644 /home/appuser/.zshrc && chown appuser:appuser /home/appuser/.zshrc
+
+RUN sed -i 's|appuser:.*|appuser:x:65532:65532:appuser:/home/appuser:/bin/zsh|' /etc/passwd
+
+ENV STATIC_DIR=/app/static
+ENV RUST_LOG=info
+ENV SHELL=/bin/zsh
+
+EXPOSE 8091 50051
+
+USER appuser
