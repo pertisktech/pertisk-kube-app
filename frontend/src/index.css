@@ -1,9 +1,9 @@
-/* Omni-inspired global theme */
+/* Omni dark theme */
 
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@300;400;500&display=swap');
 
-/* Light theme (default) */
 :root {
+  /* ── Neutrals ─────────────────────────────────────────────────────────────── */
   --color-naturals-n0: #101118;
   --color-naturals-n1: #13141c;
   --color-naturals-n2: #15161e;
@@ -19,12 +19,25 @@
   --color-naturals-n12: #c3c3c7;
   --color-naturals-n13: #e8e8e9;
   --color-naturals-n14: #ffffff;
+
+  /* ── Primary (orange) ─────────────────────────────────────────────────────── */
   --color-primary-p1: #ffbea9;
   --color-primary-p2: #fe9e74;
   --color-primary-p3: #ff8b59;
   --color-primary-p4: #ff5f2a;
   --color-primary-p5: #ce5027;
   --color-primary-p6: #342321;
+
+  /* ── Semantic named colors (Omni design system) ───────────────────────────── */
+  --color-green-g1: #69c297;
+  --color-green-g2: #2d9663;
+  --color-red-r1: #ff5c56;
+  --color-red-r2: #6e2f30;
+  --color-yellow-y1: #ffb200;
+  --color-yellow-y2: #c68a00;
+  --color-blue-b1: #59a5ff;
+
+  /* ── Semantic aliases ─────────────────────────────────────────────────────── */
   --color-bg: var(--color-naturals-n0);
   --color-surface: var(--color-naturals-n1);
   --color-surface-elevated: var(--color-naturals-n2);
@@ -39,88 +52,64 @@
   --color-primary-hover: var(--color-primary-p2);
   --color-bg-gradient-start: var(--color-naturals-n0);
   --color-bg-gradient-end: var(--color-naturals-n1);
+
+  /* ── Icon / status colors — aligned with Omni named palette ──────────────── */
   --color-icon-primary: var(--color-primary-p3);
   --color-icon-secondary: var(--color-naturals-n10);
-  --color-icon-success: #10b981;
-  --color-icon-warning: #f59e0b;
-  --color-icon-danger: #ef4444;
-  --color-icon-info: #0ea5e9;
-  /* Dashboard status and metric colors - Dark mode */
-  --color-dashboard-success: #34d399;
-  --color-dashboard-success-bg: rgba(52, 211, 153, 0.1);
-  --color-dashboard-warning: #fbbf24;
-  --color-dashboard-warning-bg: rgba(251, 191, 36, 0.1);
-  --color-dashboard-danger: #f87171;
-  --color-dashboard-danger-bg: rgba(248, 113, 113, 0.1);
-  --color-dashboard-info: #38bdf8;
-  --color-dashboard-info-bg: rgba(56, 189, 248, 0.1);
-  --color-dashboard-metric-primary: #ff8b59;
-  --color-dashboard-metric-primary-bg: rgba(255, 139, 89, 0.1);
+  --color-icon-success: var(--color-green-g1);
+  --color-icon-warning: var(--color-yellow-y1);
+  --color-icon-danger: var(--color-red-r1);
+  --color-icon-info: var(--color-blue-b1);
+
+  /* ── Dashboard metric colors ──────────────────────────────────────────────── */
+  --color-dashboard-success: var(--color-green-g1);
+  --color-dashboard-success-bg: color-mix(in srgb, var(--color-green-g1) 12%, transparent);
+  --color-dashboard-warning: var(--color-yellow-y1);
+  --color-dashboard-warning-bg: color-mix(in srgb, var(--color-yellow-y1) 12%, transparent);
+  --color-dashboard-danger: var(--color-red-r1);
+  --color-dashboard-danger-bg: color-mix(in srgb, var(--color-red-r1) 12%, transparent);
+  --color-dashboard-info: var(--color-blue-b1);
+  --color-dashboard-info-bg: color-mix(in srgb, var(--color-blue-b1) 12%, transparent);
+  --color-dashboard-metric-primary: var(--color-primary-p3);
+  --color-dashboard-metric-primary-bg: color-mix(in srgb, var(--color-primary-p3) 12%, transparent);
   --color-dashboard-metric-secondary: #7c3aed;
-  --color-dashboard-metric-secondary-bg: rgba(124, 58, 237, 0.1);
+  --color-dashboard-metric-secondary-bg: rgba(124, 58, 237, 0.12);
   --color-dashboard-metric-tertiary: #ec4899;
-  --color-dashboard-metric-tertiary-bg: rgba(236, 72, 153, 0.1);
+  --color-dashboard-metric-tertiary-bg: rgba(236, 72, 153, 0.12);
   --color-dashboard-metric-quaternary: #06b6d4;
-  --color-dashboard-metric-quaternary-bg: rgba(6, 182, 212, 0.1);
+  --color-dashboard-metric-quaternary-bg: rgba(6, 182, 212, 0.12);
+
+  /* ── Radius ───────────────────────────────────────────────────────────────── */
+  --radius-xs: 2px;
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
+  --radius-xl: 10px;
+
+  /* ── Typography ──────────────────────────────────────────────────────────── */
   --font-sans: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "Roboto Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  /* ── Shadows / transitions ───────────────────────────────────────────────── */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-sidebar: 0 0 0 1px rgba(31, 34, 46, 0.95), 8px 0 24px rgba(0, 0, 0, 0.32);
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-sidebar: 220ms;
-  --error: #ef4444;
-  --warn: #f59e0b;
+  --error: var(--color-red-r1);
+  --warn: var(--color-yellow-y1);
 }
 
-/* Dark theme */
+/* html.dark tweaks — glow + minor overrides only (all core tokens already in :root) */
 html.dark {
   --color-primary-glow: color-mix(in srgb, var(--color-primary) 25%, transparent);
-  --color-icon-success: #34d399;
-  --color-icon-warning: #fbbf24;
-  --color-icon-danger: #f87171;
-  --color-icon-info: #38bdf8;
-  --shadow-sidebar: 0 0 0 1px rgba(31, 34, 46, 0.95), 8px 0 24px rgba(0, 0, 0, 0.32);
-  --error: #f87171;
-  --warn: #fbbf24;
-  /* Dashboard status and metric colors - Dark mode adjustments */
-  --color-dashboard-success: #34d399;
-  --color-dashboard-success-bg: rgba(52, 211, 153, 0.12);
-  --color-dashboard-warning: #fbbf24;
-  --color-dashboard-warning-bg: rgba(251, 191, 36, 0.12);
-  --color-dashboard-danger: #f87171;
-  --color-dashboard-danger-bg: rgba(248, 113, 113, 0.12);
-  --color-dashboard-info: #38bdf8;
-  --color-dashboard-info-bg: rgba(56, 189, 248, 0.12);
-  --color-dashboard-metric-primary: #ff8b59;
-  --color-dashboard-metric-primary-bg: rgba(255, 139, 89, 0.12);
-  --color-dashboard-metric-secondary: #a78bfa;
-  --color-dashboard-metric-secondary-bg: rgba(167, 139, 250, 0.12);
-  --color-dashboard-metric-tertiary: #f472b6;
-  --color-dashboard-metric-tertiary-bg: rgba(244, 114, 182, 0.12);
-  --color-dashboard-metric-quaternary: #06b6d4;
-  --color-dashboard-metric-quaternary-bg: rgba(6, 182, 212, 0.12);
 }
 
-/* Keep light class available, but theme stays Omni-like */
+/* html.light — override for the few surfaces that differ in light mode */
 html.light {
   --color-bg: #f5f6f8;
   --color-surface: #ffffff;
-  /* Dashboard status and metric colors - Light mode */
-  --color-dashboard-success: #059669;
-  --color-dashboard-success-bg: rgba(5, 150, 105, 0.08);
-  --color-dashboard-warning: #d97706;
-  --color-dashboard-warning-bg: rgba(217, 119, 6, 0.08);
-  --color-dashboard-danger: #dc2626;
-  --color-dashboard-danger-bg: rgba(220, 38, 38, 0.08);
-  --color-dashboard-info: #0369a1;
-  --color-dashboard-info-bg: rgba(3, 105, 161, 0.08);
-  --color-dashboard-metric-primary: #ea580c;
-  --color-dashboard-metric-secondary: #7c3aed;
-  --color-dashboard-metric-tertiary: #db2777;
-  --color-dashboard-metric-quaternary: #0891b2;
   --color-surface-elevated: #ffffff;
   --color-hover: #eef0f3;
   --color-border: #dde2e8;
@@ -222,6 +211,9 @@ body,
   border: 1px solid var(--color-naturals-n4);
   border-radius: 10px;
 }
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-naturals-n6);
 }
@@ -268,16 +260,16 @@ body,
   color: var(--color-naturals-n11) !important;
 }
 [data-sonner-toast][data-type='success'] {
-  border-color: color-mix(in srgb, #10b981 30%, var(--color-naturals-n6)) !important;
+  border-color: color-mix(in srgb, var(--color-green-g1) 30%, var(--color-naturals-n6)) !important;
 }
 [data-sonner-toast][data-type='success'] [data-icon] svg {
-  color: #10b981 !important;
+  color: var(--color-green-g1) !important;
 }
 [data-sonner-toast][data-type='error'] {
-  border-color: color-mix(in srgb, #ef4444 30%, var(--color-naturals-n6)) !important;
+  border-color: color-mix(in srgb, var(--color-red-r1) 30%, var(--color-naturals-n6)) !important;
 }
 [data-sonner-toast][data-type='error'] [data-icon] svg {
-  color: #ef4444 !important;
+  color: var(--color-red-r1) !important;
 }
 [data-sonner-toast] [data-close-button] {
   background: var(--color-naturals-n4) !important;
@@ -288,6 +280,36 @@ body,
   background: var(--color-naturals-n6) !important;
   color: var(--color-naturals-n13) !important;
 }
+
+/* ── Resource labels (Omni design system) ────────────────────────────────── */
+.resource-label {
+  border-radius: var(--radius-sm);
+  padding-inline: 0.5rem;
+  padding-block: 0.125rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.5;
+  background-color: color-mix(in hsl, currentColor 14%, transparent);
+  border: 1px solid color-mix(in hsl, currentColor 28%, transparent);
+}
+
+.label-green   { color: #61ff9b; }
+.label-red     { color: #fc2226; }
+.label-orange  { color: #f67a51; }
+.label-violet  { color: #fd90e6; }
+.label-yellow  { color: #fcdf69; }
+.label-cyan    { color: #00c4d6; }
+.label-blue1   { color: #6fabeb; }
+.label-blue2   { color: #3388ff; }
+.label-blue3   { color: #9675f0; }
+.label-light1  { color: #e89292; }
+.label-light2  { color: #c09c75; }
+.label-light3  { color: #b7bb7e; }
+.label-light4  { color: #849a7f; }
+.label-light5  { color: #7ba09d; }
+.label-light6  { color: #7e86ba; }
+.label-light7  { color: #a57bbc; }
+.label-grayed-out { color: var(--color-naturals-n8); }
 
 /* YAML editor — override Ace background to match terminal surface */
 .yaml-editor-pane .ace_editor,
