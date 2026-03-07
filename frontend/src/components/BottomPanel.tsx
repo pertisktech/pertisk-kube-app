@@ -455,6 +455,7 @@ const TabContent = ({
 
 const MENU_ITEM_HEIGHT = 48;
 const MIN_PANEL_HEIGHT = 280;
+const DEFAULT_PANEL_HEIGHT = () => Math.round(window.innerHeight * 0.5);
 
 export const BottomPanel = () => {
   const [tabs, setTabs] = useState<PanelTab[]>([]);
@@ -480,7 +481,7 @@ export const BottomPanel = () => {
     ]);
     setActiveTabId(id);
     setCollapsed(false);
-    setPanelHeight((h) => Math.max(h, MIN_PANEL_HEIGHT));
+    setPanelHeight((h) => (h <= MIN_PANEL_HEIGHT ? DEFAULT_PANEL_HEIGHT() : h));
     setShowAddMenu(false);
   }, []);
 
@@ -532,7 +533,7 @@ export const BottomPanel = () => {
     e.preventDefault();
     const startY = e.clientY;
     const startH = panelHeight;
-    const onMove = (ev: MouseEvent) => setPanelHeight(Math.max(120, Math.min(800, startH + startY - ev.clientY)));
+    const onMove = (ev: MouseEvent) => setPanelHeight(Math.max(120, Math.min(window.innerHeight - 80, startH + startY - ev.clientY)));
     const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -545,16 +546,19 @@ export const BottomPanel = () => {
 
   return (
     <div
-      className="relative flex-shrink-0 flex flex-col border-t-2 border-primary/60 bg-surface"
+      className="relative flex-shrink-0 flex flex-col mx-2 mb-2 rounded-xl overflow-hidden shadow-[0_-4px_24px_rgba(0,0,0,0.25)] ring-1 ring-primary/50 bg-sidebar"
       style={(needsHeight ? { height: showContent ? panelHeight : Math.max(panelHeight, ADD_OPTIONS.length * MENU_ITEM_HEIGHT + 40) } : {}) as CSSProperties}
     >
+      {/* Accent top strip */}
+      <div className="h-0.5 flex-shrink-0 bg-gradient-to-r from-primary/40 via-primary to-primary/40" />
+
       {/* Drag handle */}
       {showContent && (
-        <div onMouseDown={handleDragStart} className="h-1 flex-shrink-0 cursor-ns-resize hover:bg-primary/30 transition-colors" />
+        <div onMouseDown={handleDragStart} className="h-1 flex-shrink-0 cursor-ns-resize hover:bg-primary/20 transition-colors" />
       )}
 
       {/* Tab bar */}
-      <div className="flex items-center h-8 flex-shrink-0 border-b border-border bg-surface-elevated">
+      <div className="flex items-center h-8 flex-shrink-0 border-b border-border bg-sidebar">
         {/* Scrollable tabs */}
         <div className="flex-1 flex items-center overflow-x-auto gap-0.5 px-1 min-w-0">
           {tabs.map((tab) => {
@@ -618,7 +622,7 @@ export const BottomPanel = () => {
 
       {/* Content area */}
       {showContent && (
-        <div className="flex-1 min-h-0 overflow-hidden bg-bg">
+        <div className="flex-1 min-h-0 overflow-hidden bg-sidebar">
           <TabContent
             tab={activeTab}
             onConnect={(target) => connectTab(activeTab.id, target)}
