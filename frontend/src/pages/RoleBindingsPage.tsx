@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
 import { useRoleBindings, deleteRoleBinding } from '../hooks/useKubernetes';
@@ -32,9 +32,6 @@ export const RoleBindingsPage = () => {
   const { selectedNamespaces } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<RoleBinding | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [yamlContentsByTab, setYamlContentsByTab] = useState<Record<string, string>>({}); 
-  const [yamlErrorByTab, setYamlErrorByTab] = useState<Record<string, string | null>>({}); 
-  const [yamlSuccessByTab, setYamlSuccessByTab] = useState<Record<string, string | null>>({}); 
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -75,6 +72,21 @@ export const RoleBindingsPage = () => {
     });
   }, [data, sortState, selectedNamespaces]);
 
+
+  const handleOpenYamlEditorFromPanel = async (item: RoleBinding) => {
+    setPanelOpen(false);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/rolebindings/${encodeURIComponent(item.namespace)}/${encodeURIComponent(item.name)}/yaml`, {
+        headers: token ? { Authorization: token } : {},
+      });
+      if (!res.ok) throw new Error(`Failed to load YAML: ${res.statusText}`);
+      const yaml = await res.text();
+      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeYamlForEdit(yaml) });
+    } catch {
+      openPanelTab({ type: 'yaml-editor' });
+    }
+  };
   return (
     <div className="space-y-6">
       <div>

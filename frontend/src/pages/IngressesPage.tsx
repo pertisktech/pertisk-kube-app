@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
 import { useIngresses, deleteIngress } from '../hooks/useKubernetes';
@@ -76,6 +76,21 @@ export const IngressesPage = () => {
     });
   }, [data, sortState, selectedNamespaces]);
 
+
+  const handleOpenYamlEditorFromPanel = async (item: Ingress) => {
+    setPanelOpen(false);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/ingresses/${encodeURIComponent(item.namespace)}/${encodeURIComponent(item.name)}/yaml`, {
+        headers: token ? { Authorization: token } : {},
+      });
+      if (!res.ok) throw new Error(`Failed to load YAML: ${res.statusText}`);
+      const yaml = await res.text();
+      openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeYamlForEdit(yaml) });
+    } catch {
+      openPanelTab({ type: 'yaml-editor' });
+    }
+  };
   return (
     <div className="space-y-6">
       <div>
