@@ -16,7 +16,8 @@ const ReplicaSetsPage = lazy(() => import('./pages/ReplicaSetsPage').then(m => (
 const JobsPage = lazy(() => import('./pages/JobsPage').then(m => ({ default: m.JobsPage })));
 const CronJobsPage = lazy(() => import('./pages/CronJobsPage').then(m => ({ default: m.CronJobsPage })));
 const EventsPage = lazy(() => import('./pages/EventsPage').then(m => ({ default: m.EventsPage })));
-const HelmResourcePage = lazy(() => import('./pages/HelmResourcePage').then(m => ({ default: m.HelmResourcePage })));
+const HelmChartsPage = lazy(() => import('./pages/HelmChartsPage').then(m => ({ default: m.HelmChartsPage })));
+const HelmReleasesPage = lazy(() => import('./pages/HelmReleasesPage').then(m => ({ default: m.HelmReleasesPage })));
 const ConfigResourcePage = lazy(() => import('./pages/ConfigResourcePage').then(m => ({ default: m.ConfigResourcePage })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
 const ConfigMapsPage = lazy(() => import('./pages/ConfigMapsPage').then(m => ({ default: m.ConfigMapsPage })));
@@ -157,8 +158,8 @@ export const App = () => {
           <Route path="/storage/pvc" element={<PersistentVolumeClaimsPage />} />
           <Route path="/storage/pv" element={<PersistentVolumesPage />} />
           <Route path="/storage/storageclasses" element={<StorageClassesPage />} />
-          <Route path="/helm/charts" element={<HelmResourcePage title="Charts" />} />
-          <Route path="/helm/releases" element={<HelmResourcePage title="Releases" />} />
+          <Route path="/helm/charts" element={<HelmChartsPage />} />
+          <Route path="/helm/releases" element={<HelmReleasesPage />} />
           <Route path="/access-control" element={<AccessControlPage />} />
           <Route path="/access-control/serviceaccounts" element={<ServiceAccountsPage />} />
           <Route path="/access-control/clusterroles" element={<ClusterRolesPage />} />

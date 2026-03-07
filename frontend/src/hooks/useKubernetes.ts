@@ -36,6 +36,8 @@ import type {
   ClusterRoleBinding,
   Crd,
   CustomResource,
+  HelmRelease,
+  HelmChart,
 } from '../types';
 import { getAuthToken } from '../utils/auth';
 
@@ -667,4 +669,30 @@ export const useCustomResources = (crdName: string, namespace?: string) => {
 export const deleteCustomResource = (crdName: string, name: string, namespace?: string) => {
   const params = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
   return apiDelete(`/crds/${encodeURIComponent(crdName)}/resources/${encodeURIComponent(name)}${params}`);
+};
+
+export const useHelmReleases = () => {
+  return useQuery({
+    queryKey: ['helm-releases'],
+    queryFn: async () => {
+      const res = await apiFetch('/helm/releases');
+      if (!res.ok) throw new Error('Failed to fetch Helm releases');
+      const data = (await res.json()) as ApiResponse<HelmRelease>;
+      return data.data;
+    },
+    refetchInterval: 30_000,
+  });
+};
+
+export const useHelmCharts = () => {
+  return useQuery({
+    queryKey: ['helm-charts'],
+    queryFn: async () => {
+      const res = await apiFetch('/helm/charts');
+      if (!res.ok) throw new Error('Failed to fetch Helm charts');
+      const data = (await res.json()) as ApiResponse<HelmChart>;
+      return data.data;
+    },
+    staleTime: 10 * 60 * 1000, // cache 10 min — Artifact Hub data changes slowly
+  });
 };

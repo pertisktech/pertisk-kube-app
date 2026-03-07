@@ -5,6 +5,27 @@ export interface CrdVersion {
   storage: boolean;
 }
 
+export interface HelmRelease {
+  name: string;
+  namespace: string;
+  chart: string;
+  revision: number;
+  chart_version: string;
+  app_version: string;
+  status: string;
+  updated: string;
+}
+
+export interface HelmChart {
+  name: string;
+  description: string;
+  version: string;
+  app_version: string;
+  repository: string;
+  repository_url: string;
+  stars: number;
+}
+
 export interface Crd {
   name: string;
   group: string;

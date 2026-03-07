@@ -28,6 +28,7 @@ use auth::{login, refresh_token, require_basic_auth};
 use handlers::{
     config::*,
     crd::*,
+    helm::*,
     namespaces::*,
     network::*,
     rbac::*,
@@ -238,6 +239,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/crds/:crd_name/resources", get(list_custom_resources))
         .route("/crds/:crd_name/resources/:name/yaml", get(get_custom_resource_yaml))
         .route("/crds/:crd_name/resources/:name", delete(delete_custom_resource))
+        .route("/helm/releases", get(list_helm_releases))
+        .route("/helm/charts", get(list_helm_charts))
         .route(
             "/persistentvolumes/:name/yaml",
             get(get_persistentvolume_yaml).put(update_persistentvolume_yaml),
