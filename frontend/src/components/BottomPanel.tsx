@@ -277,77 +277,23 @@ const LogViewer = ({ namespace, podName }: { namespace: string; podName: string 
 const YamlEditorTab = ({
   initialContent,
   title,
-  actionLabel = 'Apply',
   onContentChange,
 }: {
   initialContent: string;
   title?: string;
-  actionLabel?: 'Apply' | 'Upgrade';
   onContentChange: (content: string) => void;
 }) => {
   const [yaml, setYaml] = useState(initialContent);
-  const [applying, setApplying] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean } | null>(null);
 
   const handleChange = (value: string) => {
     setYaml(value);
     onContentChange(value);
   };
 
-  const handleApply = async () => {
-    if (!yaml.trim()) return;
-    setApplying(true);
-    setResult(null);
-    try {
-      const token = getAuthToken();
-      const res = await fetch('/api/apply', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/yaml',
-          ...(token ? { Authorization: token } : {}),
-        },
-        body: yaml,
-      });
-      const text = await res.text().catch(() => '');
-      let message: string;
-      try {
-        const json = JSON.parse(text);
-        message = json.message ?? (res.ok ? 'Applied successfully' : `Error ${res.status}`);
-      } catch {
-        message = text || (res.ok ? 'Applied successfully' : `Error ${res.status}`);
-      }
-      setResult({ ok: res.ok });
-      if (res.ok) {
-        toast.success(message);
-      } else {
-        toast.error(message);
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Network error';
-      setResult({ ok: false });
-      toast.error(message);
-    } finally {
-      setApplying(false);
-    }
-  };
-
   return (
     <div className="yaml-editor-pane h-full flex flex-col bg-surface-elevated">
       <div className="flex items-center gap-2 px-3 py-1 border-b border-white/10 flex-shrink-0 bg-surface-elevated">
         <span className="text-xs text-white/50">{title ?? 'New Resource'}</span>
-        {result && (
-          <span className={cn('text-xs', result.ok ? 'text-green-400' : 'text-red-400')}>
-            {result.ok ? (actionLabel === 'Upgrade' ? 'Upgraded ✓' : 'Applied ✓') : 'Failed ✗'}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={handleApply}
-          disabled={applying}
-          className="ml-auto px-3 py-0.5 rounded bg-primary text-white text-xs font-medium disabled:opacity-40 hover:opacity-90"
-        >
-          {applying ? (actionLabel === 'Upgrade' ? 'Upgrading…' : 'Applying…') : actionLabel}
-        </button>
       </div>
       <div className="flex-1 overflow-hidden">
         <AceEditor
@@ -464,7 +410,6 @@ const TabContent = ({
         <YamlEditorTab
           initialContent={tab.yamlContent ?? DEFAULT_YAML}
           title={tab.title}
-          actionLabel={tab.yamlActionLabel}
           onContentChange={onYamlChange}
         />
       );
@@ -483,6 +428,12 @@ export const BottomPanel = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [panelHeight, setPanelHeight] = useState(MIN_PANEL_HEIGHT);
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [yamlActionLoading, setYamlActionLoading] = useState(false);
+  const [yamlActionResult, setYamlActionResult] = useState<{ ok: boolean; tabId: string } | null>(null);
+
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
+  const isActiveYamlTab = !!activeTab && activeTab.type === 'yaml-editor';
+  const activeYamlActionLabel = isActiveYamlTab ? (activeTab.yamlActionLabel ?? 'Apply') : 'Apply';
 
   // ── External open events (e.g. sidebar Terminal button) ───────────────────
   const doAddTab = useCallback((type: PanelTabType, opts?: Partial<OpenPanelTabOptions>) => {
@@ -555,6 +506,49 @@ export const BottomPanel = () => {
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, yamlContent: content } : t)));
   };
 
+  const handleYamlPrimaryAction = async () => {
+    if (!activeTab || activeTab.type !== 'yaml-editor') return;
+    const yaml = (activeTab.yamlContent ?? '').trim();
+    if (!yaml) return;
+
+    setYamlActionLoading(true);
+    setYamlActionResult(null);
+    try {
+      const token = getAuthToken();
+      const res = await fetch('/api/apply', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/yaml',
+          ...(token ? { Authorization: token } : {}),
+        },
+        body: yaml,
+      });
+
+      const text = await res.text().catch(() => '');
+      let message: string;
+      try {
+        const json = JSON.parse(text);
+        message = json.message ?? (res.ok ? 'Applied successfully' : `Error ${res.status}`);
+      } catch {
+        message = text || (res.ok ? 'Applied successfully' : `Error ${res.status}`);
+      }
+
+      if (res.ok) {
+        toast.success(message);
+      } else {
+        toast.error(message);
+      }
+
+      setYamlActionResult({ ok: res.ok, tabId: activeTab.id });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Network error';
+      toast.error(message);
+      setYamlActionResult({ ok: false, tabId: activeTab.id });
+    } finally {
+      setYamlActionLoading(false);
+    }
+  };
+
   const handleDragStart = (e: React.MouseEvent) => {
     e.preventDefault();
     const startY = e.clientY;
@@ -618,6 +612,35 @@ export const BottomPanel = () => {
 
         {/* Fixed right controls */}
         <div className="flex-shrink-0 flex items-center gap-1 px-2 border-l border-border">
+          {isActiveYamlTab && (
+            <>
+              {yamlActionResult?.tabId === activeTab.id && (
+                <span
+                  className={cn(
+                    'text-[11px] px-2 py-0.5 rounded border',
+                    yamlActionResult.ok
+                      ? 'text-green-300 border-green-500/40 bg-green-500/10'
+                      : 'text-red-300 border-red-500/40 bg-red-500/10'
+                  )}
+                >
+                  {yamlActionResult.ok
+                    ? (activeYamlActionLabel === 'Upgrade' ? 'Upgraded ✓' : 'Applied ✓')
+                    : 'Failed ✗'}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleYamlPrimaryAction}
+                disabled={yamlActionLoading}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 disabled:opacity-40"
+                title={activeYamlActionLabel}
+              >
+                {yamlActionLoading
+                  ? (activeYamlActionLabel === 'Upgrade' ? 'Upgrading…' : 'Applying…')
+                  : activeYamlActionLabel}
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={handleAddClick}

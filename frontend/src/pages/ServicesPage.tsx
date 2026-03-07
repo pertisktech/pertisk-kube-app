@@ -57,10 +57,13 @@ export const ServicesPage = () => {
         headers: token ? { Authorization: token } : {},
       });
       if (!res.ok) throw new Error(`Failed to load YAML: ${res.statusText}`);
+      const contentType = res.headers.get('content-type') || '';
       const yaml = await res.text();
+      const looksLikeHtml = contentType.includes('text/html') || /^\s*<!doctype html/i.test(yaml) || /^\s*<html[\s>]/i.test(yaml);
+      if (looksLikeHtml) throw new Error('Service YAML endpoint returned HTML instead of YAML');
       openPanelTab({ type: 'yaml-editor', yamlContent: sanitizeYamlForEdit(yaml), title: item.name });
     } catch {
-      openPanelTab({ type: 'yaml-editor' });
+      openPanelTab({ type: 'yaml-editor', yamlContent: '# Failed to load service YAML\n', title: item.name });
     }
   };
 

@@ -203,10 +203,38 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/leases/:namespace/:name", delete(delete_lease))
         .route("/services", get(list_services))
+        .route(
+            "/services/:namespace/:name/yaml",
+            get(get_service_yaml).put(update_service_yaml),
+        )
+        .route("/services/:namespace/:name", delete(delete_service))
         .route("/endpoints", get(list_endpoints))
+        .route(
+            "/endpoints/:namespace/:name/yaml",
+            get(get_endpoint_yaml).put(update_endpoint_yaml),
+        )
+        .route("/endpoints/:namespace/:name", delete(delete_endpoint))
         .route("/ingresses", get(list_ingresses))
+        .route(
+            "/ingresses/:namespace/:name/yaml",
+            get(get_ingress_yaml).put(update_ingress_yaml),
+        )
+        .route("/ingresses/:namespace/:name", delete(delete_ingress))
         .route("/ingressclasses", get(list_ingressclasses))
+        .route(
+            "/ingressclasses/:name/yaml",
+            get(get_ingressclass_yaml).put(update_ingressclass_yaml),
+        )
+        .route("/ingressclasses/:name", delete(delete_ingressclass))
         .route("/networkpolicies", get(list_networkpolicies))
+        .route(
+            "/networkpolicies/:namespace/:name/yaml",
+            get(get_networkpolicy_yaml).put(update_networkpolicy_yaml),
+        )
+        .route(
+            "/networkpolicies/:namespace/:name",
+            delete(delete_networkpolicy),
+        )
         .route("/persistentvolumes", get(list_persistent_volumes))
         .route("/persistentvolumeclaims", get(list_persistent_volume_claims))
         .route("/storageclasses", get(list_storage_classes))

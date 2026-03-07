@@ -1,11 +1,11 @@
 use axum::{
-    extract::State,
-    http::StatusCode,
+    extract::{Path, State},
+    http::{header, StatusCode},
     response::IntoResponse,
     Json,
 };
-use kube::{api::ListParams, Api};
-use tracing::error;
+use kube::{api::{DeleteParams, ListParams, Patch, PatchParams}, Api};
+use tracing::{error, info};
 
 use crate::models::*;
 use crate::AppState;
@@ -406,6 +406,553 @@ pub async fn list_networkpolicies(State(state): State<AppState>) -> impl IntoRes
         }
         Err(err) => {
             error!("Error listing network policies: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn get_service_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Service;
+
+    let api: Api<Service> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize service to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting service YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+pub async fn update_service_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Service;
+
+    let mut obj: Service = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+    obj.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<Service> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!(
+                "Failed converting service YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "Service updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating service YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update service: {}", err)
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn get_endpoint_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Endpoints;
+
+    let api: Api<Endpoints> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize endpoint to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting endpoint YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+pub async fn update_endpoint_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Endpoints;
+
+    let mut obj: Endpoints = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+    obj.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<Endpoints> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!(
+                "Failed converting endpoint YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "Endpoint updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating endpoint YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update endpoint: {}", err)
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn get_ingress_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::networking::v1::Ingress;
+
+    let api: Api<Ingress> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize ingress to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting ingress YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+pub async fn update_ingress_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::networking::v1::Ingress;
+
+    let mut obj: Ingress = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+    obj.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<Ingress> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!(
+                "Failed converting ingress YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "Ingress updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating ingress YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update ingress: {}", err)
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn get_ingressclass_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::networking::v1::IngressClass;
+
+    let api: Api<IngressClass> = Api::all(state.client);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!("Failed to serialize ingressclass to YAML {}: {:?}", name, err);
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting ingressclass YAML {}: {:?}", name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+pub async fn update_ingressclass_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::networking::v1::IngressClass;
+
+    let mut obj: IngressClass = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+
+    let api: Api<IngressClass> = Api::all(state.client);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!("Failed converting ingressclass YAML to JSON {}: {:?}", name, err);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "IngressClass updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating ingressclass YAML {}: {:?}", name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update ingressclass: {}", err)
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn get_networkpolicy_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
+
+    let api: Api<NetworkPolicy> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize networkpolicy to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!(
+                "Error getting networkpolicy YAML {}/{}: {:?}",
+                namespace, name, err
+            );
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+pub async fn update_networkpolicy_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
+
+    let mut obj: NetworkPolicy = match serde_yaml::from_str(&body) {
+        Ok(o) => o,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    obj.metadata.name = Some(name.clone());
+    obj.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<NetworkPolicy> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&obj) {
+        Ok(v) => v,
+        Err(err) => {
+            error!(
+                "Failed converting networkpolicy YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "NetworkPolicy updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!(
+                "Error updating networkpolicy YAML {}/{}: {:?}",
+                namespace, name, err
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update networkpolicy: {}", err)
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn delete_service(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Service;
+
+    let api: Api<Service> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted service {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting service {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn delete_endpoint(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Endpoints;
+
+    let api: Api<Endpoints> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted endpoint {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting endpoint {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn delete_ingress(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::networking::v1::Ingress;
+
+    let api: Api<Ingress> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted ingress {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting ingress {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn delete_ingressclass(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::networking::v1::IngressClass;
+
+    let api: Api<IngressClass> = Api::all(state.client);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted ingressclass {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting ingressclass {}: {:?}", name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn delete_networkpolicy(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
+
+    let api: Api<NetworkPolicy> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted networkpolicy {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!(
+                "Error deleting networkpolicy {}/{}: {:?}",
+                namespace, name, err
+            );
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
