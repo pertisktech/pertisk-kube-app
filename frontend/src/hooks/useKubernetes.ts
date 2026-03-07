@@ -515,3 +515,32 @@ export const deleteCronJob = (namespace: string, name: string) =>
 
 export const deleteNamespace = (name: string) =>
   apiDelete(`/namespaces/${encodeURIComponent(name)}`);
+
+// Config resources
+export const deleteConfigMap = (namespace: string, name: string) =>
+  apiDelete(`/configmaps/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteSecret = (namespace: string, name: string) =>
+  apiDelete(`/secrets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteResourceQuota = (namespace: string, name: string) =>
+  apiDelete(`/resourcequotas/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteLimitRange = (namespace: string, name: string) =>
+  apiDelete(`/limitranges/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteHPA = (namespace: string, name: string) =>
+  apiDelete(`/hpa/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deletePDB = (namespace: string, name: string) =>
+  apiDelete(`/pdb/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const deleteLease = (namespace: string, name: string) =>
+  apiDelete(`/leases/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+// Cluster-scoped config resources
+export const deletePriorityClass = (name: string) =>
+  apiDelete(`/priorityclasses/${encodeURIComponent(name)}`);
+
+export const deleteRuntimeClass = (name: string) =>
+  apiDelete(`/runtimeclasses/${encodeURIComponent(name)}`);

@@ -770,14 +770,59 @@ async fn main() -> anyhow::Result<()> {
         .route("/cronjobs/:namespace/:name", delete(delete_cronjob))
         .route("/namespaces/:name", delete(delete_namespace))
         .route("/configmaps", get(list_configmaps))
+        .route(
+            "/configmaps/:namespace/:name/yaml",
+            get(get_configmap_yaml).put(update_configmap_yaml),
+        )
+        .route("/configmaps/:namespace/:name", delete(delete_configmap))
         .route("/secrets", get(list_secrets))
+        .route(
+            "/secrets/:namespace/:name/yaml",
+            get(get_secret_yaml).put(update_secret_yaml),
+        )
+        .route("/secrets/:namespace/:name", delete(delete_secret))
         .route("/resourcequotas", get(list_resourcequotas))
+        .route(
+            "/resourcequotas/:namespace/:name/yaml",
+            get(get_resourcequota_yaml).put(update_resourcequota_yaml),
+        )
+        .route("/resourcequotas/:namespace/:name", delete(delete_resourcequota))
         .route("/limitranges", get(list_limitranges))
+        .route(
+            "/limitranges/:namespace/:name/yaml",
+            get(get_limitrange_yaml).put(update_limitrange_yaml),
+        )
+        .route("/limitranges/:namespace/:name", delete(delete_limitrange))
         .route("/hpa", get(list_hpa))
+        .route(
+            "/hpa/:namespace/:name/yaml",
+            get(get_hpa_yaml).put(update_hpa_yaml),
+        )
+        .route("/hpa/:namespace/:name", delete(delete_hpa))
         .route("/pdb", get(list_pdb))
+        .route(
+            "/pdb/:namespace/:name/yaml",
+            get(get_pdb_yaml).put(update_pdb_yaml),
+        )
+        .route("/pdb/:namespace/:name", delete(delete_pdb))
         .route("/priorityclasses", get(list_priorityclasses))
+        .route(
+            "/priorityclasses/:name/yaml",
+            get(get_priorityclass_yaml).put(update_priorityclass_yaml),
+        )
+        .route("/priorityclasses/:name", delete(delete_priorityclass))
         .route("/runtimeclasses", get(list_runtimeclasses))
+        .route(
+            "/runtimeclasses/:name/yaml",
+            get(get_runtimeclass_yaml).put(update_runtimeclass_yaml),
+        )
+        .route("/runtimeclasses/:name", delete(delete_runtimeclass))
         .route("/leases", get(list_leases))
+        .route(
+            "/leases/:namespace/:name/yaml",
+            get(get_lease_yaml).put(update_lease_yaml),
+        )
+        .route("/leases/:namespace/:name", delete(delete_lease))
         .route("/services", get(list_services))
         .route("/endpoints", get(list_endpoints))
         .route("/ingresses", get(list_ingresses))
@@ -4190,6 +4235,985 @@ async fn delete_namespace(
         }
         Err(err) => {
             error!("Error deleting namespace {}: {:?}", name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// ConfigMap YAML handlers
+async fn get_configmap_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ConfigMap;
+
+    let api: Api<ConfigMap> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(configmap) => match serde_yaml::to_string(&configmap) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize configmap to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting configmap YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_configmap_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ConfigMap;
+
+    let mut configmap: ConfigMap = match serde_yaml::from_str(&body) {
+        Ok(configmap) => configmap,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    configmap.metadata.name = Some(name.clone());
+    configmap.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<ConfigMap> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&configmap) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting configmap YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "ConfigMap updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating configmap YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update configmap: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_configmap(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ConfigMap;
+    let api: Api<ConfigMap> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted configmap {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting configmap {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// Secret YAML handlers
+async fn get_secret_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Secret;
+
+    let api: Api<Secret> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(secret) => match serde_yaml::to_string(&secret) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize secret to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting secret YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_secret_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Secret;
+
+    let mut secret: Secret = match serde_yaml::from_str(&body) {
+        Ok(secret) => secret,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    secret.metadata.name = Some(name.clone());
+    secret.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<Secret> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&secret) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting secret YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "Secret updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating secret YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update secret: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_secret(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Secret;
+    let api: Api<Secret> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted secret {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting secret {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// ResourceQuota YAML handlers
+async fn get_resourcequota_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ResourceQuota;
+
+    let api: Api<ResourceQuota> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(resourcequota) => match serde_yaml::to_string(&resourcequota) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize resourcequota to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting resourcequota YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_resourcequota_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ResourceQuota;
+
+    let mut resourcequota: ResourceQuota = match serde_yaml::from_str(&body) {
+        Ok(resourcequota) => resourcequota,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    resourcequota.metadata.name = Some(name.clone());
+    resourcequota.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<ResourceQuota> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&resourcequota) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting resourcequota YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "ResourceQuota updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating resourcequota YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update resourcequota: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_resourcequota(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ResourceQuota;
+    let api: Api<ResourceQuota> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted resourcequota {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting resourcequota {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// LimitRange YAML handlers
+async fn get_limitrange_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::LimitRange;
+
+    let api: Api<LimitRange> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(limitrange) => match serde_yaml::to_string(&limitrange) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize limitrange to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting limitrange YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_limitrange_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::LimitRange;
+
+    let mut limitrange: LimitRange = match serde_yaml::from_str(&body) {
+        Ok(limitrange) => limitrange,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    limitrange.metadata.name = Some(name.clone());
+    limitrange.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<LimitRange> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&limitrange) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting limitrange YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "LimitRange updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating limitrange YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update limitrange: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_limitrange(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::LimitRange;
+    let api: Api<LimitRange> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted limitrange {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting limitrange {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// HPA YAML handlers
+async fn get_hpa_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
+
+    let api: Api<HorizontalPodAutoscaler> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(hpa) => match serde_yaml::to_string(&hpa) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize hpa to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting hpa YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_hpa_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
+
+    let mut hpa: HorizontalPodAutoscaler = match serde_yaml::from_str(&body) {
+        Ok(hpa) => hpa,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    hpa.metadata.name = Some(name.clone());
+    hpa.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<HorizontalPodAutoscaler> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&hpa) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting hpa YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "HorizontalPodAutoscaler updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating hpa YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update hpa: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_hpa(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
+    let api: Api<HorizontalPodAutoscaler> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted hpa {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting hpa {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// PDB YAML handlers
+async fn get_pdb_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::policy::v1::PodDisruptionBudget;
+
+    let api: Api<PodDisruptionBudget> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(pdb) => match serde_yaml::to_string(&pdb) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize pdb to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting pdb YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_pdb_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::policy::v1::PodDisruptionBudget;
+
+    let mut pdb: PodDisruptionBudget = match serde_yaml::from_str(&body) {
+        Ok(pdb) => pdb,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    pdb.metadata.name = Some(name.clone());
+    pdb.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<PodDisruptionBudget> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&pdb) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting pdb YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "PodDisruptionBudget updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating pdb YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update pdb: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_pdb(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::policy::v1::PodDisruptionBudget;
+    let api: Api<PodDisruptionBudget> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted pdb {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting pdb {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// PriorityClass YAML handlers (cluster-scoped)
+async fn get_priorityclass_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::scheduling::v1::PriorityClass;
+
+    let api: Api<PriorityClass> = Api::all(state.client);
+    match api.get(&name).await {
+        Ok(priorityclass) => match serde_yaml::to_string(&priorityclass) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize priorityclass to YAML {}: {:?}",
+                    name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting priorityclass YAML {}: {:?}", name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_priorityclass_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::scheduling::v1::PriorityClass;
+
+    let mut priorityclass: PriorityClass = match serde_yaml::from_str(&body) {
+        Ok(priorityclass) => priorityclass,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    priorityclass.metadata.name = Some(name.clone());
+
+    let api: Api<PriorityClass> = Api::all(state.client);
+    let patch_value = match serde_json::to_value(&priorityclass) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting priorityclass YAML to JSON {}: {:?}",
+                name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "PriorityClass updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating priorityclass YAML {}: {:?}", name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update priorityclass: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_priorityclass(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::scheduling::v1::PriorityClass;
+    let api: Api<PriorityClass> = Api::all(state.client);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted priorityclass {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting priorityclass {}: {:?}", name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// RuntimeClass YAML handlers (cluster-scoped)
+async fn get_runtimeclass_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::node::v1::RuntimeClass;
+
+    let api: Api<RuntimeClass> = Api::all(state.client);
+    match api.get(&name).await {
+        Ok(runtimeclass) => match serde_yaml::to_string(&runtimeclass) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize runtimeclass to YAML {}: {:?}",
+                    name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting runtimeclass YAML {}: {:?}", name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_runtimeclass_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::node::v1::RuntimeClass;
+
+    let mut runtimeclass: RuntimeClass = match serde_yaml::from_str(&body) {
+        Ok(runtimeclass) => runtimeclass,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    runtimeclass.metadata.name = Some(name.clone());
+
+    let api: Api<RuntimeClass> = Api::all(state.client);
+    let patch_value = match serde_json::to_value(&runtimeclass) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting runtimeclass YAML to JSON {}: {:?}",
+                name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "RuntimeClass updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating runtimeclass YAML {}: {:?}", name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update runtimeclass: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_runtimeclass(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::node::v1::RuntimeClass;
+    let api: Api<RuntimeClass> = Api::all(state.client);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted runtimeclass {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting runtimeclass {}: {:?}", name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// Lease YAML handlers
+async fn get_lease_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::coordination::v1::Lease;
+
+    let api: Api<Lease> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(lease) => match serde_yaml::to_string(&lease) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!(
+                    "Failed to serialize lease to YAML {}/{}: {:?}",
+                    namespace, name, err
+                );
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting lease YAML {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+async fn update_lease_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::coordination::v1::Lease;
+
+    let mut lease: Lease = match serde_yaml::from_str(&body) {
+        Ok(lease) => lease,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    lease.metadata.name = Some(name.clone());
+    lease.metadata.namespace = Some(namespace.clone());
+
+    let api: Api<Lease> = Api::namespaced(state.client, &namespace);
+    let patch_value = match serde_json::to_value(&lease) {
+        Ok(value) => value,
+        Err(err) => {
+            error!(
+                "Failed converting lease YAML to JSON {}/{}: {:?}",
+                namespace, name, err
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "Lease updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating lease YAML {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update lease: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn delete_lease(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::coordination::v1::Lease;
+    let api: Api<Lease> = Api::namespaced(state.client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted lease {}/{}", namespace, name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting lease {}/{}: {:?}", namespace, name, err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
