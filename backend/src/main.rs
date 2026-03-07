@@ -270,6 +270,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/helm/releases", get(list_helm_releases))
         .route("/helm/charts", get(list_helm_charts))
         .route("/helm/releases/:namespace/:name/yaml", get(get_helm_release_yaml))
+        .route("/helm/releases/:namespace/:name/upgrade", post(upgrade_helm_release))
         .route("/helm/releases/:namespace/:name", delete(delete_helm_release))
         .route(
             "/persistentvolumes/:name/yaml",

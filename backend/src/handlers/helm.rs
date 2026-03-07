@@ -12,7 +12,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Read;
+use std::path::Path as FsPath;
+use std::process::Stdio;
 use std::time::Duration;
+use tokio::io::AsyncWriteExt;
+use tokio::process::Command;
 use tracing::error;
 
 use crate::AppState;
@@ -405,6 +409,212 @@ pub async fn delete_helm_release(
             )
                 .into_response()
         }
+    }
+}
+
+pub async fn upgrade_helm_release(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    let values_yaml = body.trim();
+    if values_yaml.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "message": "Values YAML is empty"
+            })),
+        )
+            .into_response();
+    }
+
+    let api: Api<Secret> = Api::namespaced(state.client, &namespace);
+    let lp = ListParams::default().labels(&format!("owner=helm,name={}", name));
+
+    let list = match api.list(&lp).await {
+        Ok(list) => list,
+        Err(err) => {
+            error!("Failed to list helm release secrets for upgrade: {}", err);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to inspect release: {}", err)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let best = list
+        .items
+        .iter()
+        .filter_map(|s| {
+            let rev: i64 = s
+                .metadata
+                .labels
+                .as_ref()
+                .and_then(|l| l.get("version"))
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            Some((rev, s))
+        })
+        .max_by_key(|(rev, _)| *rev)
+        .map(|(_, s)| s);
+
+    let Some(secret) = best else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "success": false,
+                "message": "Helm release not found"
+            })),
+        )
+            .into_response();
+    };
+
+    let release_json = match decode_helm_release_json(secret) {
+        Some(v) => v,
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": "Unable to decode Helm release metadata"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let chart_name = release_json["chart"]["metadata"]["name"]
+        .as_str()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let chart_version = release_json["chart"]["metadata"]["version"]
+        .as_str()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    if chart_name.is_empty() {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "success": false,
+                "message": "Unable to determine chart name for Helm release"
+            })),
+        )
+            .into_response();
+    }
+
+    // Prefer local chart path when available (e.g. ./helm/pertisk-kube), otherwise
+    // fall back to chart reference and rely on Helm's configured repositories.
+    let local_chart_path = FsPath::new("helm").join(&chart_name);
+    let chart_ref = if local_chart_path.exists() {
+        local_chart_path.to_string_lossy().to_string()
+    } else {
+        chart_name.clone()
+    };
+
+    let mut cmd = Command::new("helm");
+    cmd.arg("upgrade")
+        .arg(&name)
+        .arg(&chart_ref)
+        .arg("--namespace")
+        .arg(&namespace)
+        .arg("--install")
+        .arg("--values")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if !chart_version.is_empty() && chart_version != "-" {
+        cmd.arg("--version").arg(&chart_version);
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to run helm command: {}", err)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        if let Err(err) = stdin.write_all(values_yaml.as_bytes()).await {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed sending values to helm: {}", err)
+                })),
+            )
+                .into_response();
+        }
+    }
+
+    let output = match child.wait_with_output().await {
+        Ok(out) => out,
+        Err(err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed waiting for helm command: {}", err)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    if output.status.success() {
+        let message = if stdout.is_empty() {
+            format!("Helm release '{}' upgraded successfully", name)
+        } else {
+            stdout
+        };
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": message,
+                "chart": chart_ref,
+                "chartVersion": chart_version
+            })),
+        )
+            .into_response()
+    } else {
+        let message = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("helm upgrade failed with status {}", output.status)
+        };
+
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "message": message,
+                "chart": chart_ref,
+                "chartVersion": chart_version
+            })),
+        )
+            .into_response()
     }
 }
 

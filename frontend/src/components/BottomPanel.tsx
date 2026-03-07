@@ -35,6 +35,8 @@ export interface OpenPanelTabOptions {
   yamlContent?: string;
   title?: string;
   yamlActionLabel?: 'Apply' | 'Upgrade';
+  helmReleaseName?: string;
+  helmReleaseNamespace?: string;
 }
 
 /** Open a tab in the bottom panel from anywhere in the app */
@@ -58,6 +60,8 @@ interface PanelTab {
   yamlDirty?: boolean;
   title?: string;
   yamlActionLabel?: 'Apply' | 'Upgrade';
+  helmReleaseName?: string;
+  helmReleaseNamespace?: string;
 }
 
 const DEFAULT_YAML = `apiVersion: apps/v1
@@ -459,6 +463,8 @@ export const BottomPanel = () => {
               yamlDirty: false,
               title: opts?.title,
               yamlActionLabel: opts?.yamlActionLabel ?? 'Apply',
+              helmReleaseName: opts?.helmReleaseName,
+              helmReleaseNamespace: opts?.helmReleaseNamespace,
             }
           : {}),
         ...(opts?.podName
@@ -539,7 +545,16 @@ export const BottomPanel = () => {
     setYamlActionResult(null);
     try {
       const token = getAuthToken();
-      const res = await fetch('/api/apply', {
+      const isHelmUpgrade =
+        activeTab.yamlActionLabel === 'Upgrade' &&
+        !!activeTab.helmReleaseName &&
+        !!activeTab.helmReleaseNamespace;
+
+      const endpoint = isHelmUpgrade
+        ? `/api/helm/releases/${encodeURIComponent(activeTab.helmReleaseNamespace as string)}/${encodeURIComponent(activeTab.helmReleaseName as string)}/upgrade`
+        : '/api/apply';
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/yaml',

@@ -142,7 +142,10 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const [customResourcesOpen, setCustomResourcesOpen] = useState(false);
   const [expandedCrdGroups, setExpandedCrdGroups] = useState<Record<string, boolean>>({});
 
-  const { data: crds } = useCrds();
+  const location = useLocation();
+  const shouldLoadCrdMenu = customResourcesOpen || location.pathname.startsWith('/crds');
+
+  const { data: crds, isLoading: crdsLoading } = useCrds(shouldLoadCrdMenu);
 
   const crdGroups = useMemo(() => {
     if (!crds) return [];
@@ -162,7 +165,6 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const namespaceMenuRef = useRef<HTMLDivElement>(null);
   const theme = useTheme();
-  const location = useLocation();
   const { selectedNamespaces, setSelectedNamespaces, toggleNamespace, clearNamespaces, namespaces, setNamespaces } = useNamespace();
   const { data: realtimeNamespaces } = useRealtimeNamespaces();
   const { data: apiNamespaces } = useNamespaces();
@@ -821,8 +823,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
             </div>
 
             {/* Custom Resources — dynamic, grouped by API group */}
-            {crdGroups.length > 0 && (
-              <div className="space-y-1 order-10">
+            <div className="space-y-1 order-10">
                 <button
                   type="button"
                   onClick={() => {
@@ -852,54 +853,59 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
 
                 {!sidebarCollapsed && customResourcesOpen && (
                   <div className="space-y-1">
-                    {crdGroups.map(({ group, crds: groupCrds }) => {
-                      const isGroupOpen = expandedCrdGroups[group] ?? false;
-                      return (
-                        <div key={group} className="space-y-0.5">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setExpandedCrdGroups((p) => ({ ...p, [group]: !p[group] }))
-                            }
-                            className="w-full flex items-center gap-3 px-4 py-2 pl-7 text-sm text-text-secondary hover:text-text transition-colors"
-                          >
-                            <span className="flex-1 truncate text-left">{group}</span>
-                            <ChevronDown
-                              size={16}
-                              className={cn('transition-transform flex-shrink-0', isGroupOpen && 'rotate-180')}
-                            />
-                          </button>
-                          {isGroupOpen && (
-                            <div className="space-y-0.5">
-                              {groupCrds.map((crd) => {
-                                const crdPath = `/crds/${encodeURIComponent(crd.name)}`;
-                                const active = location.pathname === crdPath;
-                                return (
-                                  <Link
-                                    key={crd.name}
-                                    to={crdPath}
-                                    onClick={() => setSidebarOpen(false)}
-                                    className={cn(
-                                      'flex items-center gap-3 px-4 py-2 pl-12 rounded-lg transition-colors text-sm font-medium',
-                                      active
-                                        ? 'bg-hover text-[var(--color-primary)] font-semibold'
-                                        : 'text-text-secondary hover:bg-hover hover:text-text'
-                                    )}
-                                    title={crd.name}
-                                  >
-                                    <span className="truncate">{crd.kind}</span>
-                                  </Link>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {crdsLoading && (
+                      <div className="px-4 py-2 pl-7 text-xs text-text-secondary">Loading custom resources...</div>
+                    )}
+                    {!crdsLoading && crdGroups.length === 0 && (
+                      <div className="px-4 py-2 pl-7 text-xs text-text-secondary">No custom resources found</div>
+                    )}
+                    {!crdsLoading && crdGroups.map(({ group, crds: groupCrds }) => {
+                        const isGroupOpen = expandedCrdGroups[group] ?? false;
+                        return (
+                          <div key={group} className="space-y-0.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedCrdGroups((p) => ({ ...p, [group]: !p[group] }))
+                              }
+                              className="w-full flex items-center gap-3 px-4 py-2 pl-7 text-sm text-text-secondary hover:text-text transition-colors"
+                            >
+                              <span className="flex-1 truncate text-left">{group}</span>
+                              <ChevronDown
+                                size={16}
+                                className={cn('transition-transform flex-shrink-0', isGroupOpen && 'rotate-180')}
+                              />
+                            </button>
+                            {isGroupOpen && (
+                              <div className="space-y-0.5">
+                                {groupCrds.map((crd) => {
+                                  const crdPath = `/crds/${encodeURIComponent(crd.name)}`;
+                                  const active = location.pathname === crdPath;
+                                  return (
+                                    <Link
+                                      key={crd.name}
+                                      to={crdPath}
+                                      onClick={() => setSidebarOpen(false)}
+                                      className={cn(
+                                        'flex items-center gap-3 px-4 py-2 pl-12 rounded-lg transition-colors text-sm font-medium',
+                                        active
+                                          ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                                          : 'text-text-secondary hover:bg-hover hover:text-text'
+                                      )}
+                                      title={crd.name}
+                                    >
+                                      <span className="truncate">{crd.kind}</span>
+                                    </Link>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </div>
-            )}
           </nav>
         </div>
 

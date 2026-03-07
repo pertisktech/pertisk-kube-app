@@ -639,7 +639,7 @@ export const drainNode = async (name: string): Promise<void> => {
 };
 
 // CRD hooks
-export const useCrds = () => {
+export const useCrds = (enabled = true) => {
   return useQuery({
     queryKey: ['crds'],
     queryFn: async () => {
@@ -649,6 +649,7 @@ export const useCrds = () => {
       return data.data;
     },
     staleTime: 1000 * 60 * 5,
+    enabled,
   });
 };
 

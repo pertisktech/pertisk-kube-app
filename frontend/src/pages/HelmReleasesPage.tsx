@@ -185,6 +185,8 @@ export const HelmReleasesPage = () => {
         yamlContent: valuesYaml,
         title: `${release.name} values`,
         yamlActionLabel: 'Upgrade',
+        helmReleaseName: release.name,
+        helmReleaseNamespace: release.namespace,
       });
     } catch {
       openPanelTab({
@@ -192,6 +194,8 @@ export const HelmReleasesPage = () => {
         yamlContent: '# Failed to load Helm values\n',
         title: `${release.name} values`,
         yamlActionLabel: 'Upgrade',
+        helmReleaseName: release.name,
+        helmReleaseNamespace: release.namespace,
       });
     }
   };
