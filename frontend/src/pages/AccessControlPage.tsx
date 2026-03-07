@@ -11,7 +11,7 @@ const accessControlSections = [
 
 export const AccessControlPage = () => {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold text-text">Access Control <span className="text-base font-normal text-text-secondary">(Explore all RBAC and authentication resources.)</span></h1>
       </div>

@@ -89,7 +89,7 @@ export const NetworkPoliciesPage = () => {
     }
   };
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold text-text">Network Policies <span className="text-base font-normal text-text-secondary">(Manage Kubernetes network policy configurations)</span></h1>
       </div>

@@ -77,7 +77,7 @@ export const ClusterRolesPage = () => {
     }
   };
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold text-text">Cluster Roles <span className="text-base font-normal text-text-secondary">(Cluster-wide RBAC roles defining permissions across all namespaces.)</span></h1>
       </div>

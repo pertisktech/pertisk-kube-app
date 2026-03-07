@@ -113,7 +113,7 @@ export const EventsPage = () => {
   }, [data, sortState, selectedNamespaces]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold text-text">Events <span className="text-base font-normal text-text-secondary">(View cluster events in real-time)</span></h1>
       </div>

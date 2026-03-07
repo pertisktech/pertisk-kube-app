@@ -78,7 +78,7 @@ export const ClusterRoleBindingsPage = () => {
     }
   };
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold text-text">Cluster Role Bindings <span className="text-base font-normal text-text-secondary">(Cluster-wide bindings connecting cluster roles to subjects.)</span></h1>
       </div>

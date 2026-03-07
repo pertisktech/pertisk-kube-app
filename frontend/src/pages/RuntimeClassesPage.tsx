@@ -141,7 +141,7 @@ export const RuntimeClassesPage = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold text-text">Runtime Classes <span className="text-base font-normal text-text-secondary">(Manage Kubernetes Runtime Classes)</span></h1>
       </div>

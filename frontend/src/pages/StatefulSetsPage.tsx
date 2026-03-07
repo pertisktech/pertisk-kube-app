@@ -227,7 +227,7 @@ export const StatefulSetsPage = () => {
   }, [data, sortState, selectedNamespaces]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold text-text">StatefulSets <span className="text-base font-normal text-text-secondary">(Manage StatefulSet resources)</span></h1>
       </div>

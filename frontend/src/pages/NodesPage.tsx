@@ -290,7 +290,7 @@ export const NodesPage = () => {
   }, [data, sortState]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold text-text">Nodes <span className="text-base font-normal text-text-secondary">(View cluster nodes)</span></h1>
       </div>

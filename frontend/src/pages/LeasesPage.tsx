@@ -154,7 +154,7 @@ export const LeasesPage = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold text-text">Leases <span className="text-base font-normal text-text-secondary">(Manage Kubernetes Leases)</span></h1>
       </div>

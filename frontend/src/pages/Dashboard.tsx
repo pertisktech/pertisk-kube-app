@@ -144,7 +144,7 @@ export const Dashboard = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Enhanced Cluster Overview - matching pertisk-kube style */}
       <div className="bg-surface border border-border rounded-lg p-6 backdrop-blur-sm">
         <div className="flex items-center justify-between mb-6">

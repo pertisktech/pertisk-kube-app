@@ -938,7 +938,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-auto bg-bg p-6 min-h-0">
+        <main className="flex-1 overflow-auto bg-bg p-4 min-h-0">
           <Outlet />
         </main>
 
