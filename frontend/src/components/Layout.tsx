@@ -779,21 +779,6 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
           </nav>
         </div>
 
-        {/* Terminal button at bottom */}
-        <div className="p-4 border-t border-border">
-          <button
-            onClick={() => { openPanelTab({ type: 'host-shell' }); setSidebarOpen(false); }}
-            className={cn(
-              'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
-              sidebarCollapsed && 'justify-center px-2',
-              'text-text-secondary hover:bg-hover hover:text-text'
-            )}
-            title="Open Terminal"
-          >
-            <Terminal size={18} className="flex-shrink-0" />
-            {!sidebarCollapsed && <span>Terminal</span>}
-          </button>
-        </div>
       </aside>
 
       {/* Main content */}

@@ -546,8 +546,11 @@ export const BottomPanel = () => {
 
   return (
     <div
-      className="relative flex-shrink-0 flex flex-col mx-2 mb-2 rounded-xl overflow-hidden shadow-[0_-4px_24px_rgba(0,0,0,0.25)] ring-1 ring-primary/50 bg-sidebar"
-      style={(needsHeight ? { height: showContent ? panelHeight : Math.max(panelHeight, ADD_OPTIONS.length * MENU_ITEM_HEIGHT + 40) } : {}) as CSSProperties}
+      className="relative flex-shrink-0 flex flex-col mx-2 mb-2 rounded-xl overflow-hidden bg-sidebar"
+      style={{
+        boxShadow: '0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent), 0 -4px 24px rgba(0,0,0,0.25)',
+        ...(needsHeight ? { height: showContent ? panelHeight : Math.max(panelHeight, ADD_OPTIONS.length * MENU_ITEM_HEIGHT + 40) } : {}),
+      } as CSSProperties}
     >
       {/* Accent top strip */}
       <div className="h-0.5 flex-shrink-0 bg-gradient-to-r from-primary/40 via-primary to-primary/40" />
