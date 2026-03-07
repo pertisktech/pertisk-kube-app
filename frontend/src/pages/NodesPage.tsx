@@ -171,8 +171,22 @@ export const NodesPage = () => {
     },
     {
       header: 'Taints',
-      accessor: (row: K8sNode) => row.taints?.join(', ') || '-',
-      width: '18%',
+      accessor: (row: K8sNode) => {
+        const count = row.taints?.length ?? 0;
+        if (count === 0) {
+          return <span className="text-xs text-text-secondary">0</span>;
+        }
+        const tooltip = row.taints!.join('\n');
+        return (
+          <span
+            title={tooltip}
+            className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 cursor-default"
+          >
+            {count}
+          </span>
+        );
+      },
+      width: '8%',
       sortable: true,
       sortKey: 'taints',
     },
@@ -282,7 +296,7 @@ export const NodesPage = () => {
         return (toPercent(first.memory_usage_percent) - toPercent(second.memory_usage_percent)) * factor;
       }
       if (sortState.key === 'taints') {
-        return (first.taints?.join(',') || '').localeCompare(second.taints?.join(',') || '') * factor;
+        return ((first.taints?.length ?? 0) - (second.taints?.length ?? 0)) * factor;
       }
 
       return (first.runtime || '').localeCompare(second.runtime || '') * factor;
