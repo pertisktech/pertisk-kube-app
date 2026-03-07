@@ -627,6 +627,7 @@ export const BottomPanel = () => {
       {showContent && (
         <div className="flex-1 min-h-0 overflow-hidden bg-sidebar">
           <TabContent
+            key={activeTab.id}
             tab={activeTab}
             onConnect={(target) => connectTab(activeTab.id, target)}
             onYamlChange={(content) => updateYaml(activeTab.id, content)}
