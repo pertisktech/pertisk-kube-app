@@ -14,6 +14,7 @@ use tower_http::{
 };
 use tonic::transport::Server;
 use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
 
 mod grpc_service;
 mod proto;
@@ -47,7 +48,13 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().with_env_filter("info").init();
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    tracing_subscriber::fmt()
+        .json()
+        .with_current_span(true)
+        .with_span_list(true)
+        .with_env_filter(env_filter)
+        .init();
 
     // In-cluster config (works in Kubernetes) or falls back to local kubeconfig.
     let client = Client::try_default().await?;

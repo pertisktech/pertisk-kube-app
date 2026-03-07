@@ -34,6 +34,12 @@ RUN VITE_APP_VERSION=${VERSION} npm run build
 FROM ${BASE_REGISTRY}/web-base-backend:${BASE_TAG} AS backend-builder
 WORKDIR /app
 
+# Keep manifests in sync with source so dependency feature changes are respected.
+COPY Cargo.toml ./Cargo.toml
+COPY Cargo.lock ./Cargo.lock
+COPY backend/Cargo.toml ./backend/Cargo.toml
+COPY backend/build.rs ./backend/build.rs
+
 # Replace dummy source with real application code
 COPY backend/src ./backend/src
 

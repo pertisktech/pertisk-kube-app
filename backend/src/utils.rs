@@ -4,7 +4,6 @@ use kube::{
     Api, Client,
 };
 use std::collections::HashMap;
-use tracing::{error, info, warn};
 
 pub fn format_compact_duration(seconds: i64) -> String {
     if seconds < 60 {
@@ -118,13 +117,8 @@ pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (Str
 
     let metrics_list = match metrics_api.list(&ListParams::default()).await {
         Ok(list) => list,
-        Err(err) => {
-            error!("Error fetching pod metrics from metrics.k8s.io: {:?}", err);
-            return metrics_map;
-        }
+        Err(_) => return metrics_map,
     };
-
-    info!("Fetched {} pod metrics", metrics_list.items.len());
 
     for metric in metrics_list.items {
         let namespace = metric.metadata.namespace.clone().unwrap_or_default();
@@ -135,18 +129,12 @@ pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (Str
 
         let metric_value = match serde_json::to_value(&metric) {
             Ok(value) => value,
-            Err(e) => {
-                error!("Failed to serialize metric for {}/{}: {}", namespace, name, e);
-                continue;
-            }
+            Err(_) => continue,
         };
 
         let containers = match metric_value.get("containers").and_then(|value| value.as_array()) {
             Some(containers) => containers,
-            None => {
-                warn!("No containers found in metrics for {}/{}", namespace, name);
-                continue;
-            }
+            None => continue,
         };
 
         let mut cpu_millicores_total = 0.0;
@@ -154,7 +142,7 @@ pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (Str
         let mut has_cpu = false;
         let mut has_memory = false;
 
-        for (idx, container) in containers.iter().enumerate() {
+        for container in containers {
             if let Some(cpu_value) = container
                 .get("usage")
                 .and_then(|value| value.get("cpu"))
@@ -163,7 +151,6 @@ pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (Str
             {
                 has_cpu = true;
                 cpu_millicores_total += cpu_value;
-                info!("Container {} {}/{} CPU: {}m", idx, namespace, name, cpu_value);
             }
 
             if let Some(memory_value) = container
@@ -174,7 +161,6 @@ pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (Str
             {
                 has_memory = true;
                 memory_bytes_total += memory_value;
-                info!("Container {} {}/{} Memory: {} bytes", idx, namespace, name, memory_value);
             }
         }
 
@@ -190,11 +176,9 @@ pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (Str
             "-".to_string()
         };
 
-        info!("Metrics for {}/{}: CPU={}, Memory={}", namespace, name, cpu, memory);
         metrics_map.insert((namespace, name), (cpu, memory));
     }
 
-    info!("Total metrics collected: {}", metrics_map.len());
     metrics_map
 }
 
@@ -207,10 +191,7 @@ pub async fn fetch_node_metrics(client: Client) -> HashMap<String, (String, Stri
 
     let metrics_list = match metrics_api.list(&ListParams::default()).await {
         Ok(list) => list,
-        Err(err) => {
-            error!("Error fetching node metrics from metrics.k8s.io: {:?}", err);
-            return metrics_map;
-        }
+        Err(_) => return metrics_map,
     };
 
     for metric in metrics_list.items {
@@ -221,10 +202,7 @@ pub async fn fetch_node_metrics(client: Client) -> HashMap<String, (String, Stri
 
         let metric_value = match serde_json::to_value(&metric) {
             Ok(value) => value,
-            Err(e) => {
-                error!("Failed to serialize node metric for {}: {}", name, e);
-                continue;
-            }
+            Err(_) => continue,
         };
 
         let cpu = metric_value

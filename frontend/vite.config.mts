@@ -26,6 +26,11 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
+    // Remove console/debugger statements from production bundle output.
+    minify: "esbuild",
+    esbuild: {
+      drop: ["console", "debugger"],
+    },
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
