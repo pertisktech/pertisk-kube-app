@@ -1,16 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import AceEditor from 'react-ace';
-import 'ace-builds/src-noconflict/mode-yaml';
-import 'ace-builds/src-noconflict/theme-github';
-import 'ace-builds/src-noconflict/theme-tomorrow_night';
-import { FileCode2, Terminal as TerminalIcon, X, Loader, Check } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import { useNodes, deleteNode, cordonNode, uncordonNode, drainNode } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { StatusBadge } from '../components/StatusBadge';
-import { Terminal } from '../components/Terminal';
-import { useTheme } from '../context/ThemeContext';
+import { openPanelTab } from '../components/BottomPanel';
 import { getAuthToken } from '../utils/auth';
 import type { K8sNode } from '../types';
 
@@ -44,31 +39,14 @@ const toPercent = (value?: number) => {
 
 export const NodesPage = () => {
   const { data, isLoading, error } = useNodes();
-  const theme = useTheme();
   const [selectedNode, setSelectedNode] = useState<K8sNode | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-
-  // Drawer: 'yaml' | 'shell' | null
-  type NodeDrawer = 'yaml' | 'shell';
-  const [nodeDrawer, setNodeDrawer] = useState<NodeDrawer | null>(null);
-  const [drawerHeightPx, setDrawerHeightPx] = useState<number | null>(null);
-
-  // YAML editor state
-  const [nodeYaml, setNodeYaml] = useState('');
-  const [nodeYamlLoading, setNodeYamlLoading] = useState(false);
-  const [nodeYamlError, setNodeYamlError] = useState<string | null>(null);
-  const [nodeYamlSaving, setNodeYamlSaving] = useState(false);
-  const [nodeYamlSaveError, setNodeYamlSaveError] = useState<string | null>(null);
-  const [nodeYamlSaveSuccess, setNodeYamlSaveSuccess] = useState(false);
 
   // Confirm dialog for delete/drain
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'drain'; name: string } | null>(null);
   const [nodeActionLoading, setNodeActionLoading] = useState(false);
   const [nodeActionError, setNodeActionError] = useState<string | null>(null);
   const [cordonLoading, setCordonLoading] = useState(false);
-
-  const resizeStartYRef = useRef<number | null>(null);
-  const resizeStartHeightRef = useRef<number | null>(null);
 
   const [sortState, setSortState] = useState<{ key: NodeSortKey; direction: 'asc' | 'desc' }>({
     key: 'name',
@@ -97,59 +75,23 @@ export const NodesPage = () => {
 
   const handleOpenYaml = async (node: K8sNode) => {
     setPanelOpen(false);
-    setNodeDrawer('yaml');
-    setNodeYaml('');
-    setNodeYamlError(null);
-    setNodeYamlSaveError(null);
-    setNodeYamlSaveSuccess(false);
-    setNodeYamlLoading(true);
     try {
       const token = getAuthToken();
       const res = await fetch(`/api/nodes/${encodeURIComponent(node.name)}/yaml`, {
         headers: token ? { Authorization: token } : {},
       });
-      if (!res.ok) throw new Error(`Failed to load YAML: ${res.statusText}`);
+      if (!res.ok) throw new Error(`Failed: ${res.statusText}`);
       const yaml = await res.text();
-      setNodeYaml(yaml);
-    } catch (err) {
-      setNodeYamlError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setNodeYamlLoading(false);
-    }
-  };
-
-  const handleSaveYaml = async () => {
-    if (!selectedNode || !nodeYaml) return;
-    setNodeYamlSaving(true);
-    setNodeYamlSaveError(null);
-    setNodeYamlSaveSuccess(false);
-    try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/nodes/${encodeURIComponent(selectedNode.name)}/yaml`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/yaml',
-          ...(token ? { Authorization: token } : {}),
-        },
-        body: nodeYaml,
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(text || `Save failed (${res.status})`);
-      }
-      setNodeYamlSaveSuccess(true);
-      setTimeout(() => setNodeYamlSaveSuccess(false), 3000);
-    } catch (err) {
-      setNodeYamlSaveError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setNodeYamlSaving(false);
+      openPanelTab({ type: 'yaml-editor', yamlContent: yaml });
+    } catch {
+      openPanelTab({ type: 'yaml-editor' });
     }
   };
 
   const handleOpenShell = (node: K8sNode) => {
     setSelectedNode(node);
     setPanelOpen(false);
-    setNodeDrawer('shell');
+    openPanelTab({ type: 'node-exec', podName: node.name });
   };
 
   const handleCordonToggle = async (node: K8sNode) => {
@@ -177,7 +119,6 @@ export const NodesPage = () => {
         await deleteNode(confirmAction.name);
         setSelectedNode(null);
         setPanelOpen(false);
-        setNodeDrawer(null);
       } else if (confirmAction.type === 'drain') {
         await drainNode(confirmAction.name);
       }
@@ -188,26 +129,6 @@ export const NodesPage = () => {
     } finally {
       setNodeActionLoading(false);
     }
-  };
-
-  const handleStartDrawerResize = (clientY: number) => {
-    resizeStartYRef.current = clientY;
-    resizeStartHeightRef.current = drawerHeightPx ?? 420;
-    const handleMouseMove = (event: MouseEvent) => {
-      if (resizeStartYRef.current === null || resizeStartHeightRef.current === null) return;
-      const delta = resizeStartYRef.current - event.clientY;
-      const minHeight = 220;
-      const maxHeight = Math.floor(window.innerHeight * 0.85);
-      setDrawerHeightPx(Math.max(minHeight, Math.min(maxHeight, resizeStartHeightRef.current + delta)));
-    };
-    const handleMouseUp = () => {
-      resizeStartYRef.current = null;
-      resizeStartHeightRef.current = null;
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
   };
 
   const columns = [
@@ -369,10 +290,7 @@ export const NodesPage = () => {
   }, [data, sortState]);
 
   return (
-    <div
-      className="space-y-6"
-      style={{ paddingBottom: nodeDrawer ? (drawerHeightPx ?? 420) : 0 }}
-    >
+    <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-text">Nodes</h1>
         <p className="text-text-secondary mt-1">View cluster nodes</p>
@@ -400,106 +318,6 @@ export const NodesPage = () => {
         </div>
       )}
 
-      {/* YAML / Shell drawer */}
-      {nodeDrawer && selectedNode && (
-        <section className="fixed bottom-0 left-0 md:left-[var(--layout-sidebar-width,16rem)] right-0 z-[96]">
-          <div className="px-6">
-            <div
-              className="bg-surface border border-border rounded-t-lg shadow-2xl overflow-hidden flex flex-col relative"
-              style={{ height: drawerHeightPx ? `${drawerHeightPx}px` : 'clamp(220px, 45vh, 620px)' }}
-            >
-              {/* Resize handle */}
-              <div
-                className="absolute top-0 left-0 right-0 h-1.5 cursor-row-resize hover:bg-primary/30 transition-colors z-10"
-                onMouseDown={(e) => handleStartDrawerResize(e.clientY)}
-              />
-
-              {/* Drawer header */}
-              <div className="flex items-center justify-between px-4 py-2 border-b border-border flex-shrink-0">
-                <div className="flex items-center gap-3">
-                  {nodeDrawer === 'yaml' ? (
-                    <FileCode2 size={15} className="text-primary" />
-                  ) : (
-                    <TerminalIcon size={15} className="text-primary" />
-                  )}
-                  <span className="text-sm font-medium text-text">
-                    {nodeDrawer === 'yaml' ? `YAML — ${selectedNode.name}` : `Node Shell — ${selectedNode.name}`}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {nodeDrawer === 'yaml' && (
-                    <>
-                      {nodeYamlSaveError && (
-                        <span className="text-xs text-[var(--color-icon-danger)]">{nodeYamlSaveError}</span>
-                      )}
-                      {nodeYamlSaveSuccess && (
-                        <span className="inline-flex items-center gap-1 text-xs text-green-500">
-                          <Check size={12} /> Saved
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        disabled={nodeYamlSaving || nodeYamlLoading}
-                        onClick={handleSaveYaml}
-                        className="px-3 py-1 text-xs rounded-md bg-primary text-bg disabled:opacity-50 hover:opacity-90 transition-opacity"
-                      >
-                        {nodeYamlSaving ? 'Saving…' : 'Save'}
-                      </button>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setNodeDrawer(null)}
-                    className="p-1.5 rounded-md hover:bg-hover text-text-secondary"
-                    aria-label="Close drawer"
-                  >
-                    <X size={15} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Drawer body */}
-              <div className="flex-1 overflow-hidden">
-                {nodeDrawer === 'yaml' && (
-                  <>
-                    {nodeYamlLoading && (
-                      <div className="flex items-center justify-center h-full gap-2 text-text-secondary">
-                        <Loader size={20} className="animate-spin" />
-                        <span className="text-sm">Loading YAML…</span>
-                      </div>
-                    )}
-                    {nodeYamlError && (
-                      <div className="flex items-center justify-center h-full text-[var(--color-icon-danger)] text-sm">
-                        {nodeYamlError}
-                      </div>
-                    )}
-                    {!nodeYamlLoading && !nodeYamlError && (
-                      <AceEditor
-                        mode="yaml"
-                        theme={theme?.isDark ? 'tomorrow_night' : 'github'}
-                        value={nodeYaml}
-                        onChange={(value) => setNodeYaml(value)}
-                        width="100%"
-                        height="100%"
-                        fontSize={13}
-                        showPrintMargin={false}
-                        editorProps={{ $blockScrolling: true }}
-                        setOptions={{ useWorker: false, tabSize: 2 }}
-                      />
-                    )}
-                  </>
-                )}
-                {nodeDrawer === 'shell' && (
-                  <Terminal
-                    podName={selectedNode.name}
-                    namespace="node"
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* Detail panel */}
       {panelOpen && selectedNode && (
