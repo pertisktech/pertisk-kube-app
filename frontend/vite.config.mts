@@ -26,6 +26,20 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          "vendor-query": ["@tanstack/react-query"],
+          "vendor-recharts": ["recharts"],
+          "vendor-chartjs": ["chart.js", "react-chartjs-2"],
+          "vendor-editor": ["ace-builds", "react-ace"],
+          "vendor-terminal": ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-web-links"],
+          "vendor-yaml": ["yaml"],
+        },
+      },
+    },
   },
 });
 

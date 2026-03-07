@@ -1,50 +1,50 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Layout } from './components';
 import { NamespaceProvider } from './context/NamespaceContext';
 import { clearAuth, getAuthUser, getTokenExpiry, isAuthenticated, refreshToken } from './utils/auth';
-import {
-  Dashboard,
-  NamespacesPage,
-  NodesPage,
-  PodsPage,
-  DeploymentsPage,
-  StatefulSetsPage,
-  DaemonSetsPage,
-  ReplicaSetsPage,
-  JobsPage,
-  CronJobsPage,
-  EventsPage,
-  HelmResourcePage,
-  ConfigResourcePage,
-  LoginPage,
-  ConfigMapsPage,
-  SecretsPage,
-  ResourceQuotasPage,
-  LimitRangesPage,
-  HPAPage,
-  PDBPage,
-  PriorityClassesPage,
-  RuntimeClassesPage,
-  LeasesPage,
-  ServicesPage,
-  EndpointsPage,
-  IngressesPage,
-  IngressClassesPage,
-  NetworkPoliciesPage,
-  PortForwardingPage,
-  NetworkPage,
-  StoragePage,
-  PersistentVolumesPage,
-  PersistentVolumeClaimsPage,
-  StorageClassesPage,
-  AccessControlPage,
-  ServiceAccountsPage,
-  RolesPage,
-  RoleBindingsPage,
-  ClusterRolesPage,
-  ClusterRoleBindingsPage,
-} from './pages';
+
+const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const NamespacesPage = lazy(() => import('./pages/NamespacesPage').then(m => ({ default: m.NamespacesPage })));
+const NodesPage = lazy(() => import('./pages/NodesPage').then(m => ({ default: m.NodesPage })));
+const PodsPage = lazy(() => import('./pages/PodsPage').then(m => ({ default: m.PodsPage })));
+const DeploymentsPage = lazy(() => import('./pages/DeploymentsPage').then(m => ({ default: m.DeploymentsPage })));
+const StatefulSetsPage = lazy(() => import('./pages/StatefulSetsPage').then(m => ({ default: m.StatefulSetsPage })));
+const DaemonSetsPage = lazy(() => import('./pages/DaemonSetsPage').then(m => ({ default: m.DaemonSetsPage })));
+const ReplicaSetsPage = lazy(() => import('./pages/ReplicaSetsPage').then(m => ({ default: m.ReplicaSetsPage })));
+const JobsPage = lazy(() => import('./pages/JobsPage').then(m => ({ default: m.JobsPage })));
+const CronJobsPage = lazy(() => import('./pages/CronJobsPage').then(m => ({ default: m.CronJobsPage })));
+const EventsPage = lazy(() => import('./pages/EventsPage').then(m => ({ default: m.EventsPage })));
+const HelmResourcePage = lazy(() => import('./pages/HelmResourcePage').then(m => ({ default: m.HelmResourcePage })));
+const ConfigResourcePage = lazy(() => import('./pages/ConfigResourcePage').then(m => ({ default: m.ConfigResourcePage })));
+const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
+const ConfigMapsPage = lazy(() => import('./pages/ConfigMapsPage').then(m => ({ default: m.ConfigMapsPage })));
+const SecretsPage = lazy(() => import('./pages/SecretsPage').then(m => ({ default: m.SecretsPage })));
+const ResourceQuotasPage = lazy(() => import('./pages/ResourceQuotasPage').then(m => ({ default: m.ResourceQuotasPage })));
+const LimitRangesPage = lazy(() => import('./pages/LimitRangesPage').then(m => ({ default: m.LimitRangesPage })));
+const HPAPage = lazy(() => import('./pages/HPAPage').then(m => ({ default: m.HPAPage })));
+const PDBPage = lazy(() => import('./pages/PDBPage').then(m => ({ default: m.PDBPage })));
+const PriorityClassesPage = lazy(() => import('./pages/PriorityClassesPage').then(m => ({ default: m.PriorityClassesPage })));
+const RuntimeClassesPage = lazy(() => import('./pages/RuntimeClassesPage').then(m => ({ default: m.RuntimeClassesPage })));
+const LeasesPage = lazy(() => import('./pages/LeasesPage').then(m => ({ default: m.LeasesPage })));
+const ServicesPage = lazy(() => import('./pages/ServicesPage').then(m => ({ default: m.ServicesPage })));
+const EndpointsPage = lazy(() => import('./pages/EndpointsPage').then(m => ({ default: m.EndpointsPage })));
+const IngressesPage = lazy(() => import('./pages/IngressesPage').then(m => ({ default: m.IngressesPage })));
+const IngressClassesPage = lazy(() => import('./pages/IngressClassesPage').then(m => ({ default: m.IngressClassesPage })));
+const NetworkPoliciesPage = lazy(() => import('./pages/NetworkPoliciesPage').then(m => ({ default: m.NetworkPoliciesPage })));
+const PortForwardingPage = lazy(() => import('./pages/PortForwardingPage').then(m => ({ default: m.PortForwardingPage })));
+const NetworkPage = lazy(() => import('./pages/NetworkPage').then(m => ({ default: m.NetworkPage })));
+const StoragePage = lazy(() => import('./pages/StoragePage').then(m => ({ default: m.StoragePage })));
+const PersistentVolumesPage = lazy(() => import('./pages/PersistentVolumesPage').then(m => ({ default: m.PersistentVolumesPage })));
+const PersistentVolumeClaimsPage = lazy(() => import('./pages/PersistentVolumeClaimsPage').then(m => ({ default: m.PersistentVolumeClaimsPage })));
+const StorageClassesPage = lazy(() => import('./pages/StorageClassesPage').then(m => ({ default: m.StorageClassesPage })));
+const AccessControlPage = lazy(() => import('./pages/AccessControlPage').then(m => ({ default: m.AccessControlPage })));
+const ServiceAccountsPage = lazy(() => import('./pages/ServiceAccountsPage').then(m => ({ default: m.ServiceAccountsPage })));
+const RolesPage = lazy(() => import('./pages/RolesPage').then(m => ({ default: m.RolesPage })));
+const RoleBindingsPage = lazy(() => import('./pages/RoleBindingsPage').then(m => ({ default: m.RoleBindingsPage })));
+const ClusterRolesPage = lazy(() => import('./pages/ClusterRolesPage').then(m => ({ default: m.ClusterRolesPage })));
+const ClusterRoleBindingsPage = lazy(() => import('./pages/ClusterRoleBindingsPage').then(m => ({ default: m.ClusterRoleBindingsPage })));
+
 
 export const App = () => {
   const [authenticated, setAuthenticated] = useState(() => isAuthenticated());
@@ -95,14 +95,19 @@ export const App = () => {
   }, []);
 
   if (!authenticated) {
-    return <LoginPage onLogin={handleLogin} />;
+    return (
+      <Suspense fallback={null}>
+        <LoginPage onLogin={handleLogin} />
+      </Suspense>
+    );
   }
 
   return (
     <NamespaceProvider>
       <Router>
-        <Routes>
-          <Route element={<Layout username={authUser} onLogout={handleLogout} />}>
+        <Suspense fallback={null}>
+          <Routes>
+            <Route element={<Layout username={authUser} onLogout={handleLogout} />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/terminal" element={null} />
           <Route path="/namespaces" element={<NamespacesPage />} />
@@ -147,7 +152,8 @@ export const App = () => {
           <Route path="/events" element={<EventsPage />} />
         </Route>
       </Routes>
-    </Router>
+        </Suspense>
+      </Router>
     </NamespaceProvider>
   );
 };
