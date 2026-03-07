@@ -32,6 +32,8 @@ const sanitizeCrdYamlForEdit = (yamlText: string): string => {
       }
     }
 
+    delete parsed.status;
+
     return YAML.stringify(parsed, { lineWidth: 0 });
   } catch {
     return yamlText;

@@ -15,8 +15,8 @@ import {
   Terminal,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Terminal as TerminalComponent } from './Terminal';
-import { useTheme } from '../context/ThemeContext';
 import { useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
 import { getAuthToken } from '../utils/auth';
 import { cn } from '../utils';
@@ -281,10 +281,9 @@ const YamlEditorTab = ({
   title?: string;
   onContentChange: (content: string) => void;
 }) => {
-  const theme = useTheme();
   const [yaml, setYaml] = useState(initialContent);
   const [applying, setApplying] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean } | null>(null);
 
   const handleChange = (value: string) => {
     setYaml(value);
@@ -306,31 +305,42 @@ const YamlEditorTab = ({
         body: yaml,
       });
       const text = await res.text().catch(() => '');
-      setResult({
-        ok: res.ok,
-        message: text || (res.ok ? 'Applied successfully' : `Error ${res.status}`),
-      });
+      let message: string;
+      try {
+        const json = JSON.parse(text);
+        message = json.message ?? (res.ok ? 'Applied successfully' : `Error ${res.status}`);
+      } catch {
+        message = text || (res.ok ? 'Applied successfully' : `Error ${res.status}`);
+      }
+      setResult({ ok: res.ok });
+      if (res.ok) {
+        toast.success(message);
+      } else {
+        toast.error(message);
+      }
     } catch (err) {
-      setResult({ ok: false, message: err instanceof Error ? err.message : 'Network error' });
+      const message = err instanceof Error ? err.message : 'Network error';
+      setResult({ ok: false });
+      toast.error(message);
     } finally {
       setApplying(false);
     }
   };
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center gap-2 px-3 py-1 border-b border-border flex-shrink-0 bg-surface">
-        <span className="text-xs text-text-secondary">{title ?? 'New Resource'}</span>
+    <div className="yaml-editor-pane h-full flex flex-col bg-surface-elevated">
+      <div className="flex items-center gap-2 px-3 py-1 border-b border-white/10 flex-shrink-0 bg-surface-elevated">
+        <span className="text-xs text-white/50">{title ?? 'New Resource'}</span>
         {result && (
-          <span className={cn('text-xs truncate max-w-xs', result.ok ? 'text-green-500' : 'text-red-400')}>
-            {result.message.slice(0, 100)}
+          <span className={cn('text-xs', result.ok ? 'text-green-400' : 'text-red-400')}>
+            {result.ok ? 'Applied ✓' : 'Failed ✗'}
           </span>
         )}
         <button
           type="button"
           onClick={handleApply}
           disabled={applying}
-          className="ml-auto px-3 py-0.5 rounded bg-primary text-bg text-xs font-medium disabled:opacity-40 hover:opacity-90"
+          className="ml-auto px-3 py-0.5 rounded bg-primary text-white text-xs font-medium disabled:opacity-40 hover:opacity-90"
         >
           {applying ? 'Applying…' : 'Apply'}
         </button>
@@ -338,7 +348,7 @@ const YamlEditorTab = ({
       <div className="flex-1 overflow-hidden">
         <AceEditor
           mode="yaml"
-          theme={theme?.isDark ? 'tomorrow_night' : 'github'}
+          theme="tomorrow_night"
           value={yaml}
           onChange={handleChange}
           width="100%"

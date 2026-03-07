@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import { Layout } from './components';
 import { NamespaceProvider } from './context/NamespaceContext';
 import { clearAuth, getAuthUser, getTokenExpiry, isAuthenticated, refreshToken } from './utils/auth';
@@ -105,6 +106,21 @@ export const App = () => {
 
   return (
     <NamespaceProvider>
+      <Toaster
+        position="top-right"
+        closeButton
+        toastOptions={{
+          style: {
+            background: 'var(--color-naturals-n3)',
+            border: '1px solid var(--color-naturals-n6)',
+            color: 'var(--color-naturals-n13)',
+            borderRadius: 'var(--radius-lg)',
+            fontSize: '13px',
+            fontFamily: 'var(--font-sans)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
+          },
+        }}
+      />
       <Router>
           <Routes>
             <Route element={<Layout username={authUser} onLogout={handleLogout} />}>

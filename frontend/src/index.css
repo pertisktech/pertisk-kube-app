@@ -256,3 +256,46 @@ body,
   opacity: 1;
 }
 
+/* Sonner toaster — match app theme */
+[data-sonner-toast] {
+  gap: 10px !important;
+}
+[data-sonner-toast] [data-title] {
+  font-weight: 500;
+  color: var(--color-naturals-n13) !important;
+}
+[data-sonner-toast] [data-description] {
+  color: var(--color-naturals-n11) !important;
+}
+[data-sonner-toast][data-type='success'] {
+  border-color: color-mix(in srgb, #10b981 30%, var(--color-naturals-n6)) !important;
+}
+[data-sonner-toast][data-type='success'] [data-icon] svg {
+  color: #10b981 !important;
+}
+[data-sonner-toast][data-type='error'] {
+  border-color: color-mix(in srgb, #ef4444 30%, var(--color-naturals-n6)) !important;
+}
+[data-sonner-toast][data-type='error'] [data-icon] svg {
+  color: #ef4444 !important;
+}
+[data-sonner-toast] [data-close-button] {
+  background: var(--color-naturals-n4) !important;
+  border-color: var(--color-naturals-n6) !important;
+  color: var(--color-naturals-n11) !important;
+}
+[data-sonner-toast] [data-close-button]:hover {
+  background: var(--color-naturals-n6) !important;
+  color: var(--color-naturals-n13) !important;
+}
+
+/* YAML editor — override Ace background to match terminal surface */
+.yaml-editor-pane .ace_editor,
+.yaml-editor-pane .ace_scroller,
+.yaml-editor-pane .ace_content {
+  background: var(--color-surface-elevated) !important;
+}
+.yaml-editor-pane .ace_gutter {
+  background: color-mix(in srgb, var(--color-surface-elevated) 85%, black 15%) !important;
+}
+
