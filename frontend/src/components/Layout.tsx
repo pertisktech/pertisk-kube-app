@@ -322,12 +322,6 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
 
   const initial = username ? username.charAt(0).toUpperCase() : 'U';
 
-  // Update browser tab title based on current page
-  useEffect(() => {
-    const last = breadcrumbs[breadcrumbs.length - 1];
-    document.title = last ? `${last.label} | Pertisk Kube` : 'Pertisk Kube';
-  }, [breadcrumbs]);
-
   return (
     <div
       className="flex h-screen bg-bg text-text"
