@@ -241,6 +241,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/crds/:crd_name/resources/:name", delete(delete_custom_resource))
         .route("/helm/releases", get(list_helm_releases))
         .route("/helm/charts", get(list_helm_charts))
+        .route("/helm/releases/:namespace/:name/yaml", get(get_helm_release_yaml))
+        .route("/helm/releases/:namespace/:name", delete(delete_helm_release))
         .route(
             "/persistentvolumes/:name/yaml",
             get(get_persistentvolume_yaml).put(update_persistentvolume_yaml),

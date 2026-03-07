@@ -696,3 +696,20 @@ export const useHelmCharts = () => {
     staleTime: 10 * 60 * 1000, // cache 10 min — Artifact Hub data changes slowly
   });
 };
+
+export const deleteHelmRelease = (namespace: string, name: string) =>
+  apiDelete(`/helm/releases/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const getHelmReleaseYaml = async (namespace: string, name: string): Promise<string> => {
+  const token = getAuthToken();
+  const res = await fetch(
+    `${API_BASE}/helm/releases/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { headers: token ? { Authorization: token } : undefined },
+  );
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) throw new Error(`Failed to load YAML (${res.status})`);
+  return res.text();
+};

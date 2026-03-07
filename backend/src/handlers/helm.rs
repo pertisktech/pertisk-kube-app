@@ -1,8 +1,13 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use flate2::read::GzDecoder;
 use k8s_openapi::api::core::v1::Secret;
-use kube::{api::ListParams, Api};
+use kube::{api::{DeleteParams, ListParams}, Api};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -277,4 +282,139 @@ pub async fn list_helm_charts(_state: State<AppState>) -> impl IntoResponse {
                 .into_response()
         }
     }
+}
+
+// ── Helm Release YAML (values + metadata) ────────────────────────────────────
+
+pub async fn get_helm_release_yaml(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let client = state.client.clone();
+    let api: Api<Secret> = Api::namespaced(client, &namespace);
+    let lp = ListParams::default().labels(&format!("owner=helm,name={}", name));
+
+    match api.list(&lp).await {
+        Ok(list) => {
+            // Find highest-revision deployed secret
+            let best = list
+                .items
+                .iter()
+                .filter_map(|s| {
+                    let rev: i64 = s
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| l.get("version"))
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    Some((rev, s))
+                })
+                .max_by_key(|(rev, _)| *rev)
+                .map(|(_, s)| s);
+
+            match best {
+                Some(secret) => {
+                    if let Some((chart_name, chart_version, app_version, _)) = decode_helm_release_data(secret) {
+                        // Extract raw JSON from the secret for the YAML view
+                        let release_json = decode_helm_release_json(secret).unwrap_or_else(|| {
+                            serde_json::json!({
+                                "name": name,
+                                "namespace": namespace,
+                                "chart": chart_name,
+                                "chart_version": chart_version,
+                                "app_version": app_version,
+                            })
+                        });
+
+                        // Convert to YAML string
+                        let yaml_text = serde_yaml::to_string(&release_json)
+                            .unwrap_or_else(|_| format!("name: {}\n", name));
+
+                        (StatusCode::OK, yaml_text).into_response()
+                    } else {
+                        (StatusCode::NOT_FOUND, "Release data not decodable").into_response()
+                    }
+                }
+                None => (StatusCode::NOT_FOUND, "Release not found").into_response(),
+            }
+        }
+        Err(err) => {
+            error!("Failed to get helm release YAML: {}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+// ── Helm Release Delete (uninstall — removes all history secrets) ─────────────
+
+pub async fn delete_helm_release(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let client = state.client.clone();
+    let api: Api<Secret> = Api::namespaced(client, &namespace);
+    let lp = ListParams::default().labels(&format!("owner=helm,name={}", name));
+
+    match api.list(&lp).await {
+        Ok(list) => {
+            if list.items.is_empty() {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({ "message": "Release not found" })),
+                )
+                    .into_response();
+            }
+
+            let dp = DeleteParams::default();
+            let mut errors: Vec<String> = Vec::new();
+
+            for secret in &list.items {
+                if let Some(secret_name) = &secret.metadata.name {
+                    if let Err(err) = api.delete(secret_name, &dp).await {
+                        errors.push(format!("{}: {}", secret_name, err));
+                    }
+                }
+            }
+
+            if errors.is_empty() {
+                (
+                    StatusCode::OK,
+                    Json(serde_json::json!({
+                        "message": format!("Release '{}' uninstalled successfully", name)
+                    })),
+                )
+                    .into_response()
+            } else {
+                error!("Errors deleting helm release {}: {:?}", name, errors);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "message": format!("Partial failure uninstalling '{}': {}", name, errors.join("; "))
+                    })),
+                )
+                    .into_response()
+            }
+        }
+        Err(err) => {
+            error!("Failed to list helm release secrets for deletion: {}", err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "message": err.to_string() })),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Decodes and returns the full Helm release JSON (for YAML view).
+fn decode_helm_release_json(secret: &Secret) -> Option<Value> {
+    let data = secret.data.as_ref()?;
+    let release_bytes = data.get("release")?;
+    let b64_str = String::from_utf8(release_bytes.0.clone()).ok()?;
+    let gzip_bytes = STANDARD.decode(b64_str.trim()).ok()?;
+    let mut decoder = GzDecoder::new(&gzip_bytes[..]);
+    let mut json_str = String::new();
+    decoder.read_to_string(&mut json_str).ok()?;
+    serde_json::from_str(&json_str).ok()
 }
