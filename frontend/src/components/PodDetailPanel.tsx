@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Pencil, Terminal, ScrollText, Trash2, ChevronDown } from 'lucide-react';
+import { X, Pencil, Terminal, ScrollText, Trash2, ChevronDown, ChevronRight, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';
@@ -12,6 +12,7 @@ interface PodDetailPanelProps {
   onOpenShell: (pod: Pod) => void;
   onOpenLogs: (pod: Pod) => void;
   onDelete?: (namespace: string, name: string) => Promise<void>;
+  onPortForward?: (pod: Pod, port: string) => void;
 }
 
 const usageBarColor = (percent: number) => {
@@ -30,10 +31,11 @@ const usageBarWidth = (percent: number) => {
   return Math.max(percent, 6);
 };
 
-export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, onOpenLogs, onDelete }: PodDetailPanelProps) => {
+export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, onOpenLogs, onDelete, onPortForward }: PodDetailPanelProps) => {
   const [expandedLabels, setExpandedLabels] = useState(false);
   const [expandedAnnotations, setExpandedAnnotations] = useState(false);
   const [expandedTolerations, setExpandedTolerations] = useState(false);
+  const [expandedContainers, setExpandedContainers] = useState<Record<string, boolean>>({});
   const [expandedEnvVars, setExpandedEnvVars] = useState<Record<string, boolean>>({});
   const [hiddenEnvVars, setHiddenEnvVars] = useState<Record<string, Set<string>>>({});
   const status = pod.status || pod.phase || 'Unknown';
@@ -61,7 +63,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
   return (
     <ResizablePanel>
       <div className="h-full flex flex-col">
-        <div className="bg-gradient-to-r from-surface to-surface-elevated border-b border-border px-5 py-4">
+        <div className="bg-surface border-b border-border px-5 py-4">
           <div className="flex items-start justify-between gap-3 mb-3">
             <div className="flex-1 min-w-0">
               <h2 className="text-lg font-bold text-text truncate">{pod.name || 'Pod'}</h2>
@@ -79,34 +81,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             </button>
           </div>
 
-          <div className="flex gap-2 mt-3">
-            <div className="group relative">
-              <button type="button" onClick={() => onOpenLogs(pod)} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors" aria-label="View pod logs">
-                <ScrollText size={12} />
-              </button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">View Logs</div>
-            </div>
-            <div className="group relative">
-              <button type="button" onClick={() => onOpenShell(pod)} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors" aria-label="Open pod shell">
-                <Terminal size={12} />
-              </button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Open Shell</div>
-            </div>
-            <div className="group relative">
-              <button type="button" onClick={() => onOpenYamlEditor(pod)} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors" aria-label="Edit pod YAML">
-                <Pencil size={12} />
-              </button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Edit YAML</div>
-            </div>
-            <div className="group relative">
-              <button type="button" onClick={() => onDelete?.(pod.namespace, pod.name)} className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors" aria-label="Delete pod">
-                <Trash2 size={12} />
-              </button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Delete</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 text-xs mt-3 pt-3 border-t border-border">
+          <div className="flex items-center gap-3 text-sm mt-3 pt-3 border-t border-border">
             <div className="flex-1">
               <p className="text-text-secondary mb-1">Namespace</p>
               <p className="text-text font-medium truncate">{pod.namespace || '-'}</p>
@@ -120,26 +95,81 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
               <p className="text-text font-medium">{pod.restarts ?? 0}</p>
             </div>
           </div>
+
+          <div className="mt-3 border-t border-border pt-3 flex items-center justify-end gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onOpenLogs(pod)}
+                className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
+                aria-label="View pod logs"
+              >
+                <ScrollText size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenShell(pod)}
+                className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
+                aria-label="Open pod shell"
+              >
+                <Terminal size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenYamlEditor(pod)}
+                className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
+                aria-label="Edit pod YAML"
+              >
+                <Pencil size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete?.(pod.namespace, pod.name)}
+                className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors"
+                aria-label="Delete pod"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-auto overflow-x-hidden p-4 space-y-4 text-sm">
+        <div className="flex-1 overflow-auto overflow-x-hidden p-4 text-sm space-y-4">
           <section className="bg-surface border border-border rounded-lg p-3.5">
-            <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">Properties</h3>
+            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Pod Info</h3>
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs py-1.5"><span className="text-text-secondary">Created</span><span className="text-text font-medium">{timeAgo(pod.created || pod.age)}</span></div>
-              <div className="flex items-center justify-between text-xs py-1.5 border-t border-border pt-2"><span className="text-text-secondary">Name</span><span className="text-text font-medium text-right break-all">{pod.name || '-'}</span></div>
-              <div className="flex items-center justify-between text-xs py-1.5 border-t border-border pt-2"><span className="text-text-secondary">Namespace</span><span className="text-text font-medium text-right break-all">{pod.namespace || '-'}</span></div>
-              <div className="flex items-center justify-between text-xs py-1.5 border-t border-border pt-2"><span className="text-text-secondary">Status</span><span className="text-text font-medium text-right break-all">{status}</span></div>
-              <div className="flex items-center justify-between text-xs py-1.5 border-t border-border pt-2"><span className="text-text-secondary">Controller By</span><span className="text-text font-medium text-right break-all">{pod.controlled_by || '-'}</span></div>
-              <div className="flex items-center justify-between text-xs py-1.5 border-t border-border pt-2"><span className="text-text-secondary">Pod IP</span><span className="text-text font-medium text-right break-all">{pod.pod_ip || '-'}</span></div>
-              <div className="border-t border-border pt-2">
-                <p className="text-xs text-text-secondary">Pod IPs</p>
-                <p className="text-text font-medium text-xs mt-1 break-all">{podIps.length > 0 ? podIps.join(', ') : '-'}</p>
+              <div className="flex items-center gap-2 text-sm py-2 px-2 rounded-md border border-border">
+                <span className="text-text-secondary min-w-20">Created</span>
+                <span className="text-text font-medium ml-auto">{timeAgo(pod.created || pod.age)}</span>
               </div>
-              <div className="flex items-center justify-between text-xs py-1.5 border-t border-border pt-2"><span className="text-text-secondary">Service Account</span><span className="text-text font-medium text-right break-all">{pod.service_account || '-'}</span></div>
-              <div className="flex items-center justify-between text-xs py-1.5 border-t border-border pt-2"><span className="text-text-secondary">QoS Class</span><span className="text-text font-medium text-right break-all">{pod.qos_class || pod.qos || '-'}</span></div>
+              <div className="flex items-center gap-2 text-sm py-2 px-2 rounded-md border border-border">
+                <span className="text-text-secondary min-w-20">Name</span>
+                <span className="text-text font-medium ml-auto text-right break-all">{pod.name || '-'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm py-2 px-2 rounded-md border border-border">
+                <span className="text-text-secondary min-w-20">Namespace</span>
+                <span className="text-text font-medium ml-auto text-right break-all">{pod.namespace || '-'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm py-2 px-2 rounded-md border border-border">
+                <span className="text-text-secondary min-w-20">Status</span>
+                <span className="text-text font-medium ml-auto text-right break-all">{status}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm py-2 px-2 rounded-md border border-border">
+                <span className="text-text-secondary min-w-20">Controller</span>
+                <span className="text-text font-medium ml-auto text-right break-all">{pod.controlled_by || '-'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm py-2 px-2 rounded-md border border-border">
+                <span className="text-text-secondary min-w-20">Pod IP</span>
+                <span className="text-text font-medium ml-auto text-right break-all">{pod.pod_ip || '-'}</span>
+              </div>
               <div className="border-t border-border pt-2">
-                <p className="text-xs text-text-secondary">Conditions</p>
+                <p className="text-sm text-text-secondary">Pod IPs</p>
+                <p className="text-text font-medium text-sm mt-1 break-all">{podIps.length > 0 ? podIps.join(', ') : '-'}</p>
+              </div>
+              <div className="flex items-center justify-between text-sm py-1.5 border-t border-border pt-2"><span className="text-text-secondary">Service Account</span><span className="text-text font-medium text-right break-all">{pod.service_account || '-'}</span></div>
+              <div className="flex items-center justify-between text-sm py-1.5 border-t border-border pt-2"><span className="text-text-secondary">QoS Class</span><span className="text-text font-medium text-right break-all">{pod.qos_class || pod.qos || '-'}</span></div>
+              <div className="border-t border-border pt-2">
+                <p className="text-sm text-text-secondary">Conditions</p>
                 {displayConditions.length > 0 ? (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {displayConditions.map((condition, idx) => {
@@ -147,7 +177,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                       return (
                         <span
                           key={`${condition.type}-${idx}`}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs border ${
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-sm border ${
                             isTrue
                               ? 'bg-[var(--color-icon-success)]/10 text-[var(--color-icon-success)] border-[var(--color-icon-success)]/30'
                               : 'bg-[var(--color-icon-danger)]/10 text-[var(--color-icon-danger)] border-[var(--color-icon-danger)]/30'
@@ -161,7 +191,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                     })}
                   </div>
                 ) : (
-                  <p className="text-text font-medium text-xs mt-1">-</p>
+                  <p className="text-text font-medium text-sm mt-1">-</p>
                 )}
               </div>
               <div className="border-t border-border pt-2">
@@ -170,7 +200,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                   onClick={() => setExpandedTolerations((prev) => !prev)}
                   className="w-full flex items-center justify-between"
                 >
-                  <p className="text-xs text-text-secondary">Tolerations ({tolerations.length})</p>
+                  <p className="text-sm text-text-secondary">Tolerations ({tolerations.length})</p>
                   <ChevronDown
                     size={14}
                     className={`transform transition-transform text-text-secondary ${expandedTolerations ? 'rotate-180' : ''}`}
@@ -179,7 +209,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                 {expandedTolerations && (
                   tolerations.length > 0 ? (
                     <div className="mt-2 overflow-x-auto border border-border rounded-md">
-                      <table className="w-full text-xs">
+                      <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b border-border bg-bg/50">
                             <th className="text-left py-2 px-2 text-text-secondary font-medium">Key</th>
@@ -201,20 +231,20 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                       </table>
                     </div>
                   ) : (
-                    <p className="text-text font-medium text-xs mt-2">-</p>
+                    <p className="text-text font-medium text-sm mt-2">-</p>
                   )
                 )}
               </div>
               <div className="border-t border-border pt-2">
-                <p className="text-xs text-text-secondary">Pod Anti Affinities</p>
+                <p className="text-sm text-text-secondary">Pod Anti Affinities</p>
                 {podAntiAffinities.length > 0 ? (
                   <div className="mt-1 space-y-1">
                     {podAntiAffinities.map((rule, idx) => (
-                      <p key={`${rule}-${idx}`} className="text-text font-medium text-xs break-all">{rule}</p>
+                      <p key={`${rule}-${idx}`} className="text-text font-medium text-sm break-all">{rule}</p>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-text font-medium text-xs mt-1">-</p>
+                  <p className="text-text font-medium text-sm mt-1">-</p>
                 )}
               </div>
               <div className="border-t border-border pt-2">
@@ -223,7 +253,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                   onClick={() => setExpandedLabels((prev) => !prev)}
                   className="w-full flex items-center justify-between"
                 >
-                  <p className="text-xs text-text-secondary">Labels ({Object.keys(labels).length})</p>
+                  <p className="text-sm text-text-secondary">Labels ({Object.keys(labels).length})</p>
                   <ChevronDown
                     size={14}
                     className={`transform transition-transform text-text-secondary ${expandedLabels ? 'rotate-180' : ''}`}
@@ -233,11 +263,11 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                   Object.keys(labels).length > 0 ? (
                     <div className="mt-2 space-y-1">
                       {Object.entries(labels).map(([key, value]) => (
-                        <p key={key} className="text-text font-medium text-xs break-all">{key}: {value}</p>
+                        <p key={key} className="text-text font-medium text-sm break-all">{key}: {value}</p>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-text font-medium text-xs mt-2">-</p>
+                    <p className="text-text font-medium text-sm mt-2">-</p>
                   )
                 )}
               </div>
@@ -247,7 +277,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                   onClick={() => setExpandedAnnotations((prev) => !prev)}
                   className="w-full flex items-center justify-between"
                 >
-                  <p className="text-xs text-text-secondary">Annotations ({Object.keys(annotations).length})</p>
+                  <p className="text-sm text-text-secondary">Annotations ({Object.keys(annotations).length})</p>
                   <ChevronDown
                     size={14}
                     className={`transform transition-transform text-text-secondary ${expandedAnnotations ? 'rotate-180' : ''}`}
@@ -257,18 +287,18 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                   Object.keys(annotations).length > 0 ? (
                     <div className="mt-2 space-y-1">
                       {Object.entries(annotations).map(([key, value]) => (
-                        <p key={key} className="text-text font-medium text-xs break-all">{key}: {value}</p>
+                        <p key={key} className="text-text font-medium text-sm break-all">{key}: {value}</p>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-text font-medium text-xs mt-2">-</p>
+                    <p className="text-text font-medium text-sm mt-2">-</p>
                   )
                 )}
               </div>
 
               <div className="border-t border-border pt-2">
-                <p className="text-xs text-text-secondary">CPU</p>
-                <p className="text-text font-medium text-xs mt-1 break-all">{hasCpuMetrics ? `${pod.cpu || '-'} / ${pod.cpu_capacity || '-'} (${Math.round(cpuPercent)}%)` : pod.cpu || '-'}</p>
+                <p className="text-sm text-text-secondary">CPU</p>
+                <p className="text-text font-medium text-sm mt-1 break-all">{hasCpuMetrics ? `${pod.cpu || '-'} / ${pod.cpu_capacity || '-'} (${Math.round(cpuPercent)}%)` : pod.cpu || '-'}</p>
                 {hasCpuMetrics && (
                   <div className="mt-2 h-2 rounded-full bg-hover overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${usageBarWidth(cpuPercent)}%`, backgroundColor: usageBarColor(cpuPercent) }} />
@@ -277,8 +307,8 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
               </div>
 
               <div className="border-t border-border pt-2">
-                <p className="text-xs text-text-secondary">Memory</p>
-                <p className="text-text font-medium text-xs mt-1 break-all">{hasMemoryMetrics ? `${pod.memory || '-'} / ${pod.memory_capacity || '-'} (${Math.round(memoryPercent)}%)` : pod.memory || '-'}</p>
+                <p className="text-sm text-text-secondary">Memory</p>
+                <p className="text-text font-medium text-sm mt-1 break-all">{hasMemoryMetrics ? `${pod.memory || '-'} / ${pod.memory_capacity || '-'} (${Math.round(memoryPercent)}%)` : pod.memory || '-'}</p>
                 {hasMemoryMetrics && (
                   <div className="mt-2 h-2 rounded-full bg-hover overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${usageBarWidth(memoryPercent)}%`, backgroundColor: usageBarColor(memoryPercent) }} />
@@ -289,9 +319,9 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           </section>
 
           <section className="bg-surface border border-border rounded-lg p-3.5">
-            <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">Pod Volumes ({volumes.length})</h3>
+            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Pod Volumes ({volumes.length})</h3>
             {volumes.length > 0 ? (
-              <div className="space-y-2 text-xs">
+              <div className="space-y-2 text-sm">
                 {volumes.map((v, i) => (
                   <div key={`${v.name}-${i}`} className="border border-border rounded-md p-2">
                     <p className="text-text font-medium break-all">{v.name}</p>
@@ -302,26 +332,59 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-text-secondary">No volume data available</p>
+              <p className="text-sm text-text-secondary">No volume data available</p>
             )}
           </section>
 
           <section className="bg-surface border border-border rounded-lg p-3.5">
-            <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">Containers ({containers.length})</h3>
+            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Containers ({containers.length})</h3>
             {containers.length > 0 ? (
               <div className="space-y-2">
                 {containers.map((c, i) => (
                   <div key={`${c.name}-${i}`} className="border border-border rounded-md p-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-text font-medium text-xs break-all">{c.name}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${c.ready ? 'bg-[var(--color-icon-success)]/10 text-[var(--color-icon-success)]' : 'bg-[var(--color-icon-warning)]/10 text-[var(--color-icon-warning)]'}`}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedContainers(prev => ({ ...prev, [c.name]: !prev[c.name] }))}
+                      className="w-full flex items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {expandedContainers[c.name] ? (
+                          <ChevronDown size={14} className="text-text-secondary flex-shrink-0" />
+                        ) : (
+                          <ChevronRight size={14} className="text-text-secondary flex-shrink-0" />
+                        )}
+                        <p className="text-text font-medium text-sm break-all text-left">{c.name}</p>
+                      </div>
+                      <span className={`text-sm px-2 py-0.5 rounded-full ${c.ready ? 'bg-[var(--color-icon-success)]/10 text-[var(--color-icon-success)]' : 'bg-[var(--color-icon-warning)]/10 text-[var(--color-icon-warning)]'}`}>
                         {c.status || (c.ready ? 'Ready' : 'Not Ready')}
                       </span>
-                    </div>
-                    <div className="mt-2 space-y-1">
-                      <p className="text-xs text-text-secondary break-all"><span className="text-text">Image:</span> {c.image || '-'}</p>
-                      <p className="text-xs text-text-secondary break-all"><span className="text-text">Image Pull Policy:</span> {c.image_pull_policy || '-'}</p>
-                      <p className="text-xs text-text-secondary break-all"><span className="text-text">Ports:</span> {c.ports && c.ports.length > 0 ? c.ports.join(', ') : '-'}</p>
+                    </button>
+                    {expandedContainers[c.name] && <div className="mt-2 space-y-1">
+                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Image:</span> {c.image || '-'}</p>
+                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Image Pull Policy:</span> {c.image_pull_policy || '-'}</p>
+                      <div className="text-sm text-text-secondary">
+                        <p><span className="text-text">Ports:</span></p>
+                        {c.ports && c.ports.length > 0 ? (
+                          <div className="mt-1 space-y-1">
+                            {c.ports.map((port, portIdx) => (
+                              <div key={`${c.name}-port-${portIdx}`} className="flex items-center gap-1.5 rounded border border-border px-2 py-1">
+                                <span className="text-text break-all flex-1">{port}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => onPortForward?.(pod, port)}
+                                  className="p-1 rounded border border-border text-text-secondary hover:text-text hover:border-[var(--color-primary)] transition-colors"
+                                  title="Port-forward (integration next)"
+                                  aria-label={`Port forward ${port}`}
+                                >
+                                  <ArrowRight size={12} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-1">-</p>
+                        )}
+                      </div>
                       {c.environment_variables && c.environment_variables.length > 0 ? (
                         <div className="mt-2 border border-border rounded-md overflow-hidden">
                           <button
@@ -331,12 +394,12 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                             }))}
                             className="w-full flex items-center justify-between bg-bg/50 hover:bg-bg/70 px-2 py-1.5 transition-colors"
                           >
-                            <span className="text-xs text-text font-medium">Environment Variables ({c.environment_variables.length})</span>
+                            <span className="text-sm text-text font-medium">Environment Variables ({c.environment_variables.length})</span>
                             <ChevronDown size={14} className={`text-text-secondary transition-transform ${expandedEnvVars[c.name] ? '' : '-rotate-90'}`} />
                           </button>
                           {expandedEnvVars[c.name] && (
                             <div className="border-t border-border overflow-x-auto">
-                              <table className="w-full text-xs">
+                              <table className="w-full text-sm">
                                 <thead>
                                   <tr className="border-b border-border bg-bg/50">
                                     <th className="text-left py-1.5 px-2 text-text-secondary font-medium w-32">Key</th>
@@ -364,8 +427,8 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                                     }
                                     return (
                                       <tr key={`${c.name}-${env.key}-${idx}`} className="border-b border-border hover:bg-bg/30">
-                                        <td className="py-1.5 px-2 text-text break-all font-mono text-xs align-top">{env.key}</td>
-                                        <td className="py-1.5 px-2 text-text-secondary font-mono text-xs">
+                                        <td className="py-1.5 px-2 text-text break-all font-mono text-sm align-top">{env.key}</td>
+                                        <td className="py-1.5 px-2 text-text-secondary font-mono text-sm">
                                           <div className="flex items-center justify-between gap-2">
                                             <span className={env.source === 'secret' && !shouldHide ? 'text-[var(--color-icon-warning)]' : ''}>{displayValue}</span>
                                             {isSensitive && (
@@ -380,7 +443,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                                                 className="flex-shrink-0 text-text-secondary hover:text-text transition-colors"
                                                 title={shouldHide ? 'Show value' : 'Hide value'}
                                               >
-                                                {shouldHide ? '🔒' : '👁'}
+                                                  {shouldHide ? <Eye size={14} /> : <EyeOff size={14} />}
                                               </button>
                                             )}
                                           </div>
@@ -394,28 +457,28 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                           )}
                         </div>
                       ) : (
-                        <p className="text-xs text-text-secondary break-all"><span className="text-text">Environment Variables:</span> -</p>
+                        <p className="text-sm text-text-secondary break-all"><span className="text-text">Environment Variables:</span> -</p>
                       )}
-                      <p className="text-xs text-text-secondary break-all"><span className="text-text">Mounts:</span> {c.mounts && c.mounts.length > 0 ? c.mounts.join(' | ') : '-'}</p>
-                      <p className="text-xs text-text-secondary break-all"><span className="text-text">Liveness:</span> {c.liveness || '-'}</p>
-                      <p className="text-xs text-text-secondary break-all"><span className="text-text">Readiness:</span> {c.readiness || '-'}</p>
-                      <p className="text-xs text-text-secondary break-all"><span className="text-text">Startup:</span> {c.startup || '-'}</p>
-                      <p className="text-xs text-text-secondary break-all"><span className="text-text">Requests:</span> {c.requests || '-'}</p>
-                      <p className="text-xs text-text-secondary break-all"><span className="text-text">Limits:</span> {c.limits || '-'}</p>
-                    </div>
+                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Mounts:</span> {c.mounts && c.mounts.length > 0 ? c.mounts.join(' | ') : '-'}</p>
+                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Liveness:</span> {c.liveness || '-'}</p>
+                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Readiness:</span> {c.readiness || '-'}</p>
+                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Startup:</span> {c.startup || '-'}</p>
+                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Requests:</span> {c.requests || '-'}</p>
+                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Limits:</span> {c.limits || '-'}</p>
+                    </div>}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-text-secondary">No container data available</p>
+              <p className="text-sm text-text-secondary">No container data available</p>
             )}
           </section>
 
           <section className="bg-surface border border-border rounded-lg p-3.5">
-            <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">Events ({events.length})</h3>
+            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Events ({events.length})</h3>
             {events.length > 0 ? (
               <div className="overflow-x-auto border border-border rounded-md">
-                <table className="w-full text-xs">
+                <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-bg/50">
                       <th className="text-left py-2 px-2 text-text-secondary font-medium">Summary</th>
@@ -438,7 +501,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                 </table>
               </div>
             ) : (
-              <p className="text-xs text-text-secondary">No recent events</p>
+              <p className="text-sm text-text-secondary">No recent events</p>
             )}
           </section>
         </div>
