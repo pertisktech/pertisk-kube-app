@@ -212,13 +212,6 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     }
   }, [location.pathname]);
 
-  // Auto-expand Custom Resources when we have CRDs (realtime: no click needed to show sub menu)
-  useEffect(() => {
-    if (crdGroups.length > 0) {
-      setCustomResourcesOpen(true);
-    }
-  }, [crdGroups.length]);
-
   useEffect(() => {
     const merged = new Set<string>();
 

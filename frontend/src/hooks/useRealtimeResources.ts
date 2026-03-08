@@ -803,7 +803,7 @@ function createRealtimeHook<T>(
           ws = new WebSocket(wsUrl);
 
           ws.onopen = () => {
-            console.log(`WebSocket connected for ${displayName}`);
+            if (import.meta.env.DEV) console.log(`WebSocket connected for ${displayName}`);
             setError(null);
 
             // Subscribe to resource
@@ -858,7 +858,7 @@ function createRealtimeHook<T>(
                   setData((prev) => prev.filter((p) => getKey(p) !== itemKey));
                 }
               } else if (message.type === 'subscribed' && message.resource === resourceType) {
-                console.log(`Subscribed to ${displayName}`);
+                if (import.meta.env.DEV) console.log(`Subscribed to ${displayName}`);
               } else if (message.type === 'error') {
                 console.error(`WebSocket error for ${displayName}:`, message.message);
                 setError(message.message || 'Unknown error');
@@ -874,11 +874,11 @@ function createRealtimeHook<T>(
           };
 
           ws.onclose = () => {
-            console.log(`WebSocket disconnected for ${displayName}`);
+            if (import.meta.env.DEV) console.log(`WebSocket disconnected for ${displayName}`);
 
             // Attempt to reconnect after 3 seconds
             reconnectTimeout = setTimeout(() => {
-              console.log(`Attempting to reconnect to ${displayName}...`);
+              if (import.meta.env.DEV) console.log(`Attempting to reconnect to ${displayName}...`);
               connect();
             }, 3000);
           };

@@ -380,7 +380,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
-        console.log('[useRealtimePods] WebSocket connected');
+        if (import.meta.env.DEV) console.log('[useRealtimePods] WebSocket connected');
         setIsConnected(true);
         setError(null);
         reconnectAttemptsRef.current = 0;
@@ -400,10 +400,10 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
             const { action, data: rawPodData } = message;
             const transformedPod = transformPod(rawPodData);
             
-            // Debug log for status changes
-            if (transformedPod.status === 'NotReady' || 
+            // Debug log for status changes (dev only)
+            if (import.meta.env.DEV && (transformedPod.status === 'NotReady' ||
                 transformedPod.status === 'ContainerStarting' ||
-                transformedPod.status === 'Terminating') {
+                transformedPod.status === 'Terminating')) {
               console.log(`[useRealtimePods] ${action} pod: ${transformedPod.namespace}/${transformedPod.name} - Status: ${transformedPod.status}, Ready: ${transformedPod.ready}`);
             }
 
@@ -414,7 +414,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                   
                   // Don't add if pod was deleted
                   if (deletedPodsRef.current.has(podKey)) {
-                    console.log(`[useRealtimePods] Ignoring ADDED for deleted pod: ${podKey}`);
+                    if (import.meta.env.DEV) console.log(`[useRealtimePods] Ignoring ADDED for deleted pod: ${podKey}`);
                     return prevData;
                   }
                   
@@ -441,7 +441,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                   
                   // Don't modify if pod was deleted
                   if (deletedPodsRef.current.has(modPodKey)) {
-                    console.log(`[useRealtimePods] Ignoring MODIFIED for deleted pod: ${modPodKey}`);
+                    if (import.meta.env.DEV) console.log(`[useRealtimePods] Ignoring MODIFIED for deleted pod: ${modPodKey}`);
                     return prevData;
                   }
                   
@@ -467,9 +467,9 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                     };
                     updated[foundIndex] = mergedPod as T;
                     
-                    // Log status transitions
+                    // Log status transitions (dev only)
                     if (oldStatus !== mergedPod.status) {
-                      console.log(`[useRealtimePods] Status transition for ${modPodKey}: ${oldStatus} -> ${mergedPod.status}`);
+                      if (import.meta.env.DEV) console.log(`[useRealtimePods] Status transition for ${modPodKey}: ${oldStatus} -> ${mergedPod.status}`);
                       
                       // If transitioning to Terminating, keep it visible until DELETED event
                       if (mergedPod.status === 'Terminating') {
@@ -485,7 +485,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                     return updated;
                   } else {
                     // Add new (pod wasn't in initial list)
-                    console.log(`[useRealtimePods] Adding pod from MODIFIED: ${modPodKey} (status: ${transformedPod.status})`);
+                    if (import.meta.env.DEV) console.log(`[useRealtimePods] Adding pod from MODIFIED: ${modPodKey} (status: ${transformedPod.status})`);
                     const newList = [...prevData, transformedPod as T];
                     
                     // Keep terminating pods until DELETED event
@@ -502,7 +502,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                 
                 case 'DELETED':
                   const podKeyForDeletion = `${transformedPod.namespace}/${transformedPod.name}`;
-                  console.log(`[useRealtimePods] Deleting pod immediately: ${podKeyForDeletion}`);
+                  if (import.meta.env.DEV) console.log(`[useRealtimePods] Deleting pod immediately: ${podKeyForDeletion}`);
                   
                   // Mark as deleted to prevent re-adding
                   deletedPodsRef.current.add(podKeyForDeletion);
@@ -521,7 +521,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                             itemRaw.namespace === transformedPod.namespace);
                   });
                   
-                  console.log(`[useRealtimePods] Pod count: ${prevData.length} -> ${finalFiltered.length}`);
+                  if (import.meta.env.DEV) console.log(`[useRealtimePods] Pod count: ${prevData.length} -> ${finalFiltered.length}`);
                   
                   // Keep deleted marker very briefly so stale events do not re-add old pod,
                   // but new same-name pod can appear quickly.
@@ -536,7 +536,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
               }
             });
           } else if (message.type === 'subscribed') {
-            console.log('[useRealtimePods] Subscription confirmed');
+            if (import.meta.env.DEV) console.log('[useRealtimePods] Subscription confirmed');
           } else if (message.type === 'error') {
             console.error('[useRealtimePods] Server error:', message.message);
             setError(message.message);
@@ -552,7 +552,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       };
 
       ws.onclose = () => {
-        console.log('[useRealtimePods] WebSocket closed');
+        if (import.meta.env.DEV) console.log('[useRealtimePods] WebSocket closed');
         setIsConnected(false);
         wsRef.current = null;
 
@@ -562,7 +562,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
           reconnectAttemptsRef.current < maxReconnectAttempts
         ) {
           reconnectAttemptsRef.current += 1;
-          console.log(
+          if (import.meta.env.DEV) console.log(
             `[useRealtimePods] Reconnecting... (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`
           );
           reconnectTimeoutRef.current = setTimeout(() => {
