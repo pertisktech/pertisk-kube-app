@@ -1,8 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { ResourceQuota } from '../types';
 import { timeAgo } from '../utils';
-import { DetailPanelHeader } from './DetailPanelHeader';
-import { ResizablePanel } from './ResizablePanel';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface ResourceQuotaDetailPanelProps {
   resourceQuota: ResourceQuota;
@@ -11,46 +10,27 @@ interface ResourceQuotaDetailPanelProps {
   onDelete?: (namespace: string, name: string) => Promise<void>;
 }
 
-export const ResourceQuotaDetailPanel = ({ resourceQuota, onClose, onOpenYamlEditor, onDelete }: ResourceQuotaDetailPanelProps) => {
-  return (
-    <ResizablePanel>
-      <div className="h-full flex flex-col">
-        <DetailPanelHeader title="ResourceQuota Info" onClose={onClose}>
-          <div className="flex gap-2">
-            <div className="group relative">
-              <button type="button" onClick={() => onOpenYamlEditor?.(resourceQuota)} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors" aria-label="Edit resourcequota YAML"><Pencil size={12} /></button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Edit YAML</div>
-            </div>
-            <div className="group relative">
-              <button type="button" onClick={() => onDelete?.(resourceQuota.namespace, resourceQuota.name)} className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors" aria-label="Delete resourcequota"><Trash2 size={12} /></button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Delete</div>
-            </div>
-          </div>
-        </DetailPanelHeader>
-
-        <div className="flex-1 overflow-auto overflow-x-hidden p-5 space-y-5 text-sm">
-          <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
-            <div className="space-y-3">
-              <div>
-                <p className="text-text-secondary">Name</p>
-                <p className="text-primary font-medium break-all">{resourceQuota.name}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Namespace</p>
-                <p className="text-text break-all">{resourceQuota.namespace}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Status</p>
-                <p className="text-text">{resourceQuota.status}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Age</p>
-                <p className="text-text">{timeAgo(resourceQuota.age)}</p>
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-    </ResizablePanel>
-  );
-};
+export const ResourceQuotaDetailPanel = ({ resourceQuota, onClose, onOpenYamlEditor, onDelete }: ResourceQuotaDetailPanelProps) => (
+  <ResourceDetailPanelLayout
+    title={resourceQuota.name}
+    keyInfo={[
+      { label: 'Namespace', value: resourceQuota.namespace },
+      { label: 'Status', value: resourceQuota.status ?? '-' },
+      { label: 'Age', value: timeAgo(resourceQuota.age) },
+    ]}
+    actions={
+      <>
+        <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor?.(resourceQuota)} />
+        <PanelActionButton icon={Trash2} label="Delete" danger onClick={() => onDelete?.(resourceQuota.namespace, resourceQuota.name)} />
+      </>
+    }
+    onClose={onClose}
+  >
+    <DetailSection title="Resource Quota">
+      <DetailRow label="Name" value={resourceQuota.name} />
+      <DetailRow label="Namespace" value={resourceQuota.namespace} />
+      <DetailRow label="Status" value={resourceQuota.status ?? '-'} />
+      <DetailRow label="Age" value={timeAgo(resourceQuota.age)} />
+    </DetailSection>
+  </ResourceDetailPanelLayout>
+);

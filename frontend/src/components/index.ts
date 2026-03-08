@@ -7,6 +7,13 @@ export { Card, Stat } from './Card';
 export { ConfirmDialog } from './ConfirmDialog';
 export { DetailPanelHeader } from './DetailPanelHeader';
 export { ResizablePanel } from './ResizablePanel';
+export {
+  ResourceDetailPanelLayout,
+  DetailSection,
+  DetailRow,
+  PanelActionButton,
+  type KeyInfoItem,
+} from './ResourceDetailPanelLayout';
 export { NamespaceDetailPanel } from './NamespaceDetailPanel';
 export { NodeDetailPanel } from './NodeDetailPanel';
 export { PodDetailPanel } from './PodDetailPanel';

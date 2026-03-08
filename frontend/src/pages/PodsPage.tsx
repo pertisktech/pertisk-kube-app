@@ -144,7 +144,7 @@ export const PodsPage = () => {
     const fetchSecrets = async () => {
       const secretNames = new Set<string>();
 
-      selectedPod.containers.forEach((container) => {
+      selectedPod.containers?.forEach((container) => {
         container.environment_variables?.forEach((env) => {
           if (env.source === 'secret' && env.value) {
             const idx = env.value.lastIndexOf('/');

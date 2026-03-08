@@ -1,8 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Secret } from '../types';
 import { timeAgo } from '../utils';
-import { DetailPanelHeader } from './DetailPanelHeader';
-import { ResizablePanel } from './ResizablePanel';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow } from './ResourceDetailPanelLayout';
 
 interface SecretDetailPanelProps {
   secret: Secret;
@@ -12,67 +11,51 @@ interface SecretDetailPanelProps {
 }
 
 export const SecretDetailPanel = ({ secret, onClose, onOpenYamlEditor, onDelete }: SecretDetailPanelProps) => {
-  return (
-    <ResizablePanel>
-      <div className="h-full flex flex-col">
-        <DetailPanelHeader title="Secret Info" onClose={onClose}>
-          <div className="flex gap-2">
-            <div className="group relative">
-              <button
-                type="button"
-                onClick={() => onOpenYamlEditor?.(secret)}
-                className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
-                aria-label="Edit secret YAML"
-              >
-                <Pencil size={12} />
-              </button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">
-                Edit YAML
-              </div>
-            </div>
-            <div className="group relative">
-              <button
-                type="button"
-                onClick={() => onDelete?.(secret.namespace, secret.name)}
-                className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors"
-                aria-label="Delete secret"
-              >
-                <Trash2 size={12} />
-              </button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">
-                Delete
-              </div>
-            </div>
-          </div>
-        </DetailPanelHeader>
-
-        <div className="flex-1 overflow-auto overflow-x-hidden p-5 space-y-5 text-sm">
-          <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
-            <div className="space-y-3">
-              <div>
-                <p className="text-text-secondary">Name</p>
-                <p className="text-primary font-medium break-all">{secret.name}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Namespace</p>
-                <p className="text-text break-all">{secret.namespace}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Type</p>
-                <p className="text-text break-all">{secret.secret_type}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Data Keys</p>
-                <p className="text-text">{secret.data_keys}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Age</p>
-                <p className="text-text">{timeAgo(secret.age)}</p>
-              </div>
-            </div>
-          </section>
-        </div>
+  const actions = (
+    <>
+      <div className="group relative">
+        <button
+          type="button"
+          onClick={() => onOpenYamlEditor?.(secret)}
+          className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
+          aria-label="Edit secret YAML"
+        >
+          <Pencil size={12} />
+        </button>
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Edit YAML</div>
       </div>
-    </ResizablePanel>
+      <div className="group relative">
+        <button
+          type="button"
+          onClick={() => onDelete?.(secret.namespace, secret.name)}
+          className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors"
+          aria-label="Delete secret"
+        >
+          <Trash2 size={12} />
+        </button>
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Delete</div>
+      </div>
+    </>
+  );
+
+  return (
+    <ResourceDetailPanelLayout
+      title={secret.name}
+      keyInfo={[
+        { label: 'Namespace', value: secret.namespace },
+        { label: 'Type', value: secret.secret_type ?? '-' },
+        { label: 'Age', value: timeAgo(secret.age) },
+      ]}
+      actions={actions}
+      onClose={onClose}
+    >
+      <DetailSection title="Secret">
+        <DetailRow label="Name" value={secret.name} />
+        <DetailRow label="Namespace" value={secret.namespace} />
+        <DetailRow label="Type" value={secret.secret_type ?? '-'} />
+        <DetailRow label="Data keys" value={secret.data_keys ?? '-'} />
+        <DetailRow label="Age" value={timeAgo(secret.age)} />
+      </DetailSection>
+    </ResourceDetailPanelLayout>
   );
 };

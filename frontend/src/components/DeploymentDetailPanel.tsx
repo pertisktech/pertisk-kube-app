@@ -2,8 +2,7 @@ import { Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Deployment } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
-import { DetailPanelHeader } from './DetailPanelHeader';
-import { ResizablePanel } from './ResizablePanel';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow } from './ResourceDetailPanelLayout';
 
 interface DeploymentDetailPanelProps {
   deployment: Deployment;
@@ -117,27 +116,36 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
     }
   };
 
-  return (
-    <ResizablePanel>
-      <div className="h-full flex flex-col">
-        <DetailPanelHeader title="Deployment Info" onClose={onClose}>
-          <div className="flex gap-2">
-            <div className="group relative">
-              <button type="button" onClick={handleRestart} disabled={isRestarting} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Restart deployment"><RotateCcw size={12} className={isRestarting ? 'animate-spin' : ''} /></button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Restart</div>
-            </div>
-            <div className="group relative">
-              <button type="button" onClick={() => onOpenYamlEditor(deployment)} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors" aria-label="Edit deployment YAML"><Pencil size={12} /></button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Edit YAML</div>
-            </div>
-            <div className="group relative">
-              <button type="button" onClick={() => onDelete?.(deployment.namespace, deployment.name)} className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors" aria-label="Delete deployment"><Trash2 size={12} /></button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Delete</div>
-            </div>
-          </div>
-        </DetailPanelHeader>
+  const actions = (
+    <>
+      <div className="group relative">
+        <button type="button" onClick={handleRestart} disabled={isRestarting} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Restart deployment"><RotateCcw size={12} className={isRestarting ? 'animate-spin' : ''} /></button>
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Restart</div>
+      </div>
+      <div className="group relative">
+        <button type="button" onClick={() => onOpenYamlEditor(deployment)} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors" aria-label="Edit deployment YAML"><Pencil size={12} /></button>
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Edit YAML</div>
+      </div>
+      <div className="group relative">
+        <button type="button" onClick={() => onDelete?.(deployment.namespace, deployment.name)} className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors" aria-label="Delete deployment"><Trash2 size={12} /></button>
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Delete</div>
+      </div>
+    </>
+  );
 
-        <div className="px-5 py-3 border-b border-border">
+  return (
+    <ResourceDetailPanelLayout
+      title={deployment.name}
+      status={deployment.status ?? undefined}
+      keyInfo={[
+        { label: 'Namespace', value: deployment.namespace },
+        { label: 'Ready', value: deployment.ready ?? '-' },
+        { label: 'Age', value: timeAgo(deployment.age) },
+      ]}
+      actions={actions}
+      onClose={onClose}
+    >
+      <div className="border-b border-border pb-4 -mt-1">
           <div className="grid grid-cols-1 gap-2">
             <div className="bg-surface border border-border rounded-lg p-2 space-y-2">
               <p className="text-[11px] uppercase tracking-wide text-text-secondary">Scale</p>
@@ -202,7 +210,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
         </div>
 
         {(restartError || restartSuccess || scaleError || scaleSuccess) && (
-          <div className="px-5 py-2 border-b border-border space-y-1">
+          <div className="py-2 border-b border-border space-y-1">
             {restartError && <p className="text-xs text-red-400">{restartError}</p>}
             {restartSuccess && <p className="text-xs text-green-400">{restartSuccess}</p>}
             {scaleError && <p className="text-xs text-red-400">{scaleError}</p>}
@@ -210,72 +218,38 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
           </div>
         )}
 
-        <div className="flex-1 overflow-auto overflow-x-hidden p-5 space-y-5 text-sm">
-          <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
-            <div className="space-y-3">
-              <div>
-                <p className="text-text-secondary">Name</p>
-                <p className="text-primary font-medium break-all">{deployment.name}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Namespace</p>
-                <p className="text-text break-all">{deployment.namespace}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Status</p>
-                <p className={`mt-1 font-medium ${getStatusTextClass(deployment.status || 'Unknown')}`}>
-                  {deployment.status || 'Unknown'}
-                </p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Ready</p>
-                <p className="text-text break-all">{deployment.ready || '-'}</p>
-              </div>
-            </div>
-          </section>
+        <DetailSection title="Details">
+          <DetailRow label="Name" value={deployment.name} />
+          <DetailRow label="Namespace" value={deployment.namespace} />
+          <DetailRow label="Status" value={<span className={getStatusTextClass(deployment.status || 'Unknown')}>{deployment.status || 'Unknown'}</span>} />
+          <DetailRow label="Ready" value={deployment.ready ?? '-'} />
+        </DetailSection>
 
-          <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
-            <div className="space-y-3">
-              <div>
-                <p className="text-text-secondary">Updated</p>
-                <p className="text-text">{deployment.updated ?? 0}</p>
+        <DetailSection title="Replicas & images">
+          <DetailRow label="Updated" value={deployment.updated ?? 0} />
+          <DetailRow label="Available" value={deployment.available ?? 0} />
+          <DetailRow label="Age" value={timeAgo(deployment.age)} />
+          <div className="mt-2 pt-2 border-t border-border">
+            <p className="text-text-secondary font-medium text-xs mb-1">Images</p>
+            {deployment.images?.length ? (
+              <div className="flex flex-wrap gap-1.5 min-w-0 max-w-full">
+                {deployment.images.map((image) => (
+                  <span key={image} className="inline-flex px-2 py-1 rounded-md bg-hover text-text text-xs max-w-full break-all">
+                    {image}
+                  </span>
+                ))}
               </div>
-              <div>
-                <p className="text-text-secondary">Available</p>
-                <p className="text-text">{deployment.available ?? 0}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Age</p>
-                <p className="text-text">{timeAgo(deployment.age)}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary mb-1">Images</p>
-                {deployment.images?.length ? (
-                  <div className="flex flex-wrap gap-1.5 min-w-0 max-w-full">
-                    {deployment.images.map((image) => (
-                      <span
-                        key={image}
-                        className="inline-flex px-2 py-1 rounded-md bg-hover text-text text-xs max-w-full break-all"
-                      >
-                        {image}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-text">-</p>
-                )}
-              </div>
-            </div>
-          </section>
+            ) : (
+              <p className="text-text text-xs">-</p>
+            )}
+          </div>
+        </DetailSection>
 
-          <section className="min-w-0 bg-surface border border-border rounded-lg p-4 space-y-3">
-            <p className="text-xs uppercase tracking-wide text-text-secondary">Manifest</p>
-            <div className="px-3 py-2 text-sm text-text-secondary border border-border rounded-md bg-surface-elevated">
-              Use the pencil icon in the top-right corner to edit deployment YAML in the bottom content tab.
-            </div>
-          </section>
-        </div>
-      </div>
-    </ResizablePanel>
+        <DetailSection title="Manifest">
+          <div className="px-3 py-2 text-sm text-text-secondary border border-border rounded-md bg-surface-elevated">
+            Use the pencil icon above to edit deployment YAML in the bottom panel.
+          </div>
+        </DetailSection>
+    </ResourceDetailPanelLayout>
   );
 };

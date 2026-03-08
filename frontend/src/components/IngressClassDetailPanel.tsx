@@ -1,8 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { IngressClass } from '../types';
 import { timeAgo } from '../utils';
-import { DetailPanelHeader } from './DetailPanelHeader';
-import { ResizablePanel } from './ResizablePanel';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface IngressClassDetailPanelProps {
   ingressClass: IngressClass;
@@ -11,50 +10,28 @@ interface IngressClassDetailPanelProps {
   onDelete?: (name: string) => Promise<void>;
 }
 
-export const IngressClassDetailPanel = ({ ingressClass, onClose, onOpenYamlEditor, onDelete }: IngressClassDetailPanelProps) => {
-  return (
-    <ResizablePanel>
-      <div className="h-full flex flex-col">
-        <DetailPanelHeader title="Ingress Class Info" onClose={onClose}>
-          <div className="flex gap-2">
-            <div className="group relative">
-              <button type="button" onClick={() => onOpenYamlEditor?.(ingressClass)} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors" aria-label="Edit ingress class YAML"><Pencil size={12} /></button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Edit YAML</div>
-            </div>
-            <div className="group relative">
-              <button type="button" onClick={() => onDelete?.(ingressClass.name)} className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors" aria-label="Delete ingress class"><Trash2 size={12} /></button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Delete</div>
-            </div>
-          </div>
-        </DetailPanelHeader>
-
-        <div className="flex-1 overflow-auto overflow-x-hidden p-5 space-y-5 text-sm">
-          <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
-            <div className="space-y-3">
-              <div>
-                <p className="text-text-secondary">Name</p>
-                <p className="text-primary font-medium break-all">{ingressClass.name}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Controller</p>
-                <p className="text-text break-all">{ingressClass.controller || '-'}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Default</p>
-                <p className="text-text">{ingressClass.is_default ? 'Yes' : 'No'}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Parameters</p>
-                <p className="text-text break-all">{ingressClass.parameters || '-'}</p>
-              </div>
-              <div>
-                <p className="text-text-secondary">Age</p>
-                <p className="text-text">{timeAgo(ingressClass.age)}</p>
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-    </ResizablePanel>
-  );
-};
+export const IngressClassDetailPanel = ({ ingressClass, onClose, onOpenYamlEditor, onDelete }: IngressClassDetailPanelProps) => (
+  <ResourceDetailPanelLayout
+    title={ingressClass.name}
+    keyInfo={[
+      { label: 'Controller', value: ingressClass.controller ?? '-' },
+      { label: 'Default', value: ingressClass.is_default ? 'Yes' : 'No' },
+      { label: 'Age', value: timeAgo(ingressClass.age) },
+    ]}
+    actions={
+      <>
+        <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor?.(ingressClass)} />
+        <PanelActionButton icon={Trash2} label="Delete" danger onClick={() => onDelete?.(ingressClass.name)} />
+      </>
+    }
+    onClose={onClose}
+  >
+    <DetailSection title="Ingress Class">
+      <DetailRow label="Name" value={ingressClass.name} />
+      <DetailRow label="Controller" value={ingressClass.controller ?? '-'} />
+      <DetailRow label="Default" value={ingressClass.is_default ? 'Yes' : 'No'} />
+      <DetailRow label="Parameters" value={ingressClass.parameters ?? '-'} />
+      <DetailRow label="Age" value={timeAgo(ingressClass.age)} />
+    </DetailSection>
+  </ResourceDetailPanelLayout>
+);
