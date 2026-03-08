@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useNetworkPolicies, deleteNetworkPolicy } from '../hooks/useKubernetes';
+import { useRealtimeNetworkPolicies } from '../hooks/useRealtimeResources';
+import { deleteNetworkPolicy } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, NetworkPolicyDetailPanel, ConfirmDialog } from '../components';
 import type { NetworkPolicy } from '../types';
@@ -28,7 +29,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 };
 
 export const NetworkPoliciesPage = () => {
-  const { data, isLoading, error } = useNetworkPolicies();
+  const { data, isLoading, error } = useRealtimeNetworkPolicies();
   const { selectedNamespaces } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<NetworkPolicy | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -96,7 +97,7 @@ export const NetworkPoliciesPage = () => {
 
       <div className="space-y-2">
         <DataTable
-          columns={columns} data={sortedData} isLoading={isLoading} error={error?.message || null} rowKey="id"
+          columns={columns} data={sortedData} isLoading={isLoading} error={error} rowKey="id"
           onRowClick={(row) => { setSelectedItem(row); setPanelOpen(true); }}
           selectedRowKey={panelOpen && selectedItem ? `${selectedItem.namespace}/${selectedItem.name}` : undefined}
           sortState={sortState} onSortChange={(s) => setSortState(s as { key: NetworkPolicySortKey; direction: 'asc' | 'desc' })}

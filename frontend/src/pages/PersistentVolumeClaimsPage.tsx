@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { usePersistentVolumeClaims, deletePersistentVolumeClaim } from '../hooks/useKubernetes';
+import { useRealtimePersistentVolumeClaims } from '../hooks/useRealtimeResources';
+import { deletePersistentVolumeClaim } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, PVCDetailPanel, ConfirmDialog } from '../components';
 import type { PersistentVolumeClaim } from '../types';
@@ -29,7 +30,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 };
 
 export const PersistentVolumeClaimsPage = () => {
-  const { data, isLoading, error } = usePersistentVolumeClaims();
+  const { data, isLoading, error } = useRealtimePersistentVolumeClaims();
   const { selectedNamespaces } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<PersistentVolumeClaim | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -108,7 +109,7 @@ export const PersistentVolumeClaimsPage = () => {
 
       <div className="space-y-2">
         <DataTable
-          columns={columns} data={sortedData} isLoading={isLoading} error={error?.message || null} rowKey="id"
+          columns={columns} data={sortedData} isLoading={isLoading} error={error} rowKey="id"
           onRowClick={(row) => { setSelectedItem(row); setPanelOpen(true); }}
           selectedRowKey={panelOpen && selectedItem ? `${selectedItem.namespace}/${selectedItem.name}` : undefined}
           sortState={sortState} onSortChange={(s) => setSortState(s as { key: PVCSortKey; direction: 'asc' | 'desc' })}

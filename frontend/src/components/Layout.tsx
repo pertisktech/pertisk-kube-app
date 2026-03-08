@@ -2,8 +2,8 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useNamespace } from '../context/NamespaceContext';
-import { useRealtimeNamespaces } from '../hooks/useRealtimeResources';
-import { useNamespaces, useCrds } from '../hooks/useKubernetes';
+import { useRealtimeNamespaces, useRealtimeCrds } from '../hooks/useRealtimeResources';
+import { useNamespaces } from '../hooks/useKubernetes';
 import { Checkbox } from './Checkbox';
 import { BottomPanel } from './BottomPanel';
 import {
@@ -140,12 +140,9 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const [helmOpen, setHelmOpen] = useState(false);
   const [accessControlOpen, setAccessControlOpen] = useState(false);
   const [customResourcesOpen, setCustomResourcesOpen] = useState(false);
-  const [expandedCrdGroups, setExpandedCrdGroups] = useState<Record<string, boolean>>({});
 
   const location = useLocation();
-  const shouldLoadCrdMenu = customResourcesOpen || location.pathname.startsWith('/crds');
-
-  const { data: crds, isLoading: crdsLoading } = useCrds(shouldLoadCrdMenu);
+  const { data: crds, isLoading: crdsLoading } = useRealtimeCrds();
 
   const crdGroups = useMemo(() => {
     if (!crds) return [];
@@ -212,14 +209,15 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     }
     if (pathname.startsWith('/crds')) {
       setCustomResourcesOpen(true);
-      // Also open the group that contains this CRD
-      const crdName = decodeURIComponent(pathname.replace('/crds/', ''));
-      if (crdName && crds) {
-        const found = crds.find((c) => c.name === crdName);
-        if (found) setExpandedCrdGroups((prev) => ({ ...prev, [found.group]: true }));
-      }
     }
-  }, [location.pathname, crds]);
+  }, [location.pathname]);
+
+  // Auto-expand Custom Resources when we have CRDs (realtime: no click needed to show sub menu)
+  useEffect(() => {
+    if (crdGroups.length > 0) {
+      setCustomResourcesOpen(true);
+    }
+  }, [crdGroups.length]);
 
   useEffect(() => {
     const merged = new Set<string>();
@@ -859,50 +857,36 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                     {!crdsLoading && crdGroups.length === 0 && (
                       <div className="px-4 py-2 pl-7 text-xs text-text-secondary">No custom resources found</div>
                     )}
-                    {!crdsLoading && crdGroups.map(({ group, crds: groupCrds }) => {
-                        const isGroupOpen = expandedCrdGroups[group] ?? false;
-                        return (
-                          <div key={group} className="space-y-0.5">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExpandedCrdGroups((p) => ({ ...p, [group]: !p[group] }))
-                              }
-                              className="w-full flex items-center gap-3 px-4 py-2 pl-7 text-sm text-text-secondary hover:text-text transition-colors"
-                            >
-                              <span className="flex-1 truncate text-left">{group}</span>
-                              <ChevronDown
-                                size={16}
-                                className={cn('transition-transform flex-shrink-0', isGroupOpen && 'rotate-180')}
-                              />
-                            </button>
-                            {isGroupOpen && (
-                              <div className="space-y-0.5">
-                                {groupCrds.map((crd) => {
-                                  const crdPath = `/crds/${encodeURIComponent(crd.name)}`;
-                                  const active = location.pathname === crdPath;
-                                  return (
-                                    <Link
-                                      key={crd.name}
-                                      to={crdPath}
-                                      onClick={() => setSidebarOpen(false)}
-                                      className={cn(
-                                        'flex items-center gap-3 px-4 py-2 pl-12 rounded-lg transition-colors text-sm font-medium',
-                                        active
-                                          ? 'bg-hover text-[var(--color-primary)] font-semibold'
-                                          : 'text-text-secondary hover:bg-hover hover:text-text'
-                                      )}
-                                      title={crd.name}
-                                    >
-                                      <span className="truncate">{crd.kind}</span>
-                                    </Link>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                    {/* Realtime: show all groups and CRDs without level-2/3 click */}
+                    {!crdsLoading && crdGroups.map(({ group, crds: groupCrds }) => (
+                      <div key={group} className="space-y-0.5">
+                        <div className="px-4 py-1.5 pl-7 text-xs font-medium text-text-secondary truncate" title={group}>
+                          {group}
+                        </div>
+                        <div className="space-y-0.5">
+                          {groupCrds.map((crd) => {
+                            const crdPath = `/crds/${encodeURIComponent(crd.name)}`;
+                            const active = location.pathname === crdPath;
+                            return (
+                              <Link
+                                key={crd.name}
+                                to={crdPath}
+                                onClick={() => setSidebarOpen(false)}
+                                className={cn(
+                                  'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
+                                  active
+                                    ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                                    : 'text-text-secondary hover:bg-hover hover:text-text'
+                                )}
+                                title={crd.name}
+                              >
+                                <span className="truncate">{crd.kind}</span>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

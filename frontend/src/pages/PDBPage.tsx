@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { usePDB, deletePDB } from '../hooks/useKubernetes';
+import { useRealtimePDB } from '../hooks/useRealtimeResources';
+import { deletePDB } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, PDBDetailPanel, ConfirmDialog } from '../components';
 import type { PDB } from '../types';
@@ -45,7 +46,7 @@ const sanitizePDBYamlForEdit = (yamlText: string) => {
 };
 
 export const PDBPage = () => {
-  const { data, isLoading, error } = usePDB();
+  const { data, isLoading, error } = useRealtimePDB();
   const { selectedNamespaces } = useNamespace();
   const [selectedPDB, setSelectedPDB] = useState<PDB | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -199,7 +200,7 @@ export const PDBPage = () => {
           columns={columns}
           data={sortedPDBs}
           isLoading={isLoading}
-          error={error?.message || null}
+          error={error}
           rowKey="id"
           onRowClick={(row) => {
             setSelectedPDB(row);

@@ -7,7 +7,11 @@ use axum::{
     response::Response,
 };
 use futures_util::{sink::SinkExt, stream::StreamExt};
-use kube::{Api, runtime::watcher};
+use kube::{
+    api::{ApiResource, DynamicObject, GroupVersionKind, ListParams},
+    Api, runtime::watcher,
+};
+use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
@@ -563,6 +567,38 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     "jobs" => watch_jobs(state_clone, tx_clone).await,
                                     "cronjobs" => watch_cronjobs(state_clone, tx_clone).await,
                                     "events" => watch_events(state_clone, tx_clone).await,
+                                    "nodes" => watch_nodes(state_clone, tx_clone).await,
+                                    "services" => watch_services(state_clone, tx_clone).await,
+                                    "configmaps" => watch_configmaps(state_clone, tx_clone).await,
+                                    "secrets" => watch_secrets(state_clone, tx_clone).await,
+                                    "resourcequotas" => watch_resourcequotas(state_clone, tx_clone).await,
+                                    "limitranges" => watch_limitranges(state_clone, tx_clone).await,
+                                    "hpa" => watch_hpa(state_clone, tx_clone).await,
+                                    "pdb" => watch_pdb(state_clone, tx_clone).await,
+                                    "ingresses" => watch_ingresses(state_clone, tx_clone).await,
+                                    "ingressclasses" => watch_ingressclasses(state_clone, tx_clone).await,
+                                    "endpoints" => watch_endpoints(state_clone, tx_clone).await,
+                                    "networkpolicies" => watch_networkpolicies(state_clone, tx_clone).await,
+                                    "persistentvolumes" => watch_persistentvolumes(state_clone, tx_clone).await,
+                                    "persistentvolumeclaims" => watch_persistentvolumeclaims(state_clone, tx_clone).await,
+                                    "storageclasses" => watch_storageclasses(state_clone, tx_clone).await,
+                                    "serviceaccounts" => watch_serviceaccounts(state_clone, tx_clone).await,
+                                    "clusterroles" => watch_clusterroles(state_clone, tx_clone).await,
+                                    "clusterrolebindings" => watch_clusterrolebindings(state_clone, tx_clone).await,
+                                    "roles" => watch_roles(state_clone, tx_clone).await,
+                                    "rolebindings" => watch_rolebindings(state_clone, tx_clone).await,
+                                    "priorityclasses" => watch_priorityclasses(state_clone, tx_clone).await,
+                                    "runtimeclasses" => watch_runtimeclasses(state_clone, tx_clone).await,
+                                    "leases" => watch_leases(state_clone, tx_clone).await,
+                                    "crds" => watch_crds(state_clone, tx_clone).await,
+                                    _ if resource_clone.starts_with("customresources/") => {
+                                        let crd_name = resource_clone.strip_prefix("customresources/").unwrap_or("").to_string();
+                                        if crd_name.is_empty() {
+                                            let _ = tx_clone.send(ServerMessage::Error { message: "customresources/ requires CRD name".into() }).await;
+                                        } else {
+                                            watch_custom_resources(state_clone, tx_clone, &resource_clone, &crd_name).await;
+                                        }
+                                    }
                                     _ => {
                                         error!("Unknown resource type: {}", resource_clone);
                                         let msg = ServerMessage::Error {
@@ -833,4 +869,120 @@ create_watch_fn!(watch_jobs, k8s_openapi::api::batch::v1::Job, "jobs");
 create_watch_fn!(watch_cronjobs, k8s_openapi::api::batch::v1::CronJob, "cronjobs");
 create_watch_fn!(watch_events, k8s_openapi::api::core::v1::Event, "events");
 create_watch_fn!(watch_namespaces, k8s_openapi::api::core::v1::Namespace, "namespaces");
+create_watch_fn!(watch_nodes, k8s_openapi::api::core::v1::Node, "nodes");
+create_watch_fn!(watch_services, k8s_openapi::api::core::v1::Service, "services");
+create_watch_fn!(watch_configmaps, k8s_openapi::api::core::v1::ConfigMap, "configmaps");
+create_watch_fn!(watch_secrets, k8s_openapi::api::core::v1::Secret, "secrets");
+create_watch_fn!(watch_resourcequotas, k8s_openapi::api::core::v1::ResourceQuota, "resourcequotas");
+create_watch_fn!(watch_limitranges, k8s_openapi::api::core::v1::LimitRange, "limitranges");
+create_watch_fn!(watch_hpa, k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler, "hpa");
+create_watch_fn!(watch_pdb, k8s_openapi::api::policy::v1::PodDisruptionBudget, "pdb");
+create_watch_fn!(watch_ingresses, k8s_openapi::api::networking::v1::Ingress, "ingresses");
+create_watch_fn!(watch_ingressclasses, k8s_openapi::api::networking::v1::IngressClass, "ingressclasses");
+create_watch_fn!(watch_endpoints, k8s_openapi::api::core::v1::Endpoints, "endpoints");
+create_watch_fn!(watch_networkpolicies, k8s_openapi::api::networking::v1::NetworkPolicy, "networkpolicies");
+create_watch_fn!(watch_persistentvolumes, k8s_openapi::api::core::v1::PersistentVolume, "persistentvolumes");
+create_watch_fn!(watch_persistentvolumeclaims, k8s_openapi::api::core::v1::PersistentVolumeClaim, "persistentvolumeclaims");
+create_watch_fn!(watch_storageclasses, k8s_openapi::api::storage::v1::StorageClass, "storageclasses");
+create_watch_fn!(watch_serviceaccounts, k8s_openapi::api::core::v1::ServiceAccount, "serviceaccounts");
+create_watch_fn!(watch_clusterroles, k8s_openapi::api::rbac::v1::ClusterRole, "clusterroles");
+create_watch_fn!(watch_clusterrolebindings, k8s_openapi::api::rbac::v1::ClusterRoleBinding, "clusterrolebindings");
+create_watch_fn!(watch_roles, k8s_openapi::api::rbac::v1::Role, "roles");
+create_watch_fn!(watch_rolebindings, k8s_openapi::api::rbac::v1::RoleBinding, "rolebindings");
+create_watch_fn!(watch_priorityclasses, k8s_openapi::api::scheduling::v1::PriorityClass, "priorityclasses");
+create_watch_fn!(watch_runtimeclasses, k8s_openapi::api::node::v1::RuntimeClass, "runtimeclasses");
+create_watch_fn!(watch_leases, k8s_openapi::api::coordination::v1::Lease, "leases");
+create_watch_fn!(watch_crds, k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition, "crds");
+
+async fn watch_custom_resources(
+    state: AppState,
+    tx: tokio::sync::mpsc::Sender<ServerMessage>,
+    resource_name: &str,
+    crd_name: &str,
+) {
+    let crd_api: Api<CustomResourceDefinition> = Api::all(state.client.clone());
+    let crd = match crd_api.get(crd_name).await {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to fetch CRD {}: {}", crd_name, e);
+            let _ = tx.send(ServerMessage::Error { message: format!("CRD not found: {}", crd_name) }).await;
+            return;
+        }
+    };
+    let spec = &crd.spec;
+    let names = &spec.names;
+    let storage_version = spec
+        .versions
+        .iter()
+        .find(|v| v.storage)
+        .or_else(|| spec.versions.first())
+        .map(|v| v.name.clone())
+        .unwrap_or_default();
+    let gvk = GroupVersionKind::gvk(&spec.group, &storage_version, &names.kind);
+    let ar = ApiResource::from_gvk_with_plural(&gvk, &names.plural);
+
+    let api: Api<DynamicObject> = Api::all_with(state.client.clone(), &ar);
+    info!("Fetching initial custom resource list for {}...", resource_name);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            for item in list.items {
+                let item_data = serde_json::to_value(&item).unwrap_or_default();
+                if tx.send(ServerMessage::ResourceUpdate {
+                    resource: resource_name.to_string(),
+                    action: "ADDED".to_string(),
+                    data: item_data,
+                }).await.is_err() {
+                    return;
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to list custom resources for {}: {}", crd_name, e);
+            let _ = tx.send(ServerMessage::Error { message: format!("List failed: {}", e) }).await;
+            return;
+        }
+    }
+    info!("Starting custom resource watch stream for {}", resource_name);
+    let stream = watcher(api, Default::default());
+    tokio::pin!(stream);
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(event) => {
+                use kube::runtime::watcher::Event;
+                let (action, item_opt) = match event {
+                    Event::Applied(item) => ("MODIFIED", Some(item)),
+                    Event::Deleted(item) => ("DELETED", Some(item)),
+                    Event::Restarted(items) => {
+                        for item in items {
+                            let item_data = serde_json::to_value(&item).unwrap_or_default();
+                            if tx.send(ServerMessage::ResourceUpdate {
+                                resource: resource_name.to_string(),
+                                action: "MODIFIED".to_string(),
+                                data: item_data,
+                            }).await.is_err() {
+                                return;
+                            }
+                        }
+                        continue;
+                    }
+                };
+                if let Some(item) = item_opt {
+                    let item_data = serde_json::to_value(&item).unwrap_or_default();
+                    if tx.send(ServerMessage::ResourceUpdate {
+                        resource: resource_name.to_string(),
+                        action: action.to_string(),
+                        data: item_data,
+                    }).await.is_err() {
+                        break;
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Watch error for {}: {}", resource_name, e);
+                let _ = tx.send(ServerMessage::Error { message: format!("Watch error: {}", e) }).await;
+                break;
+            }
+        }
+    }
+}
 

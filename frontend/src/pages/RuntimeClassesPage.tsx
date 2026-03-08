@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import { useRuntimeClasses, deleteRuntimeClass } from '../hooks/useKubernetes';
+import { useRealtimeRuntimeClasses } from '../hooks/useRealtimeResources';
+import { deleteRuntimeClass } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';
 import { RuntimeClassDetailPanel, ConfirmDialog } from '../components';
 import type { RuntimeClass } from '../types';
@@ -9,7 +10,7 @@ import { timeAgo } from '../utils';
 type RuntimeClassSortKey = 'name' | 'handler' | 'scheduling' | 'age';
 
 export const RuntimeClassesPage = () => {
-  const { data, isLoading, error } = useRuntimeClasses();
+  const { data, isLoading, error } = useRealtimeRuntimeClasses();
   const [selectedRuntimeClass, setSelectedRuntimeClass] = useState<RuntimeClass | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -151,7 +152,7 @@ export const RuntimeClassesPage = () => {
         data={sortedData}
         rowKey="name"
         isLoading={isLoading}
-        error={error?.message || null}
+        error={error}
         sortState={sortState}
         onSortChange={(newSort) =>
           setSortState(newSort as { key: RuntimeClassSortKey; direction: 'asc' | 'desc' })

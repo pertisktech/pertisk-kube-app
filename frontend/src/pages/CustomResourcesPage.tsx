@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import YAML from 'yaml';
 import { ChevronDown, Layers, Pencil, Trash2, X } from 'lucide-react';
-import { useCrds, useCustomResources, deleteCustomResource } from '../hooks/useKubernetes';
+import { useRealtimeCrds, useRealtimeCustomResources } from '../hooks/useRealtimeResources';
+import { deleteCustomResource } from '../hooks/useKubernetes';
 import { DataTable } from '../components';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useNamespace } from '../context/NamespaceContext';
@@ -204,17 +205,19 @@ export const CustomResourcesPage = () => {
   const { crdName } = useParams<{ crdName: string }>();
   const decodedCrdName = crdName ? decodeURIComponent(crdName) : '';
 
-  const { data: crds } = useCrds();
+  const { data: crds } = useRealtimeCrds();
   const { selectedNamespaces } = useNamespace();
 
   const crd = crds?.find((c) => c.name === decodedCrdName);
   const isNamespaced = crd?.scope === 'Namespaced';
 
-  // For namespaced CRDs pass the first selected namespace (or none = all)
-  const namespace =
-    isNamespaced && selectedNamespaces.length === 1 ? selectedNamespaces[0] : undefined;
-
-  const { data, isLoading, error } = useCustomResources(decodedCrdName, namespace);
+  const { data: rawData, isLoading, error } = useRealtimeCustomResources(decodedCrdName || null);
+  // For namespaced CRDs filter by selected namespaces when set
+  const data = useMemo(() => {
+    if (!rawData?.length) return rawData ?? [];
+    if (!isNamespaced || selectedNamespaces.length === 0) return rawData;
+    return rawData.filter((item) => item.namespace && selectedNamespaces.includes(item.namespace));
+  }, [rawData, isNamespaced, selectedNamespaces]);
 
   const [selectedItem, setSelectedItem] = useState<CustomResource | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);

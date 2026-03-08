@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import { usePriorityClasses, deletePriorityClass } from '../hooks/useKubernetes';
+import { useRealtimePriorityClasses } from '../hooks/useRealtimeResources';
+import { deletePriorityClass } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';
 import { PriorityClassDetailPanel, ConfirmDialog } from '../components';
 import type { PriorityClass } from '../types';
@@ -9,7 +10,7 @@ import { timeAgo } from '../utils';
 type PriorityClassSortKey = 'name' | 'value' | 'global_default' | 'age';
 
 export const PriorityClassesPage = () => {
-  const { data, isLoading, error } = usePriorityClasses();
+  const { data, isLoading, error } = useRealtimePriorityClasses();
   const [selectedPriorityClass, setSelectedPriorityClass] = useState<PriorityClass | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -149,7 +150,7 @@ export const PriorityClassesPage = () => {
         data={sortedData}
         rowKey="name"
         isLoading={isLoading}
-        error={error?.message || null}
+        error={error}
         sortState={sortState}
         onSortChange={(newSort) =>
           setSortState(newSort as { key: PriorityClassSortKey; direction: 'asc' | 'desc' })

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useSecrets, deleteSecret } from '../hooks/useKubernetes';
+import { useRealtimeSecrets } from '../hooks/useRealtimeResources';
+import { deleteSecret } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, SecretDetailPanel, ConfirmDialog } from '../components';
 import type { Secret } from '../types';
@@ -45,7 +46,7 @@ const sanitizeSecretYamlForEdit = (yamlText: string) => {
 };
 
 export const SecretsPage = () => {
-  const { data, isLoading, error } = useSecrets();
+  const { data, isLoading, error } = useRealtimeSecrets();
   const { selectedNamespaces } = useNamespace();
   const [selectedSecret, setSelectedSecret] = useState<Secret | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -200,7 +201,7 @@ export const SecretsPage = () => {
           columns={columns}
           data={sortedSecrets}
           isLoading={isLoading}
-          error={error?.message || null}
+          error={error}
           rowKey="id"
           onRowClick={(row) => {
             setSelectedSecret(row);

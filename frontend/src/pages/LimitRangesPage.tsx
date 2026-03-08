@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useLimitRanges, deleteLimitRange } from '../hooks/useKubernetes';
+import { useRealtimeLimitRanges } from '../hooks/useRealtimeResources';
+import { deleteLimitRange } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, LimitRangeDetailPanel, ConfirmDialog } from '../components';
 import type { LimitRange } from '../types';
@@ -45,7 +46,7 @@ const sanitizeLimitRangeYamlForEdit = (yamlText: string) => {
 };
 
 export const LimitRangesPage = () => {
-  const { data, isLoading, error } = useLimitRanges();
+  const { data, isLoading, error } = useRealtimeLimitRanges();
   const { selectedNamespaces } = useNamespace();
   const [selectedLimitRange, setSelectedLimitRange] = useState<LimitRange | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -199,7 +200,7 @@ export const LimitRangesPage = () => {
           columns={columns}
           data={sortedLimitRanges}
           isLoading={isLoading}
-          error={error?.message || null}
+          error={error}
           rowKey="id"
           onRowClick={(row) => {
             setSelectedLimitRange(row);

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useClusterRoleBindings, deleteClusterRoleBinding } from '../hooks/useKubernetes';
+import { useRealtimeClusterRoleBindings } from '../hooks/useRealtimeResources';
+import { deleteClusterRoleBinding } from '../hooks/useKubernetes';
 import { DataTable, ClusterRoleBindingDetailPanel, ConfirmDialog } from '../components';
 import type { ClusterRoleBinding } from '../types';
 import { getAuthToken } from '../utils/auth';
@@ -27,7 +28,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 };
 
 export const ClusterRoleBindingsPage = () => {
-  const { data, isLoading, error } = useClusterRoleBindings();
+  const { data, isLoading, error } = useRealtimeClusterRoleBindings();
   const [selectedItem, setSelectedItem] = useState<ClusterRoleBinding | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -85,7 +86,7 @@ export const ClusterRoleBindingsPage = () => {
 
       <div className="space-y-2">
         <DataTable
-          columns={columns} data={sortedData} isLoading={isLoading} error={error?.message || null} rowKey="id"
+          columns={columns} data={sortedData} isLoading={isLoading} error={error} rowKey="id"
           onRowClick={(row) => { setSelectedItem(row); setPanelOpen(true); }}
           selectedRowKey={panelOpen && selectedItem ? selectedItem.name : undefined}
           sortState={sortState} onSortChange={(s) => setSortState(s as { key: ClusterRoleBindingsSortKey; direction: 'asc' | 'desc' })}

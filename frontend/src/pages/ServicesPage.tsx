@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useServices, deleteService } from '../hooks/useKubernetes';
+import { useRealtimeServices } from '../hooks/useRealtimeResources';
+import { deleteService } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ServiceDetailPanel, ConfirmDialog } from '../components';
 import type { Service } from '../types';
@@ -39,7 +40,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 const getKey = (item: Service) => `${item.namespace}/${item.name}`;
 
 export const ServicesPage = () => {
-  const { data, isLoading, error } = useServices();
+  const { data, isLoading, error } = useRealtimeServices();
   const { selectedNamespaces } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<Service | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -125,7 +126,7 @@ export const ServicesPage = () => {
           columns={columns}
           data={sortedData}
           isLoading={isLoading}
-          error={error?.message || null}
+          error={error}
           rowKey="id"
           onRowClick={(row) => { setSelectedItem(row); setPanelOpen(true); }}
           selectedRowKey={panelOpen && selectedItem ? getKey(selectedItem) : undefined}

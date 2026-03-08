@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useRoleBindings, deleteRoleBinding } from '../hooks/useKubernetes';
+import { useRealtimeRoleBindings } from '../hooks/useRealtimeResources';
+import { deleteRoleBinding } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, RoleBindingDetailPanel, ConfirmDialog } from '../components';
 import type { RoleBinding } from '../types';
@@ -28,7 +29,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 };
 
 export const RoleBindingsPage = () => {
-  const { data, isLoading, error } = useRoleBindings();
+  const { data, isLoading, error } = useRealtimeRoleBindings();
   const { selectedNamespaces } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<RoleBinding | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -95,7 +96,7 @@ export const RoleBindingsPage = () => {
 
       <div className="space-y-2">
         <DataTable
-          columns={columns} data={sortedData} isLoading={isLoading} error={error?.message || null} rowKey="id"
+          columns={columns} data={sortedData} isLoading={isLoading} error={error} rowKey="id"
           onRowClick={(row) => { setSelectedItem(row); setPanelOpen(true); }}
           selectedRowKey={panelOpen && selectedItem ? `${(selectedItem as any).namespace}/${selectedItem.name}` : undefined}
           sortState={sortState} onSortChange={(s) => setSortState(s as { key: RoleBindingsSortKey; direction: 'asc' | 'desc' })}

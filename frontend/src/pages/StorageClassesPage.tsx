@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useStorageClasses, deleteStorageClass } from '../hooks/useKubernetes';
+import { useRealtimeStorageClasses } from '../hooks/useRealtimeResources';
+import { deleteStorageClass } from '../hooks/useKubernetes';
 import { DataTable, StorageClassDetailPanel, ConfirmDialog } from '../components';
 import type { StorageClass } from '../types';
 import { getAuthToken } from '../utils/auth';
@@ -28,7 +29,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 };
 
 export const StorageClassesPage = () => {
-  const { data, isLoading, error } = useStorageClasses();
+  const { data, isLoading, error } = useRealtimeStorageClasses();
   const [selectedItem, setSelectedItem] = useState<StorageClass | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -103,7 +104,7 @@ export const StorageClassesPage = () => {
 
       <div className="space-y-2">
         <DataTable
-          columns={columns} data={sortedData} isLoading={isLoading} error={error?.message || null} rowKey="id"
+          columns={columns} data={sortedData} isLoading={isLoading} error={error} rowKey="id"
           onRowClick={(row) => { setSelectedItem(row); setPanelOpen(true); }}
           selectedRowKey={panelOpen && selectedItem ? selectedItem.name : undefined}
           sortState={sortState} onSortChange={(s) => setSortState(s as { key: StorageClassSortKey; direction: 'asc' | 'desc' })}

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useConfigMaps, deleteConfigMap } from '../hooks/useKubernetes';
+import { useRealtimeConfigMaps } from '../hooks/useRealtimeResources';
+import { deleteConfigMap } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ConfigMapDetailPanel, ConfirmDialog } from '../components';
 import type { ConfigMap } from '../types';
@@ -45,7 +46,7 @@ const sanitizeConfigMapYamlForEdit = (yamlText: string) => {
 };
 
 export const ConfigMapsPage = () => {
-  const { data, isLoading, error } = useConfigMaps();
+  const { data, isLoading, error } = useRealtimeConfigMaps();
   const { selectedNamespaces } = useNamespace();
   const [selectedConfigMap, setSelectedConfigMap] = useState<ConfigMap | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -190,7 +191,7 @@ export const ConfigMapsPage = () => {
           columns={columns}
           data={sortedConfigMaps}
           isLoading={isLoading}
-          error={error?.message || null}
+          error={error}
           rowKey="id"
           onRowClick={(row) => {
             setSelectedConfigMap(row);

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useRoles, deleteRole } from '../hooks/useKubernetes';
+import { useRealtimeRoles } from '../hooks/useRealtimeResources';
+import { deleteRole } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, RoleDetailPanel, ConfirmDialog } from '../components';
 import type { Role } from '../types';
@@ -28,7 +29,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 };
 
 export const RolesPage = () => {
-  const { data, isLoading, error } = useRoles();
+  const { data, isLoading, error } = useRealtimeRoles();
   const { selectedNamespaces } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<Role | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -94,7 +95,7 @@ export const RolesPage = () => {
 
       <div className="space-y-2">
         <DataTable
-          columns={columns} data={sortedData} isLoading={isLoading} error={error?.message || null} rowKey="id"
+          columns={columns} data={sortedData} isLoading={isLoading} error={error} rowKey="id"
           onRowClick={(row) => { setSelectedItem(row); setPanelOpen(true); }}
           selectedRowKey={panelOpen && selectedItem ? `${(selectedItem as any).namespace}/${selectedItem.name}` : undefined}
           sortState={sortState} onSortChange={(s) => setSortState(s as { key: RolesSortKey; direction: 'asc' | 'desc' })}

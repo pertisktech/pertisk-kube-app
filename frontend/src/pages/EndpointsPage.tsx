@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useEndpoints, deleteEndpoint } from '../hooks/useKubernetes';
+import { useRealtimeEndpoints } from '../hooks/useRealtimeResources';
+import { deleteEndpoint } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, EndpointDetailPanel, ConfirmDialog } from '../components';
 import type { Endpoint } from '../types';
@@ -30,7 +31,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 const getKey = (item: Endpoint) => `${item.namespace}/${item.name}`;
 
 export const EndpointsPage = () => {
-  const { data, isLoading, error } = useEndpoints();
+  const { data, isLoading, error } = useRealtimeEndpoints();
   const { selectedNamespaces } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<Endpoint | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -97,7 +98,7 @@ export const EndpointsPage = () => {
 
       <div className="space-y-2">
         <DataTable
-          columns={columns} data={sortedData} isLoading={isLoading} error={error?.message || null} rowKey="id"
+          columns={columns} data={sortedData} isLoading={isLoading} error={error} rowKey="id"
           onRowClick={(row) => { setSelectedItem(row); setPanelOpen(true); }}
           selectedRowKey={panelOpen && selectedItem ? getKey(selectedItem) : undefined}
           sortState={sortState} onSortChange={(s) => setSortState(s as { key: EndpointSortKey; direction: 'asc' | 'desc' })}

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useServiceAccounts, deleteServiceAccount } from '../hooks/useKubernetes';
+import { useRealtimeServiceAccounts } from '../hooks/useRealtimeResources';
+import { deleteServiceAccount } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ServiceAccountDetailPanel, ConfirmDialog } from '../components';
 import type { ServiceAccount } from '../types';
@@ -28,7 +29,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 };
 
 export const ServiceAccountsPage = () => {
-  const { data, isLoading, error } = useServiceAccounts();
+  const { data, isLoading, error } = useRealtimeServiceAccounts();
   const { selectedNamespaces } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<ServiceAccount | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -94,7 +95,7 @@ export const ServiceAccountsPage = () => {
 
       <div className="space-y-2">
         <DataTable
-          columns={columns} data={sortedData} isLoading={isLoading} error={error?.message || null} rowKey="id"
+          columns={columns} data={sortedData} isLoading={isLoading} error={error} rowKey="id"
           onRowClick={(row) => { setSelectedItem(row); setPanelOpen(true); }}
           selectedRowKey={panelOpen && selectedItem ? `${(selectedItem as any).namespace}/${selectedItem.name}` : undefined}
           sortState={sortState} onSortChange={(s) => setSortState(s as { key: ServiceAccountsSortKey; direction: 'asc' | 'desc' })}

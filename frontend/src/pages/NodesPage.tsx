@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
-import { useNodes, deleteNode, cordonNode, uncordonNode, drainNode } from '../hooks/useKubernetes';
-import { useRealtimeEvents } from '../hooks/useRealtimeResources';
+import { useRealtimeNodes, useRealtimeEvents } from '../hooks/useRealtimeResources';
+import { deleteNode, cordonNode, uncordonNode, drainNode } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -35,7 +35,7 @@ const toPercent = (value?: number) => {
 };
 
 export const NodesPage = () => {
-  const { data, isLoading, error } = useNodes();
+  const { data, isLoading, error } = useRealtimeNodes();
   const { data: eventsData } = useRealtimeEvents();
   const [selectedNode, setSelectedNode] = useState<K8sNode | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -337,7 +337,7 @@ export const NodesPage = () => {
         columns={columns}
         data={sortedNodes}
         isLoading={isLoading}
-        error={error?.message}
+        error={error}
         rowKey="name"
         onRowClick={handleNodeClick}
         selectedRowKey={panelOpen ? selectedNode?.name : undefined}

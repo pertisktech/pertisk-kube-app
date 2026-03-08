@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useHPA, deleteHPA } from '../hooks/useKubernetes';
+import { useRealtimeHPA } from '../hooks/useRealtimeResources';
+import { deleteHPA } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, HPADetailPanel, ConfirmDialog } from '../components';
 import type { HPA } from '../types';
@@ -45,7 +46,7 @@ const sanitizeHPAYamlForEdit = (yamlText: string) => {
 };
 
 export const HPAPage = () => {
-  const { data, isLoading, error } = useHPA();
+  const { data, isLoading, error } = useRealtimeHPA();
   const { selectedNamespaces } = useNamespace();
   const [selectedHPA, setSelectedHPA] = useState<HPA | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -221,7 +222,7 @@ export const HPAPage = () => {
           columns={columns}
           data={sortedHPAs}
           isLoading={isLoading}
-          error={error?.message || null}
+          error={error}
           rowKey="id"
           onRowClick={(row) => {
             setSelectedHPA(row);

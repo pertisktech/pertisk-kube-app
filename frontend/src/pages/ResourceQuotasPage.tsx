@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useResourceQuotas, deleteResourceQuota } from '../hooks/useKubernetes';
+import { useRealtimeResourceQuotas } from '../hooks/useRealtimeResources';
+import { deleteResourceQuota } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ResourceQuotaDetailPanel, ConfirmDialog } from '../components';
 import type { ResourceQuota } from '../types';
@@ -45,7 +46,7 @@ const sanitizeResourceQuotaYamlForEdit = (yamlText: string) => {
 };
 
 export const ResourceQuotasPage = () => {
-  const { data, isLoading, error } = useResourceQuotas();
+  const { data, isLoading, error } = useRealtimeResourceQuotas();
   const { selectedNamespaces } = useNamespace();
   const [selectedResourceQuota, setSelectedResourceQuota] = useState<ResourceQuota | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -204,7 +205,7 @@ export const ResourceQuotasPage = () => {
           columns={columns}
           data={sortedResourceQuotas}
           isLoading={isLoading}
-          error={error?.message || null}
+          error={error}
           rowKey="id"
           onRowClick={(row) => {
             setSelectedResourceQuota(row);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import { useLeases, deleteLease } from '../hooks/useKubernetes';
+import { useRealtimeLeases } from '../hooks/useRealtimeResources';
+import { deleteLease } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
 import { LeaseDetailPanel, ConfirmDialog } from '../components';
@@ -10,7 +11,7 @@ import { timeAgo } from '../utils';
 type LeaseSortKey = 'name' | 'namespace' | 'holder_identity' | 'lease_duration_seconds' | 'age';
 
 export const LeasesPage = () => {
-  const { data, isLoading, error } = useLeases();
+  const { data, isLoading, error } = useRealtimeLeases();
   const { selectedNamespaces } = useNamespace();
   const [selectedLease, setSelectedLease] = useState<Lease | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -164,7 +165,7 @@ export const LeasesPage = () => {
         data={sortedAndFilteredData}
         rowKey="id"
         isLoading={isLoading}
-        error={error?.message || null}
+        error={error}
         sortState={sortState}
         onSortChange={(newSort) =>
           setSortState(newSort as { key: LeaseSortKey; direction: 'asc' | 'desc' })

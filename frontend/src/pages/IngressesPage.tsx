@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
-import { useIngresses, deleteIngress } from '../hooks/useKubernetes';
+import { useRealtimeIngresses } from '../hooks/useRealtimeResources';
+import { deleteIngress } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, IngressDetailPanel, ConfirmDialog } from '../components';
 import type { Ingress } from '../types';
@@ -30,7 +31,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 const getKey = (item: Ingress) => `${item.namespace}/${item.name}`;
 
 export const IngressesPage = () => {
-  const { data, isLoading, error } = useIngresses();
+  const { data, isLoading, error } = useRealtimeIngresses();
   const { selectedNamespaces } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<Ingress | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -99,7 +100,7 @@ export const IngressesPage = () => {
 
       <div className="space-y-2">
         <DataTable
-          columns={columns} data={sortedData} isLoading={isLoading} error={error?.message || null} rowKey="id"
+          columns={columns} data={sortedData} isLoading={isLoading} error={error} rowKey="id"
           onRowClick={(row) => { setSelectedItem(row); setPanelOpen(true); }}
           selectedRowKey={panelOpen && selectedItem ? getKey(selectedItem) : undefined}
           sortState={sortState} onSortChange={(s) => setSortState(s as { key: IngressSortKey; direction: 'asc' | 'desc' })}
