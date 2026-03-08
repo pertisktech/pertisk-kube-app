@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { Namespace } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection } from './drawer';
 
 interface NamespaceDetailPanelProps {
   namespace: Namespace;
@@ -33,22 +33,25 @@ export const NamespaceDetailPanel = ({ namespace, onClose, getStatusClass, onOpe
       }
       onClose={onClose}
     >
+      <DrawerTitle>Property</DrawerTitle>
       <DrawerItem name="Name">{namespace.name}</DrawerItem>
       <DrawerItem name="Status">
         <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${getStatusClass(namespace.phase)}`}>{namespace.phase}</span>
       </DrawerItem>
       <DrawerItem name="Age">{timeAgo(namespace.age)}</DrawerItem>
-      <DrawerItem name="Labels" labelsOnly>
-        {labelItems.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            {labelItems.map((label) => (
-              <span key={label} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{label}</span>
-            ))}
-          </div>
-        ) : (
-          '—'
-        )}
-      </DrawerItem>
+      <DrawerCollapsibleSection title="Metadata">
+        <DrawerItem name="Labels" labelsOnly>
+          {labelItems.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {labelItems.map((label) => (
+                <span key={label} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{label}</span>
+              ))}
+            </div>
+          ) : (
+            <span className="text-xs" style={{ color: 'var(--color-muted)' }}>No labels</span>
+          )}
+        </DrawerItem>
+      </DrawerCollapsibleSection>
     </ResourceDetailPanelLayout>
   );
 };

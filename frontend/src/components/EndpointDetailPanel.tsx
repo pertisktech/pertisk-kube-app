@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { Endpoint } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface EndpointDetailPanelProps {
   endpoint: Endpoint;
@@ -27,12 +27,15 @@ export const EndpointDetailPanel = ({ endpoint, onClose, onOpenYamlEditor, onDel
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{endpoint.name}</DrawerItem>
     <DrawerItem name="Namespace">{endpoint.namespace}</DrawerItem>
     <DrawerItem name="Ready Addresses">{endpoint.addresses ?? 0}</DrawerItem>
     <DrawerItem name="Not Ready Addresses">{endpoint.not_ready ?? 0}</DrawerItem>
     <DrawerItem name="Ports">{endpoint.ports ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(endpoint.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={endpoint.labels} annotations={endpoint.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={endpoint.labels} annotations={endpoint.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

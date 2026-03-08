@@ -161,8 +161,14 @@ export const ResourceDetailPanelLayout = ({
           )}
         </div>
 
-        {/* Content: drawer-style scrollable area — text-sm to match table columns */}
-        <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden px-5 py-5 text-sm" style={{ color: 'var(--color-text)' }}>
+        {/* Content: Freelens-style drawer content — scrollable, same padding as drawer-content */}
+        <div
+          className="ResourceDetailPanel-content flex-1 min-h-0 overflow-auto overflow-x-hidden text-sm"
+          style={{
+            padding: 'var(--drawer-content-spacing, 1.5rem)',
+            color: 'var(--color-text)',
+          }}
+        >
           {children}
         </div>
       </div>

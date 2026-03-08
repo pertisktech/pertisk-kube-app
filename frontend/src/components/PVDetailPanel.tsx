@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { PersistentVolume } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface PVDetailPanelProps {
   pv: PersistentVolume;
@@ -28,6 +28,7 @@ export const PVDetailPanel = ({ pv, onClose, onOpenYamlEditor, onDelete }: PVDet
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{pv.name}</DrawerItem>
     <DrawerItem name="Capacity">{pv.capacity ?? '-'}</DrawerItem>
     <DrawerItem name="Access Modes">{pv.access_modes ?? '-'}</DrawerItem>
@@ -36,6 +37,8 @@ export const PVDetailPanel = ({ pv, onClose, onOpenYamlEditor, onDelete }: PVDet
     <DrawerItem name="Claim">{pv.claim ?? '-'}</DrawerItem>
     <DrawerItem name="Storage Class">{pv.storage_class ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(pv.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={pv.labels} annotations={pv.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={pv.labels} annotations={pv.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

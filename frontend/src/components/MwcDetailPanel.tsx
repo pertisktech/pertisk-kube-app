@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { Mwc } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface MwcDetailPanelProps {
   mwc: Mwc;
@@ -27,9 +27,12 @@ export const MwcDetailPanel = ({ mwc, onClose, onOpenYamlEditor, onDelete }: Mwc
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{mwc.name}</DrawerItem>
     <DrawerItem name="Webhooks">{String(mwc.webhooks_count ?? 0)}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(mwc.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={mwc.labels} annotations={mwc.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={mwc.labels} annotations={mwc.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

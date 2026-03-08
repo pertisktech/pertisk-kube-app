@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { LimitRange } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface LimitRangeDetailPanelProps {
   limitRange: LimitRange;
@@ -27,10 +27,13 @@ export const LimitRangeDetailPanel = ({ limitRange, onClose, onOpenYamlEditor, o
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{limitRange.name}</DrawerItem>
     <DrawerItem name="Namespace">{limitRange.namespace}</DrawerItem>
     <DrawerItem name="Limits">{limitRange.limits ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(limitRange.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={limitRange.labels} annotations={limitRange.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={limitRange.labels} annotations={limitRange.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

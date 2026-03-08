@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { HPA } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface HPADetailPanelProps {
   hpa: HPA;
@@ -27,6 +27,7 @@ export const HPADetailPanel = ({ hpa, onClose, onOpenYamlEditor, onDelete }: HPA
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{hpa.name}</DrawerItem>
     <DrawerItem name="Namespace">{hpa.namespace}</DrawerItem>
     <DrawerItem name="Reference">{hpa.reference ?? '-'}</DrawerItem>
@@ -34,6 +35,8 @@ export const HPADetailPanel = ({ hpa, onClose, onOpenYamlEditor, onDelete }: HPA
     <DrawerItem name="Min/Max Replicas">{`${hpa.min_replicas} / ${hpa.max_replicas}`}</DrawerItem>
     <DrawerItem name="Targets">{hpa.targets ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(hpa.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={hpa.labels} annotations={hpa.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={hpa.labels} annotations={hpa.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

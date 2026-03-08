@@ -6,7 +6,7 @@ import type { Pod } from '../types';
 import { timeAgo } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerParamToggler } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerParamToggler } from './drawer';
 import { createPortForward, usePortForwards } from '../hooks/useKubernetes';
 
 interface PodDetailPanelProps {
@@ -148,8 +148,8 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden px-5 py-5 text-xs drawer-content PodDetails">
-          {/* Freelens-style order: Status, Node, Pod IPs, Service Account, QoS, then rest */}
+        <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden px-5 py-5 text-xs drawer-content PodDetails" style={{ padding: 'var(--drawer-content-spacing, 1.5rem)' }}>
+          <DrawerTitle>Property</DrawerTitle>
           <DrawerItem name="Status">{status}</DrawerItem>
           {pod.node && <DrawerItem name="Node">{pod.node}</DrawerItem>}
           {(podIps.length > 0 || pod.pod_ip) && (
@@ -166,33 +166,30 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           <DrawerItem name="Created">{timeAgo(pod.created || pod.age)}</DrawerItem>
           <DrawerItem name="Controller">{pod.controlled_by || '-'}</DrawerItem>
 
-          <DrawerItem name="Labels" labelsOnly>
-            {Object.keys(labels).length > 0 ? (
-              <>
+          <DrawerCollapsibleSection title="Metadata">
+            <DrawerItem name="Labels" labelsOnly>
+              {Object.keys(labels).length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   {Object.entries(labels).map(([key, value]) => (
                     <span key={key} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }} title={`${key}=${value}`}>{key}={value}</span>
                   ))}
                 </div>
-              </>
-            ) : (
-              '—'
-            )}
-          </DrawerItem>
-
-          <DrawerItem name="Annotations" labelsOnly>
-            {Object.keys(annotations).length > 0 ? (
-              <>
+              ) : (
+                <span className="text-xs" style={{ color: 'var(--color-muted)' }}>No labels</span>
+              )}
+            </DrawerItem>
+            <DrawerItem name="Annotations" labelsOnly>
+              {Object.keys(annotations).length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   {Object.entries(annotations).map(([key, value]) => (
                     <span key={key} className="inline-flex px-2 py-0.5 rounded text-xs border border-border break-all" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }} title={`${key}=${value}`}>{key}={value}</span>
                   ))}
                 </div>
-              </>
-            ) : (
-              '—'
-            )}
-          </DrawerItem>
+              ) : (
+                <span className="text-xs" style={{ color: 'var(--color-muted)' }}>No annotations</span>
+              )}
+            </DrawerItem>
+          </DrawerCollapsibleSection>
 
           {tolerations.length > 0 && (
             <DrawerItem name="Tolerations" className="PodDetailsTolerations">
@@ -295,7 +292,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             </div>
           )}
 
-          <DrawerTitle className="-mx-5">Containers</DrawerTitle>
+          <DrawerTitle>Containers</DrawerTitle>
           {containers.length > 0 ? (
             containers.map((c, i) => (
               <div key={`${c.name}-${i}`} className="PodDetailsContainer mt-4 mb-4">
@@ -478,7 +475,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>No container data available</p>
           )}
 
-          <DrawerTitle className="-mx-5">Volumes ({volumes.length})</DrawerTitle>
+          <DrawerTitle>Volumes ({volumes.length})</DrawerTitle>
           {volumes.length > 0 ? (
             <div className="space-y-2">
               {volumes.map((v, i) => (
@@ -494,7 +491,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>No volume data</p>
           )}
 
-          <DrawerTitle className="-mx-5">Events ({events.length})</DrawerTitle>
+          <DrawerTitle>Events ({events.length})</DrawerTitle>
           {events.length > 0 ? (
             <div className="overflow-x-auto border border-border rounded-md -mx-4 px-4">
               <table className="w-full text-xs">

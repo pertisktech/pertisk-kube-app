@@ -1,7 +1,7 @@
 import { Cable, Layers, Upload } from './Icons';
 import type { HelmChart } from '../types';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem } from './drawer';
+import { DrawerItem, DrawerTitle } from './drawer';
 
 interface HelmChartDetailPanelProps {
   chart: HelmChart;
@@ -33,6 +33,7 @@ export const HelmChartDetailPanel = ({ chart, onClose, onInstall }: HelmChartDet
         {chart.description || '—'}
       </p>
     </div>
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Version">{chart.version}</DrawerItem>
     <DrawerItem name="App Version">{chart.app_version ?? '—'}</DrawerItem>
     <DrawerItem name="Repository">

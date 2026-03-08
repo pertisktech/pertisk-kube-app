@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { RuntimeClass } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface RuntimeClassDetailPanelProps {
   runtimeClass: RuntimeClass;
@@ -27,10 +27,13 @@ export const RuntimeClassDetailPanel = ({ runtimeClass, onClose, onOpenYamlEdito
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{runtimeClass.name}</DrawerItem>
     <DrawerItem name="Handler">{runtimeClass.handler ?? '-'}</DrawerItem>
     <DrawerItem name="Scheduling">{runtimeClass.scheduling ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(runtimeClass.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={runtimeClass.labels} annotations={runtimeClass.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={runtimeClass.labels} annotations={runtimeClass.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

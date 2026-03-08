@@ -5,6 +5,47 @@ import { Checkbox } from './Checkbox';
 
 export type SortDirection = 'asc' | 'desc';
 
+const activeSortColor = 'var(--color-primary)';
+const inactiveSortColor = 'var(--color-muted)';
+
+function SortHeaderButton({
+  header,
+  sortKey,
+  sortState,
+  onSortChange,
+}: {
+  header: string;
+  sortKey: string;
+  sortState?: SortState | null;
+  onSortChange: (sort: SortState) => void;
+}) {
+  const isActive = sortState?.key === sortKey;
+  const direction = isActive ? sortState.direction : null;
+  const nextDirection: SortDirection =
+    isActive && direction === 'asc' ? 'desc' : 'asc';
+  const ariaLabel = direction === 'asc' ? `${header}: ascending, click for descending` : direction === 'desc' ? `${header}: descending, click for ascending` : `${header}: sort`;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSortChange({ key: sortKey, direction: nextDirection })}
+      className="inline-flex items-center gap-1 hover:opacity-90"
+      style={{ color: 'var(--color-text)' }}
+      aria-label={ariaLabel}
+      title={direction === 'asc' ? 'Sort descending' : direction === 'desc' ? 'Sort ascending' : 'Sort'}
+    >
+      <span>{header}</span>
+      {direction === 'asc' ? (
+        <span style={{ color: activeSortColor }}><ArrowUp size={14} /></span>
+      ) : direction === 'desc' ? (
+        <span style={{ color: activeSortColor }}><ArrowDown size={14} /></span>
+      ) : (
+        <span style={{ color: inactiveSortColor }}><ArrowUpDown size={14} /></span>
+      )}
+    </button>
+  );
+}
+
 export interface SortState {
   key: string;
   direction: SortDirection;
@@ -107,57 +148,23 @@ export const DataTable = <T extends Record<string, any>>({
                         />
                       </span>
                       {col.sortable && col.sortKey && onSortChange ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const currentKey = col.sortKey!;
-                            const nextDirection: SortDirection =
-                              sortState?.key === currentKey && sortState?.direction === 'asc'
-                                ? 'desc'
-                                : 'asc';
-                            onSortChange({ key: currentKey, direction: nextDirection });
-                          }}
-                          className="inline-flex items-center gap-1 hover:text-primary"
-                        >
-                          <span>{col.header}</span>
-                          {sortState?.key === col.sortKey ? (
-                            sortState.direction === 'asc' ? (
-                              <ArrowUp size={14} className="text-primary" />
-                            ) : (
-                              <ArrowDown size={14} className="text-primary" />
-                            )
-                          ) : (
-                            <ArrowUpDown size={14} className="text-text-secondary" />
-                          )}
-                        </button>
+                        <SortHeaderButton
+                          header={col.header}
+                          sortKey={col.sortKey}
+                          sortState={sortState}
+                          onSortChange={onSortChange}
+                        />
                       ) : (
                         col.header
                       )}
                     </div>
                   ) : col.sortable && col.sortKey && onSortChange ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const currentKey = col.sortKey!;
-                        const nextDirection: SortDirection =
-                          sortState?.key === currentKey && sortState?.direction === 'asc'
-                            ? 'desc'
-                            : 'asc';
-                        onSortChange({ key: currentKey, direction: nextDirection });
-                      }}
-                      className="inline-flex items-center gap-1 hover:text-primary"
-                    >
-                      <span>{col.header}</span>
-                      {sortState?.key === col.sortKey ? (
-                        sortState.direction === 'asc' ? (
-                          <ArrowUp size={14} className="text-primary" />
-                        ) : (
-                          <ArrowDown size={14} className="text-primary" />
-                        )
-                      ) : (
-                        <ArrowUpDown size={14} className="text-text-secondary" />
-                      )}
-                    </button>
+                    <SortHeaderButton
+                      header={col.header}
+                      sortKey={col.sortKey}
+                      sortState={sortState}
+                      onSortChange={onSortChange}
+                    />
                   ) : (
                     col.header
                   )}

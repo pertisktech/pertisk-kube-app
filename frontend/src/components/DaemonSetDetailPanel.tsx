@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { DaemonSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface DaemonSetDetailPanelProps {
   daemonSet: DaemonSet;
@@ -38,6 +38,7 @@ export const DaemonSetDetailPanel = ({ daemonSet, onClose, onOpenYamlEditor, onD
       }
       onClose={onClose}
     >
+      <DrawerTitle>Property</DrawerTitle>
       <DrawerItem name="Name">{daemonSet.name}</DrawerItem>
       <DrawerItem name="Namespace">{daemonSet.namespace}</DrawerItem>
       <DrawerItem name="Status"><span className={getStatusTextClass(daemonSet.status || 'Unknown')}>{daemonSet.status || 'Unknown'}</span></DrawerItem>
@@ -65,7 +66,9 @@ export const DaemonSetDetailPanel = ({ daemonSet, onClose, onOpenYamlEditor, onD
           </div>
         </DrawerItem>
       ) : null}
-      <DrawerLabelsAnnotations labels={daemonSet.labels} annotations={daemonSet.annotations} />
+      <DrawerCollapsibleSection title="Metadata">
+        <DrawerLabelsAnnotations labels={daemonSet.labels} annotations={daemonSet.annotations} />
+      </DrawerCollapsibleSection>
     </ResourceDetailPanelLayout>
   );
 };

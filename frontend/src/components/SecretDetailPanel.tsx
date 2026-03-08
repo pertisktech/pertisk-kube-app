@@ -4,7 +4,7 @@ import type { Secret } from '../types';
 import { timeAgo } from '../utils';
 import { getAuthToken } from '../utils/auth';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface SecretDetailPanelProps {
   secret: Secret;
@@ -79,23 +79,26 @@ export const SecretDetailPanel = ({ secret, onClose, onOpenYamlEditor, onDelete 
       actions={actions}
       onClose={onClose}
     >
+      <DrawerTitle>Property</DrawerTitle>
       <DrawerItem name="Name">{secret.name}</DrawerItem>
       <DrawerItem name="Namespace">{secret.namespace}</DrawerItem>
       <DrawerItem name="Type">{secret.secret_type ?? '-'}</DrawerItem>
       <DrawerItem name="Data keys">{secret.data_keys ?? '-'}</DrawerItem>
       <DrawerItem name="Age">{timeAgo(secret.age)}</DrawerItem>
 
-      <DrawerLabelsAnnotations labels={secret.labels} annotations={secret.annotations} />
+      <DrawerCollapsibleSection title="Metadata">
+        <DrawerLabelsAnnotations labels={secret.labels} annotations={secret.annotations} />
+      </DrawerCollapsibleSection>
 
       {isTls && certInfo && (
         <>
-          <DrawerTitle className="-mx-5">TLS Certificate</DrawerTitle>
+          <DrawerTitle>TLS Certificate</DrawerTitle>
           <DrawerItem name="Issued">{certInfo.issued}</DrawerItem>
           <DrawerItem name="Expires">{certInfo.expires}</DrawerItem>
         </>
       )}
 
-      <DrawerTitle className="-mx-5">Data</DrawerTitle>
+      <DrawerTitle>Data</DrawerTitle>
       <div className="flex items-center justify-between gap-2 mb-2">
         <span className="text-xs font-medium" style={{ color: 'var(--color-muted)' }}>Decoded values</span>
         <button

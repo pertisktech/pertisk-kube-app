@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { ReplicaSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface ReplicaSetDetailPanelProps {
   replicaSet: ReplicaSet;
@@ -36,6 +36,7 @@ export const ReplicaSetDetailPanel = ({ replicaSet, onClose, onOpenYamlEditor, o
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{replicaSet.name}</DrawerItem>
     <DrawerItem name="Namespace">{replicaSet.namespace}</DrawerItem>
     <DrawerItem name="Status"><span className={getStatusTextClass(replicaSet.status || 'Unknown')}>{replicaSet.status || 'Unknown'}</span></DrawerItem>
@@ -53,6 +54,8 @@ export const ReplicaSetDetailPanel = ({ replicaSet, onClose, onOpenYamlEditor, o
         </div>
       </DrawerItem>
     ) : null}
-    <DrawerLabelsAnnotations labels={replicaSet.labels} annotations={replicaSet.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={replicaSet.labels} annotations={replicaSet.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

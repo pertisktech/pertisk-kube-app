@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { Job } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface JobDetailPanelProps {
   job: Job;
@@ -36,12 +36,15 @@ export const JobDetailPanel = ({ job, onClose, onOpenYamlEditor, onDelete }: Job
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{job.name}</DrawerItem>
     <DrawerItem name="Namespace">{job.namespace}</DrawerItem>
     <DrawerItem name="Status"><span className={getStatusTextClass(job.status || 'Pending')}>{job.status || 'Pending'}</span></DrawerItem>
     <DrawerItem name="Completions">{job.completions ?? '-'}</DrawerItem>
     <DrawerItem name="Duration">{job.duration ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(job.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={job.labels} annotations={job.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={job.labels} annotations={job.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

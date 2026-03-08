@@ -4,7 +4,7 @@ import type { ConfigMap } from '../types';
 import { timeAgo } from '../utils';
 import { getAuthToken } from '../utils/auth';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface ConfigMapDetailPanelProps {
   configMap: ConfigMap;
@@ -63,14 +63,17 @@ export const ConfigMapDetailPanel = ({ configMap, onClose, onOpenYamlEditor, onD
       actions={actions}
       onClose={onClose}
     >
+      <DrawerTitle>Property</DrawerTitle>
       <DrawerItem name="Name">{configMap.name}</DrawerItem>
       <DrawerItem name="Namespace">{configMap.namespace}</DrawerItem>
       <DrawerItem name="Data keys">{configMap.data_keys ?? '-'}</DrawerItem>
       <DrawerItem name="Age">{timeAgo(configMap.age)}</DrawerItem>
 
-      <DrawerLabelsAnnotations labels={configMap.labels} annotations={configMap.annotations} />
+      <DrawerCollapsibleSection title="Metadata">
+        <DrawerLabelsAnnotations labels={configMap.labels} annotations={configMap.annotations} />
+      </DrawerCollapsibleSection>
 
-      <DrawerTitle className="-mx-5">Data</DrawerTitle>
+      <DrawerTitle>Data</DrawerTitle>
       {dataLoading && <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>Loading…</p>}
       {dataError && <p className="text-xs py-2" style={{ color: 'var(--color-icon-danger)' }}>{dataError}</p>}
       {!dataLoading && !dataError && dataKeys && Object.keys(dataKeys).length === 0 && (

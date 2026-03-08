@@ -28,12 +28,11 @@ export function DrawerItem({
   return (
     <div
       {...rest}
-      className={`DrawerItem grid gap-x-3 py-2 border-b border-border last:border-b-0 ${labelsOnly ? 'labelsOnly' : ''} ${name ? '' : 'WithoutName'} ${className}`.trim()}
-      style={
-        name
-          ? { gridTemplateColumns: 'minmax(30%, min-content) 1fr' }
-          : undefined
-      }
+      className={`DrawerItem grid gap-x-3 py-2 border-b last:border-b-0 ${labelsOnly ? 'labelsOnly' : ''} ${name ? '' : 'WithoutName'} ${className}`.trim()}
+      style={{
+        gridTemplateColumns: name ? 'minmax(30%, min-content) 1fr' : undefined,
+        borderColor: 'var(--color-border)',
+      }}
       title={title}
     >
       {name != null && (

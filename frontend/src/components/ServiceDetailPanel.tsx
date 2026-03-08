@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Service } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 import { createPortForward, usePortForwards } from '../hooks/useKubernetes';
 
 // Parse "80/TCP, 443/TCP" -> [80, 443]
@@ -63,6 +63,7 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
       actions={actions}
       onClose={onClose}
     >
+      <DrawerTitle>Property</DrawerTitle>
       <DrawerItem name="Name">{service.name}</DrawerItem>
       <DrawerItem name="Namespace">{service.namespace}</DrawerItem>
       <DrawerItem name="Type">{service.service_type ?? '-'}</DrawerItem>
@@ -71,11 +72,13 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
       <DrawerItem name="Ports">{service.ports ?? '-'}</DrawerItem>
       <DrawerItem name="Age">{timeAgo(service.age)}</DrawerItem>
 
-      <DrawerLabelsAnnotations labels={service.labels} annotations={service.annotations} />
+      <DrawerCollapsibleSection title="Metadata">
+        <DrawerLabelsAnnotations labels={service.labels} annotations={service.annotations} />
+      </DrawerCollapsibleSection>
 
       {servicePorts.length > 0 && (
         <>
-          <DrawerTitle className="-mx-5">Port forward</DrawerTitle>
+          <DrawerTitle>Port forward</DrawerTitle>
           <div className="space-y-0">
             {servicePorts.map((port) => {
               const isForwarding = activeForwards.some((pf) => pf.remote_port === port);

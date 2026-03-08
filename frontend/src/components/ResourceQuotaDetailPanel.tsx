@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { ResourceQuota } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface ResourceQuotaDetailPanelProps {
   resourceQuota: ResourceQuota;
@@ -27,10 +27,13 @@ export const ResourceQuotaDetailPanel = ({ resourceQuota, onClose, onOpenYamlEdi
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{resourceQuota.name}</DrawerItem>
     <DrawerItem name="Namespace">{resourceQuota.namespace}</DrawerItem>
     <DrawerItem name="Status">{resourceQuota.status ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(resourceQuota.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={resourceQuota.labels} annotations={resourceQuota.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={resourceQuota.labels} annotations={resourceQuota.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

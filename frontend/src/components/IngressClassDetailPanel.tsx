@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { IngressClass } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface IngressClassDetailPanelProps {
   ingressClass: IngressClass;
@@ -27,11 +27,14 @@ export const IngressClassDetailPanel = ({ ingressClass, onClose, onOpenYamlEdito
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{ingressClass.name}</DrawerItem>
     <DrawerItem name="Controller">{ingressClass.controller ?? '-'}</DrawerItem>
     <DrawerItem name="Default">{ingressClass.is_default ? 'Yes' : 'No'}</DrawerItem>
     <DrawerItem name="Parameters">{ingressClass.parameters ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(ingressClass.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={ingressClass.labels} annotations={ingressClass.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={ingressClass.labels} annotations={ingressClass.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

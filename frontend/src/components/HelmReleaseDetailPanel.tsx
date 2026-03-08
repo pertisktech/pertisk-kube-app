@@ -2,7 +2,7 @@ import { Box, Upload, Trash2 } from './Icons';
 import type { HelmRelease } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations, DrawerTitle } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 const getStatusClass = (status: string) => {
   const s = status.toLowerCase();
@@ -65,7 +65,8 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYaml, onDelete 
     }
     onClose={onClose}
   >
-    <DrawerTitle className="-mx-5">Release lifecycle</DrawerTitle>
+    <DrawerTitle>Property</DrawerTitle>
+    <DrawerTitle>Release lifecycle</DrawerTitle>
     <div className="space-y-1">
       <DrawerItem name="Status" className={getStatusClass(release.status)} labelsOnly>
         <span className={`inline-flex px-2.5 py-0.5 rounded-full font-medium ${getStatusClass(release.status)}`}>{release.status}</span>
@@ -80,6 +81,8 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYaml, onDelete 
     <DrawerItem name="Version">{release.chart_version ?? '—'}</DrawerItem>
     <DrawerItem name="App Version">{release.app_version ?? '—'}</DrawerItem>
     <DrawerItem name="Revision">{release.revision ?? '—'}</DrawerItem>
-    <DrawerLabelsAnnotations labels={release.labels} annotations={release.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={release.labels} annotations={release.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

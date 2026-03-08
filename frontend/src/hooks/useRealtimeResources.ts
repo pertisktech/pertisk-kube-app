@@ -135,6 +135,8 @@ function transformStatefulSet(raw: any): StatefulSet {
     updated,
     images,
     age: metadata.creationTimestamp || '',
+    labels: (metadata.labels as Record<string, string> | undefined) ?? undefined,
+    annotations: (metadata.annotations as Record<string, string> | undefined) ?? undefined,
   };
 }
 
@@ -173,6 +175,8 @@ function transformDaemonSet(raw: any): DaemonSet {
     node_selector: spec.template?.spec?.nodeSelector || {},
     images,
     age: metadata.creationTimestamp || '',
+    labels: (metadata.labels as Record<string, string> | undefined) ?? undefined,
+    annotations: (metadata.annotations as Record<string, string> | undefined) ?? undefined,
   };
 }
 
@@ -208,6 +212,8 @@ function transformReplicaSet(raw: any): ReplicaSet {
     available,
     images,
     age: metadata.creationTimestamp || '',
+    labels: (metadata.labels as Record<string, string> | undefined) ?? undefined,
+    annotations: (metadata.annotations as Record<string, string> | undefined) ?? undefined,
   };
 }
 
@@ -252,6 +258,8 @@ function transformJob(raw: any): Job {
     completions: `${succeeded}/${completions}`,
     duration,
     age: metadata.creationTimestamp || '',
+    labels: (metadata.labels as Record<string, string> | undefined) ?? undefined,
+    annotations: (metadata.annotations as Record<string, string> | undefined) ?? undefined,
   };
 }
 
@@ -282,6 +290,8 @@ function transformCronJob(raw: any): CronJob {
     next_execution: nextExecution,
     time_zone: spec.timeZone || 'UTC',
     age: metadata.creationTimestamp || '',
+    labels: (metadata.labels as Record<string, string> | undefined) ?? undefined,
+    annotations: (metadata.annotations as Record<string, string> | undefined) ?? undefined,
   };
 }
 

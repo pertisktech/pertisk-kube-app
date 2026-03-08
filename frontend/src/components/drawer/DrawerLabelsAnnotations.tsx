@@ -29,7 +29,7 @@ export function DrawerLabelsAnnotations({ labels = {}, annotations = {} }: Drawe
             ))}
           </div>
         ) : (
-          '—'
+          <span className="text-sm" style={{ color: 'var(--color-muted)' }}>No labels</span>
         )}
       </DrawerItem>
       <DrawerItem name="Annotations" labelsOnly>
@@ -47,7 +47,7 @@ export function DrawerLabelsAnnotations({ labels = {}, annotations = {} }: Drawe
             ))}
           </div>
         ) : (
-          '—'
+          <span className="text-sm" style={{ color: 'var(--color-muted)' }}>No annotations</span>
         )}
       </DrawerItem>
     </>

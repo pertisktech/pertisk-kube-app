@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { Role } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface RoleDetailPanelProps {
   role: Role;
@@ -27,10 +27,13 @@ export const RoleDetailPanel = ({ role, onClose, onOpenYamlEditor, onDelete }: R
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{role.name}</DrawerItem>
     <DrawerItem name="Namespace">{role.namespace}</DrawerItem>
     <DrawerItem name="Rules">{role.rules ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(role.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={role.labels} annotations={role.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={role.labels} annotations={role.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

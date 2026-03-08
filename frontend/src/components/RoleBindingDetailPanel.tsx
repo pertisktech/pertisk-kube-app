@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { RoleBinding } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface RoleBindingDetailPanelProps {
   roleBinding: RoleBinding;
@@ -27,11 +27,14 @@ export const RoleBindingDetailPanel = ({ roleBinding: rb, onClose, onOpenYamlEdi
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{rb.name}</DrawerItem>
     <DrawerItem name="Namespace">{rb.namespace}</DrawerItem>
     <DrawerItem name="Role">{rb.role ?? '-'}</DrawerItem>
     <DrawerItem name="Subjects">{rb.subjects ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(rb.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={rb.labels} annotations={rb.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={rb.labels} annotations={rb.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

@@ -8,13 +8,13 @@ export interface DrawerParamTogglerProps {
 }
 
 /**
- * Freelens-style toggler: shows label + "Show" / "Hide" link, content when open.
+ * Freelens-style toggler: label + "Show" / "Hide" link, content when open.
  */
 export function DrawerParamToggler({ label, children, className = '' }: DrawerParamTogglerProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className={`DrawerParamToggler flex flex-col gap-1 ${className}`.trim()}>
+    <div className={`DrawerParamToggler flex flex-col gap-1 py-2 border-b border-border last:border-b-0 ${className}`.trim()} style={{ borderColor: 'var(--color-border)' }}>
       <div className="flex items-center gap-2">
         <span className="param-label flex-1 text-xs" style={{ color: 'var(--color-muted)' }}>{label}</span>
         <button
@@ -27,7 +27,7 @@ export function DrawerParamToggler({ label, children, className = '' }: DrawerPa
           {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       </div>
-      {open && <div className="param-content pt-1">{children}</div>}
+      {open && <div className="param-content pt-2">{children}</div>}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { deleteCustomResource, useCrds, useCustomResources } from '../hooks/useK
 import { DataTable } from '../components';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ResourceDetailPanelLayout, PanelActionButton } from '../components/ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerParamToggler, DrawerLabelsAnnotations } from '../components/drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerParamToggler, DrawerLabelsAnnotations } from '../components/drawer';
 import { useNamespace } from '../context/NamespaceContext';
 import { openPanelTab } from '../components/BottomPanel';
 import { timeAgo, safeJsonPathValue, formatJsonValue, matchesResourceNameFilter } from '../utils';
@@ -220,10 +220,14 @@ const DetailPanel = ({
           actions={actions}
           onClose={onClose}
         >
+          <DrawerTitle>Property</DrawerTitle>
           <DrawerItem name="Name">{item.name}</DrawerItem>
           {item.namespace ? <DrawerItem name="Namespace">{item.namespace}</DrawerItem> : null}
           <DrawerItem name="Age">{timeAgo(item.created_at)}</DrawerItem>
-          <DrawerLabelsAnnotations labels={item.labels ?? undefined} annotations={item.annotations ?? undefined} />
+          <DrawerCollapsibleSection title="Metadata">
+            <DrawerLabelsAnnotations labels={item.labels ?? undefined} annotations={item.annotations ?? undefined} />
+          </DrawerCollapsibleSection>
+          {printerColumns.length > 0 && <DrawerTitle>Columns</DrawerTitle>}
           {printerColumns.map((col) => {
             const value = safeJsonPathValue(resourceObj, getPrinterColumnJsonPath(col));
             return (
@@ -234,7 +238,7 @@ const DetailPanel = ({
           })}
           {conditions.length > 0 ? (
             <>
-              <DrawerTitle className="-mx-5">Conditions</DrawerTitle>
+              <DrawerTitle>Conditions</DrawerTitle>
               {conditions.map((c, i) => (
                 <DrawerItem key={i} name={c.type ?? 'Condition'}>
                   {c.status === 'True' ? 'True' : c.status === 'False' ? 'False' : (c.reason ?? String(c.status))}

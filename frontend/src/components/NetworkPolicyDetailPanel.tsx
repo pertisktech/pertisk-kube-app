@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { NetworkPolicy } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface NetworkPolicyDetailPanelProps {
   networkPolicy: NetworkPolicy;
@@ -27,6 +27,7 @@ export const NetworkPolicyDetailPanel = ({ networkPolicy, onClose, onOpenYamlEdi
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{networkPolicy.name}</DrawerItem>
     <DrawerItem name="Namespace">{networkPolicy.namespace}</DrawerItem>
     <DrawerItem name="Pod Selector">{networkPolicy.pod_selector ?? '-'}</DrawerItem>
@@ -34,6 +35,8 @@ export const NetworkPolicyDetailPanel = ({ networkPolicy, onClose, onOpenYamlEdi
     <DrawerItem name="Ingress Rules">{networkPolicy.ingress_rules ?? 0}</DrawerItem>
     <DrawerItem name="Egress Rules">{networkPolicy.egress_rules ?? 0}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(networkPolicy.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={networkPolicy.labels} annotations={networkPolicy.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={networkPolicy.labels} annotations={networkPolicy.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );

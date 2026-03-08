@@ -3,7 +3,7 @@ import type { StorageClass } from '../types';
 import { timeAgo } from '../utils';
 import { StatusBadge } from './StatusBadge';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
 
 interface StorageClassDetailPanelProps {
   storageClass: StorageClass;
@@ -28,6 +28,7 @@ export const StorageClassDetailPanel = ({ storageClass, onClose, onOpenYamlEdito
     }
     onClose={onClose}
   >
+    <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{storageClass.name}</DrawerItem>
     <DrawerItem name="Provisioner">{storageClass.provisioner ?? '-'}</DrawerItem>
     <DrawerItem name="Reclaim Policy">{storageClass.reclaim_policy ?? '-'}</DrawerItem>
@@ -35,6 +36,8 @@ export const StorageClassDetailPanel = ({ storageClass, onClose, onOpenYamlEdito
     <DrawerItem name="Allow Volume Expansion"><StatusBadge status={storageClass.allow_volume_expansion ? 'Yes' : 'No'} /></DrawerItem>
     <DrawerItem name="Default">{storageClass.is_default ? <StatusBadge status="Default" /> : 'No'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(storageClass.age)}</DrawerItem>
-    <DrawerLabelsAnnotations labels={storageClass.labels} annotations={storageClass.annotations} />
+    <DrawerCollapsibleSection title="Metadata">
+      <DrawerLabelsAnnotations labels={storageClass.labels} annotations={storageClass.annotations} />
+    </DrawerCollapsibleSection>
   </ResourceDetailPanelLayout>
 );
