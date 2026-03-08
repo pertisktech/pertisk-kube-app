@@ -150,7 +150,7 @@ export const ResourceDetailPanelLayout = ({
             </div>
           </div>
           {keyInfoItems.length > 0 && (
-            <div className="flex items-center gap-3 text-xs mt-3 pt-3 border-t border-border">
+            <div className="flex items-center gap-3 text-sm mt-3 pt-3 border-t border-border">
               {keyInfoItems.map((item, idx) => (
                 <div key={idx} className="flex-1 min-w-0">
                   <p className="mb-1" style={{ color: 'var(--color-text-secondary)' }}>{item.label}</p>
@@ -161,8 +161,8 @@ export const ResourceDetailPanelLayout = ({
           )}
         </div>
 
-        {/* Content: drawer-style scrollable area */}
-        <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden px-5 py-5 text-xs" style={{ color: 'var(--color-text)' }}>
+        {/* Content: drawer-style scrollable area — text-sm to match table columns */}
+        <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden px-5 py-5 text-sm" style={{ color: 'var(--color-text)' }}>
           {children}
         </div>
       </div>

@@ -20,7 +20,7 @@ export function DrawerLabelsAnnotations({ labels = {}, annotations = {} }: Drawe
             {labelEntries.map(([key, value]) => (
               <span
                 key={key}
-                className="inline-flex px-2 py-0.5 rounded text-xs border border-border"
+                className="inline-flex px-2 py-0.5 rounded text-sm border border-border"
                 style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}
                 title={`${key}=${value}`}
               >
@@ -38,7 +38,7 @@ export function DrawerLabelsAnnotations({ labels = {}, annotations = {} }: Drawe
             {annotationEntries.map(([key, value]) => (
               <span
                 key={key}
-                className="inline-flex px-2 py-0.5 rounded text-xs border border-border break-all"
+                className="inline-flex px-2 py-0.5 rounded text-sm border border-border break-all"
                 style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}
                 title={`${key}=${value}`}
               >

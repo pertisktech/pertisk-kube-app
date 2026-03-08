@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import YAML from 'yaml';
+import { toast } from 'sonner';
 import { Trash2 } from '../components/Icons';
 import { useHelmReleases, deleteHelmRelease, getHelmReleaseYaml } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';
@@ -144,11 +146,37 @@ const getStatusClass = (status: string) => {
   if (s === 'deployed') return 'status-green';
   if (s === 'failed') return 'status-red';
   if (s.startsWith('pending') || s === 'uninstalling') return 'status-yellow';
-  if (s === 'superseded') return 'status-gray';
+  if (s === 'superseded' || s === 'uninstalled') return 'status-gray';
   return 'status-gray';
 };
 
+/** Helm release lifecycle description for tooltip. */
+const getLifecycleDescription = (status: string): string => {
+  const s = status.toLowerCase();
+  switch (s) {
+    case 'deployed':
+      return 'Release is active and running.';
+    case 'pending-install':
+      return 'Install is in progress.';
+    case 'pending-upgrade':
+      return 'Upgrade is in progress.';
+    case 'pending-rollback':
+      return 'Rollback is in progress.';
+    case 'uninstalling':
+      return 'Uninstall is in progress (helm uninstall).';
+    case 'uninstalled':
+      return 'Release has been uninstalled.';
+    case 'failed':
+      return 'Release install, upgrade, or rollback failed.';
+    case 'superseded':
+      return 'Superseded by a newer revision.';
+    default:
+      return 'Release lifecycle state.';
+  }
+};
+
 export const HelmReleasesPage = () => {
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useHelmReleases();
   const [selectedRelease, setSelectedRelease] = useState<HelmRelease | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -226,10 +254,19 @@ export const HelmReleasesPage = () => {
           return deleteHelmRelease(ns, name);
         }),
       );
+      toast.success(
+        confirmDelete.keys.length === 1
+          ? `Release '${confirmDelete.keys[0].split('/')[1]}' uninstalled.`
+          : `${confirmDelete.keys.length} releases uninstalled.`,
+      );
+      void queryClient.invalidateQueries({ queryKey: ['helm-releases'] });
       setSelectedRows([]);
       setConfirmDelete(null);
       setPanelOpen(false);
       setSelectedRelease(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Uninstall failed';
+      toast.error(msg);
     } finally {
       setIsDeleting(false);
     }
@@ -248,7 +285,7 @@ export const HelmReleasesPage = () => {
     {
       header: 'Namespace',
       accessor: (row: HelmRelease) => (
-        <span className="text-xs font-mono text-text-secondary">{row.namespace}</span>
+        <span className="font-mono text-text-secondary">{row.namespace}</span>
       ),
       width: '12%',
       sortable: true,
@@ -257,7 +294,7 @@ export const HelmReleasesPage = () => {
     {
       header: 'Chart',
       accessor: (row: HelmRelease) => (
-        <span className="text-xs text-text">{row.chart !== '-' ? row.chart : row.name}</span>
+        <span className="text-text">{row.chart !== '-' ? row.chart : row.name}</span>
       ),
       width: '14%',
       sortable: true,
@@ -266,7 +303,7 @@ export const HelmReleasesPage = () => {
     {
       header: 'Revision',
       accessor: (row: HelmRelease) => (
-        <span className="text-xs text-text-secondary">{row.revision}</span>
+        <span className="text-text-secondary">{row.revision}</span>
       ),
       width: '8%',
       sortable: true,
@@ -275,14 +312,14 @@ export const HelmReleasesPage = () => {
     {
       header: 'Version',
       accessor: (row: HelmRelease) => (
-        <span className="font-mono text-xs text-text-secondary">{row.chart_version}</span>
+        <span className="font-mono text-text-secondary">{row.chart_version}</span>
       ),
       width: '10%',
     },
     {
       header: 'App Version',
       accessor: (row: HelmRelease) => (
-        <span className="font-mono text-xs text-text-secondary">{row.app_version}</span>
+        <span className="font-mono text-text-secondary">{row.app_version}</span>
       ),
       width: '10%',
     },
@@ -290,7 +327,8 @@ export const HelmReleasesPage = () => {
       header: 'Status',
       accessor: (row: HelmRelease) => (
         <span
-          className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(row.status)}`}
+          className={`inline-flex px-2.5 py-0.5 rounded-full font-medium ${getStatusClass(row.status)}`}
+          title={getLifecycleDescription(row.status)}
         >
           {row.status}
         </span>
@@ -302,7 +340,7 @@ export const HelmReleasesPage = () => {
     {
       header: 'Updated',
       accessor: (row: HelmRelease) => (
-        <span className="text-xs text-text-secondary">
+        <span className="text-text-secondary">
           {row.updated ? timeAgo(row.updated) : '-'}
         </span>
       ),

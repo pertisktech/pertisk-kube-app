@@ -37,11 +37,11 @@ export function DrawerItem({
       title={title}
     >
       {name != null && (
-        <span className="DrawerItem-name text-xs overflow-hidden text-ellipsis pr-2" style={{ color: 'var(--color-muted)' }}>
+        <span className="DrawerItem-name text-sm overflow-hidden text-ellipsis pr-2" style={{ color: 'var(--color-muted)' }}>
           {name}
         </span>
       )}
-      <span className="DrawerItem-value min-w-0 text-xs break-words" style={{ color: 'var(--color-text)' }}>
+      <span className="DrawerItem-value min-w-0 text-sm break-words" style={{ color: 'var(--color-text)' }}>
         {children ?? '—'}
       </span>
     </div>

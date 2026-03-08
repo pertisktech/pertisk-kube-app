@@ -60,3 +60,4 @@ export { RoleBindingDetailPanel } from './RoleBindingDetailPanel';
 export { ClusterRoleDetailPanel } from './ClusterRoleDetailPanel';
 export { ClusterRoleBindingDetailPanel } from './ClusterRoleBindingDetailPanel';
 export { HelmReleaseDetailPanel } from './HelmReleaseDetailPanel';
+export { HelmChartDetailPanel } from './HelmChartDetailPanel';

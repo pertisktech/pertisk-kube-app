@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -7,7 +7,7 @@ use axum::{
 use base64::{engine::general_purpose::STANDARD, Engine};
 use flate2::read::GzDecoder;
 use k8s_openapi::api::core::v1::Secret;
-use kube::{api::{DeleteParams, ListParams}, Api};
+use kube::{api::ListParams, Api};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -351,61 +351,61 @@ pub async fn get_helm_release_yaml(
     }
 }
 
-// ── Helm Release Delete (uninstall — removes all history secrets) ─────────────
+// ── Helm Release Delete (uninstall — runs helm uninstall) ─────────────────────
 
 pub async fn delete_helm_release(
     Path((namespace, name)): Path<(String, String)>,
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
 ) -> impl IntoResponse {
-    let client = state.client.clone();
-    let api: Api<Secret> = Api::namespaced(client, &namespace);
-    let lp = ListParams::default().labels(&format!("owner=helm,name={}", name));
+    let namespace = namespace.trim();
+    let name = name.trim();
+    if name.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "message": "Release name is required" })),
+        )
+            .into_response();
+    }
+    let ns = if namespace.is_empty() { "default" } else { namespace };
 
-    match api.list(&lp).await {
-        Ok(list) => {
-            if list.items.is_empty() {
+    let output = Command::new("helm")
+        .args(["uninstall", name, "--namespace", ns])
+        .output()
+        .await;
+
+    match output {
+        Ok(o) if o.status.success() => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "message": format!("Release '{}' uninstalled successfully", name)
+            })),
+        )
+            .into_response(),
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let msg = if !stderr.is_empty() { stderr } else { stdout };
+            if msg.contains("not found") || msg.contains("No such release") {
                 return (
                     StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({ "message": "Release not found" })),
+                    Json(serde_json::json!({ "message": msg.to_string() })),
                 )
                     .into_response();
             }
-
-            let dp = DeleteParams::default();
-            let mut errors: Vec<String> = Vec::new();
-
-            for secret in &list.items {
-                if let Some(secret_name) = &secret.metadata.name {
-                    if let Err(err) = api.delete(secret_name, &dp).await {
-                        errors.push(format!("{}: {}", secret_name, err));
-                    }
-                }
-            }
-
-            if errors.is_empty() {
-                (
-                    StatusCode::OK,
-                    Json(serde_json::json!({
-                        "message": format!("Release '{}' uninstalled successfully", name)
-                    })),
-                )
-                    .into_response()
-            } else {
-                error!("Errors deleting helm release {}: {:?}", name, errors);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({
-                        "message": format!("Partial failure uninstalling '{}': {}", name, errors.join("; "))
-                    })),
-                )
-                    .into_response()
-            }
-        }
-        Err(err) => {
-            error!("Failed to list helm release secrets for deletion: {}", err);
+            error!("helm uninstall failed: {}", msg);
             (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "message": err.to_string() })),
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "message": msg.to_string() })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            error!("helm uninstall error: {}", e);
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "message": format!("Helm not available: {}", e)
+                })),
             )
                 .into_response()
         }
@@ -628,4 +628,286 @@ fn decode_helm_release_json(secret: &Secret) -> Option<Value> {
     let mut json_str = String::new();
     decoder.read_to_string(&mut json_str).ok()?;
     serde_json::from_str(&json_str).ok()
+}
+
+// ── Helm chart default values (for install tab) ───────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ChartValuesQuery {
+    pub repo_url: String,
+    pub chart: String,
+    pub version: String,
+}
+
+/// Fetches the chart's default values.yaml by running `helm repo add` + `helm show values`.
+pub async fn get_helm_chart_values(
+    Query(q): Query<ChartValuesQuery>,
+    _state: State<AppState>,
+) -> impl IntoResponse {
+    let repo_url = q.repo_url.trim();
+    let chart = q.chart.trim();
+    let version = q.version.trim();
+
+    if repo_url.is_empty() || chart.is_empty() || version.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::response::Response::builder()
+                .header("content-type", "text/plain; charset=utf-8")
+                .body(axum::body::Body::from("Missing repo_url, chart, or version"))
+                .unwrap(),
+        )
+            .into_response();
+    }
+
+    // Unique repo name to avoid clashes with concurrent requests
+    let repo_name = format!("chartvals_{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis());
+
+    // helm repo add <name> <url>
+    let add = Command::new("helm")
+        .args(["repo", "add", &repo_name, repo_url])
+        .output()
+        .await;
+
+    let _ = match add {
+        Ok(o) if o.status.success() => o,
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            error!("helm repo add failed: {}", stderr);
+            let _ = Command::new("helm").args(["repo", "remove", &repo_name]).output().await;
+            return (
+                StatusCode::BAD_GATEWAY,
+                axum::response::Response::builder()
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(axum::body::Body::from(format!("Failed to add repo: {}", stderr)))
+                    .unwrap(),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            error!("helm repo add error: {}", e);
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::response::Response::builder()
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(axum::body::Body::from(format!("Helm not available: {}", e)))
+                    .unwrap(),
+            )
+                .into_response();
+        }
+    };
+
+    // helm show values <repo>/<chart> --version <version>
+    let chart_ref = format!("{}/{}", repo_name, chart);
+    let mut show = Command::new("helm");
+    show.args(["show", "values", &chart_ref, "--version", version]);
+    let show_out = show.output().await;
+
+    let _ = Command::new("helm").args(["repo", "remove", &repo_name]).output().await;
+
+    match show_out {
+        Ok(o) if o.status.success() => {
+            let yaml = String::from_utf8_lossy(&o.stdout).to_string();
+            axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "text/plain; charset=utf-8")
+                .body(axum::body::Body::from(yaml))
+                .unwrap()
+                .into_response()
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            error!("helm show values failed: {}", stderr);
+            (
+                StatusCode::BAD_GATEWAY,
+                axum::response::Response::builder()
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(axum::body::Body::from(stderr.to_string()))
+                    .unwrap(),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            error!("helm show values error: {}", e);
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::response::Response::builder()
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(axum::body::Body::from(e.to_string()))
+                    .unwrap(),
+            )
+                .into_response()
+        }
+    }
+}
+
+// ── Helm chart install (run helm install) ─────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct InstallChartRequest {
+    pub namespace: String,
+    pub release_name: String,
+    pub repo_url: String,
+    pub chart: String,
+    pub version: String,
+    pub values_yaml: String,
+}
+
+/// Runs `helm repo add` + `helm install` with the given values, then removes the temp repo.
+pub async fn install_helm_chart(
+    State(_state): State<AppState>,
+    Json(req): Json<InstallChartRequest>,
+) -> impl IntoResponse {
+    let namespace = req.namespace.trim();
+    let release_name = req.release_name.trim();
+    let repo_url = req.repo_url.trim();
+    let chart = req.chart.trim();
+    let version = req.version.trim();
+    let values_yaml = req.values_yaml.trim();
+
+    if release_name.is_empty() || repo_url.is_empty() || chart.is_empty() || version.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "message": "Missing release_name, repo_url, chart, or version"
+            })),
+        )
+            .into_response();
+    }
+
+    let ns = if namespace.is_empty() { "default" } else { namespace };
+
+    let repo_name = format!(
+        "install_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
+
+    let add_out = Command::new("helm")
+        .args(["repo", "add", &repo_name, repo_url])
+        .output()
+        .await;
+
+    let add_ok = match &add_out {
+        Ok(o) => o.status.success(),
+        Err(e) => {
+            error!("helm repo add error: {}", e);
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Helm not available: {}", e)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    if !add_ok {
+        let stderr = add_out
+            .as_ref()
+            .map(|o| String::from_utf8_lossy(&o.stderr).to_string())
+            .unwrap_or_default();
+        let _ = Command::new("helm").args(["repo", "remove", &repo_name]).output().await;
+        return (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({
+                "success": false,
+                "message": format!("Failed to add repo: {}", stderr)
+            })),
+        )
+            .into_response();
+    }
+
+    let chart_ref = format!("{}/{}", repo_name, chart);
+    let mut cmd = Command::new("helm");
+    cmd.arg("install")
+        .arg(release_name)
+        .arg(&chart_ref)
+        .arg("--version")
+        .arg(version)
+        .arg("--namespace")
+        .arg(ns)
+        .arg("--create-namespace")
+        .arg("--values")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = Command::new("helm").args(["repo", "remove", &repo_name]).output().await;
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to run helm install: {}", e)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let body = if values_yaml.is_empty() { "{}" } else { values_yaml };
+        if let Err(e) = stdin.write_all(body.as_bytes()).await {
+            let _ = child.wait().await;
+            let _ = Command::new("helm").args(["repo", "remove", &repo_name]).output().await;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to send values to helm: {}", e)
+                })),
+            )
+                .into_response();
+        }
+    }
+
+    let output = match child.wait_with_output().await {
+        Ok(o) => o,
+        Err(e) => {
+            let _ = Command::new("helm").args(["repo", "remove", &repo_name]).output().await;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Helm install failed: {}", e)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let _ = Command::new("helm").args(["repo", "remove", &repo_name]).output().await;
+
+    if output.status.success() {
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": format!("Release '{}' installed in namespace '{}'", release_name, ns)
+            })),
+        )
+            .into_response()
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let msg = if !stderr.is_empty() { stderr } else { stdout };
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "message": msg.to_string()
+            })),
+        )
+            .into_response()
+    }
 }

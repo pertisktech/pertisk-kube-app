@@ -83,18 +83,18 @@ export const DataTable = <T extends Record<string, any>>({
   const someSelected = enableRowSelection && selectedRows.length > 0 && selectedRows.length < data.length;
 
   return (
-    <div className="bg-surface border border-border rounded-lg overflow-hidden">
-      <div className="px-3 py-2 border-b border-border bg-surface-elevated text-xs text-text-secondary">
+    <div className="bg-surface border border-border rounded-lg overflow-hidden text-base">
+      <div className="px-3 py-2 border-b border-border bg-surface-elevated text-base text-text-secondary">
         Total: {data.length} records
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-base">
           <thead>
             <tr className="border-b border-border bg-surface-elevated">
               {columns.map((col, idx) => (
                 <th
                   key={idx}
-                  className="px-3 py-2 text-left font-semibold text-text align-middle"
+                  className="px-3 py-2 text-left text-base font-semibold text-text align-middle"
                   style={{ width: col.width }}
                 >
                   {enableRowSelection && idx === 0 ? (
@@ -168,7 +168,7 @@ export const DataTable = <T extends Record<string, any>>({
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={columns.length} className="px-3 py-12 text-center">
+                <td colSpan={columns.length} className="px-3 py-12 text-center text-base">
                   <div className="flex flex-col items-center gap-2">
                     <Loader size={32} className="text-primary animate-spin" />
                     <p className="text-text-secondary">Loading...</p>
@@ -177,7 +177,7 @@ export const DataTable = <T extends Record<string, any>>({
               </tr>
             ) : data.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-3 py-8 text-center text-text-secondary">
+                <td colSpan={columns.length} className="px-3 py-8 text-center text-base text-text-secondary">
                   No data available
                 </td>
               </tr>
@@ -202,7 +202,7 @@ export const DataTable = <T extends Record<string, any>>({
                     <td
                       key={colIdx}
                       className={cn(
-                        'px-3 py-2 align-middle',
+                        'px-3 py-2 align-middle text-base',
                         col.header === 'Name' && typeof col.accessor !== 'function'
                           ? 'text-text font-medium'
                           : 'text-text'

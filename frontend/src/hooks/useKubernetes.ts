@@ -732,8 +732,31 @@ export const useHelmCharts = () => {
   });
 };
 
-export const deleteHelmRelease = (namespace: string, name: string) =>
-  apiDelete(`/helm/releases/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+export const deleteHelmRelease = async (namespace: string, name: string): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(
+    `${API_BASE}/helm/releases/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+    {
+      method: 'DELETE',
+      headers: token ? { Authorization: token } : undefined,
+    },
+  );
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let msg = text || `Uninstall failed (${res.status})`;
+    try {
+      const json = JSON.parse(text) as { message?: string };
+      if (json.message) msg = json.message;
+    } catch {
+      /* use msg as-is */
+    }
+    throw new Error(msg);
+  }
+};
 
 export const getHelmReleaseYaml = async (namespace: string, name: string): Promise<string> => {
   const token = getAuthToken();
@@ -747,6 +770,75 @@ export const getHelmReleaseYaml = async (namespace: string, name: string): Promi
   }
   if (!res.ok) throw new Error(`Failed to load YAML (${res.status})`);
   return res.text();
+};
+
+/** Fetches a Helm chart's default values.yaml from the backend (runs helm show values). */
+export const getHelmChartValues = async (
+  repoUrl: string,
+  chart: string,
+  version: string,
+): Promise<string> => {
+  const params = new URLSearchParams({
+    repo_url: repoUrl,
+    chart,
+    version,
+  });
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/helm/charts/values?${params.toString()}`, {
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Failed to load chart values (${res.status})`);
+  }
+  return res.text();
+};
+
+export interface InstallHelmChartParams {
+  namespace: string;
+  release_name: string;
+  repo_url: string;
+  chart: string;
+  version: string;
+  values_yaml: string;
+}
+
+export interface InstallHelmChartResult {
+  success: boolean;
+  message: string;
+}
+
+/** Runs helm install via the backend (adds repo, installs chart with values, removes temp repo). */
+export const installHelmChart = async (params: InstallHelmChartParams): Promise<InstallHelmChartResult> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/helm/charts/install`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: token } : {}),
+    },
+    body: JSON.stringify({
+      namespace: params.namespace,
+      release_name: params.release_name,
+      repo_url: params.repo_url,
+      chart: params.chart,
+      version: params.version,
+      values_yaml: params.values_yaml,
+    }),
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  const data = (await res.json()) as InstallHelmChartResult;
+  if (!res.ok) {
+    throw new Error(data.message || `Install failed (${res.status})`);
+  }
+  return data;
 };
 
 // Port forwarding

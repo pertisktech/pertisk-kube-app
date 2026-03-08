@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CSSProperties } from 'react';
 import AceEditor from 'react-ace';
 import 'ace-builds/src-noconflict/mode-yaml';
@@ -10,6 +11,7 @@ import {
   ChevronUp,
   Dot,
   FileText,
+  Loader,
   Maximize2,
   Minimize2,
   Plus,
@@ -17,17 +19,19 @@ import {
   ScrollText,
   Server,
   Terminal,
+  Upload,
   X,
 } from './Icons';
+import YAML from 'yaml';
 import { toast } from 'sonner';
 import { Terminal as TerminalComponent } from './Terminal';
-import { useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
+import { getHelmChartValues, installHelmChart, useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
 import { getAuthToken } from '../utils/auth';
 import { cn } from '../utils';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type PanelTabType = 'pod-exec' | 'node-exec' | 'logs' | 'yaml-editor' | 'host-shell';
+export type PanelTabType = 'pod-exec' | 'node-exec' | 'logs' | 'yaml-editor' | 'host-shell' | 'install-chart';
 
 export interface OpenPanelTabOptions {
   type: PanelTabType;
@@ -39,6 +43,8 @@ export interface OpenPanelTabOptions {
   yamlActionLabel?: 'Apply' | 'Upgrade';
   helmReleaseName?: string;
   helmReleaseNamespace?: string;
+  /** For type 'install-chart': chart to install (opens bottom tab like Freelens) */
+  installChart?: { name: string; repository: string; version: string; repository_url: string };
 }
 
 /** Open a tab in the bottom panel from anywhere in the app */
@@ -64,7 +70,16 @@ interface PanelTab {
   yamlActionLabel?: 'Apply' | 'Upgrade';
   helmReleaseName?: string;
   helmReleaseNamespace?: string;
+  installChart?: { name: string; repository: string; version: string; repository_url: string };
 }
+
+/** Default Values content for Helm install tab — loaded so user can edit before install */
+const HELM_DEFAULT_VALUES = [
+  '# Helm values (YAML)',
+  '# Add custom values for the chart below.',
+  '{}',
+  '',
+].join('\n');
 
 const DEFAULT_YAML = `apiVersion: apps/v1
 kind: Deployment
@@ -92,6 +107,7 @@ const LABEL_MAP: Record<PanelTabType, string> = {
   'node-exec': 'Node Shell',
   logs: 'Logs',
   'yaml-editor': 'YAML',
+  'install-chart': 'Helm Install',
 };
 
 const ADD_OPTIONS: {
@@ -219,6 +235,185 @@ const NodeSelector = ({ onSelect }: { onSelect: (nodeName: string) => void }) =>
   );
 };
 
+// ── InstallChartTab (Freelens-style: controls + Values editor + Install button) ──
+
+const InstallChartTabContent = ({
+  chart,
+  onInstallSuccess,
+}: {
+  chart: { name: string; repository: string; version: string; repository_url: string };
+  onInstallSuccess?: () => void;
+}) => {
+  const queryClient = useQueryClient();
+  const { data: namespaces } = useNamespaces();
+  const [namespace, setNamespace] = useState('default');
+  const [releaseName, setReleaseName] = useState('');
+  const [valuesYaml, setValuesYaml] = useState(HELM_DEFAULT_VALUES);
+  const valuesFetchedRef = useRef(false);
+  const [valuesError, setValuesError] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
+
+  const { data: fetchedValues, isLoading: valuesLoading, isError: valuesFetchFailed } = useQuery({
+    queryKey: ['helm-chart-values', chart.repository_url, chart.name, chart.version],
+    queryFn: () => getHelmChartValues(chart.repository_url, chart.name, chart.version),
+    enabled: !!chart.repository_url?.trim(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (fetchedValues != null && fetchedValues.trim() && !valuesFetchedRef.current) {
+      valuesFetchedRef.current = true;
+      setValuesYaml(fetchedValues);
+    }
+  }, [fetchedValues]);
+
+  useEffect(() => {
+    if (valuesFetchFailed) {
+      toast.error('Could not load chart default values. Edit the template below or add the repo manually.');
+    }
+  }, [valuesFetchFailed]);
+
+  const nsList = namespaces?.map((ns) => ns.name) ?? [];
+  const chartRef = `${chart.repository}/${chart.name}`;
+  const installRelease = releaseName.trim() || chart.name;
+  const baseCmd = `helm install ${installRelease} ${chartRef} --version ${chart.version} -n ${namespace} --create-namespace`;
+  const helmCmd = valuesYaml.trim() && validateValuesYamlSilent(valuesYaml)
+    ? `${baseCmd} -f values.yaml`
+    : baseCmd;
+
+  const handleValuesChange = (value: string) => {
+    setValuesYaml(value);
+    const err = validateValuesYamlSilent(value) ? null : getValuesYamlError(value);
+    setValuesError(err);
+  };
+
+  const handleInstall = async () => {
+    if (valuesYaml.trim() && !validateValuesYamlSilent(valuesYaml)) {
+      toast.error('Fix YAML syntax in Values before installing.');
+      return;
+    }
+    setInstalling(true);
+    try {
+      await installHelmChart({
+        namespace,
+        release_name: installRelease,
+        repo_url: chart.repository_url,
+        chart: chart.name,
+        version: chart.version,
+        values_yaml: valuesYaml.trim() || '{}',
+      });
+      toast.success(`Release '${installRelease}' installed in namespace '${namespace}'.`);
+      void queryClient.invalidateQueries({ queryKey: ['helm-releases'] });
+      onInstallSuccess?.();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Install failed';
+      toast.error(msg);
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full min-h-0 overflow-hidden text-sm" style={{ color: 'var(--color-text)' }}>
+      {/* Top bar: Chart, Version, Namespace, Release name, Install button (Freelens InfoPanel-style) */}
+      <div className="flex-shrink-0 p-4 border-b border-border bg-surface-elevated space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-text-secondary">Chart</span>
+          <span
+            className="px-2 py-0.5 rounded border font-medium"
+            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
+          >
+            {chartRef}
+          </span>
+          <span className="text-text-secondary">Version</span>
+          <span className="font-mono">{chart.version}</span>
+          <span className="text-text-secondary">Namespace</span>
+          <select
+            value={namespace}
+            onChange={(e) => setNamespace(e.target.value)}
+            className="border border-border rounded px-2 py-1 bg-bg text-text focus:outline-none focus:border-primary min-w-[7rem]"
+          >
+            {(nsList.length ? nsList : ['default']).map((ns) => (
+              <option key={ns} value={ns}>{ns}</option>
+            ))}
+          </select>
+          <input
+            type="text"
+            placeholder="Name (optional)"
+            value={releaseName}
+            onChange={(e) => setReleaseName(e.target.value)}
+            className="border border-border rounded px-2 py-1 bg-bg text-text focus:outline-none focus:border-primary min-w-[8rem]"
+          />
+          <button
+            type="button"
+            onClick={() => void handleInstall()}
+            disabled={installing}
+            className="px-4 py-1.5 rounded font-medium bg-primary text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {installing ? 'Installing…' : 'Install'}
+          </button>
+        </div>
+        {valuesError && (
+          <p className="text-red-500 text-xs" role="alert">Values: {valuesError}</p>
+        )}
+      </div>
+      {/* Values editor — YAML syntax highlighting (same as YAML tab) */}
+      <div className="flex-1 min-h-0 flex flex-col p-4">
+        <label className="text-text-secondary font-medium mb-2 flex items-center gap-2">
+          Values
+          {valuesLoading && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-normal text-primary">
+              <Loader size={12} className="animate-spin flex-shrink-0" />
+              Loading… (fetching Helm values)
+            </span>
+          )}
+        </label>
+        <div
+          className={cn(
+            'yaml-editor-pane flex-1 min-h-[200px] rounded-lg overflow-hidden border bg-surface-elevated',
+            valuesError ? 'border-red-500' : 'border-border'
+          )}
+        >
+          <AceEditor
+            mode="yaml"
+            theme="tomorrow_night"
+            value={valuesYaml}
+            onChange={(value) => handleValuesChange(value)}
+            readOnly={valuesLoading}
+            width="100%"
+            height="100%"
+            setOptions={{ useWorker: false, tabSize: 2 }}
+            editorProps={{ $blockScrolling: true }}
+            style={{ fontSize: 12, minHeight: 200 }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+function validateValuesYamlSilent(yamlStr: string): boolean {
+  const t = yamlStr.trim();
+  if (!t) return true;
+  try {
+    YAML.parse(t);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getValuesYamlError(yamlStr: string): string | null {
+  const t = yamlStr.trim();
+  if (!t) return null;
+  try {
+    YAML.parse(t);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : 'Invalid YAML';
+  }
+}
+
 // ── LogViewer ────────────────────────────────────────────────────────────────
 
 const LogViewer = ({ namespace, podName }: { namespace: string; podName: string }) => {
@@ -335,6 +530,8 @@ const TabIcon = ({ type, size = 13 }: { type: PanelTabType; size?: number }) => 
       return <ScrollText size={size} />;
     case 'yaml-editor':
       return <FileText size={size} />;
+    case 'install-chart':
+      return <Upload size={size} />;
   }
 };
 
@@ -368,10 +565,12 @@ const TabContent = ({
   tab,
   onConnect,
   onYamlChange,
+  onCloseCurrentTab,
 }: {
   tab: PanelTab;
   onConnect: (target: TabTarget) => void;
   onYamlChange: (content: string) => void;
+  onCloseCurrentTab?: () => void;
 }) => {
   switch (tab.type) {
     case 'pod-exec':
@@ -423,6 +622,22 @@ const TabContent = ({
           onContentChange={onYamlChange}
         />
       );
+
+    case 'install-chart':
+      if (!tab.installChart) {
+        return (
+          <div className="flex items-center justify-center h-full p-6 text-sm text-text-secondary">
+            No chart selected. Open a chart from the Charts page and click Install.
+          </div>
+        );
+      }
+      return (
+        <InstallChartTabContent
+          key={tab.id}
+          chart={tab.installChart}
+          onInstallSuccess={onCloseCurrentTab}
+        />
+      );
   }
 };
 
@@ -451,15 +666,18 @@ export const BottomPanel = () => {
   // ── External open events (e.g. sidebar Terminal button) ───────────────────
   const doAddTab = useCallback((type: PanelTabType, opts?: Partial<OpenPanelTabOptions>) => {
     const id = `${type}-${Date.now()}`;
+    const label =
+      type === 'yaml-editor'
+        ? (opts?.title?.trim() || LABEL_MAP[type])
+        : type === 'install-chart' && opts?.installChart
+          ? `Helm Install: ${opts.installChart.repository}/${opts.installChart.name}`
+          : (opts?.podName ?? LABEL_MAP[type]);
     setTabs((prev) => [
       ...prev,
       {
         id,
         type,
-        label:
-          type === 'yaml-editor'
-            ? (opts?.title?.trim() || LABEL_MAP[type])
-            : (opts?.podName ?? LABEL_MAP[type]),
+        label,
         ...(type === 'yaml-editor'
           ? {
               yamlContent: opts?.yamlContent ?? DEFAULT_YAML,
@@ -470,6 +688,9 @@ export const BottomPanel = () => {
               helmReleaseName: opts?.helmReleaseName,
               helmReleaseNamespace: opts?.helmReleaseNamespace,
             }
+          : {}),
+        ...(type === 'install-chart' && opts?.installChart
+          ? { installChart: opts.installChart }
           : {}),
         ...(opts?.podName
           ? { target: { namespace: opts.namespace ?? 'default', podName: opts.podName, containerName: opts.containerName } }
@@ -519,8 +740,8 @@ export const BottomPanel = () => {
     setShowAddMenu((p) => !p);
   };
 
-  const closeTab = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const closeTab = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setTabs((prev) => {
       const next = prev.filter((t) => t.id !== id);
       if (activeTabId === id) setActiveTabId(next.length > 0 ? next[next.length - 1].id : null);
@@ -768,10 +989,16 @@ export const BottomPanel = () => {
               <button
                 type="button"
                 onClick={toggleFullScreen}
-                className="p-1 hover:bg-hover rounded text-text-secondary transition-colors"
+                className={cn(
+                  'flex items-center gap-1.5 rounded transition-colors',
+                  fullScreen
+                    ? 'px-2 py-1 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40'
+                    : 'p-1 hover:bg-hover text-text-secondary'
+                )}
                 title={fullScreen ? 'Exit full screen' : 'Full screen'}
               >
                 {fullScreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                {fullScreen && <span className="text-xs font-medium">Exit full screen</span>}
               </button>
               <button
                 type="button"
@@ -798,6 +1025,7 @@ export const BottomPanel = () => {
                 tab={tab}
                 onConnect={(target) => connectTab(tab.id, target)}
                 onYamlChange={(content) => updateYaml(tab.id, content)}
+                onCloseCurrentTab={() => closeTab(tab.id)}
               />
             </div>
           ))}
