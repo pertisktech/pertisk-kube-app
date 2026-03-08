@@ -10,6 +10,8 @@ import {
   ChevronUp,
   Dot,
   FileText,
+  Maximize2,
+  Minimize2,
   Plus,
   RotateCw,
   ScrollText,
@@ -435,6 +437,8 @@ export const BottomPanel = () => {
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [panelHeight, setPanelHeight] = useState(MIN_PANEL_HEIGHT);
+  const [fullScreen, setFullScreen] = useState(false);
+  const savedBeforeFullScreen = useRef<{ height: number; collapsed: boolean } | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [yamlActionLoading, setYamlActionLoading] = useState(false);
   const [yamlActionResult, setYamlActionResult] = useState<{ ok: boolean; tabId: string } | null>(null);
@@ -495,6 +499,16 @@ export const BottomPanel = () => {
     }, 0);
     return () => window.clearTimeout(t);
   }, [showAddMenu]);
+
+  // ── Exit full screen on Escape ───────────────────────────────────────────
+  useEffect(() => {
+    if (!fullScreen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullScreen(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [fullScreen]);
 
   const handleAddClick = () => {
     if (!showAddMenu) {
@@ -611,12 +625,41 @@ export const BottomPanel = () => {
   // Panel needs explicit height when showing content or the dropdown menu
   const needsHeight = (!collapsed && tabs.length > 0) || showAddMenu;
 
+  const toggleFullScreen = () => {
+    setFullScreen((prev) => {
+      if (!prev) {
+        savedBeforeFullScreen.current = { height: panelHeight, collapsed };
+        setCollapsed(false);
+        setPanelHeight(window.innerHeight - 32);
+      } else {
+        const saved = savedBeforeFullScreen.current;
+        if (saved) {
+          setPanelHeight(saved.height);
+          setCollapsed(saved.collapsed);
+          savedBeforeFullScreen.current = null;
+        } else {
+          setPanelHeight(DEFAULT_PANEL_HEIGHT());
+        }
+      }
+      return !prev;
+    });
+  };
+
+  const effectiveHeight = fullScreen
+    ? '100vh'
+    : needsHeight
+      ? (!collapsed && tabs.length > 0) ? panelHeight : Math.max(panelHeight, ADD_OPTIONS.length * MENU_ITEM_HEIGHT + 40)
+      : undefined;
+
   return (
     <div
-      className="relative flex-shrink-0 flex flex-col mx-2 mb-2 rounded-xl overflow-hidden bg-sidebar"
+      className={cn(
+        'flex flex-col rounded-xl overflow-hidden bg-sidebar',
+        fullScreen ? 'fixed inset-0 z-[100] rounded-none' : 'relative flex-shrink-0 mx-2 mb-2'
+      )}
       style={{
-        boxShadow: '0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent), 0 -4px 24px rgba(0,0,0,0.25)',
-        ...(needsHeight ? { height: (!collapsed && tabs.length > 0) ? panelHeight : Math.max(panelHeight, ADD_OPTIONS.length * MENU_ITEM_HEIGHT + 40) } : {}),
+        boxShadow: fullScreen ? '0 0 0 1px var(--color-border)' : '0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent), 0 -4px 24px rgba(0,0,0,0.25)',
+        ...(effectiveHeight !== undefined ? { height: effectiveHeight } : {}),
       } as CSSProperties}
     >
       {/* Accent top strip */}
@@ -721,14 +764,24 @@ export const BottomPanel = () => {
             <span>New Tab</span>
           </button>
           {tabs.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setCollapsed((p) => !p)}
-              className="p-1 hover:bg-hover rounded text-text-secondary transition-colors"
-              title={collapsed ? 'Expand' : 'Collapse'}
-            >
-              {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={toggleFullScreen}
+                className="p-1 hover:bg-hover rounded text-text-secondary transition-colors"
+                title={fullScreen ? 'Exit full screen' : 'Full screen'}
+              >
+                {fullScreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCollapsed((p) => !p)}
+                className="p-1 hover:bg-hover rounded text-text-secondary transition-colors"
+                title={collapsed ? 'Expand' : 'Collapse'}
+              >
+                {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+            </>
           )}
         </div>
       </div>

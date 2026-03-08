@@ -251,7 +251,7 @@ function ChartCard({ title, icon: Icon, data, total, linkTo, isLoading }: ChartC
           <p className="text-text-secondary">No resources found</p>
         </div>
       ) : (
-        <div className="h-48">
+        <div className="h-48 chart-theme-text">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
@@ -274,18 +274,21 @@ function ChartCard({ title, icon: Icon, data, total, linkTo, isLoading }: ChartC
               <Tooltip
                 contentStyle={{
                   backgroundColor: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: '8px',
                   color: 'var(--color-text)',
+                  borderRadius: '8px',
+                  padding: '10px 12px',
                 }}
+                labelStyle={{ color: 'var(--color-text)' }}
+                itemStyle={{ color: 'var(--color-text)' }}
+                wrapperStyle={{ outline: 'none' }}
                 formatter={(value, name) => [
                   `${value} (${total > 0 ? ((Number(value) / total) * 100).toFixed(1) : 0}%)`,
                   name,
                 ]}
               />
               <Legend
-                wrapperStyle={{ fontSize: '12px' }}
-                formatter={(value) => <span className="text-text">{value}</span>}
+                wrapperStyle={{ fontSize: '12px', color: 'var(--color-text)' }}
+                formatter={(value) => <span style={{ color: 'var(--color-text)' }}>{value}</span>}
               />
             </PieChart>
           </ResponsiveContainer>
