@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import YAML from 'yaml';
-import { ChevronDown, Clock, Layers, Pencil, Trash2 } from 'lucide-react';
+import { ChevronDown, Clock, Layers, Pencil, Trash2 } from '../components/Icons';
 import { useRealtimeCrds, useRealtimeCustomResources } from '../hooks/useRealtimeResources';
 import { deleteCustomResource } from '../hooks/useKubernetes';
 import { DataTable } from '../components';

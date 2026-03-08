@@ -6,6 +6,7 @@ import { useRealtimeNamespaces, useRealtimeCrds } from '../hooks/useRealtimeReso
 import { useNamespaces } from '../hooks/useKubernetes';
 import { Checkbox } from './Checkbox';
 import { BottomPanel } from './BottomPanel';
+import type { IconComponent } from './Icons';
 import {
   ChevronDown,
   ChevronRight,
@@ -18,7 +19,6 @@ import {
   Network,
   Database,
   Archive,
-  LucideIcon,
   Copy,
   Clock,
   RotateCw,
@@ -37,7 +37,7 @@ import {
   Terminal,
   Layers,
   LayoutGrid,
-} from 'lucide-react';
+} from './Icons';
 import { cn } from '../utils';
 import { APP_VERSION } from '../utils/version';
 import { useTheme } from '../context/ThemeContext';
@@ -46,7 +46,7 @@ import { useTheme } from '../context/ThemeContext';
 interface NavItem {
   label: string;
   path: string;
-  icon: LucideIcon;
+  icon: IconComponent;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -127,7 +127,7 @@ interface LayoutProps {
 interface BreadcrumbItem {
   label: string;
   path?: string;
-  icon?: LucideIcon;
+  icon?: IconComponent;
 }
 
 export const Layout = ({ username, onLogout }: LayoutProps) => {

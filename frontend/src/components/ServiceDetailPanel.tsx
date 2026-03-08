@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pencil, Trash2, Cable, X } from 'lucide-react';
+import { Pencil, Trash2, Cable, X } from './Icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Service } from '../types';
 import { timeAgo } from '../utils';

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useRealtimeMwcs } from '../hooks/useRealtimeResources';
 import { deleteMwc } from '../hooks/useKubernetes';
 import { getAuthToken } from '../utils/auth';

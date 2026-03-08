@@ -14,7 +14,6 @@ import {
   Copy,
   Briefcase,
   Clock,
-  LucideIcon,
   RefreshCw,
   LayoutGrid,
   Network,
@@ -25,7 +24,8 @@ import {
   KeyRound,
   HardDrive,
   Circle,
-} from 'lucide-react';
+  type IconComponent,
+} from '../components/Icons';
 import {
   useServices,
   useEndpoints,
@@ -212,7 +212,7 @@ function getCronJobStatusData(
 
 interface ChartCardProps {
   title: string;
-  icon: LucideIcon;
+  icon: IconComponent;
   data: { name: string; value: number; color: string }[];
   total: number;
   linkTo: string;
@@ -316,7 +316,7 @@ function ChartCard({ title, icon: Icon, data, total, linkTo, isLoading }: ChartC
 
 interface SummaryRowProps {
   name: string;
-  icon: LucideIcon;
+  icon: IconComponent;
   total: number;
   healthy: number;
   warning: number;

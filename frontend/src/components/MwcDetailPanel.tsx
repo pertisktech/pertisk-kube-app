@@ -1,4 +1,4 @@
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from './Icons';
 import type { Mwc } from '../types';
 import { timeAgo } from '../utils';
 import {

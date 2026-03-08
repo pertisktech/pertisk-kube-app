@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ExternalLink, Star } from 'lucide-react';
+import { ExternalLink, Star } from '../components/Icons';
 import { useHelmCharts } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';
 import type { HelmChart } from '../types';

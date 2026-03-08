@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useRealtimeClusterRoles } from '../hooks/useRealtimeResources';
 import { deleteClusterRole } from '../hooks/useKubernetes';
 import { DataTable, ClusterRoleDetailPanel, ConfirmDialog } from '../components';

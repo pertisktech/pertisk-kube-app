@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Terminal, Trash2, Loader, ChevronDown, FileText, Lock, Unlock, Droplet } from 'lucide-react';
+import { X, Terminal, Trash2, Loader, ChevronDown, FileText, Lock, Unlock, Droplet } from './Icons';
 import { StatusBadge } from './StatusBadge';
 import { usePods } from '../hooks/useKubernetes';
 import { ResizablePanel } from './ResizablePanel';

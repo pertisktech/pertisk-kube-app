@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import type { LucideIcon } from 'lucide-react';
-import { X, ChevronDown, ChevronUp } from 'lucide-react';
+import type { IconComponent } from './Icons';
+import { X, ChevronDown, ChevronUp } from './Icons';
 import { ResizablePanel } from './ResizablePanel';
 
 /** Reusable panel action button with tooltip — used in the right-panel header toolbar */
@@ -12,7 +12,7 @@ export const PanelActionButton = ({
   disabled,
   colorClass = 'text-amber-400 hover:bg-amber-500/20 hover:text-amber-300',
 }: {
-  icon: LucideIcon;
+  icon: IconComponent;
   label: string;
   onClick: () => void;
   danger?: boolean;
@@ -57,7 +57,7 @@ export interface StatusCardItem {
 }
 
 export interface QuickInfoItem {
-  icon?: LucideIcon;
+  icon?: IconComponent;
   label: string;
   value: ReactNode;
 }
@@ -66,7 +66,7 @@ interface ResourceDetailPanelLayoutProps {
   /** Resource kind label (e.g. "POD", "DEPLOYMENT") — base project style when set */
   kind?: string;
   /** Icon for kind (e.g. Box, Layers) */
-  kindIcon?: LucideIcon;
+  kindIcon?: IconComponent;
   /** Resource name shown as main title */
   title: string;
   /** Optional status for badge (e.g. "Ready", "Running") */
@@ -261,7 +261,7 @@ export const CollapsibleSection = ({
   title: string;
   defaultExpanded?: boolean;
   children: ReactNode;
-  icon?: LucideIcon;
+  icon?: IconComponent;
 }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
   return (
@@ -309,7 +309,7 @@ export const DetailSection = ({
   children: ReactNode;
   collapsible?: boolean;
   defaultExpanded?: boolean;
-  icon?: LucideIcon;
+  icon?: IconComponent;
 }) => {
   if (collapsible) {
     return (
@@ -354,7 +354,7 @@ export const DetailRow = ({
   label: string;
   value: ReactNode;
   mono?: boolean;
-  icon?: LucideIcon;
+  icon?: IconComponent;
 }) => (
   <div
     className="px-4 py-3 flex items-center justify-between"

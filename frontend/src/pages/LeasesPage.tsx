@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useRealtimeLeases } from '../hooks/useRealtimeResources';
 import { deleteLease } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';

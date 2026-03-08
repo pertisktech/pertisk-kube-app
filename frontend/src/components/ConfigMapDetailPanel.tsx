@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from './Icons';
 import type { ConfigMap } from '../types';
 import { timeAgo } from '../utils';
 import { getAuthToken } from '../utils/auth';

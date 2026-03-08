@@ -1,4 +1,4 @@
-import { Layers, Clock, Pencil, RotateCcw, Trash2 } from 'lucide-react';
+import { Layers, Clock, Pencil, RotateCcw, Trash2 } from './Icons';
 import { useEffect, useState } from 'react';
 import type { Deployment } from '../types';
 import { getStatusColor, timeAgo } from '../utils';

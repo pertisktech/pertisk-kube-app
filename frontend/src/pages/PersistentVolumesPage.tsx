@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useRealtimePersistentVolumes } from '../hooks/useRealtimeResources';
 import { deletePersistentVolume } from '../hooks/useKubernetes';
 import { DataTable, PVDetailPanel, ConfirmDialog } from '../components';

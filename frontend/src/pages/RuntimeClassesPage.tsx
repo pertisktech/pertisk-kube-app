@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useRealtimeRuntimeClasses } from '../hooks/useRealtimeResources';
 import { deleteRuntimeClass } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';

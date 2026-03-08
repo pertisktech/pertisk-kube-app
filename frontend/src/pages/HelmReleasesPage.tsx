@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useHelmReleases, deleteHelmRelease, getHelmReleaseYaml } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';
 import { HelmReleaseDetailPanel } from '../components/HelmReleaseDetailPanel';

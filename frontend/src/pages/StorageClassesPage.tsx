@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useRealtimeStorageClasses } from '../hooks/useRealtimeResources';
 import { deleteStorageClass } from '../hooks/useKubernetes';
 import { DataTable, StorageClassDetailPanel, ConfirmDialog } from '../components';

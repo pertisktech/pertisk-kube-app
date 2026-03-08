@@ -1,6 +1,6 @@
 import { usePods, useNodes } from '../hooks/useKubernetes';
 import { Card } from './Card';
-import { Loader } from 'lucide-react';
+import { Loader } from './Icons';
 import { useTheme } from '../context/ThemeContext';
 import {
   Chart as ChartJS,

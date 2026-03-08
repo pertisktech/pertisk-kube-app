@@ -1,6 +1,6 @@
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { useTheme } from '../context/ThemeContext';
-import { Loader } from 'lucide-react';
+import { Loader } from './Icons';
 
 interface ResourceGaugeChartProps {
   label: string;

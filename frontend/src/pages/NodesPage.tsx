@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import { X } from '../components/Icons';
 import { useRealtimeNodes, useRealtimeEvents } from '../hooks/useRealtimeResources';
 import { useNodes } from '../hooks/useKubernetes';
 import { deleteNode, cordonNode, uncordonNode, drainNode } from '../hooks/useKubernetes';

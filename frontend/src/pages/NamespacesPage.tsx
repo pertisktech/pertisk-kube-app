@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useRealtimeNamespaces } from '../hooks/useRealtimeResources';
 import { DataTable } from '../components/DataTable';
 import { NamespaceDetailPanel } from '../components/NamespaceDetailPanel';

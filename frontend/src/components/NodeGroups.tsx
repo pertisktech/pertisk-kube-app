@@ -1,6 +1,6 @@
 import { useNodes } from '../hooks/useKubernetes';
 import { Card } from './Card';
-import { Loader } from 'lucide-react';
+import { Loader } from './Icons';
 import type { K8sNode } from '../types';
 
 interface NodeGroupInfo {

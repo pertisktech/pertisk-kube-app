@@ -7,7 +7,7 @@ import {
   useReplicaSets 
 } from '../hooks/useKubernetes';
 import { Card } from './Card';
-import { Loader } from 'lucide-react';
+import { Loader } from './Icons';
 
 export const WorkloadSummary = () => {
   const { data: deployments, isLoading: deploymentsLoading } = useDeployments();

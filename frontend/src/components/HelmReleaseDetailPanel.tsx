@@ -1,4 +1,4 @@
-import { Upload, Trash2 } from 'lucide-react';
+import { Upload, Trash2 } from './Icons';
 import type { HelmRelease } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';

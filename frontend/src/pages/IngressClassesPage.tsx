@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useRealtimeIngressClasses } from '../hooks/useRealtimeResources';
 import { deleteIngressClass } from '../hooks/useKubernetes';
 import { DataTable, IngressClassDetailPanel, ConfirmDialog } from '../components';

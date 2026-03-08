@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useRealtimeLimitRanges } from '../hooks/useRealtimeResources';
 import { deleteLimitRange } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';

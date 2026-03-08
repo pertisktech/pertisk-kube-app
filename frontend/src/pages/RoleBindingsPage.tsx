@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useRealtimeRoleBindings } from '../hooks/useRealtimeResources';
 import { deleteRoleBinding } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';

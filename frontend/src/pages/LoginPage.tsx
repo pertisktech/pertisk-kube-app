@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { Moon, Shield, Sun } from 'lucide-react';
+import { Moon, Shield, Sun } from '../components/Icons';
 import { useTheme } from '../context/ThemeContext';
 import { setAuth } from '../utils/auth';
 import { APP_VERSION } from '../utils/version';

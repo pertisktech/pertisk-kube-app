@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Pencil, Terminal, ScrollText, Trash2, ChevronDown, ChevronRight, Cable, Eye, EyeOff } from 'lucide-react';
+import { X, Pencil, Terminal, ScrollText, Trash2, ChevronDown, ChevronRight, Cable, Eye, EyeOff } from './Icons';
 import { StatusBadge } from './StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';

@@ -3,7 +3,7 @@ import AceEditor from 'react-ace';
 import 'ace-builds/src-noconflict/mode-yaml';
 import 'ace-builds/src-noconflict/theme-github';
 import 'ace-builds/src-noconflict/theme-tomorrow_night';
-import { X } from 'lucide-react';
+import { X } from './Icons';
 import { useTheme } from '../context/ThemeContext';
 import { getAuthToken } from '../utils/auth';
 

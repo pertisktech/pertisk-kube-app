@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useRealtimePriorityClasses } from '../hooks/useRealtimeResources';
 import { deletePriorityClass } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';

@@ -18,8 +18,8 @@ import {
   XCircle,
   AlertCircle,
   ExternalLink,
-} from 'lucide-react';
-import { Loader } from 'lucide-react';
+  Loader,
+} from '../components/Icons';
 import { timeAgo, formatMemoryUsedAlloc } from '../utils';
 import { K8sNode } from '../types';
 

@@ -1,6 +1,6 @@
 import { usePods, useNodes } from '../hooks/useKubernetes';
 import { Card } from './Card';
-import { CheckCircle, AlertCircle, XCircle, Loader } from 'lucide-react';
+import { CheckCircle, AlertCircle, XCircle, Loader } from './Icons';
 
 interface ClusterHealth {
   status: 'healthy' | 'warning' | 'critical';

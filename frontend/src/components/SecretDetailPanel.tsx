@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pencil, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Pencil, Trash2, Eye, EyeOff } from './Icons';
 import type { Secret } from '../types';
 import { timeAgo } from '../utils';
 import { getAuthToken } from '../utils/auth';

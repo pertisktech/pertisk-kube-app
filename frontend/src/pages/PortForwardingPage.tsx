@@ -8,7 +8,7 @@ import {
   ExternalLink,
   X,
   RefreshCw,
-} from 'lucide-react';
+} from '../components/Icons';
 import {
   usePortForwards,
   createPortForward,

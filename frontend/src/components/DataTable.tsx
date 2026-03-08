@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Loader, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Loader, ArrowUp, ArrowDown, ArrowUpDown } from './Icons';
 import { cn } from '../utils';
 import { Checkbox } from './Checkbox';
 

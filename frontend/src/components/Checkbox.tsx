@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useRef, InputHTMLAttributes } from 'react';
-import { Check, Minus } from 'lucide-react';
+import { Check, Minus } from './Icons';
 import { cn } from '../utils';
 
 interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {

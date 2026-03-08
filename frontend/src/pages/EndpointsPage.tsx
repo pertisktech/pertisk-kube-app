@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../components/Icons';
 import { useRealtimeEndpoints } from '../hooks/useRealtimeResources';
 import { deleteEndpoint } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';

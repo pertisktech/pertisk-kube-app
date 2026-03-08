@@ -18,7 +18,7 @@ import {
   Server,
   Terminal,
   X,
-} from 'lucide-react';
+} from './Icons';
 import { toast } from 'sonner';
 import { Terminal as TerminalComponent } from './Terminal';
 import { useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
