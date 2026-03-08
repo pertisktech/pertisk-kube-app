@@ -9,7 +9,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { StatusBadge } from '../components/StatusBadge';
 import { openPanelTab } from '../components/BottomPanel';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, formatMemoryUsedAlloc } from '../utils';
 import type { K8sNode } from '../types';
 
 type NodeSortKey =
@@ -165,7 +165,7 @@ export const NodesPage = () => {
       accessor: (row: K8sNode) => (
         <StatusBadge status={String(row.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady'} />
       ),
-      width: '10%',
+      width: '7%',
       sortable: true,
       sortKey: 'status',
     },
@@ -205,7 +205,7 @@ export const NodesPage = () => {
           </span>
         );
       },
-      width: '8%',
+      width: '5%',
       sortable: true,
       sortKey: 'taints',
     },
@@ -226,16 +226,14 @@ export const NodesPage = () => {
         const hasMetrics = row.cpu_usage_percent != null;
 
         return (
-          <div className="flex items-center gap-2" style={{ minWidth: '160px', maxWidth: '160px' }}>
-            <span className="text-xs text-text-secondary min-w-[3rem] flex-shrink-0 truncate" title="used / allocatable">{label}</span>
+          <div className="flex items-center gap-2 w-full">
+            <span className="text-xs text-text-secondary w-[5rem] flex-shrink-0 truncate" title={label}>{label}</span>
             {hasMetrics ? (
               <>
-                <div className="h-1.5 flex-1 rounded-full bg-hover overflow-hidden">
+                <div className="h-1.5 w-16 flex-shrink-0 rounded-full bg-hover overflow-hidden">
                   <div
                     className="h-full rounded-full bg-blue-500"
-                    style={{
-                      width: `${usageBarWidth(percent)}%`,
-                    }}
+                    style={{ width: `${usageBarWidth(percent)}%` }}
                   />
                 </div>
                 <span className="text-xs font-medium text-text w-9 text-right flex-shrink-0">{Math.round(percent)}%</span>
@@ -246,30 +244,26 @@ export const NodesPage = () => {
           </div>
         );
       },
-      width: '15%',
+      width: '18%',
       sortable: true,
       sortKey: 'cpu_pct',
     },
     {
       header: 'Memory',
       accessor: (row: K8sNode) => {
-        const used = row.memory_used ?? '-';
-        const alloc = row.memory ?? '-';
-        const label = alloc !== '-' ? `${used}/${alloc}` : '-';
+        const label = formatMemoryUsedAlloc(row.memory_used, row.memory);
         const percent = toPercent(row.memory_usage_percent);
         const hasMetrics = row.memory_usage_percent != null;
 
         return (
-          <div className="flex items-center gap-2" style={{ minWidth: '160px', maxWidth: '160px' }}>
-            <span className="text-xs text-text-secondary min-w-[4rem] flex-shrink-0 truncate" title="used / allocatable">{label}</span>
+          <div className="flex items-center gap-2 w-full">
+            <span className="text-xs text-text-secondary min-w-[11rem] flex-shrink-0 whitespace-nowrap" title={label}>{label}</span>
             {hasMetrics ? (
               <>
-                <div className="h-1.5 flex-1 rounded-full bg-hover overflow-hidden">
+                <div className="h-1.5 w-16 flex-shrink-0 rounded-full bg-hover overflow-hidden">
                   <div
                     className="h-full rounded-full bg-purple-500"
-                    style={{
-                      width: `${usageBarWidth(percent)}%`,
-                    }}
+                    style={{ width: `${usageBarWidth(percent)}%` }}
                   />
                 </div>
                 <span className="text-xs font-medium text-text w-9 text-right flex-shrink-0">{Math.round(percent)}%</span>
@@ -280,7 +274,7 @@ export const NodesPage = () => {
           </div>
         );
       },
-      width: '15%',
+      width: '18%',
       sortable: true,
       sortKey: 'memory_pct',
     },

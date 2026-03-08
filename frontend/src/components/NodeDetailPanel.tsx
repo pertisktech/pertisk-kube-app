@@ -4,6 +4,7 @@ import { StatusBadge } from './StatusBadge';
 import { usePods } from '../hooks/useKubernetes';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton } from './ResourceDetailPanelLayout';
+import { formatMemoryUsedAlloc } from '../utils';
 import type { K8sNode } from '../types';
 
 interface NodeDetailPanelProps {
@@ -75,10 +76,10 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
   // Filter pods running on this node
   const nodePods = (allPods || []).filter((pod) => pod.node === node.name);
 
-  // Resources: show used / allocatable for CPU and Memory
+  // Resources: show used / allocatable for CPU and Memory (memory in GB)
   const resourcesUsedAlloc = {
     cpu: node.cpu != null ? `${node.cpu_used ?? '-'} / ${node.cpu}` : undefined,
-    memory: node.memory != null ? `${node.memory_used ?? '-'} / ${node.memory}` : undefined,
+    memory: node.memory != null ? formatMemoryUsedAlloc(node.memory_used, node.memory) : undefined,
     ephemeral_storage: node.ephemeral_storage,
     pods: node.pods,
   };

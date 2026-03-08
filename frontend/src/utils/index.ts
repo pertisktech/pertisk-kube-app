@@ -136,6 +136,34 @@ export const formatBytes = (bytes: number): string => {
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 };
 
+/**
+ * Parse Kubernetes memory string (e.g. "15340880Ki", "2.4Gi", "16384Mi") to GB (binary: 1024).
+ */
+export function parseK8sMemoryToGB(str: string | undefined | null): number {
+  if (str == null || typeof str !== 'string') return 0;
+  const s = str.trim();
+  if (!s) return 0;
+  const num = parseFloat(s.replace(/[^\d.]/g, ''));
+  if (Number.isNaN(num)) return 0;
+  const lower = s.toLowerCase();
+  if (lower.endsWith('ki')) return num / (1024 * 1024);
+  if (lower.endsWith('mi')) return num / 1024;
+  if (lower.endsWith('gi')) return num;
+  if (lower.endsWith('k')) return num / (1000 * 1000);
+  if (lower.endsWith('m')) return num / 1000;
+  if (lower.endsWith('g')) return num;
+  return num;
+}
+
+/** Format memory for display: "X GB / Y GB" from K8s used/allocatable strings. */
+export function formatMemoryUsedAlloc(used: string | undefined | null, alloc: string | undefined | null): string {
+  const usedGB = parseK8sMemoryToGB(used);
+  const allocGB = parseK8sMemoryToGB(alloc);
+  if (allocGB === 0 && usedGB === 0) return '-';
+  const fmt = (gb: number) => (gb === 0 ? '-' : gb % 1 === 0 ? `${gb} GB` : `${gb.toFixed(2)} GB`);
+  return `${fmt(usedGB)} / ${fmt(allocGB)}`;
+}
+
 export const cn = (...classes: (string | false | undefined)[]): string => {
   return classes.filter(Boolean).join(' ');
 };

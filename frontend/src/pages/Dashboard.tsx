@@ -20,7 +20,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { Loader } from 'lucide-react';
-import { timeAgo } from '../utils';
+import { timeAgo, formatMemoryUsedAlloc } from '../utils';
 import { K8sNode } from '../types';
 
 const CHART_USED = 'var(--color-dashboard-metric-primary)';
@@ -93,10 +93,10 @@ function formatCPU(cores: number): string {
   return cores % 1 === 0 ? cores.toString() : cores.toFixed(2);
 }
 
-// Helper to format Memory display
+// Helper to format Memory display (unit: GB)
 function formatMemory(gb: number): string {
-  if (gb === 0) return '0 Gi';
-  return gb % 1 === 0 ? `${gb} Gi` : `${gb.toFixed(2)} Gi`;
+  if (gb === 0) return '0 GB';
+  return gb % 1 === 0 ? `${gb} GB` : `${gb.toFixed(2)} GB`;
 }
 
 // Helper to parse allocatable pods (integer string per node)
@@ -223,7 +223,7 @@ export const Dashboard = () => {
       accessor: (row: K8sNode) => (
         <StatusBadge status={String(row.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady'} />
       ),
-      width: '10%',
+      width: '7%',
       sortable: true,
       sortKey: 'status' as NodeSortKey,
     },
@@ -247,19 +247,19 @@ export const Dashboard = () => {
         const percent = toPercent(row.cpu_usage_percent);
         const hasMetrics = row.cpu_usage_percent != null;
         return (
-          <div className="flex items-center gap-2" style={{ minWidth: '120px' }}>
-            <span className="text-xs text-text-secondary flex-shrink-0 truncate" title="used / allocatable">
+          <div className="flex items-center gap-2 w-full">
+            <span className="text-xs text-text-secondary w-[5rem] flex-shrink-0 truncate" title={label}>
               {label}
             </span>
             {hasMetrics ? (
               <>
-                <div className="h-1.5 flex-1 min-w-[40px] rounded-full bg-hover overflow-hidden">
+                <div className="h-1.5 w-16 flex-shrink-0 rounded-full bg-hover overflow-hidden">
                   <div
                     className="h-full rounded-full bg-blue-500"
                     style={{ width: `${usageBarWidth(percent)}%` }}
                   />
                 </div>
-                <span className="text-xs font-medium text-text w-8 text-right flex-shrink-0">{Math.round(percent)}%</span>
+                <span className="text-xs font-medium text-text w-9 text-right flex-shrink-0">{Math.round(percent)}%</span>
               </>
             ) : (
               <span className="text-xs text-text-secondary">-</span>
@@ -267,32 +267,30 @@ export const Dashboard = () => {
           </div>
         );
       },
-      width: '18%',
+      width: '20%',
       sortable: true,
       sortKey: 'cpu' as NodeSortKey,
     },
     {
       header: 'Memory',
       accessor: (row: K8sNode) => {
-        const used = row.memory_used ?? '-';
-        const alloc = row.memory ?? '-';
-        const label = alloc !== '-' ? `${used}/${alloc}` : '-';
+        const label = formatMemoryUsedAlloc(row.memory_used, row.memory);
         const percent = toPercent(row.memory_usage_percent);
         const hasMetrics = row.memory_usage_percent != null;
         return (
-          <div className="flex items-center gap-2" style={{ minWidth: '120px' }}>
-            <span className="text-xs text-text-secondary flex-shrink-0 truncate" title="used / allocatable">
+          <div className="flex items-center gap-2 w-full">
+            <span className="text-xs text-text-secondary min-w-[11rem] flex-shrink-0 whitespace-nowrap" title={label}>
               {label}
             </span>
             {hasMetrics ? (
               <>
-                <div className="h-1.5 flex-1 min-w-[40px] rounded-full bg-hover overflow-hidden">
+                <div className="h-1.5 w-16 flex-shrink-0 rounded-full bg-hover overflow-hidden">
                   <div
                     className="h-full rounded-full bg-purple-500"
                     style={{ width: `${usageBarWidth(percent)}%` }}
                   />
                 </div>
-                <span className="text-xs font-medium text-text w-8 text-right flex-shrink-0">{Math.round(percent)}%</span>
+                <span className="text-xs font-medium text-text w-9 text-right flex-shrink-0">{Math.round(percent)}%</span>
               </>
             ) : (
               <span className="text-xs text-text-secondary">-</span>
@@ -300,7 +298,7 @@ export const Dashboard = () => {
           </div>
         );
       },
-      width: '18%',
+      width: '20%',
       sortable: true,
       sortKey: 'memory' as NodeSortKey,
     },
@@ -311,7 +309,7 @@ export const Dashboard = () => {
           {row.roles?.length ? row.roles.join(', ') : '-'}
         </span>
       ),
-      width: '12%',
+      width: '11%',
       sortable: true,
       sortKey: 'roles' as NodeSortKey,
     },
@@ -603,8 +601,8 @@ export const Dashboard = () => {
                 value={62}
                 color="var(--color-dashboard-metric-secondary)"
                 label="Memory"
-                used="24 Gi"
-                total="40 Gi"
+                used="24 GB"
+                total="40 GB"
                 icon={<HardDrive size={20} className="text-dashboard-metric-secondary" />}
               />
             </div>
@@ -615,8 +613,8 @@ export const Dashboard = () => {
                 value={38}
                 color="var(--color-dashboard-metric-tertiary)"
                 label="Disk"
-                used="19 Gi"
-                total="50 Gi"
+                used="19 GB"
+                total="50 GB"
                 icon={<HardDrive size={20} className="text-dashboard-metric-tertiary" />}
               />
             </div>
