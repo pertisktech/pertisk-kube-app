@@ -15,6 +15,7 @@ const DaemonSetsPage = lazy(() => import('./pages/DaemonSetsPage').then(m => ({ 
 const ReplicaSetsPage = lazy(() => import('./pages/ReplicaSetsPage').then(m => ({ default: m.ReplicaSetsPage })));
 const JobsPage = lazy(() => import('./pages/JobsPage').then(m => ({ default: m.JobsPage })));
 const CronJobsPage = lazy(() => import('./pages/CronJobsPage').then(m => ({ default: m.CronJobsPage })));
+const WorkloadsOverviewPage = lazy(() => import('./pages/WorkloadsOverviewPage').then(m => ({ default: m.WorkloadsOverviewPage })));
 const EventsPage = lazy(() => import('./pages/EventsPage').then(m => ({ default: m.EventsPage })));
 const HelmChartsPage = lazy(() => import('./pages/HelmChartsPage').then(m => ({ default: m.HelmChartsPage })));
 const HelmReleasesPage = lazy(() => import('./pages/HelmReleasesPage').then(m => ({ default: m.HelmReleasesPage })));
@@ -128,6 +129,7 @@ export const App = () => {
             <Route element={<Layout username={authUser} onLogout={handleLogout} />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/terminal" element={null} />
+          <Route path="/workloads" element={<WorkloadsOverviewPage />} />
           <Route path="/namespaces" element={<NamespacesPage />} />
           <Route path="/nodes" element={<NodesPage />} />
           <Route path="/pods" element={<PodsPage />} />

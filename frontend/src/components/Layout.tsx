@@ -36,6 +36,7 @@ import {
   Bell,
   Terminal,
   Layers,
+  LayoutGrid,
 } from 'lucide-react';
 import { cn } from '../utils';
 import { APP_VERSION } from '../utils/version';
@@ -108,6 +109,7 @@ const CONFIG_ITEMS: NavItem[] = [
 ];
 
 const WORKLOAD_ITEMS: NavItem[] = [
+  { label: 'Overview', path: '/workloads', icon: LayoutGrid },
   { label: 'Pods', path: '/pods', icon: Copy },
   { label: 'Deployment', path: '/deployments', icon: Archive },
   { label: 'StatefulSet', path: '/statefulsets', icon: Archive },
