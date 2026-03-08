@@ -331,6 +331,14 @@ function transformNode(raw: any): K8sNode {
   const age = metadata.creationTimestamp
     ? new Date(metadata.creationTimestamp).toISOString()
     : '';
+
+  const allocatable = status.allocatable || status.capacity || {};
+  const q = (v: any) => (typeof v === 'string' ? v : v?.string ?? undefined);
+  const cpu = q(allocatable.cpu ?? allocatable['cpu']);
+  const memory = q(allocatable.memory ?? allocatable['memory']);
+  const ephemeral_storage = q(allocatable['ephemeral-storage'] ?? allocatable.ephemeral_storage);
+  const pods = q(allocatable.pods ?? allocatable['pods']);
+
   return {
     name: metadata.name || '',
     ready,
@@ -351,6 +359,10 @@ function transformNode(raw: any): K8sNode {
     os_image: nodeInfo.osImage || '',
     age,
     unschedulable: spec.unschedulable === true,
+    cpu: cpu || undefined,
+    memory: memory || undefined,
+    ephemeral_storage: ephemeral_storage || undefined,
+    pods: pods || undefined,
   };
 }
 

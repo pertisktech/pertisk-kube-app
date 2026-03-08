@@ -75,17 +75,10 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
   // Filter pods running on this node
   const nodePods = (allPods || []).filter((pod) => pod.node === node.name);
 
-  // Capacity and Allocatable resources
-  const capacityResources = {
-    cpu: node.cpu,
-    memory: node.memory,
-    ephemeral_storage: node.ephemeral_storage,
-    pods: node.pods,
-  };
-
-  const allocatableResources = {
-    cpu: node.cpu,
-    memory: node.memory,
+  // Resources: show used / allocatable for CPU and Memory
+  const resourcesUsedAlloc = {
+    cpu: node.cpu != null ? `${node.cpu_used ?? '-'} / ${node.cpu}` : undefined,
+    memory: node.memory != null ? `${node.memory_used ?? '-'} / ${node.memory}` : undefined,
     ephemeral_storage: node.ephemeral_storage,
     pods: node.pods,
   };
@@ -249,11 +242,9 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
           </section>
         )}
 
-        {/* Capacity Card */}
-        <ResourceCard title="Capacity" resources={capacityResources} />
+        {/* Resources: used / allocatable */}
+        <ResourceCard title="Resources (used / allocatable)" resources={resourcesUsedAlloc} />
 
-        {/* Allocatable Card */}
-        <ResourceCard title="Allocatable" resources={allocatableResources} />
 
         {/* Labels Card */}
         {node.labels && Object.keys(node.labels).length > 0 && (

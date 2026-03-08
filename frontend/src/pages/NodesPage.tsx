@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { useRealtimeNodes, useRealtimeEvents } from '../hooks/useRealtimeResources';
+import { useNodes } from '../hooks/useKubernetes';
 import { deleteNode, cordonNode, uncordonNode, drainNode } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
@@ -35,10 +36,30 @@ const toPercent = (value?: number) => {
 };
 
 export const NodesPage = () => {
-  const { data, isLoading, error } = useRealtimeNodes();
+  const { data: realtimeNodes, isLoading, error } = useRealtimeNodes();
+  const { data: apiNodes } = useNodes({ refetchInterval: 30_000 }); // REST: metrics from metrics.k8s.io (like kubectl top nodes), poll every 30s
   const { data: eventsData } = useRealtimeEvents();
   const [selectedNode, setSelectedNode] = useState<K8sNode | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+
+  // Merge metrics (cpu/memory used + %) from REST into realtime node list
+  const data = useMemo(() => {
+    if (!realtimeNodes?.length) return realtimeNodes ?? [];
+    const byName = new Map((apiNodes ?? []).map((n) => [n.name, n]));
+    return realtimeNodes.map((node) => {
+      const fromApi = byName.get(node.name);
+      if (!fromApi) return node;
+      return {
+        ...node,
+        cpu: fromApi.cpu ?? node.cpu,
+        memory: fromApi.memory ?? node.memory,
+        cpu_used: fromApi.cpu_used ?? node.cpu_used,
+        memory_used: fromApi.memory_used ?? node.memory_used,
+        cpu_usage_percent: fromApi.cpu_usage_percent ?? node.cpu_usage_percent,
+        memory_usage_percent: fromApi.memory_usage_percent ?? node.memory_usage_percent,
+      };
+    });
+  }, [realtimeNodes, apiNodes]);
 
   // Confirm dialog for delete/drain
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'drain'; name: string } | null>(null);
@@ -198,13 +219,15 @@ export const NodesPage = () => {
     {
       header: 'CPU',
       accessor: (row: K8sNode) => {
-        const cores = row.cpu_used || row.cpu || '-';
+        const used = row.cpu_used ?? '-';
+        const alloc = row.cpu ?? '-';
+        const label = alloc !== '-' ? `${used}/${alloc}` : '-';
         const percent = toPercent(row.cpu_usage_percent);
         const hasMetrics = row.cpu_usage_percent != null;
 
         return (
           <div className="flex items-center gap-2" style={{ minWidth: '160px', maxWidth: '160px' }}>
-            <span className="text-xs text-text-secondary w-14 flex-shrink-0 truncate">{cores}</span>
+            <span className="text-xs text-text-secondary min-w-[3rem] flex-shrink-0 truncate" title="used / allocatable">{label}</span>
             {hasMetrics ? (
               <>
                 <div className="h-1.5 flex-1 rounded-full bg-hover overflow-hidden">
@@ -230,13 +253,15 @@ export const NodesPage = () => {
     {
       header: 'Memory',
       accessor: (row: K8sNode) => {
-        const bytes = row.memory_used || row.memory || '-';
+        const used = row.memory_used ?? '-';
+        const alloc = row.memory ?? '-';
+        const label = alloc !== '-' ? `${used}/${alloc}` : '-';
         const percent = toPercent(row.memory_usage_percent);
         const hasMetrics = row.memory_usage_percent != null;
 
         return (
           <div className="flex items-center gap-2" style={{ minWidth: '160px', maxWidth: '160px' }}>
-            <span className="text-xs text-text-secondary w-14 flex-shrink-0 truncate">{bytes}</span>
+            <span className="text-xs text-text-secondary min-w-[4rem] flex-shrink-0 truncate" title="used / allocatable">{label}</span>
             {hasMetrics ? (
               <>
                 <div className="h-1.5 flex-1 rounded-full bg-hover overflow-hidden">

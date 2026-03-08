@@ -166,7 +166,7 @@ export const useEvents = () => {
   });
 };
 
-export const useNodes = () => {
+export const useNodes = (options?: { refetchInterval?: number }) => {
   return useQuery({
     queryKey: ['nodes'],
     queryFn: async () => {
@@ -175,6 +175,7 @@ export const useNodes = () => {
       const data = (await res.json()) as ApiResponse<K8sNode>;
       return data.data;
     },
+    refetchInterval: options?.refetchInterval,
   });
 };
 
