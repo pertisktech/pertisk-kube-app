@@ -1,4 +1,9 @@
+import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useDashboard, useNodes, usePods } from '../hooks/useKubernetes';
+import { DataTable } from '../components/DataTable';
+import { StatusBadge } from '../components/StatusBadge';
 import { WorkloadSummary } from '../components/WorkloadSummary';
 import { MetricsCharts } from '../components/MetricsCharts';
 import { GaugeChart } from '../components/GaugeChart';
@@ -12,10 +17,14 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  ExternalLink,
 } from 'lucide-react';
 import { Loader } from 'lucide-react';
+import { timeAgo } from '../utils';
 import { K8sNode } from '../types';
-import clsx from 'clsx';
+
+const CHART_USED = 'var(--color-dashboard-metric-primary)';
+const CHART_AVAILABLE = 'var(--color-muted)';
 
 // Helper to format node IPs
 function formatNodeIPs(node: K8sNode): string {
@@ -90,12 +99,59 @@ function formatMemory(gb: number): string {
   return gb % 1 === 0 ? `${gb} Gi` : `${gb.toFixed(2)} Gi`;
 }
 
+// Helper to parse allocatable pods (integer string per node)
+function parsePods(podsStr?: string): number {
+  if (!podsStr) return 0;
+  const n = parseInt(podsStr, 10);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+const usageBarWidth = (percent: number) => (percent <= 0 ? 0 : Math.max(percent, 6));
+const toPercent = (value?: number) =>
+  value == null || Number.isNaN(value) ? 0 : Math.max(0, Math.min(100, value));
+
+type NodeSortKey = 'name' | 'status' | 'ip' | 'cpu' | 'memory' | 'roles' | 'age';
+
 export const Dashboard = () => {
   const { data: dashboard, isLoading: dashLoading } = useDashboard();
-  const { data: nodes, isLoading: nodesLoading } = useNodes();
+  const { data: nodes, isLoading: nodesLoading } = useNodes({ refetchInterval: 30_000 });
   const { data: pods, isLoading: podsLoading } = usePods();
 
+  const [nodeSortState, setNodeSortState] = useState<{ key: NodeSortKey; direction: 'asc' | 'desc' }>({
+    key: 'name',
+    direction: 'asc',
+  });
+
   const isLoading = dashLoading || nodesLoading || podsLoading;
+
+  const sortedNodes = useMemo(() => {
+    const list = [...(nodes ?? [])];
+    const f = nodeSortState.direction === 'asc' ? 1 : -1;
+    list.sort((a, b) => {
+      switch (nodeSortState.key) {
+        case 'name':
+          return a.name.localeCompare(b.name) * f;
+        case 'status': {
+          const ra = String(a.ready).toLowerCase() === 'true' ? 1 : 0;
+          const rb = String(b.ready).toLowerCase() === 'true' ? 1 : 0;
+          return (ra - rb) * f;
+        }
+        case 'ip':
+          return (formatNodeIPs(a) || '').localeCompare(formatNodeIPs(b) || '') * f;
+        case 'cpu':
+          return ((a.cpu_usage_percent ?? 0) - (b.cpu_usage_percent ?? 0)) * f;
+        case 'memory':
+          return ((a.memory_usage_percent ?? 0) - (b.memory_usage_percent ?? 0)) * f;
+        case 'roles':
+          return (a.roles?.join(', ') ?? '').localeCompare(b.roles?.join(', ') ?? '') * f;
+        case 'age':
+          return (new Date(a.age ?? 0).getTime() - new Date(b.age ?? 0).getTime()) * f;
+        default:
+          return 0;
+      }
+    });
+    return list;
+  }, [nodes, nodeSortState]);
 
   if (isLoading) {
     return (
@@ -121,15 +177,22 @@ export const Dashboard = () => {
       return state === 'failed' || state === 'crashloopbackoff';
     }).length || 0;
 
-  // Calculate total CPU and Memory allocatable
+  // Calculate total allocatable and used (from metrics) for pie charts
   let totalCPU = 0;
   let totalMemory = 0;
+  let totalPodsAllocatable = 0;
+  let usedCPU = 0;
+  let usedMemory = 0;
   if (nodes) {
     nodes.forEach((node) => {
       totalCPU += parseCPU(node.cpu);
       totalMemory += parseMemory(node.memory);
+      totalPodsAllocatable += parsePods(node.pods);
+      usedCPU += parseCPU(node.cpu_used);
+      usedMemory += parseMemory(node.memory_used);
     });
   }
+  const podCount = dashboard?.pods ?? pods?.length ?? 0;
 
   // Calculate health status
   const nodeHealthPercent = totalNodeCount > 0 ? (readyNodeCount / totalNodeCount) * 100 : 0;
@@ -142,6 +205,126 @@ export const Dashboard = () => {
   } else if (nodeHealthPercent < 95 || podFailurePercent > 5) {
     healthStatus = 'warning';
   }
+
+  const nodeColumns = [
+    {
+      header: 'Name',
+      accessor: (row: K8sNode) => (
+        <span className="font-medium text-text truncate block max-w-[180px]" title={row.name}>
+          {row.name}
+        </span>
+      ),
+      width: '18%',
+      sortable: true,
+      sortKey: 'name' as NodeSortKey,
+    },
+    {
+      header: 'Status',
+      accessor: (row: K8sNode) => (
+        <StatusBadge status={String(row.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady'} />
+      ),
+      width: '10%',
+      sortable: true,
+      sortKey: 'status' as NodeSortKey,
+    },
+    {
+      header: 'IP',
+      accessor: (row: K8sNode) => (
+        <span className="text-text-secondary text-xs font-mono truncate block max-w-[140px]" title={formatNodeIPs(row)}>
+          {formatNodeIPs(row) || '-'}
+        </span>
+      ),
+      width: '14%',
+      sortable: true,
+      sortKey: 'ip' as NodeSortKey,
+    },
+    {
+      header: 'CPU',
+      accessor: (row: K8sNode) => {
+        const used = row.cpu_used ?? '-';
+        const alloc = row.cpu ?? '-';
+        const label = alloc !== '-' ? `${used}/${alloc}` : '-';
+        const percent = toPercent(row.cpu_usage_percent);
+        const hasMetrics = row.cpu_usage_percent != null;
+        return (
+          <div className="flex items-center gap-2" style={{ minWidth: '120px' }}>
+            <span className="text-xs text-text-secondary flex-shrink-0 truncate" title="used / allocatable">
+              {label}
+            </span>
+            {hasMetrics ? (
+              <>
+                <div className="h-1.5 flex-1 min-w-[40px] rounded-full bg-hover overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-blue-500"
+                    style={{ width: `${usageBarWidth(percent)}%` }}
+                  />
+                </div>
+                <span className="text-xs font-medium text-text w-8 text-right flex-shrink-0">{Math.round(percent)}%</span>
+              </>
+            ) : (
+              <span className="text-xs text-text-secondary">-</span>
+            )}
+          </div>
+        );
+      },
+      width: '18%',
+      sortable: true,
+      sortKey: 'cpu' as NodeSortKey,
+    },
+    {
+      header: 'Memory',
+      accessor: (row: K8sNode) => {
+        const used = row.memory_used ?? '-';
+        const alloc = row.memory ?? '-';
+        const label = alloc !== '-' ? `${used}/${alloc}` : '-';
+        const percent = toPercent(row.memory_usage_percent);
+        const hasMetrics = row.memory_usage_percent != null;
+        return (
+          <div className="flex items-center gap-2" style={{ minWidth: '120px' }}>
+            <span className="text-xs text-text-secondary flex-shrink-0 truncate" title="used / allocatable">
+              {label}
+            </span>
+            {hasMetrics ? (
+              <>
+                <div className="h-1.5 flex-1 min-w-[40px] rounded-full bg-hover overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-purple-500"
+                    style={{ width: `${usageBarWidth(percent)}%` }}
+                  />
+                </div>
+                <span className="text-xs font-medium text-text w-8 text-right flex-shrink-0">{Math.round(percent)}%</span>
+              </>
+            ) : (
+              <span className="text-xs text-text-secondary">-</span>
+            )}
+          </div>
+        );
+      },
+      width: '18%',
+      sortable: true,
+      sortKey: 'memory' as NodeSortKey,
+    },
+    {
+      header: 'Roles',
+      accessor: (row: K8sNode) => (
+        <span className="text-xs text-text-secondary truncate block max-w-[100px]" title={row.roles?.join(', ')}>
+          {row.roles?.length ? row.roles.join(', ') : '-'}
+        </span>
+      ),
+      width: '12%',
+      sortable: true,
+      sortKey: 'roles' as NodeSortKey,
+    },
+    {
+      header: 'Age',
+      accessor: (row: K8sNode) => (
+        <span className="text-xs text-text-secondary">{row.age ? timeAgo(row.age) : '-'}</span>
+      ),
+      width: '10%',
+      sortable: true,
+      sortKey: 'age' as NodeSortKey,
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -195,195 +378,194 @@ export const Dashboard = () => {
             <span>Updated {new Date().toLocaleTimeString()}</span>
           </div>
 
-          {/* Resource Grid - CPU, Memory, etc */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-            {/* CPU Resources */}
-            <div className="bg-bg border border-border rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Cpu size={16} className="text-dashboard-metric-primary" />
-                <span className="text-sm font-semibold text-text">CPU</span>
+          {/* Cluster resource pie charts (freelens-style: CPU, Memory, Pods) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+            {/* CPU pie */}
+            <div className="bg-bg border border-border rounded-xl p-4 flex flex-col items-center chart-theme-text">
+              <div className="flex items-center gap-2 mb-3">
+                <Cpu size={20} className="text-dashboard-metric-primary" />
+                <span className="font-semibold text-text">CPU</span>
               </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-text-secondary">Allocatable</span>
-                  <span className="font-medium text-dashboard-metric-primary">{formatCPU(totalCPU)} cores</span>
-                </div>
+              <div className="w-full h-44">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Used', value: Math.max(0, usedCPU) || 0.01, color: CHART_USED },
+                        {
+                          name: 'Available',
+                          value: Math.max(0, totalCPU - usedCPU) || (totalCPU || 0.01),
+                          color: CHART_AVAILABLE,
+                        },
+                      ]}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={44}
+                      outerRadius={64}
+                      paddingAngle={0}
+                      dataKey="value"
+                    >
+                      {[{ color: CHART_USED }, { color: CHART_AVAILABLE }].map((entry, i) => (
+                        <Cell key={i} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'var(--color-surface)',
+                        color: 'var(--color-text)',
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        border: '1px solid var(--color-border)',
+                      }}
+                      formatter={(value: number, name: string) => [`${formatCPU(Number(value))} cores`, name]}
+                      labelFormatter={() => `Total: ${formatCPU(totalCPU)} cores`}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
+              <p className="text-xs text-text-secondary mt-2">
+                {formatCPU(usedCPU)} / {formatCPU(totalCPU)} cores
+              </p>
             </div>
 
-            {/* Memory Resources */}
-            <div className="bg-bg border border-border rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <HardDrive size={16} className="text-dashboard-metric-secondary" />
-                <span className="text-sm font-semibold text-text">Memory</span>
+            {/* Memory pie */}
+            <div className="bg-bg border border-border rounded-xl p-4 flex flex-col items-center chart-theme-text">
+              <div className="flex items-center gap-2 mb-3">
+                <HardDrive size={20} className="text-dashboard-metric-secondary" />
+                <span className="font-semibold text-text">Memory</span>
               </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-text-secondary">Allocatable</span>
-                  <span className="font-medium text-dashboard-metric-secondary">{formatMemory(totalMemory)}</span>
-                </div>
+              <div className="w-full h-44">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Used', value: Math.max(0, usedMemory) || 0.01, color: CHART_USED },
+                        {
+                          name: 'Available',
+                          value: Math.max(0, totalMemory - usedMemory) || (totalMemory || 0.01),
+                          color: CHART_AVAILABLE,
+                        },
+                      ]}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={44}
+                      outerRadius={64}
+                      paddingAngle={0}
+                      dataKey="value"
+                    >
+                      {[{ color: CHART_USED }, { color: CHART_AVAILABLE }].map((entry, i) => (
+                        <Cell key={i} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'var(--color-surface)',
+                        color: 'var(--color-text)',
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        border: '1px solid var(--color-border)',
+                      }}
+                      formatter={(value: number, name: string) => [formatMemory(Number(value)), name]}
+                      labelFormatter={() => `Total: ${formatMemory(totalMemory)}`}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
+              <p className="text-xs text-text-secondary mt-2">
+                {formatMemory(usedMemory)} / {formatMemory(totalMemory)}
+              </p>
             </div>
 
-            {/* Pod Capacity */}
-            <div className="bg-bg border border-border rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Box size={16} className="text-dashboard-metric-tertiary" />
-                <span className="text-sm font-semibold text-text">Pods</span>
+            {/* Pods pie */}
+            <div className="bg-bg border border-border rounded-xl p-4 flex flex-col items-center chart-theme-text">
+              <div className="flex items-center gap-2 mb-3">
+                <Box size={20} className="text-dashboard-metric-tertiary" />
+                <span className="font-semibold text-text">Pods</span>
               </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-text-secondary">Current</span>
-                  <span className="font-medium text-dashboard-metric-tertiary">{dashboard?.pods || 0}</span>
-                </div>
+              <div className="w-full h-44">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Used', value: podCount || 0.01, color: CHART_USED },
+                        {
+                          name: 'Available',
+                          value: Math.max(0, (totalPodsAllocatable || 1) - podCount) || 0.01,
+                          color: CHART_AVAILABLE,
+                        },
+                      ]}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={44}
+                      outerRadius={64}
+                      paddingAngle={0}
+                      dataKey="value"
+                    >
+                      {[{ color: CHART_USED }, { color: CHART_AVAILABLE }].map((entry, i) => (
+                        <Cell key={i} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'var(--color-surface)',
+                        color: 'var(--color-text)',
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        border: '1px solid var(--color-border)',
+                      }}
+                      formatter={(value: number, name: string) => [
+                        `${Math.round(Number(value))} pods`,
+                        name,
+                      ]}
+                      labelFormatter={() => `Capacity: ${totalPodsAllocatable} pods`}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
+              <p className="text-xs text-text-secondary mt-2">
+                {podCount} / {totalPodsAllocatable || 0} pods
+              </p>
             </div>
+          </div>
 
-            {/* Nodes */}
-            <div className="bg-bg border border-border rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Server size={16} className="text-dashboard-metric-quaternary" />
-                <span className="text-sm font-semibold text-text">Nodes</span>
-              </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-text-secondary">Ready</span>
-                  <span className="font-medium text-dashboard-metric-quaternary">
-                    {readyNodeCount}/{totalNodeCount}
-                  </span>
-                </div>
-              </div>
-            </div>
+          {/* Nodes summary line below pies */}
+          <div className="mt-4 pt-4 border-t border-border flex items-center gap-4 text-sm text-text-secondary">
+            <span className="flex items-center gap-1.5">
+              <Server size={14} className="text-dashboard-metric-quaternary" />
+              Nodes: {readyNodeCount}/{totalNodeCount} ready
+            </span>
+            <span>
+              {dashboard?.cluster_name || 'kubernetes-cluster'} • {dashboard?.kube_version || 'Unknown'}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Enhanced Node Groups Section */}
+      {/* Nodes table (same style as Nodes page) */}
       <div className="bg-surface border border-border rounded-lg p-6 backdrop-blur-sm">
-        <div className="flex items-center gap-3 mb-6">
-          <Server size={24} className="text-dashboard-metric-primary" />
-          <h2 className="text-2xl font-bold text-text">Nodes</h2>
-          <span className="text-sm ml-auto text-text-secondary">{nodes?.length ?? 0} nodes</span>
-        </div>
-
-        {nodes && nodes.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {nodes.map((node) => {
-              const isReady =
-                typeof node.ready === 'boolean'
-                  ? node.ready
-                  : String(node.ready).toLowerCase() === 'true';
-
-              return (
-                <div
-                  key={node.name}
-                  className="bg-bg border border-border rounded-lg p-4 transition-all hover:shadow-md"
-                >
-                  {/* Node Header */}
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <div
-                        className={clsx(
-                          'w-2 h-2 rounded-full flex-shrink-0',
-                          isReady ? 'bg-dashboard-success' : 'bg-dashboard-danger'
-                        )}
-                      />
-                      <h3 className="text-base font-bold text-text truncate">{node.name}</h3>
-                    </div>
-                    {isReady ? (
-                      <span className="px-2 py-0.5 rounded-full text-xs bg-dashboard-success-bg text-dashboard-success flex items-center gap-1 flex-shrink-0">
-                        <CheckCircle size={12} /> Ready
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-xs bg-dashboard-danger-bg text-dashboard-danger flex items-center gap-1 flex-shrink-0">
-                        <XCircle size={12} /> NotReady
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Roles */}
-                  {node.roles && node.roles.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      {node.roles.map((role) => (
-                        <span
-                          key={role}
-                          className="px-2 py-0.5 rounded text-xs bg-dashboard-metric-primary-bg text-dashboard-metric-primary border border-dashboard-metric-primary/20"
-                        >
-                          {role}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Resource Capacity */}
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    <div className="bg-surface border border-border rounded p-2">
-                      <div className="flex items-center gap-1 mb-1">
-                        <Cpu size={12} className="text-dashboard-metric-primary" />
-                        <span className="text-xs font-semibold text-text-secondary">CPU</span>
-                      </div>
-                      <div className="text-sm font-bold text-dashboard-metric-primary">
-                        {node.cpu ? formatCPU(parseCPU(node.cpu)) : '-'}
-                      </div>
-                    </div>
-                    <div className="bg-surface border border-border rounded p-2">
-                      <div className="flex items-center gap-1 mb-1">
-                        <HardDrive size={12} className="text-dashboard-metric-secondary" />
-                        <span className="text-xs font-semibold text-text-secondary">Memory</span>
-                      </div>
-                      <div className="text-sm font-bold text-dashboard-metric-secondary">
-                        {node.memory ? formatMemory(parseMemory(node.memory)) : '-'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Node Details */}
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex justify-between items-start">
-                      <span className="text-text-secondary">IP:</span>
-                      <span className="text-text font-mono text-right break-all max-w-[60%]">
-                        {formatNodeIPs(node)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-start">
-                      <span className="text-text-secondary">Version:</span>
-                      <span className="text-text text-right">{node.kubelet_version || '-'}</span>
-                    </div>
-                    {node.os_image && (
-                      <div className="flex justify-between items-start">
-                        <span className="text-text-secondary">OS:</span>
-                        <span className="text-text text-right break-words max-w-[60%]">{node.os_image}</span>
-                      </div>
-                    )}
-                    {node.runtime && (
-                      <div className="flex justify-between items-start">
-                        <span className="text-text-secondary">Runtime:</span>
-                        <span className="text-text text-right break-words max-w-[60%]">{node.runtime}</span>
-                      </div>
-                    )}
-                    {node.taints && node.taints.length > 0 && (
-                      <div className="pt-1">
-                        <span className="text-text-secondary block mb-1">Taints:</span>
-                        <div className="flex flex-wrap gap-1">
-                          {node.taints.map((taint, idx) => (
-                            <span
-                              key={idx}
-                              className="px-1.5 py-0.5 rounded text-xs bg-dashboard-warning-bg text-dashboard-warning border border-dashboard-warning/20"
-                            >
-                              {taint}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Server size={24} className="text-dashboard-metric-primary" />
+            <h2 className="text-2xl font-bold text-text">Nodes</h2>
+            <span className="text-sm text-text-secondary">{nodes?.length ?? 0} nodes</span>
           </div>
-        ) : (
-          <div className="text-center py-8 text-text-secondary">No nodes found</div>
-        )}
+          <Link
+            to="/nodes"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline"
+          >
+            View all
+            <ExternalLink size={14} />
+          </Link>
+        </div>
+        <DataTable<K8sNode>
+          columns={nodeColumns}
+          data={sortedNodes}
+          isLoading={nodesLoading}
+          error={null}
+          rowKey="name"
+          sortState={nodeSortState}
+          onSortChange={(s) => setNodeSortState(s as { key: NodeSortKey; direction: 'asc' | 'desc' })}
+        />
       </div>
 
       {/* Workload Summary */}
