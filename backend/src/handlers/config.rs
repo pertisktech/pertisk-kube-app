@@ -579,6 +579,29 @@ pub async fn get_configmap_yaml(
     }
 }
 
+pub async fn get_configmap_data(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::ConfigMap;
+
+    let api: Api<ConfigMap> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(configmap) => {
+            let data = configmap
+                .data
+                .unwrap_or_default()
+                .into_iter()
+                .collect::<std::collections::HashMap<String, String>>();
+            (StatusCode::OK, Json(serde_json::json!({ "data": data }))).into_response()
+        }
+        Err(err) => {
+            error!("Error getting configmap data {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
 pub async fn update_configmap_yaml(
     Path((namespace, name)): Path<(String, String)>,
     State(state): State<AppState>,

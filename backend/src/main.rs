@@ -164,6 +164,7 @@ async fn main() -> anyhow::Result<()> {
             "/configmaps/:namespace/:name/yaml",
             get(get_configmap_yaml).put(update_configmap_yaml),
         )
+        .route("/configmaps/:namespace/:name/data", get(get_configmap_data))
         .route("/configmaps/:namespace/:name", delete(delete_configmap))
         .route("/secrets", get(list_secrets))
         .route(

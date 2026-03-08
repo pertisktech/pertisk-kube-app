@@ -43,6 +43,11 @@ interface WebSocketMessage {
   message?: string;
 }
 
+/** Show WebSocket debug logs in Vite dev or when running on localhost (e.g. local run with built app). */
+const isRealtimeDebug = (): boolean =>
+  typeof window !== 'undefined' &&
+  (import.meta.env.DEV || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
 // Transformation functions to convert raw K8s objects to frontend format
 function transformNamespace(raw: any): Namespace {
   const metadata = raw.metadata || {};
@@ -803,7 +808,7 @@ function createRealtimeHook<T>(
           ws = new WebSocket(wsUrl);
 
           ws.onopen = () => {
-            if (import.meta.env.DEV) console.log(`WebSocket connected for ${displayName}`);
+            if (isRealtimeDebug()) console.log(`WebSocket connected for ${displayName}`);
             setError(null);
 
             // Subscribe to resource
@@ -858,7 +863,7 @@ function createRealtimeHook<T>(
                   setData((prev) => prev.filter((p) => getKey(p) !== itemKey));
                 }
               } else if (message.type === 'subscribed' && message.resource === resourceType) {
-                if (import.meta.env.DEV) console.log(`Subscribed to ${displayName}`);
+                if (isRealtimeDebug()) console.log(`Subscribed to ${displayName}`);
               } else if (message.type === 'error') {
                 console.error(`WebSocket error for ${displayName}:`, message.message);
                 setError(message.message || 'Unknown error');
@@ -874,11 +879,11 @@ function createRealtimeHook<T>(
           };
 
           ws.onclose = () => {
-            if (import.meta.env.DEV) console.log(`WebSocket disconnected for ${displayName}`);
+            if (isRealtimeDebug()) console.log(`WebSocket disconnected for ${displayName}`);
 
             // Attempt to reconnect after 3 seconds
             reconnectTimeout = setTimeout(() => {
-              if (import.meta.env.DEV) console.log(`Attempting to reconnect to ${displayName}...`);
+              if (isRealtimeDebug()) console.log(`Attempting to reconnect to ${displayName}...`);
               connect();
             }, 3000);
           };
