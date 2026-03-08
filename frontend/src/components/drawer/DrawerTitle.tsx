@@ -10,8 +10,7 @@ export interface DrawerTitleProps {
  * Section title in drawer content. Same horizontal padding as content (none);
  * vertical padding matches DrawerItem (py-2) so PROPERTY aligns with rows.
  */
-export function DrawerTitle({ className = '', children, size = 'title' }: DrawerTitleProps) {
-  const isSub = size === 'sub-title';
+export function DrawerTitle({ className = '', children }: DrawerTitleProps) {
   return (
     <div
       className={`DrawerTitle mt-6 first:mt-0 py-2 ${className}`.trim()}
