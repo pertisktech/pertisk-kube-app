@@ -110,20 +110,34 @@ Benefits:
 
 ## Accessing the Application
 
-### Via Ingress (Production)
+For **remote cluster**: use **LoadBalancer** (IP:port) or **Ingress** (domain). See [K8S_INGRESS_AND_PORTS.md](K8S_INGRESS_AND_PORTS.md).
+
+### Via LoadBalancer (IP + port, no domain)
+
+Set `app.service.type: LoadBalancer` in values, deploy, then:
+
+```bash
+make lb-url
+# Open the printed URL, e.g. http://<EXTERNAL-IP>:8091
+```
+
+### Via Ingress (domain, remote cluster / production)
 
 If ingress is enabled, access at your configured domain:
 ```
 https://pertisk-kube.yourdomain.com
 ```
 
-### Via Port Forward (Development)
+### Get app URL (remote cluster)
+
+- **LoadBalancer:** `make lb-url` → open http://&lt;IP&gt;:8091  
+- **Ingress:** `make ingress-hosts` → open https://&lt;printed-host&gt;
+
+### Via Port Forward (local dev only, not for remote cluster)
 
 ```bash
-# Forward the unified service
-kubectl port-forward -n pertisk-kube svc/pertisk-kube 8080:8091
-
-# Access at http://localhost:8080
+make port-forward
+# Access at http://localhost:8091
 ```
 
 The backend serves:

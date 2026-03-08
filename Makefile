@@ -14,11 +14,14 @@ BASE_IMAGE_PREFIX ?= $(DOCKER_REGISTRY)/pertisksoft/pertisk-kube/web-base
 BASE_TAG ?= latest
 HELM_RELEASE ?= pertisk-kube
 HELM_NAMESPACE ?= pertisk-rproxy
+# App port (must match helm/pertisk-kube/values.yaml app.service.port)
+APP_PORT ?= 8091
+GRPC_PORT ?= 50051
 
 .PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run-monolith run-ingress-k3s
 .PHONY: docker-build docker-build-amd64 docker-build-arm64 docker-build-multi docker-push docker-push-multi
 .PHONY: docker-base-build docker-base-push docker-base-push-multi
-.PHONY: helm-install helm-upgrade helm-uninstall helm-template helm-deploy
+.PHONY: helm-install helm-upgrade helm-uninstall helm-template helm-deploy port-forward ingress-hosts lb-url
 .PHONY: skaffold-run skaffold-run-prod skaffold-dev skaffold-delete skaffold-build
 .PHONY: release version
 
@@ -179,6 +182,29 @@ helm-upgrade:
 helm-uninstall:
 	helm uninstall $(HELM_RELEASE) -n $(HELM_NAMESPACE)
 	@echo "✓ Uninstalled $(HELM_RELEASE)"
+
+# List ingress domains (app URL) for the remote cluster. Use https://<host> to access the app. No port-forward.
+ingress-hosts:
+	@echo "App URL(s) in $(HELM_NAMESPACE) (remote cluster — use https://<host> or http://<host>):"
+	@kubectl get ingress -n $(HELM_NAMESPACE) -o jsonpath='{range .items[*]}{range .spec.rules[*]}{.host}{"\n"}{end}{end}' 2>/dev/null | sort -u | sed 's/^/  /' || echo "  (no ingresses or namespace missing)"
+
+# LoadBalancer URL: show http://<EXTERNAL-IP>:<port> when service type is LoadBalancer. Run after deploy.
+lb-url:
+	@IP=$$(kubectl get svc -n $(HELM_NAMESPACE) $(HELM_RELEASE) -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null); \
+	if [ -z "$$IP" ]; then \
+		IP=$$(kubectl get svc -n $(HELM_NAMESPACE) $(HELM_RELEASE) -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null); \
+	fi; \
+	if [ -z "$$IP" ]; then \
+		echo "LoadBalancer IP not ready yet (or service is not type LoadBalancer). Run: kubectl get svc -n $(HELM_NAMESPACE) $(HELM_RELEASE)"; \
+	else \
+		echo "App URL (LoadBalancer): http://$$IP:$(APP_PORT)"; \
+		echo "  (gRPC: $$IP:$(GRPC_PORT))"; \
+	fi
+
+# Local/dev only: forward app port to localhost. Not for remote cluster access — use Ingress URL (make ingress-hosts).
+port-forward:
+	@echo "Forwarding $(HELM_NAMESPACE)/$(HELM_RELEASE) -> localhost:$(APP_PORT) (http), localhost:$(GRPC_PORT) (grpc). Ctrl+C to stop."
+	kubectl port-forward -n $(HELM_NAMESPACE) svc/$(HELM_RELEASE) $(APP_PORT):$(APP_PORT) $(GRPC_PORT):$(GRPC_PORT)
 
 # Build, push multi-arch Docker image and deploy with Helm
 helm-deploy: docker-build-multi

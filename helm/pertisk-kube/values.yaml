@@ -19,6 +19,7 @@ app:
     tag: "v0.0.4"
     pullPolicy: Always
   service:
+    # ClusterIP (default) — use with Ingress. Or LoadBalancer for direct access via IP:port (no domain).
     type: ClusterIP
     port: 8091
     targetPort: 8091
