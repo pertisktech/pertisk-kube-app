@@ -5,6 +5,7 @@ import { StatusBadge } from './StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
+import { PanelActionButton } from './ResourceDetailPanelLayout';
 import { createPortForward, usePortForwards } from '../hooks/useKubernetes';
 
 interface PodDetailPanelProps {
@@ -87,21 +88,31 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
     <ResizablePanel>
       <div className="h-full flex flex-col">
         <div className="bg-surface border-b border-border px-5 py-4">
-          <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <h2 className="text-lg font-bold text-text truncate">{pod.name || 'Pod'}</h2>
               <div className="mt-2">
                 <StatusBadge status={status} />
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-hover text-text-secondary transition-colors flex-shrink-0"
-              aria-label="Close pod panel"
+            <div
+              className="flex items-center flex-shrink-0 rounded-lg border overflow-hidden"
+              style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
             >
-              <X size={18} />
-            </button>
+              <PanelActionButton icon={ScrollText} label="Logs" onClick={() => onOpenLogs(pod)} />
+              <PanelActionButton icon={Terminal} label="Shell" onClick={() => onOpenShell(pod)} />
+              <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor(pod)} />
+              {onDelete && <PanelActionButton icon={Trash2} label="Delete" danger onClick={() => onDelete(pod.namespace, pod.name)} />}
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-2 rounded-r-md transition-all duration-150 hover:opacity-80 flex-shrink-0"
+                style={{ color: 'var(--color-muted)', borderLeft: '1px solid var(--color-border)' }}
+                aria-label="Close pod panel"
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-3 text-sm mt-3 pt-3 border-t border-border">
@@ -116,43 +127,6 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             <div className="flex-1">
               <p className="text-text-secondary mb-1">Restarts</p>
               <p className="text-text font-medium">{pod.restarts ?? 0}</p>
-            </div>
-          </div>
-
-          <div className="mt-3 border-t border-border pt-3 flex items-center justify-end gap-2">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onOpenLogs(pod)}
-                className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
-                aria-label="View pod logs"
-              >
-                <ScrollText size={12} />
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenShell(pod)}
-                className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
-                aria-label="Open pod shell"
-              >
-                <Terminal size={12} />
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenYamlEditor(pod)}
-                className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
-                aria-label="Edit pod YAML"
-              >
-                <Pencil size={12} />
-              </button>
-              <button
-                type="button"
-                onClick={() => onDelete?.(pod.namespace, pod.name)}
-                className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors"
-                aria-label="Delete pod"
-              >
-                <Trash2 size={12} />
-              </button>
             </div>
           </div>
         </div>

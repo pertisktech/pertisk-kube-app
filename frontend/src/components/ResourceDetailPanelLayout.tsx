@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react';
 import { X, ChevronDown, ChevronUp } from 'lucide-react';
 import { ResizablePanel } from './ResizablePanel';
 
-/** Reusable panel action button with tooltip (Edit YAML, Delete, etc.) — base project style */
+/** Reusable panel action button with tooltip — used in the right-panel header toolbar */
 export const PanelActionButton = ({
   icon: Icon,
   label,
@@ -24,7 +24,7 @@ export const PanelActionButton = ({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`p-1.5 rounded transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed ${
+      className={`p-2 rounded-md transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed ${
         danger ? 'text-red-400 hover:bg-red-500/20 hover:text-red-300' : colorClass
       }`}
       aria-label={label}
@@ -32,7 +32,7 @@ export const PanelActionButton = ({
       <Icon size={16} />
     </button>
     <div
-      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50"
+      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-sm"
       style={{
         backgroundColor: 'var(--color-surface-elevated)',
         color: 'var(--color-text)',
@@ -107,13 +107,13 @@ export const ResourceDetailPanelLayout = ({
   return (
     <ResizablePanel>
       <div className="h-full flex flex-col">
-        {/* Header row: kind + icon + actions + close (base style) or legacy title + close */}
+        {/* Header row: title/kind on left; actions + close grouped on right */}
         <div style={{ borderBottom: '1px solid var(--color-border)' }}>
-          <div className="flex items-center justify-between px-4 py-2">
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5">
             {useBaseStyle && KindIcon ? (
-              <div className="flex items-center gap-2">
-                <KindIcon size={18} className="text-[var(--color-primary)]" />
-                <h2 className="text-sm font-semibold" style={{ color: 'var(--color-muted)' }}>
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <KindIcon size={18} className="text-[var(--color-primary)] flex-shrink-0" />
+                <h2 className="text-sm font-semibold truncate" style={{ color: 'var(--color-muted)' }}>
                   {kind}
                 </h2>
               </div>
@@ -124,13 +124,27 @@ export const ResourceDetailPanelLayout = ({
                 </h2>
               </div>
             )}
-            <div className="flex items-center gap-1">
-              {actions}
+            <div
+              className="flex items-center flex-shrink-0 rounded-lg border overflow-hidden"
+              style={{
+                borderColor: 'var(--color-border)',
+                backgroundColor: 'var(--color-bg)',
+              }}
+            >
+              {actions && (
+                <div className="flex items-center">
+                  {actions}
+                </div>
+              )}
               <button
                 type="button"
                 onClick={onClose}
-                className="p-1.5 rounded transition-all duration-150 flex-shrink-0"
-                style={{ color: 'var(--color-muted)' }}
+                className="p-2 rounded-r-md transition-all duration-150 hover:opacity-80 flex-shrink-0"
+                style={{
+                  color: 'var(--color-muted)',
+                  backgroundColor: actions ? 'transparent' : 'transparent',
+                  borderLeft: actions ? '1px solid var(--color-border)' : 'none',
+                }}
                 aria-label="Close panel"
               >
                 <X size={18} />

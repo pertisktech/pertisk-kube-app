@@ -3,6 +3,7 @@ import { X, Terminal, Trash2, Loader, ChevronDown, FileText, Lock, Unlock, Dropl
 import { StatusBadge } from './StatusBadge';
 import { usePods } from '../hooks/useKubernetes';
 import { ResizablePanel } from './ResizablePanel';
+import { PanelActionButton } from './ResourceDetailPanelLayout';
 import type { K8sNode } from '../types';
 
 interface NodeDetailPanelProps {
@@ -97,77 +98,59 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
   return (
     <ResizablePanel>
       <div className="h-full flex flex-col">
-      {/* Enhanced Header Section */}
+      {/* Header: title + status on left; actions + close in toolbar on right */}
       <div className="bg-gradient-to-r from-surface to-surface-elevated border-b border-border px-5 py-4">
-        <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-bold text-text truncate">{node.name}</h2>
             <div className="mt-2">
               <StatusBadge status={status} />
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-hover text-text-secondary transition-colors flex-shrink-0"
-            aria-label="Close node panel"
+          <div
+            className="flex items-center flex-shrink-0 rounded-lg border overflow-hidden"
+            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
           >
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Action Buttons - Icon Only with Tooltips */}
-        <div className="flex gap-2 mt-3">
-          {onEditYaml && (
-            <div className="group relative">
-              <button type="button" onClick={() => onEditYaml(node)} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors">
-                <FileText size={12} />
-              </button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">
-                Edit YAML
+            {onEditYaml && <PanelActionButton icon={FileText} label="Edit YAML" onClick={() => onEditYaml(node)} />}
+            {onOpenShell && <PanelActionButton icon={Terminal} label="Node Shell" onClick={() => onOpenShell(node)} />}
+            {onCordonToggle && (
+              <div className="group relative">
+                <button
+                  type="button"
+                  onClick={() => onCordonToggle(node)}
+                  disabled={cordonLoading}
+                  className="p-2 rounded-md text-amber-400 hover:bg-amber-500/20 hover:text-amber-300 disabled:opacity-50 transition-colors"
+                  aria-label={node.unschedulable ? 'Uncordon' : 'Cordon'}
+                >
+                  {cordonLoading ? <Loader size={16} className="animate-spin" /> : node.unschedulable ? <Unlock size={16} /> : <Lock size={16} />}
+                </button>
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-sm" style={{ backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>
+                  {node.unschedulable ? 'Uncordon' : 'Cordon'}
+                </div>
               </div>
-            </div>
-          )}
-          {onOpenShell && (
-            <div className="group relative">
-              <button type="button" onClick={() => onOpenShell(node)} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors">
-                <Terminal size={12} />
-              </button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">
-                Node Shell
-              </div>
-            </div>
-          )}
-          {onCordonToggle && (
-            <div className="group relative">
-              <button type="button" onClick={() => onCordonToggle(node)} disabled={cordonLoading} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-50 transition-colors">
-                {cordonLoading ? <Loader size={12} className="animate-spin" /> : node.unschedulable ? <Unlock size={12} /> : <Lock size={12} />}
-              </button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">
-                {node.unschedulable ? 'Uncordon' : 'Cordon'}
-              </div>
-            </div>
-          )}
-          {onDrain && (
-            <div className="group relative">
-              <button type="button" onClick={() => onDrain(node)} className="p-2 rounded-md border border-[var(--color-icon-warning)] text-[var(--color-icon-warning)] hover:bg-[var(--color-icon-warning)]/10 transition-colors">
-                <Droplet size={12} />
-              </button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">
-                Drain
-              </div>
-            </div>
-          )}
-          {onDelete && (
-            <div className="group relative">
-              <button type="button" onClick={() => onDelete(node)} className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors">
-                <Trash2 size={12} />
-              </button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">
-                Delete node
-              </div>
-            </div>
-          )}
+            )}
+            {onDrain && (
+              <PanelActionButton
+                icon={Droplet}
+                label="Drain"
+                onClick={() => onDrain(node)}
+                colorClass="text-amber-400 hover:bg-amber-500/20 hover:text-amber-300"
+              />
+            )}
+            {onDelete && <PanelActionButton icon={Trash2} label="Delete node" danger onClick={() => onDelete(node)} />}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-r-md transition-all duration-150 hover:opacity-80 flex-shrink-0"
+              style={{
+                color: 'var(--color-muted)',
+                borderLeft: onEditYaml || onOpenShell || onCordonToggle || onDrain || onDelete ? '1px solid var(--color-border)' : 'none',
+              }}
+              aria-label="Close node panel"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Key Info Bar */}
