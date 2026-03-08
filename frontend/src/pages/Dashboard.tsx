@@ -384,8 +384,8 @@ export const Dashboard = () => {
                 <Cpu size={20} className="text-dashboard-metric-primary" />
                 <span className="font-semibold text-text">CPU</span>
               </div>
-              <div className="w-full h-44">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="w-full h-44 min-h-[176px]">
+                <ResponsiveContainer width="100%" height={176} minHeight={176}>
                   <PieChart>
                     <Pie
                       data={[
@@ -432,8 +432,8 @@ export const Dashboard = () => {
                 <HardDrive size={20} className="text-dashboard-metric-secondary" />
                 <span className="font-semibold text-text">Memory</span>
               </div>
-              <div className="w-full h-44">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="w-full h-44 min-h-[176px]">
+                <ResponsiveContainer width="100%" height={176} minHeight={176}>
                   <PieChart>
                     <Pie
                       data={[
@@ -480,8 +480,8 @@ export const Dashboard = () => {
                 <Box size={20} className="text-dashboard-metric-tertiary" />
                 <span className="font-semibold text-text">Pods</span>
               </div>
-              <div className="w-full h-44">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="w-full h-44 min-h-[176px]">
+                <ResponsiveContainer width="100%" height={176} minHeight={176}>
                   <PieChart>
                     <Pie
                       data={[

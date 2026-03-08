@@ -251,8 +251,8 @@ function ChartCard({ title, icon: Icon, data, total, linkTo, isLoading }: ChartC
           <p className="text-text-secondary">No resources found</p>
         </div>
       ) : (
-        <div className="h-48 chart-theme-text">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-48 min-h-[192px] chart-theme-text">
+          <ResponsiveContainer width="100%" height={192} minHeight={192}>
             <PieChart>
               <Pie
                 data={data}
