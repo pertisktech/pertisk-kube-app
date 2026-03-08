@@ -392,7 +392,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
             <div className="flex items-center gap-2">
               {!sidebarCollapsed && (
                 <>
-                  <h1 className="text-lg font-bold text-primary">Pertisk Kube</h1>
+                  <h1 className="text-lg font-bold text-primary">PTKublet</h1>
                   <span className="text-xs font-medium text-text-secondary">v{APP_VERSION}</span>
                 </>
               )}
