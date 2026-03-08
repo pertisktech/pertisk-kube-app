@@ -215,6 +215,12 @@ async fn main() -> anyhow::Result<()> {
             get(get_lease_yaml).put(update_lease_yaml),
         )
         .route("/leases/:namespace/:name", delete(delete_lease))
+        .route("/mwcs", get(list_mwcs))
+        .route("/mwcs/:name/yaml", get(get_mwc_yaml).put(update_mwc_yaml))
+        .route("/mwcs/:name", delete(delete_mwc))
+        .route("/vwcs", get(list_vwcs))
+        .route("/vwcs/:name/yaml", get(get_vwc_yaml).put(update_vwc_yaml))
+        .route("/vwcs/:name", delete(delete_vwc))
         .route("/services", get(list_services))
         .route(
             "/services/:namespace/:name/yaml",

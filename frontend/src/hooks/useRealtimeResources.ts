@@ -31,6 +31,8 @@ import {
   PriorityClass,
   RuntimeClass,
   Lease,
+  Mwc,
+  Vwc,
   CustomResource,
   Crd,
 } from '../types';
@@ -745,6 +747,36 @@ function transformLease(raw: any): Lease {
   };
 }
 
+function normalizeRawData(raw: any): any {
+  return raw?.data ?? raw;
+}
+
+function transformMwc(raw: any): Mwc {
+  const d = normalizeRawData(raw);
+  const metadata = d?.metadata || {};
+  const webhooks = d?.webhooks || [];
+  return {
+    name: metadata.name || '',
+    webhooks_count: Array.isArray(webhooks) ? webhooks.length : 0,
+    age: metadata.creationTimestamp ? new Date(metadata.creationTimestamp).toISOString() : '',
+    labels: metadata.labels as Record<string, string> | undefined,
+    annotations: metadata.annotations as Record<string, string> | undefined,
+  };
+}
+
+function transformVwc(raw: any): Vwc {
+  const d = normalizeRawData(raw);
+  const metadata = d?.metadata || {};
+  const webhooks = d?.webhooks || [];
+  return {
+    name: metadata.name || '',
+    webhooks_count: Array.isArray(webhooks) ? webhooks.length : 0,
+    age: metadata.creationTimestamp ? new Date(metadata.creationTimestamp).toISOString() : '',
+    labels: metadata.labels as Record<string, string> | undefined,
+    annotations: metadata.annotations as Record<string, string> | undefined,
+  };
+}
+
 function transformCustomResource(raw: any): CustomResource {
   const metadata = raw.metadata || {};
   const name = metadata.name || '';
@@ -1098,6 +1130,18 @@ export const useRealtimeLeases = createRealtimeHook<Lease>(
   'Leases',
   transformLease,
   (item) => `${item.namespace}/${item.name}`
+);
+export const useRealtimeMwcs = createRealtimeHook<Mwc>(
+  'mwc',
+  'MWC',
+  transformMwc,
+  (item) => item.name
+);
+export const useRealtimeVwcs = createRealtimeHook<Vwc>(
+  'vwc',
+  'VWC',
+  transformVwc,
+  (item) => item.name
 );
 export const useRealtimeCrds = createRealtimeHook<Crd>(
   'crds',

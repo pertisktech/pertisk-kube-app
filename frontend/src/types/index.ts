@@ -366,6 +366,22 @@ export interface Lease {
   annotations?: Record<string, string>;
 }
 
+export interface Mwc {
+  name: string;
+  webhooks_count: number;
+  age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
+}
+
+export interface Vwc {
+  name: string;
+  webhooks_count: number;
+  age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
+}
+
 // Network Resources
 export interface Service {
   name: string;

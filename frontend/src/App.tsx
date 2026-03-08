@@ -18,7 +18,6 @@ const CronJobsPage = lazy(() => import('./pages/CronJobsPage').then(m => ({ defa
 const EventsPage = lazy(() => import('./pages/EventsPage').then(m => ({ default: m.EventsPage })));
 const HelmChartsPage = lazy(() => import('./pages/HelmChartsPage').then(m => ({ default: m.HelmChartsPage })));
 const HelmReleasesPage = lazy(() => import('./pages/HelmReleasesPage').then(m => ({ default: m.HelmReleasesPage })));
-const ConfigResourcePage = lazy(() => import('./pages/ConfigResourcePage').then(m => ({ default: m.ConfigResourcePage })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
 const ConfigMapsPage = lazy(() => import('./pages/ConfigMapsPage').then(m => ({ default: m.ConfigMapsPage })));
 const SecretsPage = lazy(() => import('./pages/SecretsPage').then(m => ({ default: m.SecretsPage })));
@@ -29,6 +28,8 @@ const PDBPage = lazy(() => import('./pages/PDBPage').then(m => ({ default: m.PDB
 const PriorityClassesPage = lazy(() => import('./pages/PriorityClassesPage').then(m => ({ default: m.PriorityClassesPage })));
 const RuntimeClassesPage = lazy(() => import('./pages/RuntimeClassesPage').then(m => ({ default: m.RuntimeClassesPage })));
 const LeasesPage = lazy(() => import('./pages/LeasesPage').then(m => ({ default: m.LeasesPage })));
+const MWCPage = lazy(() => import('./pages/MWCPage').then(m => ({ default: m.MWCPage })));
+const VWCPage = lazy(() => import('./pages/VWCPage').then(m => ({ default: m.VWCPage })));
 const ServicesPage = lazy(() => import('./pages/ServicesPage').then(m => ({ default: m.ServicesPage })));
 const EndpointsPage = lazy(() => import('./pages/EndpointsPage').then(m => ({ default: m.EndpointsPage })));
 const IngressesPage = lazy(() => import('./pages/IngressesPage').then(m => ({ default: m.IngressesPage })));
@@ -145,8 +146,8 @@ export const App = () => {
           <Route path="/config/priorityclasses" element={<PriorityClassesPage />} />
           <Route path="/config/runtimeclasses" element={<RuntimeClassesPage />} />
           <Route path="/config/leases" element={<LeasesPage />} />
-          <Route path="/config/mwc" element={<ConfigResourcePage title="MWC" />} />
-          <Route path="/config/vwc" element={<ConfigResourcePage title="VWC" />} />
+          <Route path="/config/mwc" element={<MWCPage />} />
+          <Route path="/config/vwc" element={<VWCPage />} />
           <Route path="/network" element={<NetworkPage />} />
           <Route path="/network/services" element={<ServicesPage />} />
           <Route path="/network/endpoints" element={<EndpointsPage />} />

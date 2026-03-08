@@ -27,6 +27,8 @@ export { PDBPage } from './PDBPage';
 export { PriorityClassesPage } from './PriorityClassesPage';
 export { RuntimeClassesPage } from './RuntimeClassesPage';
 export { LeasesPage } from './LeasesPage';
+export { MWCPage } from './MWCPage';
+export { VWCPage } from './VWCPage';
 // Network Pages
 export { ServicesPage } from './ServicesPage';
 export { EndpointsPage } from './EndpointsPage';

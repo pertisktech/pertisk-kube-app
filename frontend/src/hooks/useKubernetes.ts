@@ -580,6 +580,12 @@ export const deletePriorityClass = (name: string) =>
 export const deleteRuntimeClass = (name: string) =>
   apiDelete(`/runtimeclasses/${encodeURIComponent(name)}`);
 
+export const deleteMwc = (name: string) =>
+  apiDelete(`/mwcs/${encodeURIComponent(name)}`);
+
+export const deleteVwc = (name: string) =>
+  apiDelete(`/vwcs/${encodeURIComponent(name)}`);
+
 // Network resources
 export const deleteService = (namespace: string, name: string) =>
   apiDelete(`/services/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);

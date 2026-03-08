@@ -79,6 +79,8 @@ interface ResourceDetailPanelLayoutProps {
   keyInfo?: KeyInfoItem[];
   /** Action buttons (Edit YAML, Delete, etc.) */
   actions?: ReactNode;
+  /** When true, title uses break-words and does not truncate (e.g. for long MWC/VWC names) */
+  titleFullText?: boolean;
   onClose: () => void;
   children: ReactNode;
 }
@@ -95,10 +97,12 @@ export const ResourceDetailPanelLayout = ({
   quickInfo = [],
   keyInfo = [],
   actions,
+  titleFullText = false,
   onClose,
   children,
 }: ResourceDetailPanelLayoutProps) => {
   const useBaseStyle = kind != null;
+  const titleClass = titleFullText ? 'text-lg font-bold break-words' : 'text-lg font-bold truncate';
 
   return (
     <ResizablePanel>
@@ -115,7 +119,7 @@ export const ResourceDetailPanelLayout = ({
               </div>
             ) : (
               <div className="flex-1 min-w-0">
-                <h2 className="text-lg font-bold truncate" style={{ color: 'var(--color-text)' }}>
+                <h2 className={titleClass} style={{ color: 'var(--color-text)' }} title={titleFullText ? undefined : title}>
                   {title}
                 </h2>
               </div>
@@ -142,9 +146,9 @@ export const ResourceDetailPanelLayout = ({
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <h3
-                        className="text-lg font-bold truncate"
+                        className={titleFullText ? 'text-lg font-bold break-words' : 'text-lg font-bold truncate'}
                         style={{ color: 'var(--color-text)' }}
-                        title={title}
+                        title={titleFullText ? undefined : title}
                       >
                         {title}
                       </h3>

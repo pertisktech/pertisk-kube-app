@@ -4,7 +4,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use kube::{api::{DeleteParams, ListParams, Patch, PatchParams}, Api};
+use kube::{
+    api::{ApiResource, DeleteParams, DynamicObject, GroupVersionKind, ListParams, Patch, PatchParams},
+    Api,
+};
 use tracing::{error, info, warn};
 
 use crate::models::*;
@@ -1570,6 +1573,306 @@ pub async fn delete_lease(
         }
         Err(err) => {
             error!("Error deleting lease {}/{}: {:?}", namespace, name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+fn mwc_api_resource() -> ApiResource {
+    let gvk = GroupVersionKind::gvk("admissionregistration.k8s.io", "v1", "MutatingWebhookConfiguration");
+    ApiResource::from_gvk_with_plural(&gvk, "mutatingwebhookconfigurations")
+}
+
+fn vwc_api_resource() -> ApiResource {
+    let gvk = GroupVersionKind::gvk("admissionregistration.k8s.io", "v1", "ValidatingWebhookConfiguration");
+    ApiResource::from_gvk_with_plural(&gvk, "validatingwebhookconfigurations")
+}
+
+fn dynamic_object_to_mwc_item(obj: &DynamicObject) -> MwcItem {
+    let data = &obj.data;
+    let name = data
+        .get("metadata")
+        .and_then(|m| m.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("")
+        .to_string();
+    let webhooks_count = data
+        .get("webhooks")
+        .and_then(|w| w.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let age = data
+        .get("metadata")
+        .and_then(|m| m.get("creationTimestamp"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .to_string();
+    let labels = data
+        .get("metadata")
+        .and_then(|m| m.get("labels"))
+        .and_then(|l| l.as_object().cloned());
+    let annotations = data
+        .get("metadata")
+        .and_then(|m| m.get("annotations"))
+        .and_then(|a| a.as_object().cloned());
+    MwcItem {
+        name,
+        webhooks_count,
+        age,
+        labels,
+        annotations,
+    }
+}
+
+fn dynamic_object_to_vwc_item(obj: &DynamicObject) -> VwcItem {
+    let data = &obj.data;
+    let name = data
+        .get("metadata")
+        .and_then(|m| m.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("")
+        .to_string();
+    let webhooks_count = data
+        .get("webhooks")
+        .and_then(|w| w.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let age = data
+        .get("metadata")
+        .and_then(|m| m.get("creationTimestamp"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .to_string();
+    let labels = data
+        .get("metadata")
+        .and_then(|m| m.get("labels"))
+        .and_then(|l| l.as_object().cloned());
+    let annotations = data
+        .get("metadata")
+        .and_then(|m| m.get("annotations"))
+        .and_then(|a| a.as_object().cloned());
+    VwcItem {
+        name,
+        webhooks_count,
+        age,
+        labels,
+        annotations,
+    }
+}
+
+pub async fn list_mwcs(State(state): State<AppState>) -> impl IntoResponse {
+    let ar = mwc_api_resource();
+    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<MwcItem> = list.items.iter().map(dynamic_object_to_mwc_item).collect();
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            if let kube::Error::Api(api_err) = &err {
+                if api_err.code == 403 || api_err.code == 404 {
+                    warn!(
+                        "MutatingWebhookConfiguration API unavailable or forbidden (code {}): {}",
+                        api_err.code, api_err.message
+                    );
+                    return (StatusCode::OK, Json(ApiResponse::<MwcItem> { data: vec![], total: 0 })).into_response();
+                }
+            }
+            error!("Error listing mutating webhook configurations: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn get_mwc_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let ar = mwc_api_resource();
+    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj.data) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!("Failed to serialize MWC to YAML {}: {:?}", name, err);
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting MWC YAML {}: {:?}", name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+pub async fn update_mwc_yaml(Path(name): Path<String>, State(state): State<AppState>, body: String) -> impl IntoResponse {
+    let ar = mwc_api_resource();
+    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    let data: serde_json::Value = match serde_yaml::from_str(&body) {
+        Ok(v) => v,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+    let mut obj = DynamicObject::new(&name, &ar);
+    obj.data = data;
+    let patch_value = serde_json::to_value(&obj).unwrap_or(serde_json::Value::Null);
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "MutatingWebhookConfiguration updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating MWC YAML {}: {:?}", name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn delete_mwc(Path(name): Path<String>, State(state): State<AppState>) -> impl IntoResponse {
+    let ar = mwc_api_resource();
+    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted MutatingWebhookConfiguration {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting MWC {}: {:?}", name, err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn list_vwcs(State(state): State<AppState>) -> impl IntoResponse {
+    let ar = vwc_api_resource();
+    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let items: Vec<VwcItem> = list.items.iter().map(dynamic_object_to_vwc_item).collect();
+            let total = items.len();
+            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
+        }
+        Err(err) => {
+            if let kube::Error::Api(api_err) = &err {
+                if api_err.code == 403 || api_err.code == 404 {
+                    warn!(
+                        "ValidatingWebhookConfiguration API unavailable or forbidden (code {}): {}",
+                        api_err.code, api_err.message
+                    );
+                    return (StatusCode::OK, Json(ApiResponse::<VwcItem> { data: vec![], total: 0 })).into_response();
+                }
+            }
+            error!("Error listing validating webhook configurations: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn get_vwc_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let ar = vwc_api_resource();
+    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    match api.get(&name).await {
+        Ok(obj) => match serde_yaml::to_string(&obj.data) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!("Failed to serialize VWC to YAML {}: {:?}", name, err);
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting VWC YAML {}: {:?}", name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+pub async fn update_vwc_yaml(Path(name): Path<String>, State(state): State<AppState>, body: String) -> impl IntoResponse {
+    let ar = vwc_api_resource();
+    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    let data: serde_json::Value = match serde_yaml::from_str(&body) {
+        Ok(v) => v,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+    let mut obj = DynamicObject::new(&name, &ar);
+    obj.data = data;
+    let patch_value = serde_json::to_value(&obj).unwrap_or(serde_json::Value::Null);
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api.patch(&name, &patch_params, &Patch::Apply(patch_value)).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "ValidatingWebhookConfiguration updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating VWC YAML {}: {:?}", name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update: {}", err),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn delete_vwc(Path(name): Path<String>, State(state): State<AppState>) -> impl IntoResponse {
+    let ar = vwc_api_resource();
+    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            info!("Deleted ValidatingWebhookConfiguration {}", name);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        Err(err) => {
+            error!("Error deleting VWC {}: {:?}", name, err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }

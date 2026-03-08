@@ -307,6 +307,28 @@ pub struct LeaseItem {
 }
 
 #[derive(Serialize)]
+pub struct MwcItem {
+    pub name: String,
+    pub webhooks_count: usize,
+    pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(Serialize)]
+pub struct VwcItem {
+    pub name: String,
+    pub webhooks_count: usize,
+    pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(Serialize)]
 pub struct ServiceItem {
     pub name: String,
     pub namespace: String,

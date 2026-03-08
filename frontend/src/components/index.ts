@@ -37,6 +37,8 @@ export { PDBDetailPanel } from './PDBDetailPanel';
 export { PriorityClassDetailPanel } from './PriorityClassDetailPanel';
 export { RuntimeClassDetailPanel } from './RuntimeClassDetailPanel';
 export { LeaseDetailPanel } from './LeaseDetailPanel';
+export { MwcDetailPanel } from './MwcDetailPanel';
+export { VwcDetailPanel } from './VwcDetailPanel';
 export { ServiceDetailPanel } from './ServiceDetailPanel';
 export { EndpointDetailPanel } from './EndpointDetailPanel';
 export { IngressDetailPanel } from './IngressDetailPanel';

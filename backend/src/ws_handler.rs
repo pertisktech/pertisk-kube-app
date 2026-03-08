@@ -590,6 +590,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     "priorityclasses" => watch_priorityclasses(state_clone, tx_clone).await,
                                     "runtimeclasses" => watch_runtimeclasses(state_clone, tx_clone).await,
                                     "leases" => watch_leases(state_clone, tx_clone).await,
+                                    "mwc" => watch_mwcs(state_clone, tx_clone).await,
+                                    "vwc" => watch_vwcs(state_clone, tx_clone).await,
                                     "crds" => watch_crds(state_clone, tx_clone).await,
                                     _ if resource_clone.starts_with("customresources/") => {
                                         let crd_name = resource_clone.strip_prefix("customresources/").unwrap_or("").to_string();
@@ -893,6 +895,114 @@ create_watch_fn!(watch_priorityclasses, k8s_openapi::api::scheduling::v1::Priori
 create_watch_fn!(watch_runtimeclasses, k8s_openapi::api::node::v1::RuntimeClass, "runtimeclasses");
 create_watch_fn!(watch_leases, k8s_openapi::api::coordination::v1::Lease, "leases");
 create_watch_fn!(watch_crds, k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition, "crds");
+
+fn mwc_api_resource() -> ApiResource {
+    ApiResource::from_gvk_with_plural(
+        &GroupVersionKind::gvk("admissionregistration.k8s.io", "v1", "MutatingWebhookConfiguration"),
+        "mutatingwebhookconfigurations",
+    )
+}
+
+fn vwc_api_resource() -> ApiResource {
+    ApiResource::from_gvk_with_plural(
+        &GroupVersionKind::gvk("admissionregistration.k8s.io", "v1", "ValidatingWebhookConfiguration"),
+        "validatingwebhookconfigurations",
+    )
+}
+
+async fn watch_dynamic_cluster_resource(
+    state: AppState,
+    tx: tokio::sync::mpsc::Sender<ServerMessage>,
+    ar: ApiResource,
+    resource_name: &str,
+) {
+    let api: Api<DynamicObject> = Api::all_with(state.client.clone(), &ar);
+    info!("Fetching initial {} list...", resource_name);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            for item in list.items {
+                let item_data = serde_json::to_value(&item).unwrap_or_default();
+                if tx.send(ServerMessage::ResourceUpdate {
+                    resource: resource_name.to_string(),
+                    action: "ADDED".to_string(),
+                    data: item_data,
+                })
+                .await
+                .is_err()
+                {
+                    return;
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to fetch initial {} list: {}", resource_name, e);
+            let _ = tx.send(ServerMessage::Error {
+                message: format!("Failed to fetch initial {}: {}", resource_name, e),
+            })
+            .await;
+            return;
+        }
+    }
+    info!("Starting {} watch stream...", resource_name);
+    let stream = watcher(api, Default::default());
+    tokio::pin!(stream);
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(event) => {
+                use kube::runtime::watcher::Event;
+                let (action, item_opt) = match event {
+                    Event::Applied(item) => ("MODIFIED", Some(item)),
+                    Event::Deleted(item) => ("DELETED", Some(item)),
+                    Event::Restarted(items) => {
+                        for item in items {
+                            let item_data = serde_json::to_value(&item).unwrap_or_default();
+                            if tx.send(ServerMessage::ResourceUpdate {
+                                resource: resource_name.to_string(),
+                                action: "MODIFIED".to_string(),
+                                data: item_data,
+                            })
+                            .await
+                            .is_err()
+                            {
+                                return;
+                            }
+                        }
+                        continue;
+                    }
+                };
+                if let Some(item) = item_opt {
+                    let item_data = serde_json::to_value(&item).unwrap_or_default();
+                    if tx.send(ServerMessage::ResourceUpdate {
+                        resource: resource_name.to_string(),
+                        action: action.to_string(),
+                        data: item_data,
+                    })
+                    .await
+                    .is_err()
+                    {
+                        return;
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Watch error for {}: {}", resource_name, e);
+                let _ = tx.send(ServerMessage::Error {
+                    message: format!("Watch error: {}", e),
+                })
+                .await;
+                return;
+            }
+        }
+    }
+}
+
+async fn watch_mwcs(state: AppState, tx: tokio::sync::mpsc::Sender<ServerMessage>) {
+    watch_dynamic_cluster_resource(state, tx, mwc_api_resource(), "mwc").await;
+}
+
+async fn watch_vwcs(state: AppState, tx: tokio::sync::mpsc::Sender<ServerMessage>) {
+    watch_dynamic_cluster_resource(state, tx, vwc_api_resource(), "vwc").await;
+}
 
 async fn watch_custom_resources(
     state: AppState,
