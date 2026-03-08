@@ -276,10 +276,6 @@ const InstallChartTabContent = ({
   const nsList = namespaces?.map((ns) => ns.name) ?? [];
   const chartRef = `${chart.repository}/${chart.name}`;
   const installRelease = releaseName.trim() || chart.name;
-  const baseCmd = `helm install ${installRelease} ${chartRef} --version ${chart.version} -n ${namespace} --create-namespace`;
-  const helmCmd = valuesYaml.trim() && validateValuesYamlSilent(valuesYaml)
-    ? `${baseCmd} -f values.yaml`
-    : baseCmd;
 
   const handleValuesChange = (value: string) => {
     setValuesYaml(value);
