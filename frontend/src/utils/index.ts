@@ -15,6 +15,40 @@ export const formatDate = (timestamp?: string | null): string => {
   return date.toLocaleString();
 };
 
+/** Parse Kubernetes CPU (e.g. "500m", "1", "0.5") to cores (number). */
+export const parseCpuToCores = (cpuStr?: string | null): number => {
+  if (!cpuStr || typeof cpuStr !== 'string') return 0;
+  const s = cpuStr.trim();
+  if (!s) return 0;
+  if (s.endsWith('m')) {
+    const m = parseInt(s.slice(0, -1), 10);
+    return Number.isNaN(m) ? 0 : m / 1000;
+  }
+  const n = parseFloat(s);
+  return Number.isNaN(n) ? 0 : n;
+};
+
+/** Format a single CPU value in cores for display (e.g. 0.429 -> "0.43", 7.95 -> "7.95"). */
+export const formatCpuCores = (cores: number): string => {
+  if (cores === 0) return '0';
+  if (Number.isInteger(cores)) return String(cores);
+  return cores.toFixed(2);
+};
+
+/**
+ * Format "used / total" CPU (Kubernetes millicores or cores) for display.
+ * e.g. "429m", "7950m" -> "0.43 / 7.95 cores"
+ */
+export const formatCpuRange = (
+  used?: string | null,
+  total?: string | null
+): string => {
+  const u = parseCpuToCores(used);
+  const t = parseCpuToCores(total);
+  if (u === 0 && t === 0) return '—';
+  return `${formatCpuCores(u)} / ${formatCpuCores(t)} cores`;
+};
+
 const formatCompactAge = (seconds: number): string => {
   if (seconds < 60) return `${seconds}s`;
 
@@ -145,6 +179,30 @@ export const formatBytes = (bytes: number): string => {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 };
+
+/**
+ * Parse Kubernetes quantity (memory/storage) to bytes. Handles Ki, Mi, Gi (binary) and plain numbers (bytes).
+ */
+export function parseK8sQuantityToBytes(str: string | undefined | null): number {
+  if (str == null || typeof str !== 'string') return 0;
+  const s = str.trim();
+  if (!s) return 0;
+  const num = parseFloat(s.replace(/[^\d.]/g, ''));
+  if (Number.isNaN(num)) return 0;
+  const lower = s.toLowerCase();
+  if (lower.endsWith('ki')) return num * 1024;
+  if (lower.endsWith('mi')) return num * 1024 * 1024;
+  if (lower.endsWith('gi')) return num * 1024 * 1024 * 1024;
+  if (lower.endsWith('ti')) return num * 1024 * 1024 * 1024 * 1024;
+  return num; // no suffix = bytes
+}
+
+/** Format a single K8s memory/storage quantity for display (e.g. "15471952Ki" -> "14.75 GB"). */
+export function formatK8sQuantity(str: string | undefined | null): string {
+  const bytes = parseK8sQuantityToBytes(str);
+  if (bytes === 0) return '—';
+  return formatBytes(bytes);
+}
 
 /**
  * Parse Kubernetes memory string (e.g. "15340880Ki", "2.4Gi", "16384Mi") to GB (binary: 1024).

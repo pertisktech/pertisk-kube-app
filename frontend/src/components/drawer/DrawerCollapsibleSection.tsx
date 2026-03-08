@@ -38,8 +38,8 @@ export function DrawerCollapsibleSection({
         <span className="DrawerItem-name text-xs font-semibold uppercase tracking-wide overflow-hidden text-ellipsis pr-2 min-w-0" style={{ color: 'var(--color-muted)' }}>
           {title}
         </span>
-        <span className="DrawerItem-value flex items-center justify-end min-w-0">
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        <span className="DrawerItem-value flex items-center justify-end min-w-0" style={{ color: 'var(--color-primary)' }}>
+          {expanded ? <ChevronUp size={14} color="var(--color-primary)" /> : <ChevronDown size={14} color="var(--color-primary)" />}
         </span>
       </button>
       {expanded && <div className="pt-1">{children}</div>}

@@ -61,7 +61,7 @@
   --color-icon-danger: var(--color-red-r1);
   --color-icon-info: var(--color-blue-b1);
 
-  /* ── Dashboard metric colors ──────────────────────────────────────────────── */
+  /* ── Dashboard metric colors (pie charts, workload summary badges) ──────────── */
   --color-dashboard-success: var(--color-green-g1);
   --color-dashboard-success-bg: color-mix(in srgb, var(--color-green-g1) 12%, transparent);
   --color-dashboard-warning: var(--color-yellow-y1);

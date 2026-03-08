@@ -5,7 +5,7 @@ import { usePods } from '../hooks/useKubernetes';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle } from './drawer';
-import { formatMemoryUsedAlloc } from '../utils';
+import { formatMemoryUsedAlloc, formatCpuRange, formatCpuCores, parseCpuToCores, formatK8sQuantity } from '../utils';
 import type { K8sNode } from '../types';
 
 interface NodeDetailPanelProps {
@@ -35,16 +35,18 @@ const NodeDetailsResources = ({
 }) => {
   const items: Array<{ key: string; label: string; value: string }> = [];
   if (type === 'capacity') {
-    if (node.cpu != null) items.push({ key: 'cpu', label: 'CPU', value: node.cpu });
-    if (node.memory != null) items.push({ key: 'memory', label: 'Memory', value: node.memory });
-    if (node.ephemeral_storage) items.push({ key: 'ephemeral-storage', label: 'Ephemeral Storage', value: node.ephemeral_storage });
+    if (node.cpu != null) items.push({ key: 'cpu', label: 'CPU', value: `${formatCpuCores(parseCpuToCores(node.cpu))} cores` });
+    if (node.memory != null) items.push({ key: 'memory', label: 'Memory', value: formatK8sQuantity(node.memory) });
+    if (node.ephemeral_storage) items.push({ key: 'ephemeral-storage', label: 'Ephemeral Storage', value: formatK8sQuantity(node.ephemeral_storage) });
     if (node.pods) items.push({ key: 'pods', label: 'Pods', value: node.pods });
   } else {
-    const cpuVal = node.cpu != null ? (node.cpu_used != null ? `${node.cpu_used} / ${node.cpu}` : node.cpu) : undefined;
+    const cpuVal = node.cpu != null
+      ? (node.cpu_used != null ? formatCpuRange(node.cpu_used, node.cpu) : `${formatCpuCores(parseCpuToCores(node.cpu))} cores`)
+      : undefined;
     const memVal = node.memory != null ? formatMemoryUsedAlloc(node.memory_used, node.memory) : undefined;
     if (cpuVal) items.push({ key: 'cpu', label: 'CPU', value: cpuVal });
     if (memVal) items.push({ key: 'memory', label: 'Memory', value: memVal });
-    if (node.ephemeral_storage) items.push({ key: 'ephemeral-storage', label: 'Ephemeral Storage', value: node.ephemeral_storage });
+    if (node.ephemeral_storage) items.push({ key: 'ephemeral-storage', label: 'Ephemeral Storage', value: formatK8sQuantity(node.ephemeral_storage) });
     if (node.pods) items.push({ key: 'pods', label: 'Pods', value: node.pods });
   }
   if (items.length === 0) return null;
@@ -200,10 +202,11 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
                 type="button"
                 onClick={() => setExpandedLabels(!expandedLabels)}
                 className="w-full flex items-center justify-between py-2 text-left"
-                style={{ color: 'var(--color-muted)' }}
               >
-                <span className="text-xs font-semibold uppercase tracking-wide">Labels ({labelCount})</span>
-                <ChevronDown size={14} className={`transition-transform ${expandedLabels ? 'rotate-180' : ''}`} />
+                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Labels ({labelCount})</span>
+                <span style={{ color: 'var(--color-primary)' }}>
+                  <ChevronDown size={14} color="var(--color-primary)" className={`transition-transform ${expandedLabels ? 'rotate-180' : ''}`} />
+                </span>
               </button>
               {expandedLabels && (
                 <div className="space-y-0 border-t border-border pt-2">
@@ -224,10 +227,11 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
                 type="button"
                 onClick={() => setExpandedAnnotations(!expandedAnnotations)}
                 className="w-full flex items-center justify-between py-2 text-left"
-                style={{ color: 'var(--color-muted)' }}
               >
-                <span className="text-xs font-semibold uppercase tracking-wide">Annotations ({annotationCount})</span>
-                <ChevronDown size={14} className={`transition-transform ${expandedAnnotations ? 'rotate-180' : ''}`} />
+                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Annotations ({annotationCount})</span>
+                <span style={{ color: 'var(--color-primary)' }}>
+                  <ChevronDown size={14} color="var(--color-primary)" className={`transition-transform ${expandedAnnotations ? 'rotate-180' : ''}`} />
+                </span>
               </button>
               {expandedAnnotations && (
                 <div className="space-y-0 border-t border-border pt-2">

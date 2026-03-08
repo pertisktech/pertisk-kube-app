@@ -639,6 +639,12 @@ pub struct ChartValuesQuery {
     pub version: String,
 }
 
+#[derive(Deserialize)]
+pub struct ChartVersionsQuery {
+    pub repo_url: String,
+    pub chart: String,
+}
+
 /// Fetches the chart's default values.yaml by running `helm repo add` + `helm show values`.
 pub async fn get_helm_chart_values(
     Query(q): Query<ChartValuesQuery>,
@@ -737,6 +743,99 @@ pub async fn get_helm_chart_values(
                     .header("content-type", "text/plain; charset=utf-8")
                     .body(axum::body::Body::from(e.to_string()))
                     .unwrap(),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Returns available chart versions (helm search repo <repo>/<chart> --versions).
+pub async fn get_helm_chart_versions(
+    Query(q): Query<ChartVersionsQuery>,
+    _state: State<AppState>,
+) -> impl IntoResponse {
+    let repo_url = q.repo_url.trim();
+    let chart = q.chart.trim();
+
+    if repo_url.is_empty() || chart.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "data": [], "message": "Missing repo_url or chart" })),
+        )
+            .into_response();
+    }
+
+    let repo_name = format!(
+        "chartver_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
+
+    let add_out = Command::new("helm")
+        .args(["repo", "add", &repo_name, repo_url])
+        .output()
+        .await;
+
+    let add_ok = match &add_out {
+        Ok(o) => o.status.success(),
+        Err(e) => {
+            error!("helm repo add error: {}", e);
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "data": [], "message": format!("Helm not available: {}", e) })),
+            )
+                .into_response();
+        }
+    };
+
+    if !add_ok {
+        let stderr = add_out
+            .as_ref()
+            .map(|o| String::from_utf8_lossy(&o.stderr).to_string())
+            .unwrap_or_default();
+        let _ = Command::new("helm").args(["repo", "remove", &repo_name]).output().await;
+        return (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({ "data": [], "message": format!("Failed to add repo: {}", stderr) })),
+        )
+            .into_response();
+    }
+
+    let chart_ref = format!("{}/{}", repo_name, chart);
+    let search_out = Command::new("helm")
+        .args(["search", "repo", &chart_ref, "--versions"])
+        .output()
+        .await;
+
+    let _ = Command::new("helm").args(["repo", "remove", &repo_name]).output().await;
+
+    match search_out {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let versions: Vec<String> = stdout
+                .lines()
+                .skip(1)
+                .filter_map(|line| {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        Some(parts[1].to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            (StatusCode::OK, Json(serde_json::json!({ "data": versions }))).into_response()
+        }
+        Ok(_) => {
+            (StatusCode::OK, Json(serde_json::json!({ "data": [] }))).into_response()
+        }
+        Err(e) => {
+            error!("helm search error: {}", e);
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "data": [], "message": format!("Helm not available: {}", e) })),
             )
                 .into_response()
         }

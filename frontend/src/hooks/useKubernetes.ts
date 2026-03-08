@@ -732,6 +732,27 @@ export const useHelmCharts = () => {
   });
 };
 
+/** Fetches available versions for a chart (repo_url + chart name). */
+export const getHelmChartVersions = async (
+  repoUrl: string,
+  chart: string,
+): Promise<string[]> => {
+  const params = new URLSearchParams({ repo_url: repoUrl.trim(), chart: chart.trim() });
+  const res = await apiFetch(`/helm/charts/versions?${params.toString()}`);
+  if (!res.ok) return [];
+  const json = (await res.json()) as { data?: string[] };
+  return Array.isArray(json.data) ? json.data : [];
+};
+
+export const useHelmChartVersions = (repoUrl: string, chartName: string) => {
+  return useQuery({
+    queryKey: ['helm-chart-versions', repoUrl, chartName],
+    queryFn: () => getHelmChartVersions(repoUrl, chartName),
+    enabled: !!repoUrl?.trim() && !!chartName?.trim(),
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
 export const deleteHelmRelease = async (namespace: string, name: string): Promise<void> => {
   const token = getAuthToken();
   const res = await fetch(

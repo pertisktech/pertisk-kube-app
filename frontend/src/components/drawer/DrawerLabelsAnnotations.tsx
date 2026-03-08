@@ -66,8 +66,8 @@ function DrawerExpandableKeyValues({
         <span className="DrawerItem-name text-sm overflow-hidden text-ellipsis pr-2 min-w-0" style={{ color: 'var(--color-muted)' }}>
           {name} ({count})
         </span>
-        <span className="DrawerItem-value flex items-center justify-end min-w-0">
-          <ChevronDown size={14} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} style={{ color: 'var(--color-muted)' }} />
+        <span className="DrawerItem-value flex items-center justify-end min-w-0" style={{ color: 'var(--color-primary)' }}>
+          <ChevronDown size={14} color="var(--color-primary)" className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
         </span>
       </button>
       {expanded && (

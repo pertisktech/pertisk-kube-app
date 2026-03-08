@@ -9,7 +9,7 @@ import { PodDetailPanel } from '../components/PodDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { StatusBadge } from '../components/StatusBadge';
 import type { Pod } from '../types';
-import { timeAgo, matchesResourceNameFilter } from '../utils';
+import { timeAgo, matchesResourceNameFilter, formatCpuCores, parseCpuToCores } from '../utils';
 import { getAuthToken } from '../utils/auth';
 import { deletePod, fetchSecretData } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
@@ -258,8 +258,8 @@ export const PodsPage = () => {
       sortKey: 'restarts',
     },
     {
-      header: 'CPU(cores)',
-      accessor: (row: Pod) => row.cpu || '-',
+      header: 'CPU (cores)',
+      accessor: (row: Pod) => (row.cpu ? formatCpuCores(parseCpuToCores(row.cpu)) : '-'),
       width: '11%',
       sortable: true,
       sortKey: 'cpu',

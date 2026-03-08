@@ -24,7 +24,7 @@ export function DrawerParamToggler({ label, children, className = '' }: DrawerPa
           style={{ color: 'var(--color-primary)' }}
           aria-label={open ? 'Hide' : 'Show'}
         >
-          {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          {open ? <ChevronUp size={14} color="var(--color-primary)" /> : <ChevronDown size={14} color="var(--color-primary)" />}
         </button>
       </div>
       {open && <div className="param-content pt-2">{children}</div>}

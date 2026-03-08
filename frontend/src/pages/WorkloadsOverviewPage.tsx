@@ -16,29 +16,9 @@ import {
   Clock,
   RefreshCw,
   LayoutGrid,
-  Network,
-  Globe,
-  Shield,
-  FileCode,
-  FileText,
-  KeyRound,
-  HardDrive,
   Circle,
   type IconComponent,
 } from '../components/Icons';
-import {
-  useServices,
-  useEndpoints,
-  useIngresses,
-  useIngressClasses,
-  useNetworkPolicies,
-  useConfigMaps,
-  useSecrets,
-  usePersistentVolumeClaims,
-  usePersistentVolumes,
-  useStorageClasses,
-  useCrds,
-} from '../hooks/useKubernetes';
 import {
   useRealtimePods,
 } from '../hooks/useRealtimePods';
@@ -53,30 +33,32 @@ import {
 import { useNamespace } from '../context/NamespaceContext';
 import type { Pod, Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob } from '../types';
 
-// Chart/status colors from base theme (dashboard-success, warning, danger, muted)
-// Use CSS variables so charts follow light/dark and theme overrides.
-const CHART_SUCCESS = 'var(--color-dashboard-success)';
-const CHART_WARNING = 'var(--color-dashboard-warning)';
-const CHART_DANGER = 'var(--color-dashboard-danger)';
-const CHART_MUTED = 'var(--color-muted)';
+// Pie chart and summary use dashboard-metric-primary (same as dashboard metrics) for healthy/success
+// so workload overview and dashboard metrics share the same primary pie color.
+const PIE_AND_THEME = {
+  success: 'var(--color-dashboard-metric-primary)',
+  warning: 'var(--color-dashboard-warning)',
+  danger: 'var(--color-dashboard-danger)',
+  muted: 'var(--color-muted)',
+} as const;
 
 const STATUS_COLORS: Record<string, string> = {
-  Running: CHART_SUCCESS,
-  Healthy: CHART_SUCCESS,
-  Active: CHART_SUCCESS,
-  Complete: CHART_SUCCESS,
-  Succeeded: CHART_SUCCESS,
-  Completed: CHART_SUCCESS,
-  Pending: CHART_WARNING,
-  Warning: CHART_WARNING,
-  Progressing: CHART_WARNING,
-  Degraded: CHART_WARNING,
-  Suspended: CHART_MUTED,
-  Stopped: CHART_MUTED,
-  Unknown: CHART_MUTED,
-  Failed: CHART_DANGER,
-  Error: CHART_DANGER,
-  CrashLoopBackOff: CHART_DANGER,
+  Running: PIE_AND_THEME.success,
+  Healthy: PIE_AND_THEME.success,
+  Active: PIE_AND_THEME.success,
+  Complete: PIE_AND_THEME.success,
+  Succeeded: PIE_AND_THEME.success,
+  Completed: PIE_AND_THEME.success,
+  Pending: PIE_AND_THEME.warning,
+  Warning: PIE_AND_THEME.warning,
+  Progressing: PIE_AND_THEME.warning,
+  Degraded: PIE_AND_THEME.warning,
+  Suspended: PIE_AND_THEME.muted,
+  Stopped: PIE_AND_THEME.muted,
+  Unknown: PIE_AND_THEME.muted,
+  Failed: PIE_AND_THEME.danger,
+  Error: PIE_AND_THEME.danger,
+  CrashLoopBackOff: PIE_AND_THEME.danger,
 };
 
 // Parse "ready/total" string to [ready, total]
@@ -357,27 +339,36 @@ function SummaryRow({
       <td className="text-center py-3 px-4 text-text tabular-nums">{total}</td>
       <td className="text-center py-3 px-4">
         <span
-          className={`px-2 py-1 rounded-full text-sm ${
-            healthy > 0 ? 'bg-dashboard-success/20 text-dashboard-success' : ''
-          }`}
+          className="px-2 py-1 rounded-full text-sm"
+          style={
+            healthy > 0
+              ? { backgroundColor: 'var(--color-dashboard-metric-primary-bg)', color: 'var(--color-dashboard-metric-primary)' }
+              : undefined
+          }
         >
           {healthy}
         </span>
       </td>
       <td className="text-center py-3 px-4">
         <span
-          className={`px-2 py-1 rounded-full text-sm ${
-            warning > 0 ? 'bg-dashboard-warning/20 text-dashboard-warning' : ''
-          }`}
+          className="px-2 py-1 rounded-full text-sm"
+          style={
+            warning > 0
+              ? { backgroundColor: 'var(--color-dashboard-warning-bg)', color: 'var(--color-dashboard-warning)' }
+              : undefined
+          }
         >
           {warning}
         </span>
       </td>
       <td className="text-center py-3 px-4">
         <span
-          className={`px-2 py-1 rounded-full text-sm ${
-            critical > 0 ? 'bg-dashboard-danger/20 text-dashboard-danger' : ''
-          }`}
+          className="px-2 py-1 rounded-full text-sm"
+          style={
+            critical > 0
+              ? { backgroundColor: 'var(--color-dashboard-danger-bg)', color: 'var(--color-dashboard-danger)' }
+              : undefined
+          }
         >
           {critical}
         </span>
@@ -408,18 +399,6 @@ export const WorkloadsOverviewPage = () => {
     !jobsLoading &&
     !cronjobsLoading;
 
-  const { data: services } = useServices();
-  const { data: endpoints } = useEndpoints();
-  const { data: ingresses } = useIngresses();
-  const { data: ingressClasses } = useIngressClasses();
-  const { data: networkPolicies } = useNetworkPolicies();
-  const { data: configmaps } = useConfigMaps();
-  const { data: secrets } = useSecrets();
-  const { data: pvcs } = usePersistentVolumeClaims();
-  const { data: pvs } = usePersistentVolumes();
-  const { data: storageClasses } = useStorageClasses();
-  const { data: crds } = useCrds();
-
   const filterByNs = <T extends { namespace?: string }>(list: T[] | undefined): T[] => {
     if (!list) return [];
     if (selectedNamespaces.length === 0) return list;
@@ -433,16 +412,6 @@ export const WorkloadsOverviewPage = () => {
   const filteredReplicaSets = filterByNs(replicasets ?? []);
   const filteredJobs = filterByNs(jobs ?? []);
   const filteredCronJobs = filterByNs(cronjobs ?? []);
-  const filteredServices = filterByNs(services);
-  const filteredEndpoints = filterByNs(endpoints);
-  const filteredIngresses = filterByNs(ingresses);
-  const filteredIngressClasses = ingressClasses ?? []; // cluster-scoped
-  const filteredNetworkPolicies = filterByNs(networkPolicies);
-  const filteredConfigMaps = filterByNs(configmaps);
-  const filteredSecrets = filterByNs(secrets);
-  const filteredPvcs = filterByNs(pvcs);
-  const filteredPvs = pvs ?? []; // cluster-scoped
-  const filteredStorageClasses = storageClasses ?? []; // cluster-scoped
 
   const totalWorkloads =
     filteredPods.length +
@@ -468,8 +437,12 @@ export const WorkloadsOverviewPage = () => {
   const healthPercentage =
     totalWorkloads > 0 ? ((healthyCount / totalWorkloads) * 100).toFixed(1) : '0';
   const healthNum = parseFloat(healthPercentage);
-  const healthColor =
-    healthNum >= 80 ? 'text-dashboard-success' : healthNum >= 50 ? 'text-dashboard-warning' : 'text-dashboard-danger';
+  const healthColorStyle =
+    healthNum >= 80
+      ? { color: 'var(--color-dashboard-metric-primary)' }
+      : healthNum >= 50
+        ? { color: 'var(--color-dashboard-warning)' }
+        : { color: 'var(--color-dashboard-danger)' };
 
   return (
     <div className="space-y-6">
@@ -486,7 +459,10 @@ export const WorkloadsOverviewPage = () => {
         </div>
         <div className="flex items-center gap-4 flex-wrap">
           {workloadRealtimeConnected && (
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-dashboard-success/15 text-dashboard-success text-sm font-medium">
+            <span
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium"
+              style={{ backgroundColor: 'var(--color-dashboard-metric-primary-bg)', color: 'var(--color-dashboard-metric-primary)' }}
+            >
               <Circle size={8} className="fill-current animate-pulse" />
               Live
             </span>
@@ -496,7 +472,7 @@ export const WorkloadsOverviewPage = () => {
             <span className="font-bold text-text tabular-nums">{totalWorkloads}</span>
             <span className="text-border mx-2">|</span>
             <span className="text-text-secondary">Health: </span>
-            <span className={`font-bold tabular-nums ${healthColor}`}>{healthPercentage}%</span>
+            <span className="font-bold tabular-nums" style={healthColorStyle}>{healthPercentage}%</span>
           </div>
         </div>
       </div>
@@ -561,7 +537,7 @@ export const WorkloadsOverviewPage = () => {
         />
       </div>
 
-      {/* Resource Summary Table - same as pertisk-kube */}
+      {/* Resource Summary — workloads only */}
       <div className="bg-surface border border-border rounded-xl p-6 backdrop-blur-sm">
         <h2 className="text-lg font-semibold text-text mb-4">Resource Summary</h2>
         <div className="overflow-x-auto">
@@ -572,13 +548,13 @@ export const WorkloadsOverviewPage = () => {
                   Resource Type
                 </th>
                 <th className="text-center py-3 px-4 text-text-secondary font-medium">Total</th>
-                <th className="text-center py-3 px-4 text-dashboard-success font-medium">
+                <th className="text-center py-3 px-4 font-medium" style={{ color: 'var(--color-dashboard-metric-primary)' }}>
                   Healthy
                 </th>
-                <th className="text-center py-3 px-4 text-dashboard-warning font-medium">
+                <th className="text-center py-3 px-4 font-medium" style={{ color: 'var(--color-dashboard-warning)' }}>
                   Warning
                 </th>
-                <th className="text-center py-3 px-4 text-dashboard-danger font-medium">
+                <th className="text-center py-3 px-4 font-medium" style={{ color: 'var(--color-dashboard-danger)' }}>
                   Critical
                 </th>
               </tr>
@@ -666,109 +642,6 @@ export const WorkloadsOverviewPage = () => {
                 warning={0}
                 critical={filteredCronJobs.filter((cj) => cj.suspend).length}
                 linkTo="/cronjobs"
-              />
-              {/* Network */}
-              <SummaryRow
-                name="Services"
-                icon={Network}
-                total={filteredServices.length}
-                healthy={0}
-                warning={0}
-                critical={0}
-                linkTo="/network/services"
-              />
-              <SummaryRow
-                name="Endpoints"
-                icon={Network}
-                total={filteredEndpoints.length}
-                healthy={0}
-                warning={0}
-                critical={0}
-                linkTo="/network/endpoints"
-              />
-              <SummaryRow
-                name="Ingresses"
-                icon={Globe}
-                total={filteredIngresses.length}
-                healthy={0}
-                warning={0}
-                critical={0}
-                linkTo="/network/ingresses"
-              />
-              <SummaryRow
-                name="Ingress Classes"
-                icon={Globe}
-                total={filteredIngressClasses.length}
-                healthy={0}
-                warning={0}
-                critical={0}
-                linkTo="/network/ingressclasses"
-              />
-              <SummaryRow
-                name="Network Policies"
-                icon={Shield}
-                total={filteredNetworkPolicies.length}
-                healthy={0}
-                warning={0}
-                critical={0}
-                linkTo="/network/networkpolicies"
-              />
-              {/* Config */}
-              <SummaryRow
-                name="Config Maps"
-                icon={FileText}
-                total={filteredConfigMaps.length}
-                healthy={0}
-                warning={0}
-                critical={0}
-                linkTo="/config/configmaps"
-              />
-              <SummaryRow
-                name="Secrets"
-                icon={KeyRound}
-                total={filteredSecrets.length}
-                healthy={0}
-                warning={0}
-                critical={0}
-                linkTo="/config/secrets"
-              />
-              {/* Storage */}
-              <SummaryRow
-                name="PVC"
-                icon={HardDrive}
-                total={filteredPvcs.length}
-                healthy={0}
-                warning={0}
-                critical={0}
-                linkTo="/storage/pvc"
-              />
-              <SummaryRow
-                name="PV"
-                icon={HardDrive}
-                total={filteredPvs.length}
-                healthy={0}
-                warning={0}
-                critical={0}
-                linkTo="/storage/pv"
-              />
-              <SummaryRow
-                name="Storage Classes"
-                icon={HardDrive}
-                total={filteredStorageClasses.length}
-                healthy={0}
-                warning={0}
-                critical={0}
-                linkTo="/storage/storageclasses"
-              />
-              {/* Custom resources */}
-              <SummaryRow
-                name="CRDs"
-                icon={FileCode}
-                total={crds?.length ?? 0}
-                healthy={0}
-                warning={0}
-                critical={0}
-                linkTo="#"
               />
             </tbody>
           </table>

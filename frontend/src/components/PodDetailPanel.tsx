@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Pencil, Terminal, ScrollText, Trash2, Cable, Eye, EyeOff } from './Icons';
 import { StatusBadge } from './StatusBadge';
 import type { Pod } from '../types';
-import { timeAgo } from '../utils';
+import { timeAgo, formatCpuRange, formatCpuCores, parseCpuToCores } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations, DrawerParamToggler } from './drawer';
@@ -198,8 +198,8 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           )}
 
           {podAntiAffinities.length > 0 && (
-            <DrawerItem name="Affinities" className="PodDetailsAffinities">
-              <DrawerParamToggler label={podAntiAffinities.length}>
+            <DrawerItem name={`Affinities (${podAntiAffinities.length})`} className="PodDetailsAffinities">
+              <DrawerParamToggler label="">
                 <div className="space-y-1">
                   {podAntiAffinities.map((rule, idx) => (
                     <p key={`${rule}-${idx}`} className="break-all text-xs" style={{ color: 'var(--color-text)' }}>{rule}</p>
@@ -252,7 +252,11 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           )}
 
           <DrawerItem name="CPU">
-            {hasCpuMetrics ? `${pod.cpu || '-'} / ${pod.cpu_capacity || '-'} (${Math.round(cpuPercent)}%)` : pod.cpu || '-'}
+            {hasCpuMetrics
+              ? `${formatCpuRange(pod.cpu, pod.cpu_capacity)} (${Math.round(cpuPercent)}%)`
+              : pod.cpu
+                ? `${formatCpuCores(parseCpuToCores(pod.cpu))} cores`
+                : '—'}
           </DrawerItem>
           {hasCpuMetrics && (
             <div className="h-2 rounded-full overflow-hidden mb-2" style={{ backgroundColor: 'var(--color-hover)' }}>

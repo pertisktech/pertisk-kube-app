@@ -202,16 +202,15 @@ export const CollapsibleSection = ({
         className="w-full px-4 py-2 flex items-center justify-between cursor-pointer hover:opacity-80 transition-colors"
         style={{
           backgroundColor: 'var(--color-surface)',
-          color: 'var(--color-muted)',
           borderBottom: expanded ? '1px solid var(--color-border)' : 'none',
         }}
         onClick={() => setExpanded((e) => !e)}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" style={{ color: 'var(--color-muted)' }}>
           {Icon && <Icon size={12} />}
           <span className="text-xs font-semibold uppercase tracking-wider">{title}</span>
         </div>
-        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        <span style={{ color: 'var(--color-primary)' }}>{expanded ? <ChevronUp size={16} color="var(--color-primary)" /> : <ChevronDown size={16} color="var(--color-primary)" />}</span>
       </button>
       {expanded && (
         <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
@@ -316,13 +315,12 @@ export const DetailLabelsSection = ({ labels }: { labels?: Record<string, string
         className="w-full px-4 py-2 flex items-center justify-between cursor-pointer hover:opacity-80 transition-colors"
         style={{
           backgroundColor: 'var(--color-surface)',
-          color: 'var(--color-muted)',
           borderBottom: expanded ? '1px solid var(--color-border)' : 'none',
         }}
         onClick={() => setExpanded((e) => !e)}
       >
-        <span className="text-xs font-semibold uppercase tracking-wider">Labels ({count})</span>
-        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>Labels ({count})</span>
+        <span style={{ color: 'var(--color-primary)' }}>{expanded ? <ChevronUp size={16} color="var(--color-primary)" /> : <ChevronDown size={16} color="var(--color-primary)" />}</span>
       </button>
       {expanded && (
         <div className="divide-y px-4" style={{ borderColor: 'var(--color-border)' }}>
@@ -364,13 +362,12 @@ export const DetailAnnotationsSection = ({ annotations }: { annotations?: Record
         className="w-full px-4 py-2 flex items-center justify-between cursor-pointer hover:opacity-80 transition-colors"
         style={{
           backgroundColor: 'var(--color-surface)',
-          color: 'var(--color-muted)',
           borderBottom: expanded ? '1px solid var(--color-border)' : 'none',
         }}
         onClick={() => setExpanded((e) => !e)}
       >
-        <span className="text-xs font-semibold uppercase tracking-wider">Annotations ({count})</span>
-        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>Annotations ({count})</span>
+        <span style={{ color: 'var(--color-primary)' }}>{expanded ? <ChevronUp size={16} color="var(--color-primary)" /> : <ChevronDown size={16} color="var(--color-primary)" />}</span>
       </button>
       {expanded && (
         <div className="divide-y px-4" style={{ borderColor: 'var(--color-border)' }}>

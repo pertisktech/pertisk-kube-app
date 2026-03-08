@@ -25,7 +25,7 @@ import {
 import YAML from 'yaml';
 import { toast } from 'sonner';
 import { Terminal as TerminalComponent } from './Terminal';
-import { getHelmChartValues, installHelmChart, useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
+import { getHelmChartValues, installHelmChart, useHelmChartVersions, useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
 import { getAuthToken } from '../utils/auth';
 import { cn } from '../utils';
 
@@ -246,6 +246,9 @@ const InstallChartTabContent = ({
 }) => {
   const queryClient = useQueryClient();
   const { data: namespaces } = useNamespaces();
+  const { data: versionsList = [], isLoading: versionsLoading } = useHelmChartVersions(chart.repository_url, chart.name);
+  const versions = versionsList.length > 0 ? versionsList : [chart.version];
+  const [selectedVersion, setSelectedVersion] = useState(chart.version);
   const [namespace, setNamespace] = useState('default');
   const [releaseName, setReleaseName] = useState('');
   const [valuesYaml, setValuesYaml] = useState(HELM_DEFAULT_VALUES);
@@ -253,10 +256,24 @@ const InstallChartTabContent = ({
   const [valuesError, setValuesError] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
 
+  useEffect(() => {
+    setSelectedVersion(chart.version);
+  }, [chart.repository_url, chart.name, chart.version]);
+
+  useEffect(() => {
+    if (versions.length > 0 && !versions.includes(selectedVersion)) {
+      setSelectedVersion(versions[0]);
+    }
+  }, [versions, selectedVersion]);
+
+  useEffect(() => {
+    valuesFetchedRef.current = false;
+  }, [selectedVersion]);
+
   const { data: fetchedValues, isLoading: valuesLoading, isError: valuesFetchFailed } = useQuery({
-    queryKey: ['helm-chart-values', chart.repository_url, chart.name, chart.version],
-    queryFn: () => getHelmChartValues(chart.repository_url, chart.name, chart.version),
-    enabled: !!chart.repository_url?.trim(),
+    queryKey: ['helm-chart-values', chart.repository_url, chart.name, selectedVersion],
+    queryFn: () => getHelmChartValues(chart.repository_url, chart.name, selectedVersion),
+    enabled: !!chart.repository_url?.trim() && !!selectedVersion,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -295,7 +312,7 @@ const InstallChartTabContent = ({
         release_name: installRelease,
         repo_url: chart.repository_url,
         chart: chart.name,
-        version: chart.version,
+        version: selectedVersion,
         values_yaml: valuesYaml.trim() || '{}',
       });
       toast.success(`Release '${installRelease}' installed in namespace '${namespace}'.`);
@@ -322,7 +339,24 @@ const InstallChartTabContent = ({
             {chartRef}
           </span>
           <span className="text-text-secondary">Version</span>
-          <span className="font-mono">{chart.version}</span>
+          <select
+            value={selectedVersion}
+            onChange={(e) => setSelectedVersion(e.target.value)}
+            className="border border-border rounded px-2 py-1 bg-bg text-text font-mono focus:outline-none focus:border-primary min-w-[8rem]"
+            title="Chart version to install (default: latest)"
+          >
+            {versions.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+          {versionsLoading && (
+            <span className="inline-flex items-center gap-1 text-text-secondary">
+              <Loader size={12} className="animate-spin flex-shrink-0" />
+              versions
+            </span>
+          )}
           <span className="text-text-secondary">Namespace</span>
           <select
             value={namespace}

@@ -20,7 +20,7 @@ import {
   ExternalLink,
   Loader,
 } from '../components/Icons';
-import { timeAgo, formatMemoryUsedAlloc } from '../utils';
+import { timeAgo, formatMemoryUsedAlloc, formatCpuRange } from '../utils';
 import { K8sNode } from '../types';
 
 const CHART_USED = 'var(--color-dashboard-metric-primary)';
@@ -243,12 +243,12 @@ export const Dashboard = () => {
       accessor: (row: K8sNode) => {
         const used = row.cpu_used ?? '-';
         const alloc = row.cpu ?? '-';
-        const label = alloc !== '-' ? `${used}/${alloc}` : '-';
+        const label = alloc !== '-' ? formatCpuRange(used, alloc) : '-';
         const percent = toPercent(row.cpu_usage_percent);
         const hasMetrics = row.cpu_usage_percent != null;
         return (
           <div className="flex items-center gap-2 w-full">
-            <span className="text-xs text-text-secondary w-[5rem] flex-shrink-0 truncate" title={label}>
+            <span className="text-xs text-text-secondary min-w-[10.5rem] flex-shrink-0 whitespace-nowrap" title={label}>
               {label}
             </span>
             {hasMetrics ? (
@@ -267,7 +267,7 @@ export const Dashboard = () => {
           </div>
         );
       },
-      width: '20%',
+      width: '22%',
       sortable: true,
       sortKey: 'cpu' as NodeSortKey,
     },

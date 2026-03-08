@@ -9,7 +9,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { StatusBadge } from '../components/StatusBadge';
 import { openPanelTab } from '../components/BottomPanel';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo, formatMemoryUsedAlloc } from '../utils';
+import { timeAgo, formatMemoryUsedAlloc, formatCpuRange } from '../utils';
 import type { K8sNode } from '../types';
 
 type NodeSortKey =
@@ -221,13 +221,13 @@ export const NodesPage = () => {
       accessor: (row: K8sNode) => {
         const used = row.cpu_used ?? '-';
         const alloc = row.cpu ?? '-';
-        const label = alloc !== '-' ? `${used}/${alloc}` : '-';
+        const label = alloc !== '-' ? formatCpuRange(used, alloc) : '-';
         const percent = toPercent(row.cpu_usage_percent);
         const hasMetrics = row.cpu_usage_percent != null;
 
         return (
           <div className="flex items-center gap-2 w-full">
-            <span className="text-xs text-text-secondary w-[5rem] flex-shrink-0 truncate" title={label}>{label}</span>
+            <span className="text-xs text-text-secondary min-w-[10.5rem] flex-shrink-0 whitespace-nowrap" title={label}>{label}</span>
             {hasMetrics ? (
               <>
                 <div className="h-1.5 w-16 flex-shrink-0 rounded-full bg-hover overflow-hidden">
@@ -244,7 +244,7 @@ export const NodesPage = () => {
           </div>
         );
       },
-      width: '18%',
+      width: '20%',
       sortable: true,
       sortKey: 'cpu_pct',
     },
