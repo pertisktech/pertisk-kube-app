@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { PersistentVolume } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface PVDetailPanelProps {
   pv: PersistentVolume;
@@ -37,5 +37,7 @@ export const PVDetailPanel = ({ pv, onClose, onOpenYamlEditor, onDelete }: PVDet
       <DetailRow label="Storage Class" value={pv.storage_class ?? '-'} />
       <DetailRow label="Age" value={timeAgo(pv.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={pv.labels} />
+    <DetailAnnotationsSection annotations={pv.annotations} />
   </ResourceDetailPanelLayout>
 );

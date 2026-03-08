@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { RuntimeClass } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface RuntimeClassDetailPanelProps {
   runtimeClass: RuntimeClass;
@@ -32,5 +32,7 @@ export const RuntimeClassDetailPanel = ({ runtimeClass, onClose, onOpenYamlEdito
       <DetailRow label="Scheduling" value={runtimeClass.scheduling ?? '-'} />
       <DetailRow label="Age" value={timeAgo(runtimeClass.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={runtimeClass.labels} />
+    <DetailAnnotationsSection annotations={runtimeClass.annotations} />
   </ResourceDetailPanelLayout>
 );

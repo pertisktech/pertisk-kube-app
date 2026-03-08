@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { StatefulSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface StatefulSetDetailPanelProps {
   statefulSet: StatefulSet;
@@ -58,5 +58,7 @@ export const StatefulSetDetailPanel = ({ statefulSet, onClose, onOpenYamlEditor,
         )}
       </div>
     </DetailSection>
+    <DetailLabelsSection labels={statefulSet.labels} />
+    <DetailAnnotationsSection annotations={statefulSet.annotations} />
   </ResourceDetailPanelLayout>
 );

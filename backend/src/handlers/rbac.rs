@@ -36,11 +36,26 @@ pub async fn list_service_accounts(State(state): State<AppState>) -> impl IntoRe
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = sa
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = sa
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     ServiceAccountItem {
                         name,
                         namespace,
                         secrets,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -81,11 +96,26 @@ pub async fn list_roles(State(state): State<AppState>) -> impl IntoResponse {
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = role
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = role
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     RoleItem {
                         name,
                         namespace,
                         rules,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -128,12 +158,27 @@ pub async fn list_role_bindings(State(state): State<AppState>) -> impl IntoRespo
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = rb
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = rb
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     RoleBindingItem {
                         name,
                         namespace,
                         role,
                         subjects,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -173,10 +218,25 @@ pub async fn list_cluster_roles(State(state): State<AppState>) -> impl IntoRespo
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = cr
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = cr
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     ClusterRoleItem {
                         name,
                         rules,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -218,11 +278,26 @@ pub async fn list_cluster_role_bindings(State(state): State<AppState>) -> impl I
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = crb
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = crb
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     ClusterRoleBindingItem {
                         name,
                         role,
                         subjects,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();

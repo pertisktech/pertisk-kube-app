@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { IngressClass } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface IngressClassDetailPanelProps {
   ingressClass: IngressClass;
@@ -33,5 +33,7 @@ export const IngressClassDetailPanel = ({ ingressClass, onClose, onOpenYamlEdito
       <DetailRow label="Parameters" value={ingressClass.parameters ?? '-'} />
       <DetailRow label="Age" value={timeAgo(ingressClass.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={ingressClass.labels} />
+    <DetailAnnotationsSection annotations={ingressClass.annotations} />
   </ResourceDetailPanelLayout>
 );

@@ -2,7 +2,7 @@ import { Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Deployment } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection } from './ResourceDetailPanelLayout';
 
 interface DeploymentDetailPanelProps {
   deployment: Deployment;
@@ -250,6 +250,8 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
             Use the pencil icon above to edit deployment YAML in the bottom panel.
           </div>
         </DetailSection>
+        <DetailLabelsSection labels={deployment.labels} />
+        <DetailAnnotationsSection annotations={deployment.annotations} />
     </ResourceDetailPanelLayout>
   );
 };

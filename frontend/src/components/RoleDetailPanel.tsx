@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Role } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface RoleDetailPanelProps {
   role: Role;
@@ -32,5 +32,7 @@ export const RoleDetailPanel = ({ role, onClose, onOpenYamlEditor, onDelete }: R
       <DetailRow label="Rules" value={role.rules ?? '-'} />
       <DetailRow label="Age" value={timeAgo(role.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={role.labels} />
+    <DetailAnnotationsSection annotations={role.annotations} />
   </ResourceDetailPanelLayout>
 );

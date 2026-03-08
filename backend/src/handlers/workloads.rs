@@ -214,6 +214,19 @@ pub async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
                         .and_then(|status| status.qos_class.clone())
                         .unwrap_or_else(|| "-".to_string());
 
+                    let labels = pod
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = pod
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     PodItem {
                         name,
                         namespace,
@@ -232,6 +245,8 @@ pub async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
                         memory_usage_percent,
                         controlled_by,
                         qos,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -634,6 +649,19 @@ pub async fn list_deployments(State(state): State<AppState>) -> impl IntoRespons
                         "Pending".to_string()
                     };
 
+                    let labels = item
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = item
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     DeploymentItem {
                         name,
                         namespace,
@@ -643,6 +671,8 @@ pub async fn list_deployments(State(state): State<AppState>) -> impl IntoRespons
                         available,
                         images,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -1357,6 +1387,19 @@ pub async fn list_statefulsets(State(state): State<AppState>) -> impl IntoRespon
                         "Pending".to_string()
                     };
 
+                    let labels = item
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = item
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     StatefulSetItem {
                         name,
                         namespace,
@@ -1366,6 +1409,8 @@ pub async fn list_statefulsets(State(state): State<AppState>) -> impl IntoRespon
                         updated,
                         age,
                         images,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -1446,6 +1491,19 @@ pub async fn list_daemonsets(State(state): State<AppState>) -> impl IntoResponse
                         "Pending".to_string()
                     };
 
+                    let labels = item
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = item
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     DaemonSetItem {
                         name,
                         namespace,
@@ -1458,6 +1516,8 @@ pub async fn list_daemonsets(State(state): State<AppState>) -> impl IntoResponse
                         node_selector,
                         age,
                         images,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -1524,6 +1584,19 @@ pub async fn list_replicasets(State(state): State<AppState>) -> impl IntoRespons
                         "Pending".to_string()
                     };
 
+                    let labels = item
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = item
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     ReplicaSetItem {
                         name,
                         namespace,
@@ -1534,6 +1607,8 @@ pub async fn list_replicasets(State(state): State<AppState>) -> impl IntoRespons
                         available,
                         age,
                         images,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -1692,6 +1767,19 @@ pub async fn list_jobs(State(state): State<AppState>) -> impl IntoResponse {
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = item
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = item
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     JobItem {
                         name,
                         namespace,
@@ -1699,6 +1787,8 @@ pub async fn list_jobs(State(state): State<AppState>) -> impl IntoResponse {
                         completions,
                         duration,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -1761,6 +1851,20 @@ pub async fn list_cronjobs(State(state): State<AppState>) -> impl IntoResponse {
                         .creation_timestamp
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
+
+                    let labels = item
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = item
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     CronJobItem {
                         name,
                         namespace,
@@ -1771,6 +1875,8 @@ pub async fn list_cronjobs(State(state): State<AppState>) -> impl IntoResponse {
                         next_execution,
                         time_zone,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();

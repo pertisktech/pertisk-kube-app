@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { PriorityClass } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface PriorityClassDetailPanelProps {
   priorityClass: PriorityClass;
@@ -32,5 +32,7 @@ export const PriorityClassDetailPanel = ({ priorityClass, onClose, onOpenYamlEdi
       <DetailRow label="Global Default" value={priorityClass.global_default ? 'Yes' : 'No'} />
       <DetailRow label="Age" value={timeAgo(priorityClass.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={priorityClass.labels} />
+    <DetailAnnotationsSection annotations={priorityClass.annotations} />
   </ResourceDetailPanelLayout>
 );

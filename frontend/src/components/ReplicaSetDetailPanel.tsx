@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { ReplicaSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface ReplicaSetDetailPanelProps {
   replicaSet: ReplicaSet;
@@ -59,5 +59,7 @@ export const ReplicaSetDetailPanel = ({ replicaSet, onClose, onOpenYamlEditor, o
         )}
       </div>
     </DetailSection>
+    <DetailLabelsSection labels={replicaSet.labels} />
+    <DetailAnnotationsSection annotations={replicaSet.annotations} />
   </ResourceDetailPanelLayout>
 );

@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { DaemonSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface DaemonSetDetailPanelProps {
   daemonSet: DaemonSet;
@@ -74,6 +74,8 @@ export const DaemonSetDetailPanel = ({ daemonSet, onClose, onOpenYamlEditor, onD
           )}
         </div>
       </DetailSection>
+      <DetailLabelsSection labels={daemonSet.labels} />
+      <DetailAnnotationsSection annotations={daemonSet.annotations} />
     </ResourceDetailPanelLayout>
   );
 };

@@ -11,6 +11,8 @@ export {
   ResourceDetailPanelLayout,
   DetailSection,
   DetailRow,
+  DetailLabelsSection,
+  DetailAnnotationsSection,
   PanelActionButton,
   type KeyInfoItem,
 } from './ResourceDetailPanelLayout';

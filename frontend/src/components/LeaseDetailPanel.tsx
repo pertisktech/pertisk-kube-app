@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Lease } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface LeaseDetailPanelProps {
   lease: Lease;
@@ -33,5 +33,7 @@ export const LeaseDetailPanel = ({ lease, onClose, onOpenYamlEditor, onDelete }:
       <DetailRow label="Lease Duration" value={lease.lease_duration_seconds != null ? `${lease.lease_duration_seconds}s` : '-'} />
       <DetailRow label="Age" value={timeAgo(lease.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={lease.labels} />
+    <DetailAnnotationsSection annotations={lease.annotations} />
   </ResourceDetailPanelLayout>
 );

@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { ClusterRole } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface ClusterRoleDetailPanelProps {
   clusterRole: ClusterRole;
@@ -30,5 +30,7 @@ export const ClusterRoleDetailPanel = ({ clusterRole: cr, onClose, onOpenYamlEdi
       <DetailRow label="Rules" value={cr.rules ?? '-'} />
       <DetailRow label="Age" value={timeAgo(cr.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={cr.labels} />
+    <DetailAnnotationsSection annotations={cr.annotations} />
   </ResourceDetailPanelLayout>
 );

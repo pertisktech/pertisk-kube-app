@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { ServiceAccount } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface ServiceAccountDetailPanelProps {
   serviceAccount: ServiceAccount;
@@ -32,5 +32,7 @@ export const ServiceAccountDetailPanel = ({ serviceAccount: sa, onClose, onOpenY
       <DetailRow label="Secrets" value={sa.secrets ?? '-'} />
       <DetailRow label="Age" value={timeAgo(sa.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={sa.labels} />
+    <DetailAnnotationsSection annotations={sa.annotations} />
   </ResourceDetailPanelLayout>
 );

@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { PDB } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface PDBDetailPanelProps {
   pdb: PDB;
@@ -34,5 +34,7 @@ export const PDBDetailPanel = ({ pdb, onClose, onOpenYamlEditor, onDelete }: PDB
       <DetailRow label="Status" value={pdb.status ?? '-'} />
       <DetailRow label="Age" value={timeAgo(pdb.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={pdb.labels} />
+    <DetailAnnotationsSection annotations={pdb.annotations} />
   </ResourceDetailPanelLayout>
 );

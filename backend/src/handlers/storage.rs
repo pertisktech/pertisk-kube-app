@@ -75,6 +75,19 @@ pub async fn list_persistent_volumes(State(state): State<AppState>) -> impl Into
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = pv
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = pv
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     PersistentVolumeItem {
                         name,
                         capacity,
@@ -84,6 +97,8 @@ pub async fn list_persistent_volumes(State(state): State<AppState>) -> impl Into
                         claim,
                         storage_class,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -151,6 +166,19 @@ pub async fn list_persistent_volume_claims(State(state): State<AppState>) -> imp
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = pvc
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = pvc
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     PersistentVolumeClaimItem {
                         name,
                         namespace,
@@ -160,6 +188,8 @@ pub async fn list_persistent_volume_claims(State(state): State<AppState>) -> imp
                         access_modes,
                         storage_class,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -220,6 +250,19 @@ pub async fn list_storage_classes(State(state): State<AppState>) -> impl IntoRes
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = sc
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = sc
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     StorageClassItem {
                         name,
                         provisioner,
@@ -228,6 +271,8 @@ pub async fn list_storage_classes(State(state): State<AppState>) -> impl IntoRes
                         allow_volume_expansion,
                         is_default,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();

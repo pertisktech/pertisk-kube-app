@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { CronJob } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface CronJobDetailPanelProps {
   cronJob: CronJob;
@@ -39,5 +39,7 @@ export const CronJobDetailPanel = ({ cronJob, onClose, onOpenYamlEditor, onDelet
       <DetailRow label="Time Zone" value={cronJob.time_zone ?? '-'} />
       <DetailRow label="Age" value={timeAgo(cronJob.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={cronJob.labels} />
+    <DetailAnnotationsSection annotations={cronJob.annotations} />
   </ResourceDetailPanelLayout>
 );

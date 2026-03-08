@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Endpoint } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface EndpointDetailPanelProps {
   endpoint: Endpoint;
@@ -34,5 +34,7 @@ export const EndpointDetailPanel = ({ endpoint, onClose, onOpenYamlEditor, onDel
       <DetailRow label="Ports" value={endpoint.ports ?? '-'} mono />
       <DetailRow label="Age" value={timeAgo(endpoint.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={endpoint.labels} />
+    <DetailAnnotationsSection annotations={endpoint.annotations} />
   </ResourceDetailPanelLayout>
 );

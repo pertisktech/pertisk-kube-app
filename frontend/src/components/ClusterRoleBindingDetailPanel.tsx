@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { ClusterRoleBinding } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface ClusterRoleBindingDetailPanelProps {
   clusterRoleBinding: ClusterRoleBinding;
@@ -32,5 +32,7 @@ export const ClusterRoleBindingDetailPanel = ({ clusterRoleBinding: crb, onClose
       <DetailRow label="Subjects" value={crb.subjects ?? '-'} />
       <DetailRow label="Age" value={timeAgo(crb.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={crb.labels} />
+    <DetailAnnotationsSection annotations={crb.annotations} />
   </ResourceDetailPanelLayout>
 );

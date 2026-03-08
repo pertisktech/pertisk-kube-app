@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Secret } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection } from './ResourceDetailPanelLayout';
 
 interface SecretDetailPanelProps {
   secret: Secret;
@@ -56,6 +56,8 @@ export const SecretDetailPanel = ({ secret, onClose, onOpenYamlEditor, onDelete 
         <DetailRow label="Data keys" value={secret.data_keys ?? '-'} />
         <DetailRow label="Age" value={timeAgo(secret.age)} />
       </DetailSection>
+      <DetailLabelsSection labels={secret.labels} />
+      <DetailAnnotationsSection annotations={secret.annotations} />
     </ResourceDetailPanelLayout>
   );
 };

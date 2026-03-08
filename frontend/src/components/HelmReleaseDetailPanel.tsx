@@ -1,7 +1,7 @@
 import { Upload, Trash2 } from 'lucide-react';
 import type { HelmRelease } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 const getStatusClass = (status: string) => {
   const s = status.toLowerCase();
@@ -49,5 +49,7 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYaml, onDelete 
       <DetailRow label="Revision" value={release.revision ?? '-'} />
       <DetailRow label="Last Updated" value={release.updated ? timeAgo(release.updated) : '-'} />
     </DetailSection>
+    <DetailLabelsSection labels={release.labels} />
+    <DetailAnnotationsSection annotations={release.annotations} />
   </ResourceDetailPanelLayout>
 );

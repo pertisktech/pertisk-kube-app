@@ -14,6 +14,8 @@ export interface HelmRelease {
   app_version: string;
   status: string;
   updated: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface HelmChart {
@@ -132,6 +134,8 @@ export interface Deployment {
   available: number;
   age: string;
   images: string[];
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface StatefulSet {
@@ -143,6 +147,8 @@ export interface StatefulSet {
   updated: number;
   age: string;
   images: string[];
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface DaemonSet {
@@ -157,6 +163,8 @@ export interface DaemonSet {
   node_selector: Record<string, string>;
   age: string;
   images: string[];
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface ReplicaSet {
@@ -169,6 +177,8 @@ export interface ReplicaSet {
   available: number;
   age: string;
   images: string[];
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface Job {
@@ -178,6 +188,8 @@ export interface Job {
   completions: string;
   duration: string;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface CronJob {
@@ -190,6 +202,8 @@ export interface CronJob {
   next_execution: string;
   time_zone: string;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface KubernetesEvent {
@@ -267,6 +281,8 @@ export interface ConfigMap {
   namespace: string;
   data_keys: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface Secret {
@@ -275,6 +291,8 @@ export interface Secret {
   secret_type: string;
   data_keys: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface ResourceQuota {
@@ -282,6 +300,8 @@ export interface ResourceQuota {
   namespace: string;
   status: string;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface LimitRange {
@@ -289,6 +309,8 @@ export interface LimitRange {
   namespace: string;
   limits: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface HPA {
@@ -301,6 +323,8 @@ export interface HPA {
   min_replicas: number;
   max_replicas: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface PDB {
@@ -310,6 +334,8 @@ export interface PDB {
   allowed_disruptions: number;
   status: string;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface PriorityClass {
@@ -317,6 +343,8 @@ export interface PriorityClass {
   value: number;
   global_default: boolean;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface RuntimeClass {
@@ -324,6 +352,8 @@ export interface RuntimeClass {
   handler: string;
   scheduling: string;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface Lease {
@@ -332,6 +362,8 @@ export interface Lease {
   holder_identity: string;
   lease_duration_seconds: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 // Network Resources
@@ -343,6 +375,8 @@ export interface Service {
   external_ip: string;
   ports: string;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface Endpoint {
@@ -352,6 +386,8 @@ export interface Endpoint {
   not_ready: number;
   ports: string;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface Ingress {
@@ -362,6 +398,8 @@ export interface Ingress {
   address: string;
   rules: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface IngressClass {
@@ -370,6 +408,8 @@ export interface IngressClass {
   is_default: boolean;
   parameters: string;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface NetworkPolicy {
@@ -380,6 +420,8 @@ export interface NetworkPolicy {
   ingress_rules: number;
   egress_rules: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 // Storage Resources
@@ -392,6 +434,8 @@ export interface PersistentVolume {
   claim: string;
   storage_class: string;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface PersistentVolumeClaim {
@@ -403,6 +447,8 @@ export interface PersistentVolumeClaim {
   access_modes: string;
   storage_class: string;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface StorageClass {
@@ -413,6 +459,8 @@ export interface StorageClass {
   allow_volume_expansion: boolean;
   is_default: boolean;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 // Access Control (RBAC) Resources
@@ -421,6 +469,8 @@ export interface ServiceAccount {
   namespace: string;
   secrets: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface Role {
@@ -428,6 +478,8 @@ export interface Role {
   namespace: string;
   rules: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface RoleBinding {
@@ -436,12 +488,16 @@ export interface RoleBinding {
   role: string;
   subjects: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface ClusterRole {
   name: string;
   rules: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 export interface ClusterRoleBinding {
@@ -449,4 +505,6 @@ export interface ClusterRoleBinding {
   role: string;
   subjects: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }

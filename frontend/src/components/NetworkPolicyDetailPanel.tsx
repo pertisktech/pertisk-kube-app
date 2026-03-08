@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { NetworkPolicy } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface NetworkPolicyDetailPanelProps {
   networkPolicy: NetworkPolicy;
@@ -35,5 +35,7 @@ export const NetworkPolicyDetailPanel = ({ networkPolicy, onClose, onOpenYamlEdi
       <DetailRow label="Egress Rules" value={networkPolicy.egress_rules ?? 0} />
       <DetailRow label="Age" value={timeAgo(networkPolicy.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={networkPolicy.labels} />
+    <DetailAnnotationsSection annotations={networkPolicy.annotations} />
   </ResourceDetailPanelLayout>
 );

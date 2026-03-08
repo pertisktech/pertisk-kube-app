@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { PersistentVolumeClaim } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface PVCDetailPanelProps {
   pvc: PersistentVolumeClaim;
@@ -37,5 +37,7 @@ export const PVCDetailPanel = ({ pvc, onClose, onOpenYamlEditor, onDelete }: PVC
       <DetailRow label="Storage Class" value={pvc.storage_class ?? '-'} />
       <DetailRow label="Age" value={timeAgo(pvc.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={pvc.labels} />
+    <DetailAnnotationsSection annotations={pvc.annotations} />
   </ResourceDetailPanelLayout>
 );

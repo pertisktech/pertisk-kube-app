@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 import type { StorageClass } from '../types';
 import { timeAgo } from '../utils';
 import { StatusBadge } from './StatusBadge';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface StorageClassDetailPanelProps {
   storageClass: StorageClass;
@@ -36,5 +36,7 @@ export const StorageClassDetailPanel = ({ storageClass, onClose, onOpenYamlEdito
       <DetailRow label="Default" value={storageClass.is_default ? <StatusBadge status="Default" /> : 'No'} />
       <DetailRow label="Age" value={timeAgo(storageClass.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={storageClass.labels} />
+    <DetailAnnotationsSection annotations={storageClass.annotations} />
   </ResourceDetailPanelLayout>
 );

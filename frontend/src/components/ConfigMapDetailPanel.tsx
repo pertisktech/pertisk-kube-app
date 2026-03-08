@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { ConfigMap } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection } from './ResourceDetailPanelLayout';
 
 interface ConfigMapDetailPanelProps {
   configMap: ConfigMap;
@@ -55,6 +55,8 @@ export const ConfigMapDetailPanel = ({ configMap, onClose, onOpenYamlEditor, onD
         <DetailRow label="Data keys" value={configMap.data_keys ?? '-'} />
         <DetailRow label="Age" value={timeAgo(configMap.age)} />
       </DetailSection>
+      <DetailLabelsSection labels={configMap.labels} />
+      <DetailAnnotationsSection annotations={configMap.annotations} />
     </ResourceDetailPanelLayout>
   );
 };

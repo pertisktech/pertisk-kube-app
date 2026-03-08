@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { LimitRange } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface LimitRangeDetailPanelProps {
   limitRange: LimitRange;
@@ -32,5 +32,7 @@ export const LimitRangeDetailPanel = ({ limitRange, onClose, onOpenYamlEditor, o
       <DetailRow label="Limits" value={limitRange.limits ?? '-'} />
       <DetailRow label="Age" value={timeAgo(limitRange.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={limitRange.labels} />
+    <DetailAnnotationsSection annotations={limitRange.annotations} />
   </ResourceDetailPanelLayout>
 );

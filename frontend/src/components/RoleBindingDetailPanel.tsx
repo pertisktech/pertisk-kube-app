@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { RoleBinding } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface RoleBindingDetailPanelProps {
   roleBinding: RoleBinding;
@@ -33,5 +33,7 @@ export const RoleBindingDetailPanel = ({ roleBinding: rb, onClose, onOpenYamlEdi
       <DetailRow label="Subjects" value={rb.subjects ?? '-'} />
       <DetailRow label="Age" value={timeAgo(rb.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={rb.labels} />
+    <DetailAnnotationsSection annotations={rb.annotations} />
   </ResourceDetailPanelLayout>
 );

@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Service } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection } from './ResourceDetailPanelLayout';
 
 interface ServiceDetailPanelProps {
   service: Service;
@@ -58,6 +58,8 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
         <DetailRow label="Ports" value={service.ports ?? '-'} mono />
         <DetailRow label="Age" value={timeAgo(service.age)} />
       </DetailSection>
+      <DetailLabelsSection labels={service.labels} />
+      <DetailAnnotationsSection annotations={service.annotations} />
     </ResourceDetailPanelLayout>
   );
 };

@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { HPA } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface HPADetailPanelProps {
   hpa: HPA;
@@ -35,5 +35,7 @@ export const HPADetailPanel = ({ hpa, onClose, onOpenYamlEditor, onDelete }: HPA
       <DetailRow label="Targets" value={hpa.targets ?? '-'} />
       <DetailRow label="Age" value={timeAgo(hpa.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={hpa.labels} />
+    <DetailAnnotationsSection annotations={hpa.annotations} />
   </ResourceDetailPanelLayout>
 );

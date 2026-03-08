@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { ResourceQuota } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface ResourceQuotaDetailPanelProps {
   resourceQuota: ResourceQuota;
@@ -32,5 +32,7 @@ export const ResourceQuotaDetailPanel = ({ resourceQuota, onClose, onOpenYamlEdi
       <DetailRow label="Status" value={resourceQuota.status ?? '-'} />
       <DetailRow label="Age" value={timeAgo(resourceQuota.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={resourceQuota.labels} />
+    <DetailAnnotationsSection annotations={resourceQuota.annotations} />
   </ResourceDetailPanelLayout>
 );

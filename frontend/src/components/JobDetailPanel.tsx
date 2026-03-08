@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Job } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
 
 interface JobDetailPanelProps {
   job: Job;
@@ -45,5 +45,7 @@ export const JobDetailPanel = ({ job, onClose, onOpenYamlEditor, onDelete }: Job
       <DetailRow label="Duration" value={job.duration ?? '-'} />
       <DetailRow label="Age" value={timeAgo(job.age)} />
     </DetailSection>
+    <DetailLabelsSection labels={job.labels} />
+    <DetailAnnotationsSection annotations={job.annotations} />
   </ResourceDetailPanelLayout>
 );

@@ -43,6 +43,10 @@ pub struct PodItem {
     pub memory_usage_percent: Option<f64>,
     pub controlled_by: String,
     pub qos: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -96,6 +100,10 @@ pub struct DeploymentItem {
     pub available: i32,
     pub images: Vec<String>,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -108,6 +116,10 @@ pub struct StatefulSetItem {
     pub updated: i32,
     pub age: String,
     pub images: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -123,6 +135,10 @@ pub struct DaemonSetItem {
     pub node_selector: std::collections::BTreeMap<String, String>,
     pub age: String,
     pub images: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -136,6 +152,10 @@ pub struct ReplicaSetItem {
     pub available: i32,
     pub age: String,
     pub images: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -146,6 +166,10 @@ pub struct JobItem {
     pub completions: String,
     pub duration: String,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -159,6 +183,10 @@ pub struct CronJobItem {
     pub next_execution: String,
     pub time_zone: String,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -167,6 +195,10 @@ pub struct ConfigMapItem {
     pub namespace: String,
     pub data_keys: usize,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -176,6 +208,10 @@ pub struct SecretItem {
     pub secret_type: String,
     pub data_keys: usize,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -184,6 +220,10 @@ pub struct ResourceQuotaItem {
     pub namespace: String,
     pub status: String,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -192,6 +232,10 @@ pub struct LimitRangeItem {
     pub namespace: String,
     pub limits: usize,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -205,6 +249,10 @@ pub struct HPAItem {
     pub min_replicas: i32,
     pub max_replicas: i32,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -215,6 +263,10 @@ pub struct PDBItem {
     pub allowed_disruptions: i32,
     pub status: String,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -223,6 +275,10 @@ pub struct PriorityClassItem {
     pub value: i32,
     pub global_default: bool,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -231,6 +287,10 @@ pub struct RuntimeClassItem {
     pub handler: String,
     pub scheduling: String,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -240,6 +300,10 @@ pub struct LeaseItem {
     pub holder_identity: String,
     pub lease_duration_seconds: i32,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -251,6 +315,10 @@ pub struct ServiceItem {
     pub external_ip: String,
     pub ports: String,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -261,6 +329,10 @@ pub struct EndpointItem {
     pub not_ready: usize,
     pub ports: String,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -272,6 +344,10 @@ pub struct IngressItem {
     pub address: String,
     pub rules: usize,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -281,6 +357,10 @@ pub struct IngressClassItem {
     pub is_default: bool,
     pub parameters: String,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -292,6 +372,10 @@ pub struct NetworkPolicyItem {
     pub ingress_rules: usize,
     pub egress_rules: usize,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -304,6 +388,10 @@ pub struct PersistentVolumeItem {
     pub claim: String,
     pub storage_class: String,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -316,6 +404,10 @@ pub struct PersistentVolumeClaimItem {
     pub access_modes: String,
     pub storage_class: String,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -327,6 +419,10 @@ pub struct StorageClassItem {
     pub allow_volume_expansion: bool,
     pub is_default: bool,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -335,6 +431,10 @@ pub struct ServiceAccountItem {
     pub namespace: String,
     pub secrets: usize,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -343,6 +443,10 @@ pub struct RoleItem {
     pub namespace: String,
     pub rules: usize,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -352,6 +456,10 @@ pub struct RoleBindingItem {
     pub role: String,
     pub subjects: usize,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -359,6 +467,10 @@ pub struct ClusterRoleItem {
     pub name: String,
     pub rules: usize,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]
@@ -367,6 +479,10 @@ pub struct ClusterRoleBindingItem {
     pub role: String,
     pub subjects: usize,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize)]

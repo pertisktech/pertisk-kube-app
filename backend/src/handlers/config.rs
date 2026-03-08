@@ -29,11 +29,25 @@ pub async fn list_configmaps(State(state): State<AppState>) -> impl IntoResponse
                         .as_ref()
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
+                    let labels = cm
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = cm
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
                     ConfigMapItem {
                         name,
                         namespace,
                         data_keys,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -67,12 +81,26 @@ pub async fn list_secrets(State(state): State<AppState>) -> impl IntoResponse {
                         .as_ref()
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
+                    let labels = secret
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = secret
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
                     SecretItem {
                         name,
                         namespace,
                         secret_type,
                         data_keys,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -105,11 +133,25 @@ pub async fn list_resourcequotas(State(state): State<AppState>) -> impl IntoResp
                         .as_ref()
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
+                    let labels = rq
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = rq
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
                     ResourceQuotaItem {
                         name,
                         namespace,
                         status,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -146,11 +188,25 @@ pub async fn list_limitranges(State(state): State<AppState>) -> impl IntoRespons
                         .as_ref()
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
+                    let labels = lr
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = lr
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
                     LimitRangeItem {
                         name,
                         namespace,
                         limits,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -195,6 +251,18 @@ pub async fn list_hpa(State(state): State<AppState>) -> impl IntoResponse {
                         .as_ref()
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
+                    let labels = hpa
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = hpa
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
                     HPAItem {
                         name,
                         namespace,
@@ -205,6 +273,8 @@ pub async fn list_hpa(State(state): State<AppState>) -> impl IntoResponse {
                         min_replicas,
                         max_replicas,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -251,6 +321,18 @@ pub async fn list_pdb(State(state): State<AppState>) -> impl IntoResponse {
                         .as_ref()
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
+                    let labels = pdb
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = pdb
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
                     PDBItem {
                         name,
                         namespace,
@@ -258,6 +340,8 @@ pub async fn list_pdb(State(state): State<AppState>) -> impl IntoResponse {
                         allowed_disruptions,
                         status,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -290,11 +374,25 @@ pub async fn list_priorityclasses(State(state): State<AppState>) -> impl IntoRes
                         .as_ref()
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
+                    let labels = pc
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = pc
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
                     PriorityClassItem {
                         name,
                         value,
                         global_default,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -341,11 +439,25 @@ pub async fn list_runtimeclasses(State(state): State<AppState>) -> impl IntoResp
                         .as_ref()
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
+                    let labels = rc
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = rc
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
                     RuntimeClassItem {
                         name,
                         handler,
                         scheduling,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -394,12 +506,26 @@ pub async fn list_leases(State(state): State<AppState>) -> impl IntoResponse {
                         .as_ref()
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
+                    let labels = lease
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = lease
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
                     LeaseItem {
                         name,
                         namespace,
                         holder_identity,
                         lease_duration_seconds,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();

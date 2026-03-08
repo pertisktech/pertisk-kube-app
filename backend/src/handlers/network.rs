@@ -82,6 +82,19 @@ pub async fn list_services(State(state): State<AppState>) -> impl IntoResponse {
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = svc
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = svc
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     ServiceItem {
                         name,
                         namespace,
@@ -90,6 +103,8 @@ pub async fn list_services(State(state): State<AppState>) -> impl IntoResponse {
                         external_ip,
                         ports,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -158,6 +173,19 @@ pub async fn list_endpoints(State(state): State<AppState>) -> impl IntoResponse 
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = ep
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = ep
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     EndpointItem {
                         name,
                         namespace,
@@ -165,6 +193,8 @@ pub async fn list_endpoints(State(state): State<AppState>) -> impl IntoResponse 
                         not_ready,
                         ports,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -251,6 +281,19 @@ pub async fn list_ingresses(State(state): State<AppState>) -> impl IntoResponse 
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = ing
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = ing
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     IngressItem {
                         name,
                         namespace,
@@ -259,6 +302,8 @@ pub async fn list_ingresses(State(state): State<AppState>) -> impl IntoResponse 
                         address,
                         rules,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -312,12 +357,27 @@ pub async fn list_ingressclasses(State(state): State<AppState>) -> impl IntoResp
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = ing_class
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = ing_class
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     IngressClassItem {
                         name,
                         controller,
                         is_default,
                         parameters,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();
@@ -389,6 +449,19 @@ pub async fn list_networkpolicies(State(state): State<AppState>) -> impl IntoRes
                         .map(|t| t.0.to_rfc3339())
                         .unwrap_or_default();
 
+                    let labels = policy
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| serde_json::to_value(l).ok())
+                        .and_then(|v| v.as_object().cloned());
+                    let annotations = policy
+                        .metadata
+                        .annotations
+                        .as_ref()
+                        .and_then(|a| serde_json::to_value(a).ok())
+                        .and_then(|v| v.as_object().cloned());
+
                     NetworkPolicyItem {
                         name,
                         namespace,
@@ -397,6 +470,8 @@ pub async fn list_networkpolicies(State(state): State<AppState>) -> impl IntoRes
                         ingress_rules,
                         egress_rules,
                         age,
+                        labels,
+                        annotations,
                     }
                 })
                 .collect();

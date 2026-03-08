@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { X } from 'lucide-react';
+import { X, ChevronDown } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import { ResizablePanel } from './ResizablePanel';
 
@@ -146,3 +146,79 @@ export const DetailRow = ({
     </span>
   </div>
 );
+
+/** Expandable Labels section (same style as Node/Pod). Always visible; shows count and empty state when no labels. */
+export const DetailLabelsSection = ({ labels }: { labels?: Record<string, string> | null }) => {
+  const [expanded, setExpanded] = useState(true);
+  const entries = labels && typeof labels === 'object' && !Array.isArray(labels) ? Object.entries(labels) : [];
+  const count = entries.length;
+  return (
+    <section className="bg-surface border border-border rounded-lg p-3.5">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="w-full flex items-center justify-between"
+      >
+        <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
+          Labels ({count})
+        </h3>
+        <ChevronDown
+          size={14}
+          className={`transform transition-transform text-text-secondary ${expanded ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {expanded && (
+        <div className="space-y-2 text-xs mt-3 pt-3 border-t border-border">
+          {count > 0 ? (
+            entries.map(([key, value]) => (
+              <div key={key} className="flex items-start justify-between gap-2">
+                <span className="text-text-secondary truncate">{key}:</span>
+                <span className="text-text font-medium text-right break-all">{value}</span>
+              </div>
+            ))
+          ) : (
+            <p className="text-text-secondary">No labels</p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+};
+
+/** Expandable Annotations section (same style as Node/Pod). Always visible; shows count and empty state when no annotations. */
+export const DetailAnnotationsSection = ({ annotations }: { annotations?: Record<string, string> | null }) => {
+  const [expanded, setExpanded] = useState(true);
+  const entries = annotations && typeof annotations === 'object' && !Array.isArray(annotations) ? Object.entries(annotations) : [];
+  const count = entries.length;
+  return (
+    <section className="bg-surface border border-border rounded-lg p-3.5">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="w-full flex items-center justify-between"
+      >
+        <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
+          Annotations ({count})
+        </h3>
+        <ChevronDown
+          size={14}
+          className={`transform transition-transform text-text-secondary ${expanded ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {expanded && (
+        <div className="space-y-2 text-xs mt-3 pt-3 border-t border-border">
+          {count > 0 ? (
+            entries.map(([key, value]) => (
+              <div key={key} className="flex items-start justify-between gap-2">
+                <span className="text-text-secondary truncate">{key}:</span>
+                <span className="text-text font-medium text-right break-all">{value}</span>
+              </div>
+            ))
+          ) : (
+            <p className="text-text-secondary">No annotations</p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+};
