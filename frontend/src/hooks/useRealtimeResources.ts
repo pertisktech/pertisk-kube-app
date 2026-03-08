@@ -803,11 +803,27 @@ function transformCrd(raw: any): Crd {
   const metadata = raw.metadata || {};
   const spec = raw.spec || {};
   const names = spec.names || {};
-  const versions = (spec.versions || []).map((v: any) => ({
+  const versionsList = spec.versions || [];
+  const versions = versionsList.map((v: any) => ({
     name: v.name || '',
     served: v.served === true,
     storage: v.storage === true,
   }));
+  // Preferred version = storage version; get additionalPrinterColumns (v1) or additional_printer_columns (Rust/snake)
+  const preferred = versionsList.find((v: any) => v.storage === true) || versionsList[0];
+  const additionalPrinterColumns =
+    preferred?.additionalPrinterColumns ?? preferred?.additional_printer_columns ?? [];
+  const printer_columns: { name: string; jsonPath: string; type?: string; priority?: number }[] =
+    additionalPrinterColumns
+      .filter((col: any) => col && (col.name || col.jsonPath || col.json_path))
+      .map((col: any) => ({
+        name: col.name ?? '',
+        jsonPath: col.jsonPath ?? col.json_path ?? '',
+        type: col.type,
+        priority: col.priority,
+      }))
+      .filter((c: { name: string; jsonPath: string }) => c.jsonPath && c.name.toLowerCase() !== 'age');
+
   return {
     name: metadata.name || '',
     group: spec.group || '',
@@ -817,6 +833,7 @@ function transformCrd(raw: any): Crd {
     plural: names.plural || '',
     short_names: names.short_names || [],
     versions,
+    printer_columns: printer_columns.length > 0 ? printer_columns : undefined,
     created_at: metadata.creationTimestamp ? new Date(metadata.creationTimestamp).toISOString() : null,
   };
 }

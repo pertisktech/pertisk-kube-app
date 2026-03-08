@@ -1,16 +1,36 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import YAML from 'yaml';
-import { ChevronDown, Layers, Pencil, Trash2, X } from 'lucide-react';
+import { ChevronDown, Clock, Layers, Pencil, Trash2 } from 'lucide-react';
 import { useRealtimeCrds, useRealtimeCustomResources } from '../hooks/useRealtimeResources';
 import { deleteCustomResource } from '../hooks/useKubernetes';
 import { DataTable } from '../components';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import {
+  ResourceDetailPanelLayout,
+  DetailSection,
+  DetailRow,
+  PanelActionButton,
+  CollapsibleSection,
+} from '../components/ResourceDetailPanelLayout';
 import { useNamespace } from '../context/NamespaceContext';
 import { openPanelTab } from '../components/BottomPanel';
-import { timeAgo } from '../utils';
+import { timeAgo, safeJsonPathValue, formatJsonValue } from '../utils';
 import { getAuthToken } from '../utils/auth';
-import type { CustomResource } from '../types';
+import type { CustomResource, Crd, CrdPrinterColumn } from '../types';
+
+/** Build a K8s-like object from CustomResource for JSONPath resolution (.metadata, .spec, .status) */
+function resourceObjectForJsonPath(item: CustomResource): Record<string, unknown> {
+  return {
+    metadata: {
+      name: item.name,
+      namespace: item.namespace ?? '',
+      creationTimestamp: item.created_at ?? null,
+    },
+    spec: item.spec ?? {},
+    status: item.status ?? {},
+  };
+}
 
 const sanitizeCrdYamlForEdit = (yamlText: string): string => {
   try {
@@ -111,95 +131,113 @@ const JsonTree = ({ value, depth = 0 }: { value: unknown; depth?: number }) => {
   return <span>{String(value)}</span>;
 };
 
+/** Format a printer column value for display (same style as other detail panels) */
+function formatDetailValue(value: unknown): React.ReactNode {
+  if (value == null) return '—';
+  if (typeof value === 'boolean') return value ? 'True' : 'False';
+  if (typeof value === 'object') return JSON.stringify(value, null, 2);
+  return String(value);
+}
+
+/** Humanized label from CRD column name */
+function drawerLabel(name: string): string {
+  return name.replace(/([A-Z])/g, ' $1').trim() || name;
+}
+
 const DetailPanel = ({
   item,
+  crd,
   onClose,
   onEditYaml,
   onDelete,
 }: {
   item: CustomResource;
+  crd: Crd | undefined;
   onClose: () => void;
   onEditYaml: (item: CustomResource) => void;
   onDelete: (item: CustomResource) => void;
-}) => (
-  <>
-    {/* Backdrop — click anywhere outside to dismiss, covers all screen sizes */}
-    <div
-      className="fixed inset-0 z-[110] bg-black/20"
-      onClick={onClose}
-      aria-hidden="true"
-    />
-    <div className="fixed inset-y-0 right-0 z-[120] w-[480px] max-w-[100vw] bg-surface border-l border-border shadow-xl flex flex-col overflow-hidden">
-    <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
-      <div className="flex items-center gap-2 min-w-0">
-        <Layers size={16} className="text-primary flex-shrink-0" />
-        <span className="font-semibold text-text truncate">{item.name}</span>
-      </div>
-      <button
-        type="button"
-        onClick={onClose}
-        className="p-1.5 rounded-md hover:bg-hover text-text-secondary ml-2 flex-shrink-0"
-        aria-label="Close panel"
-      >
-        <X size={16} />
-      </button>
-    </div>
-    {/* Action bar */}
-    <div className="px-4 py-2 border-b border-border flex-shrink-0">
-      <div className="bg-surface border border-border rounded-lg p-1.5 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onEditYaml(item)}
-          className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
-          aria-label="Edit YAML"
-          data-tooltip="Edit YAML"
-        >
-          <Pencil size={13} />
-        </button>
-        <button
-          type="button"
-          onClick={() => onDelete(item)}
-          className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
-          aria-label="Delete"
-          data-tooltip="Delete"
-        >
-          <Trash2 size={13} />
-        </button>
-      </div>
-    </div>
-    <div className="flex-1 overflow-y-auto p-4 space-y-4 font-mono text-xs">
-      {item.namespace && (
-        <div>
-          <p className="text-text-secondary mb-1 font-sans uppercase tracking-wide text-[10px]">Namespace</p>
-          <p className="text-text">{item.namespace}</p>
-        </div>
-      )}
-      {item.created_at && (
-        <div>
-          <p className="text-text-secondary mb-1 font-sans uppercase tracking-wide text-[10px]">Created</p>
-          <p className="text-text">{timeAgo(item.created_at)}</p>
-        </div>
-      )}
-      <div>
-        <p className="text-text-secondary mb-2 font-sans uppercase tracking-wide text-[10px]">Spec</p>
-        <div className="bg-bg rounded p-3">
-          <JsonTree value={item.spec} />
-        </div>
-      </div>
-      {item.status && Object.keys(item.status).length > 0 && (
-        <div>
-          <p className="text-text-secondary mb-2 font-sans uppercase tracking-wide text-[10px]">Status</p>
-          <div className="bg-bg rounded p-3">
-            <JsonTree value={item.status} />
-          </div>
-        </div>
-      )}
-    </div>
-  </div>
-  </>
-);
+}) => {
+  const resourceObj = resourceObjectForJsonPath(item);
+  const printerColumns = crd?.printer_columns ?? [];
+  const conditions = (item.status && typeof item.status === 'object' && Array.isArray((item.status as Record<string, unknown>).conditions))
+    ? (item.status as Record<string, unknown>).conditions as Array<{ type?: string; status?: string; reason?: string }>
+    : [];
 
-type SortKey = 'name' | 'namespace' | 'age';
+  const actions = (
+    <>
+      <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onEditYaml(item)} />
+      <PanelActionButton icon={Trash2} label="Delete" onClick={() => onDelete(item)} danger />
+    </>
+  );
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-[110] bg-black/20"
+        onClick={onClose}
+        onKeyDown={(e) => e.key === 'Escape' && onClose()}
+        aria-hidden="true"
+        role="presentation"
+      />
+      <div className="fixed right-0 top-0 bottom-0 z-[120]" onClick={(e) => e.stopPropagation()}>
+        <ResourceDetailPanelLayout
+          kind={crd?.kind ?? 'Custom Resource'}
+          kindIcon={Layers}
+          title={item.name}
+          keyInfo={[
+            ...(item.namespace ? [{ label: 'Namespace', value: item.namespace }] : []),
+            { label: 'Age', value: timeAgo(item.created_at) },
+          ]}
+          quickInfo={[{ icon: Clock, label: 'Age', value: timeAgo(item.created_at) }]}
+          actions={actions}
+          onClose={onClose}
+        >
+          {printerColumns.length > 0 && (
+            <DetailSection title="Details" icon={Layers}>
+              {printerColumns.map((col) => {
+                const value = safeJsonPathValue(resourceObj, col.jsonPath);
+                const display = formatDetailValue(value);
+                return (
+                  <DetailRow
+                    key={col.name}
+                    label={drawerLabel(col.name)}
+                    value={display}
+                    mono={typeof value === 'object' && value !== null}
+                  />
+                );
+              })}
+            </DetailSection>
+          )}
+          {conditions.length > 0 && (
+            <DetailSection title="Conditions">
+              {conditions.map((c, i) => (
+                <DetailRow
+                  key={i}
+                  label={c.type ?? 'Condition'}
+                  value={c.status === 'True' ? 'True' : c.status === 'False' ? 'False' : (c.reason ?? String(c.status))}
+                />
+              ))}
+            </DetailSection>
+          )}
+          <CollapsibleSection title="Spec" defaultExpanded={false}>
+            <div className="px-4 py-3 font-mono text-xs overflow-x-auto">
+              <JsonTree value={item.spec} />
+            </div>
+          </CollapsibleSection>
+          {item.status && Object.keys(item.status).length > 0 && (
+            <CollapsibleSection title="Status" defaultExpanded={false}>
+              <div className="px-4 py-3 font-mono text-xs overflow-x-auto">
+                <JsonTree value={item.status} />
+              </div>
+            </CollapsibleSection>
+          )}
+        </ResourceDetailPanelLayout>
+      </div>
+    </>
+  );
+};
+
+type SortKey = 'name' | 'namespace' | 'age' | string;
 
 export const CustomResourcesPage = () => {
   const { crdName } = useParams<{ crdName: string }>();
@@ -265,25 +303,53 @@ export const CustomResourcesPage = () => {
     direction: 'desc',
   });
 
-  const columns = [
-    { header: 'Name', accessor: 'name' as const, width: '35%', sortable: true, sortKey: 'name' },
-    ...(isNamespaced
-      ? [{ header: 'Namespace', accessor: 'namespace' as const, width: '25%', sortable: true, sortKey: 'namespace' }]
-      : []),
-    {
-      header: 'Age',
-      accessor: (r: CustomResource) => (r.created_at ? timeAgo(r.created_at) : '-'),
-      width: isNamespaced ? '20%' : '30%',
-      sortable: true,
-      sortKey: 'age',
-    },
-    {
-      header: 'Spec keys',
-      accessor: (r: CustomResource) =>
-        r.spec && typeof r.spec === 'object' ? Object.keys(r.spec).join(', ') || '-' : '-',
-      width: isNamespaced ? '20%' : '35%',
-    },
-  ];
+  const printerColumns = crd?.printer_columns ?? [];
+  const hasPrinterColumns = printerColumns.length > 0;
+
+  const columns = useMemo(() => {
+    const base = [
+      { header: 'Name', accessor: 'name' as const, width: '25%', sortable: true, sortKey: 'name' as SortKey },
+      ...(isNamespaced
+        ? [
+            {
+              header: 'Namespace',
+              accessor: 'namespace' as const,
+              width: '15%',
+              sortable: true,
+              sortKey: 'namespace' as SortKey,
+            },
+          ]
+        : []),
+      ...(hasPrinterColumns
+        ? printerColumns.map((col: CrdPrinterColumn) => ({
+            header: col.name.replace(/([A-Z])/g, ' $1').trim(),
+            accessor: (r: CustomResource) => {
+              const obj = resourceObjectForJsonPath(r);
+              return formatJsonValue(safeJsonPathValue(obj, col.jsonPath));
+            },
+            width: '15%' as const,
+            sortable: true,
+            sortKey: col.name as SortKey,
+          }))
+        : [
+            {
+              header: 'Spec keys',
+              accessor: (r: CustomResource) =>
+                r.spec && typeof r.spec === 'object' ? Object.keys(r.spec).join(', ') || '-' : '-',
+              width: '20%' as const,
+              sortKey: 'spec_keys' as SortKey,
+            },
+          ]),
+      {
+        header: 'Age',
+        accessor: (r: CustomResource) => (r.created_at ? timeAgo(r.created_at) : '-'),
+        width: hasPrinterColumns ? '12%' : '20%',
+        sortable: true,
+        sortKey: 'age' as SortKey,
+      },
+    ];
+    return base;
+  }, [crd?.printer_columns, isNamespaced, hasPrinterColumns, printerColumns]);
 
   // Apply namespace filter client-side when multiple are selected
   const filtered = useMemo(() => {
@@ -294,15 +360,29 @@ export const CustomResourcesPage = () => {
 
   const sortedData = useMemo(() => {
     const f = sortState.direction === 'asc' ? 1 : -1;
+    const sortKey = sortState.key;
     return [...filtered].sort((a, b) => {
-      if (sortState.key === 'name') return a.name.localeCompare(b.name) * f;
-      if (sortState.key === 'namespace')
+      if (sortKey === 'name') return a.name.localeCompare(b.name) * f;
+      if (sortKey === 'namespace')
         return (a.namespace ?? '').localeCompare(b.namespace ?? '') * f;
-      const at = Date.parse(a.created_at ?? '');
-      const bt = Date.parse(b.created_at ?? '');
-      return ((Number.isNaN(at) ? 0 : at) - (Number.isNaN(bt) ? 0 : bt)) * f;
+      if (sortKey === 'age' || sortKey === 'spec_keys') {
+        const at = Date.parse(a.created_at ?? '');
+        const bt = Date.parse(b.created_at ?? '');
+        return ((Number.isNaN(at) ? 0 : at) - (Number.isNaN(bt) ? 0 : bt)) * f;
+      }
+      const printerCol = printerColumns.find((c) => c.name === sortKey);
+      if (printerCol) {
+        const objA = resourceObjectForJsonPath(a);
+        const objB = resourceObjectForJsonPath(b);
+        const valA = safeJsonPathValue(objA, printerCol.jsonPath);
+        const valB = safeJsonPathValue(objB, printerCol.jsonPath);
+        const strA = formatJsonValue(valA);
+        const strB = formatJsonValue(valB);
+        return strA.localeCompare(strB, undefined, { numeric: true }) * f;
+      }
+      return 0;
     });
-  }, [filtered, sortState]);
+  }, [filtered, sortState, printerColumns]);
 
   const withId = sortedData.map((r) => ({ ...r, id: `${r.name}/${r.namespace ?? ''}` }));
 
@@ -340,6 +420,7 @@ export const CustomResourcesPage = () => {
       {panelOpen && selectedItem && (
         <DetailPanel
           item={selectedItem}
+          crd={crd}
           onClose={() => setPanelOpen(false)}
           onEditYaml={handleEditYaml}
           onDelete={(item) => setConfirmDelete(item)}

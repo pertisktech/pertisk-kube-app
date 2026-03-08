@@ -139,3 +139,57 @@ export const formatBytes = (bytes: number): string => {
 export const cn = (...classes: (string | false | undefined)[]): string => {
   return classes.filter(Boolean).join(' ');
 };
+
+/**
+ * Resolve a Kubernetes-style JSONPath (e.g. .spec.replicas, .status.conditions[0].status) from an object.
+ * Supports dot notation and [index] for arrays. Leading . or $. is stripped.
+ */
+export function safeJsonPathValue(obj: unknown, path: string): unknown {
+  if (obj == null || typeof path !== 'string') return undefined;
+  let s = path.replace(/^\$?\.?/, '').trim();
+  if (!s) return obj;
+  const parts: string[] = [];
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === '[') {
+      const end = s.indexOf(']', i);
+      if (end === -1) break;
+      parts.push(s.slice(i, end + 1));
+      i = end + 1;
+      if (s[i] === '.') i += 1;
+    } else {
+      const dot = s.indexOf('.', i);
+      const bracket = s.indexOf('[', i);
+      let next = s.length;
+      if (dot !== -1) next = Math.min(next, dot);
+      if (bracket !== -1) next = Math.min(next, bracket);
+      const segment = s.slice(i, next).trim();
+      if (segment) parts.push(segment);
+      i = next >= s.length ? s.length : next + (s[next] === '.' ? 1 : 0);
+    }
+  }
+  let current: unknown = obj;
+  for (const p of parts) {
+    if (current == null) return undefined;
+    if (p.startsWith('[') && p.endsWith(']')) {
+      const inner = p.slice(1, -1).trim();
+      const idx = inner === '' ? 0 : parseInt(inner, 10);
+      if (Number.isNaN(idx)) return undefined;
+      current = Array.isArray(current) ? current[idx] : undefined;
+    } else {
+      current =
+        typeof current === 'object' && current !== null && p in (current as object)
+          ? (current as Record<string, unknown>)[p]
+          : undefined;
+    }
+  }
+  return current;
+}
+
+/** Format a value for display in CRD printer columns (like kubectl). */
+export function formatJsonValue(value: unknown): string {
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.map(formatJsonValue).join(', ');
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}

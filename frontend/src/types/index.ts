@@ -28,6 +28,14 @@ export interface HelmChart {
   stars: number;
 }
 
+/** Printer column from CRD additionalPrinterColumns (for table and detail panel) */
+export interface CrdPrinterColumn {
+  name: string;
+  jsonPath: string;
+  type?: string;
+  priority?: number;
+}
+
 export interface Crd {
   name: string;
   group: string;
@@ -37,6 +45,8 @@ export interface Crd {
   plural: string;
   short_names: string[];
   versions: CrdVersion[];
+  /** Columns from CRD preferred version (for table and detail) */
+  printer_columns?: CrdPrinterColumn[];
   created_at: string | null;
 }
 
