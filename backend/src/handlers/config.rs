@@ -561,6 +561,39 @@ pub async fn get_secret_yaml(
     }
 }
 
+pub async fn get_secret_data(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Secret;
+
+    let api: Api<Secret> = Api::namespaced(state.client, &namespace);
+    match api.get(&name).await {
+        Ok(secret) => {
+            let mut decoded = serde_json::Map::new();
+            if let Some(data) = secret.data {
+                for (key, value) in data {
+                    let decoded_value = String::from_utf8(value.0.clone())
+                        .unwrap_or_else(|_| String::from_utf8_lossy(&value.0).to_string());
+                    decoded.insert(key, serde_json::Value::String(decoded_value));
+                }
+            }
+
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "data": decoded,
+                })),
+            )
+                .into_response()
+        }
+        Err(err) => {
+            error!("Error getting secret data {}/{}: {:?}", namespace, name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
 pub async fn update_secret_yaml(
     Path((namespace, name)): Path<(String, String)>,
     State(state): State<AppState>,

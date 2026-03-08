@@ -56,13 +56,18 @@ export interface Namespace {
 export interface Pod {
   name: string;
   namespace: string;
+  created?: string;
   status?: string;
   phase?: string;
   ready: string;
   restarts: number;
   age: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
   node?: string;
   pod_ip?: string;
+  pod_ips?: string[];
+  service_account?: string;
   cpu?: string;
   memory?: string;
   cpu_capacity?: string;
@@ -71,6 +76,51 @@ export interface Pod {
   memory_usage_percent?: number;
   controlled_by?: string;
   qos?: string;
+  qos_class?: string;
+  conditions?: Array<{
+    type: string;
+    status: string;
+    reason?: string;
+    last_transition_time?: string;
+  }>;
+  tolerations?: Array<{
+    key: string;
+    operator: string;
+    effect: string;
+    seconds: string;
+    value?: string;
+  }>;
+  pod_anti_affinities?: string[];
+  volumes?: Array<{
+    name: string;
+    type?: string;
+    source?: string;
+    read_only?: boolean;
+  }>;
+  containers?: Array<{
+    name: string;
+    image?: string;
+    ready?: boolean;
+    restart_count?: number;
+    state?: string;
+    status?: string;
+    image_pull_policy?: string;
+    ports?: string[];
+    environment_variables?: Array<{ key: string; value?: string; decoded_value?: string; source?: string }>;
+    mounts?: string[];
+    liveness?: string;
+    readiness?: string;
+    startup?: string;
+    requests?: string;
+    limits?: string;
+  }>;
+  events?: Array<{
+    type?: string;
+    reason?: string;
+    message?: string;
+    count?: number;
+    age?: string;
+  }>;
 }
 
 export interface Deployment {

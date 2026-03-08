@@ -7,6 +7,12 @@ import type { K8sNode } from '../types';
 
 interface NodeDetailPanelProps {
   node: K8sNode;
+  events?: Array<{
+    summary: string;
+    message?: string;
+    count: number;
+    age: string;
+  }>;
   onClose: () => void;
   onEditYaml?: (node: K8sNode) => void;
   onOpenShell?: (node: K8sNode) => void;
@@ -56,7 +62,7 @@ const ResourceCard = ({ title, resources }: { title: string; resources: { cpu?: 
   );
 };
 
-export const NodeDetailPanel = ({ node, onClose, onEditYaml, onOpenShell, onCordonToggle, onDrain, onDelete, cordonLoading }: NodeDetailPanelProps) => {
+export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpenShell, onCordonToggle, onDrain, onDelete, cordonLoading }: NodeDetailPanelProps) => {
   const [expandedLabels, setExpandedLabels] = useState(false);
   const [expandedAnnotations, setExpandedAnnotations] = useState(false);
 
@@ -361,10 +367,35 @@ export const NodeDetailPanel = ({ node, onClose, onEditYaml, onOpenShell, onCord
           )}
         </section>
 
-        {/* Events Placeholder */}
         <section className="bg-surface border border-border rounded-lg p-3.5">
-          <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide">Events</h3>
-          <p className="text-xs text-text-secondary mt-2">Recent events will be displayed here</p>
+          <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">Events ({events.length})</h3>
+          {events.length > 0 ? (
+            <div className="overflow-x-auto border border-border rounded-md">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-bg/50">
+                    <th className="text-left py-2 px-2 text-text-secondary font-medium">Summary</th>
+                    <th className="text-left py-2 px-2 text-text-secondary font-medium w-16">Count</th>
+                    <th className="text-left py-2 px-2 text-text-secondary font-medium w-20">Age</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.slice(0, 20).map((event, idx) => (
+                    <tr key={`${event.summary}-${idx}`} className="border-b border-border last:border-b-0 hover:bg-hover/40">
+                      <td className="py-2 px-2 align-top">
+                        <p className="text-text font-medium">{event.summary}</p>
+                        <p className="text-text-secondary mt-1 break-all">{event.message || '-'}</p>
+                      </td>
+                      <td className="py-2 px-2 align-top text-text">{event.count}</td>
+                      <td className="py-2 px-2 align-top text-text-secondary">{event.age}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-xs text-text-secondary">No recent events</p>
+          )}
         </section>
       </div>
     </div>

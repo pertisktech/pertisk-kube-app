@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from 'lucide-react';
 import { useRealtimePods } from '../hooks/useRealtimePods';
+import { useRealtimeEvents } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
 import { PodDetailPanel } from '../components/PodDetailPanel';
@@ -10,7 +11,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';
 import { getAuthToken } from '../utils/auth';
-import { deletePod } from '../hooks/useKubernetes';
+import { deletePod, fetchSecretData } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
 type PodSortKey =
@@ -61,6 +62,7 @@ export const PodsPage = () => {
   const { data, isConnected, error } = useRealtimePods<Pod>({
     enabled: true,
   });
+  const { data: eventsData } = useRealtimeEvents();
   
   const isLoading = !isConnected && data.length === 0;
   
@@ -70,6 +72,7 @@ export const PodsPage = () => {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [decodedSecrets, setDecodedSecrets] = useState<Record<string, Record<string, string>>>({});
   const [sortState, setSortState] = useState<{ key: PodSortKey; direction: 'asc' | 'desc' }>({
     key: 'age',
     direction: 'desc',
@@ -130,6 +133,49 @@ export const PodsPage = () => {
       setIsDeleting(false);
     }
   };
+
+  // Fetch and decode secret data for selected pod
+  useEffect(() => {
+    if (!selectedPod || !selectedPod.containers) {
+      setDecodedSecrets({});
+      return;
+    }
+
+    const fetchSecrets = async () => {
+      const secretNames = new Set<string>();
+
+      selectedPod.containers.forEach((container) => {
+        container.environment_variables?.forEach((env) => {
+          if (env.source === 'secret' && env.value) {
+            const idx = env.value.lastIndexOf('/');
+            if (idx > 0) {
+              const secretName = env.value.substring(0, idx);
+              if (secretName) secretNames.add(secretName);
+            }
+          }
+        });
+      });
+
+      if (secretNames.size === 0) {
+        setDecodedSecrets({});
+        return;
+      }
+
+      const resolved: Record<string, Record<string, string>> = {};
+      await Promise.allSettled(
+        Array.from(secretNames).map(async (secretName) => {
+          const data = await fetchSecretData(selectedPod.namespace, secretName);
+          if (data && Object.keys(data).length > 0) {
+            resolved[`${selectedPod.namespace}/${secretName}`] = data;
+          }
+        })
+      );
+
+      setDecodedSecrets(resolved);
+    };
+
+    fetchSecrets();
+  }, [selectedPod]);
 
   // Force re-render every 10 seconds to update ages
   useEffect(() => {
@@ -294,6 +340,50 @@ export const PodsPage = () => {
     }) as (Pod & { id: string })[];
   }, [data, sortState, selectedNamespaces]);
 
+  const selectedPodWithEvents = useMemo(() => {
+    if (!selectedPod) return null;
+
+    const podEvents = (eventsData || [])
+      .filter((event) => event.namespace === selectedPod.namespace && event.involved_object === `Pod/${selectedPod.name}`)
+      .sort((a, b) => {
+        const aTs = Date.parse(a.last_timestamp || a.first_timestamp || '');
+        const bTs = Date.parse(b.last_timestamp || b.first_timestamp || '');
+        return (Number.isNaN(bTs) ? 0 : bTs) - (Number.isNaN(aTs) ? 0 : aTs);
+      })
+      .map((event) => ({
+        type: event.type,
+        reason: event.reason,
+        message: event.message,
+        count: event.count,
+        age: timeAgo(event.last_timestamp || event.first_timestamp || ''),
+      }));
+
+    const containersWithDecodedSecrets = selectedPod.containers?.map((container) => ({
+      ...container,
+      environment_variables: container.environment_variables?.map((env) => {
+        if (env.source === 'secret' && env.value) {
+          const idx = env.value.lastIndexOf('/');
+          if (idx > 0) {
+            const secretName = env.value.substring(0, idx);
+            const keyName = env.value.substring(idx + 1);
+            const key = `${selectedPod.namespace}/${secretName}`;
+            const secretData = decodedSecrets[key];
+            if (secretData && keyName && secretData[keyName] != null) {
+              return { ...env, decoded_value: secretData[keyName] };
+            }
+          }
+        }
+        return env;
+      }),
+    })) || [];
+
+    return {
+      ...selectedPod,
+      containers: containersWithDecodedSecrets,
+      events: podEvents,
+    };
+  }, [selectedPod, eventsData, decodedSecrets]);
+
   return (
     <div className="space-y-4">
       <div>
@@ -320,14 +410,14 @@ export const PodsPage = () => {
         />
       </div>
 
-      {panelOpen && selectedPod && (
+      {panelOpen && selectedPodWithEvents && (
         <>
           <div
             className="fixed inset-0 z-[95] bg-black/20"
             onClick={() => setPanelOpen(false)}
           />
           <PodDetailPanel
-            pod={selectedPod}
+            pod={selectedPodWithEvents}
             onClose={() => setPanelOpen(false)}
             onOpenYamlEditor={handleOpenYamlTab}
             onOpenShell={handleOpenShellTab}

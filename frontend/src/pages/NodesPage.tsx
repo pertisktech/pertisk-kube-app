@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { useNodes, deleteNode, cordonNode, uncordonNode, drainNode } from '../hooks/useKubernetes';
+import { useRealtimeEvents } from '../hooks/useRealtimeResources';
 import { DataTable } from '../components/DataTable';
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -35,6 +36,7 @@ const toPercent = (value?: number) => {
 
 export const NodesPage = () => {
   const { data, isLoading, error } = useNodes();
+  const { data: eventsData } = useRealtimeEvents();
   const [selectedNode, setSelectedNode] = useState<K8sNode | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
@@ -307,6 +309,24 @@ export const NodesPage = () => {
     });
   }, [data, sortState]);
 
+  const selectedNodeEvents = useMemo(() => {
+    if (!selectedNode) return [];
+
+    return (eventsData || [])
+      .filter((event) => event.involved_object === `Node/${selectedNode.name}`)
+      .sort((a, b) => {
+        const aTs = Date.parse(a.last_timestamp || a.first_timestamp || '');
+        const bTs = Date.parse(b.last_timestamp || b.first_timestamp || '');
+        return (Number.isNaN(bTs) ? 0 : bTs) - (Number.isNaN(aTs) ? 0 : aTs);
+      })
+      .map((event) => ({
+        summary: event.reason || event.type || 'Event',
+        message: event.message || '-',
+        count: event.count ?? 1,
+        age: timeAgo(event.last_timestamp || event.first_timestamp || ''),
+      }));
+  }, [selectedNode, eventsData]);
+
   return (
     <div className="space-y-4">
       <div>
@@ -345,6 +365,7 @@ export const NodesPage = () => {
           />
           <NodeDetailPanel
             node={selectedNode}
+            events={selectedNodeEvents}
             onClose={() => setPanelOpen(false)}
             onEditYaml={handleOpenYaml}
             onOpenShell={handleOpenShell}

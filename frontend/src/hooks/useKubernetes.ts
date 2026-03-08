@@ -215,6 +215,31 @@ export const useSecrets = () => {
   });
 };
 
+export const fetchSecretData = async (namespace: string, name: string): Promise<Record<string, string> | null> => {
+  try {
+    const res = await apiFetch(
+      `/secrets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/data`
+    );
+    if (!res.ok) return null;
+
+    const payload = await res.json();
+    const secretData = payload?.data;
+    if (!secretData || typeof secretData !== 'object') {
+      return null;
+    }
+
+    const normalized: Record<string, string> = {};
+    for (const [key, value] of Object.entries(secretData)) {
+      if (typeof value === 'string') {
+        normalized[key] = value;
+      }
+    }
+    return normalized;
+  } catch {
+    return null;
+  }
+};
+
 export const useResourceQuotas = () => {
   return useQuery({
     queryKey: ['resourcequotas'],

@@ -166,6 +166,7 @@ async fn main() -> anyhow::Result<()> {
             "/secrets/:namespace/:name/yaml",
             get(get_secret_yaml).put(update_secret_yaml),
         )
+        .route("/secrets/:namespace/:name/data", get(get_secret_data))
         .route("/secrets/:namespace/:name", delete(delete_secret))
         .route("/resourcequotas", get(list_resourcequotas))
         .route(

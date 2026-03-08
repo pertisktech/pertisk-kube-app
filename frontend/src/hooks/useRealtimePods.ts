@@ -14,6 +14,33 @@ const transformPod = (rawPod: any): any => {
   const status = rawPod.status || {};
   const spec = rawPod.spec || {};
 
+  const formatProbe = (probe: any): string => {
+    if (!probe) return '-';
+    const parts: string[] = [];
+
+    if (probe.httpGet) {
+      const scheme = probe.httpGet.scheme || 'HTTP';
+      parts.push(`HTTP ${scheme} ${probe.httpGet.path || '/'}:${probe.httpGet.port || '-'}`);
+    } else if (probe.tcpSocket) {
+      parts.push(`TCP ${probe.tcpSocket.port || '-'}`);
+    } else if (probe.exec?.command?.length) {
+      parts.push(`Exec ${probe.exec.command.join(' ')}`);
+    }
+
+    if (probe.initialDelaySeconds != null) parts.push(`delay ${probe.initialDelaySeconds}s`);
+    if (probe.periodSeconds != null) parts.push(`period ${probe.periodSeconds}s`);
+
+    return parts.length > 0 ? parts.join(' | ') : '-';
+  };
+
+  const formatResources = (resourceObj: any): string => {
+    if (!resourceObj || typeof resourceObj !== 'object') return '-';
+    const entries = Object.entries(resourceObj)
+      .filter(([, value]) => value != null)
+      .map(([key, value]) => `${key}: ${String(value)}`);
+    return entries.length > 0 ? entries.join(', ') : '-';
+  };
+
   // Calculate ready status
   const containerStatuses = status.containerStatuses || [];
   const initContainerStatuses = status.initContainerStatuses || [];
@@ -160,20 +187,119 @@ const transformPod = (rawPod: any): any => {
     }
   }
 
+  const volumes = (spec.volumes || []).map((vol: any) => {
+    const sourceType = Object.keys(vol || {}).find((k) => k !== 'name') || 'unknown';
+    const source = vol?.[sourceType];
+    return {
+      name: vol?.name || '-',
+      type: sourceType,
+      source: source?.claimName || source?.secretName || source?.configMap?.name || source?.path || '-',
+      read_only: Boolean(source?.readOnly),
+    };
+  });
+
+  const containersDetailed = (spec.containers || []).map((container: any) => {
+    const containerStatus = containerStatuses.find((s: any) => s.name === container.name);
+    let state = 'Waiting';
+    if (containerStatus?.state?.running) state = 'Running';
+    else if (containerStatus?.state?.terminated) state = containerStatus.state.terminated.reason || 'Terminated';
+    else if (containerStatus?.state?.waiting) state = containerStatus.state.waiting.reason || 'Waiting';
+
+    const ports = (container?.ports || []).map((p: any) => `${p.name ? `${p.name}: ` : ''}${p.containerPort}/${p.protocol || 'TCP'}`);
+    const environmentVariables = (container?.env || []).map((env: any) => {
+      if (env.value != null) return { key: env.name, value: env.value, source: undefined };
+      if (env.valueFrom?.fieldRef?.fieldPath) return { key: env.name, value: env.valueFrom.fieldRef.fieldPath, source: 'fieldRef' };
+      if (env.valueFrom?.secretKeyRef?.name) return { key: env.name, value: `${env.valueFrom.secretKeyRef.name}/${env.valueFrom.secretKeyRef.key || ''}`, source: 'secret' };
+      if (env.valueFrom?.configMapKeyRef?.name) return { key: env.name, value: `${env.valueFrom.configMapKeyRef.name}/${env.valueFrom.configMapKeyRef.key || ''}`, source: 'configMap' };
+      return { key: env.name, value: '<valueFrom>', source: 'unknown' };
+    });
+    const mounts = (container?.volumeMounts || []).map((m: any) => `${m.name}: ${m.mountPath}${m.readOnly ? ' (ro)' : ''}`);
+
+    const requests = formatResources(container?.resources?.requests);
+    const limits = formatResources(container?.resources?.limits);
+    const statusLabel = containerStatus?.ready ? 'Ready' : state;
+
+    return {
+      name: container?.name || '-',
+      image: container?.image || '-',
+      ready: Boolean(containerStatus?.ready),
+      restart_count: containerStatus?.restartCount || 0,
+      state,
+      status: statusLabel,
+      image_pull_policy: container?.imagePullPolicy || '-',
+      ports,
+      environment_variables: environmentVariables,
+      mounts,
+      liveness: formatProbe(container?.livenessProbe),
+      readiness: formatProbe(container?.readinessProbe),
+      startup: formatProbe(container?.startupProbe),
+      requests,
+      limits,
+    };
+  });
+
+  const podIps = (status.podIPs || []).map((item: any) => item?.ip).filter(Boolean);
+  const conditions = (status.conditions || []).map((condition: any) => ({
+    type: condition?.type || '-',
+    status: condition?.status || '-',
+    reason: condition?.reason,
+    last_transition_time: condition?.lastTransitionTime,
+  }));
+
+  const tolerations = (spec.tolerations || []).map((tol: any) => ({
+    key: tol?.key || '<all>',
+    operator: tol?.operator || 'Equal',
+    effect: tol?.effect || '-',
+    seconds: tol?.tolerationSeconds != null ? String(tol.tolerationSeconds) : '-',
+    value: tol?.value,
+  }));
+
+  const antiAffinityRules: string[] = [];
+  const requiredAnti = spec?.affinity?.podAntiAffinity?.requiredDuringSchedulingIgnoredDuringExecution || [];
+  const preferredAnti = spec?.affinity?.podAntiAffinity?.preferredDuringSchedulingIgnoredDuringExecution || [];
+
+  for (const term of requiredAnti) {
+    const expr = term?.labelSelector?.matchExpressions?.[0];
+    const key = expr?.key || '-';
+    const op = expr?.operator || '-';
+    const vals = Array.isArray(expr?.values) ? expr.values.join(',') : '';
+    antiAffinityRules.push(`Required: ${key} ${op}${vals ? ` [${vals}]` : ''} on ${term?.topologyKey || '-'}`);
+  }
+  for (const pref of preferredAnti) {
+    const term = pref?.podAffinityTerm;
+    const expr = term?.labelSelector?.matchExpressions?.[0];
+    const key = expr?.key || '-';
+    const op = expr?.operator || '-';
+    const vals = Array.isArray(expr?.values) ? expr.values.join(',') : '';
+    antiAffinityRules.push(`Preferred(${pref?.weight || 0}): ${key} ${op}${vals ? ` [${vals}]` : ''} on ${term?.topologyKey || '-'}`);
+  }
+
   return {
     name: metadata.name || '',
     namespace: metadata.namespace || '',
+    created: metadata.creationTimestamp || '',
     status: podStatus,
     phase: phase,
     ready,
     restarts,
     age: metadata.creationTimestamp || '',
+    labels: metadata.labels || {},
+    annotations: metadata.annotations || {},
     node: spec.nodeName || '',
     pod_ip: status.podIP || '',
+    pod_ips: podIps,
+    service_account: spec.serviceAccountName || '-',
     cpu,
     memory,
     controlled_by: controlledBy,
     qos,
+    qos_class: qos,
+    conditions,
+    tolerations,
+    pod_anti_affinities: antiAffinityRules,
+    volumes,
+    containers: containersDetailed,
+    events: [],
   };
 };
 
