@@ -6,7 +6,7 @@ import type { Pod } from '../types';
 import { timeAgo } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerParamToggler } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations, DrawerParamToggler } from './drawer';
 import { createPortForward, usePortForwards } from '../hooks/useKubernetes';
 
 interface PodDetailPanelProps {
@@ -166,34 +166,11 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           <DrawerItem name="Created">{timeAgo(pod.created || pod.age)}</DrawerItem>
           <DrawerItem name="Controller">{pod.controlled_by || '-'}</DrawerItem>
 
-          <DrawerCollapsibleSection title="Metadata">
-            <DrawerItem name="Labels" labelsOnly>
-              {Object.keys(labels).length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {Object.entries(labels).map(([key, value]) => (
-                    <span key={key} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }} title={`${key}=${value}`}>{key}={value}</span>
-                  ))}
-                </div>
-              ) : (
-                <span className="text-xs" style={{ color: 'var(--color-muted)' }}>No labels</span>
-              )}
-            </DrawerItem>
-            <DrawerItem name="Annotations" labelsOnly>
-              {Object.keys(annotations).length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {Object.entries(annotations).map(([key, value]) => (
-                    <span key={key} className="inline-flex px-2 py-0.5 rounded text-xs border border-border break-all" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }} title={`${key}=${value}`}>{key}={value}</span>
-                  ))}
-                </div>
-              ) : (
-                <span className="text-xs" style={{ color: 'var(--color-muted)' }}>No annotations</span>
-              )}
-            </DrawerItem>
-          </DrawerCollapsibleSection>
+          <DrawerLabelsAnnotations labels={labels} annotations={annotations} />
 
           {tolerations.length > 0 && (
-            <DrawerItem name="Tolerations" className="PodDetailsTolerations">
-              <DrawerParamToggler label={tolerations.length}>
+            <DrawerItem name={`Tolerations (${tolerations.length})`} className="PodDetailsTolerations">
+              <DrawerParamToggler label="">
                 <div className="overflow-x-auto border border-border rounded-md">
                   <table className="w-full text-xs">
                     <thead>

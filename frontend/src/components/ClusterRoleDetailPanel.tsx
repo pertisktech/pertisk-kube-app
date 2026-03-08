@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { ClusterRole } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface ClusterRoleDetailPanelProps {
   clusterRole: ClusterRole;
@@ -30,8 +30,6 @@ export const ClusterRoleDetailPanel = ({ clusterRole: cr, onClose, onOpenYamlEdi
     <DrawerItem name="Name">{cr.name}</DrawerItem>
     <DrawerItem name="Rules">{cr.rules ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(cr.age)}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={cr.labels} annotations={cr.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={cr.labels} annotations={cr.annotations} />
   </ResourceDetailPanelLayout>
 );

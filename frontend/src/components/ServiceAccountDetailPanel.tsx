@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { ServiceAccount } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface ServiceAccountDetailPanelProps {
   serviceAccount: ServiceAccount;
@@ -32,8 +32,6 @@ export const ServiceAccountDetailPanel = ({ serviceAccount: sa, onClose, onOpenY
     <DrawerItem name="Namespace">{sa.namespace}</DrawerItem>
     <DrawerItem name="Secrets">{sa.secrets ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(sa.age)}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={sa.labels} annotations={sa.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={sa.labels} annotations={sa.annotations} />
   </ResourceDetailPanelLayout>
 );

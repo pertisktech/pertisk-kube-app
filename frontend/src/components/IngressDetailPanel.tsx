@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { Ingress } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface IngressDetailPanelProps {
   ingress: Ingress;
@@ -35,8 +35,6 @@ export const IngressDetailPanel = ({ ingress, onClose, onOpenYamlEditor, onDelet
     <DrawerItem name="Address">{ingress.address ?? '-'}</DrawerItem>
     <DrawerItem name="Rules">{ingress.rules ?? 0}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(ingress.age)}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={ingress.labels} annotations={ingress.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={ingress.labels} annotations={ingress.annotations} />
   </ResourceDetailPanelLayout>
 );

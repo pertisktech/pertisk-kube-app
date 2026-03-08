@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { StatefulSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface StatefulSetDetailPanelProps {
   statefulSet: StatefulSet;
@@ -55,8 +55,6 @@ export const StatefulSetDetailPanel = ({ statefulSet, onClose, onOpenYamlEditor,
         </div>
       </DrawerItem>
     ) : null}
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={statefulSet.labels} annotations={statefulSet.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={statefulSet.labels} annotations={statefulSet.annotations} />
   </ResourceDetailPanelLayout>
 );

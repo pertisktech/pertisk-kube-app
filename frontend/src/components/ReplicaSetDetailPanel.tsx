@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { ReplicaSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface ReplicaSetDetailPanelProps {
   replicaSet: ReplicaSet;
@@ -54,8 +54,6 @@ export const ReplicaSetDetailPanel = ({ replicaSet, onClose, onOpenYamlEditor, o
         </div>
       </DrawerItem>
     ) : null}
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={replicaSet.labels} annotations={replicaSet.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={replicaSet.labels} annotations={replicaSet.annotations} />
   </ResourceDetailPanelLayout>
 );

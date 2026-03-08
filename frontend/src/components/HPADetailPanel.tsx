@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { HPA } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface HPADetailPanelProps {
   hpa: HPA;
@@ -35,8 +35,6 @@ export const HPADetailPanel = ({ hpa, onClose, onOpenYamlEditor, onDelete }: HPA
     <DrawerItem name="Min/Max Replicas">{`${hpa.min_replicas} / ${hpa.max_replicas}`}</DrawerItem>
     <DrawerItem name="Targets">{hpa.targets ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(hpa.age)}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={hpa.labels} annotations={hpa.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={hpa.labels} annotations={hpa.annotations} />
   </ResourceDetailPanelLayout>
 );

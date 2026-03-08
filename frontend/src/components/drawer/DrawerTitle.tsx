@@ -7,19 +7,15 @@ export interface DrawerTitleProps {
 }
 
 /**
- * Freelens-style section title in drawer content.
- * Full-bleed background bar; use for "Connection", "Conditions", etc.
+ * Section title in drawer content. Same horizontal padding as content (none);
+ * vertical padding matches DrawerItem (py-2) so PROPERTY aligns with rows.
  */
 export function DrawerTitle({ className = '', children, size = 'title' }: DrawerTitleProps) {
   const isSub = size === 'sub-title';
   return (
     <div
-      className={`DrawerTitle mt-6 first:mt-0 ${isSub ? 'py-2 px-4' : 'py-3 px-4'} ${className}`.trim()}
+      className={`DrawerTitle mt-6 first:mt-0 py-2 ${className}`.trim()}
       style={{
-        marginLeft: 'calc(-1 * var(--drawer-content-spacing, 1.5rem))',
-        marginRight: 'calc(-1 * var(--drawer-content-spacing, 1.5rem))',
-        paddingLeft: 'var(--drawer-content-spacing, 1.5rem)',
-        paddingRight: 'var(--drawer-content-spacing, 1.5rem)',
         backgroundColor: 'var(--color-surface-elevated, var(--color-bg))',
       }}
     >

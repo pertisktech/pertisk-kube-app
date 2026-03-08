@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { PDB } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface PDBDetailPanelProps {
   pdb: PDB;
@@ -34,8 +34,6 @@ export const PDBDetailPanel = ({ pdb, onClose, onOpenYamlEditor, onDelete }: PDB
     <DrawerItem name="Allowed Disruptions">{pdb.allowed_disruptions ?? '-'}</DrawerItem>
     <DrawerItem name="Status">{pdb.status ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(pdb.age)}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={pdb.labels} annotations={pdb.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={pdb.labels} annotations={pdb.annotations} />
   </ResourceDetailPanelLayout>
 );

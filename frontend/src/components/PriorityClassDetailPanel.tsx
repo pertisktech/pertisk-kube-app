@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { PriorityClass } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface PriorityClassDetailPanelProps {
   priorityClass: PriorityClass;
@@ -32,8 +32,6 @@ export const PriorityClassDetailPanel = ({ priorityClass, onClose, onOpenYamlEdi
     <DrawerItem name="Value">{priorityClass.value ?? '-'}</DrawerItem>
     <DrawerItem name="Global Default">{priorityClass.global_default ? 'Yes' : 'No'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(priorityClass.age)}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={priorityClass.labels} annotations={priorityClass.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={priorityClass.labels} annotations={priorityClass.annotations} />
   </ResourceDetailPanelLayout>
 );

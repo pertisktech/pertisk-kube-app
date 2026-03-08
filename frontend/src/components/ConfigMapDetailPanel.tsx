@@ -4,7 +4,7 @@ import type { ConfigMap } from '../types';
 import { timeAgo } from '../utils';
 import { getAuthToken } from '../utils/auth';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface ConfigMapDetailPanelProps {
   configMap: ConfigMap;
@@ -69,9 +69,7 @@ export const ConfigMapDetailPanel = ({ configMap, onClose, onOpenYamlEditor, onD
       <DrawerItem name="Data keys">{configMap.data_keys ?? '-'}</DrawerItem>
       <DrawerItem name="Age">{timeAgo(configMap.age)}</DrawerItem>
 
-      <DrawerCollapsibleSection title="Metadata">
-        <DrawerLabelsAnnotations labels={configMap.labels} annotations={configMap.annotations} />
-      </DrawerCollapsibleSection>
+      <DrawerLabelsAnnotations labels={configMap.labels} annotations={configMap.annotations} />
 
       <DrawerTitle>Data</DrawerTitle>
       {dataLoading && <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>Loading…</p>}

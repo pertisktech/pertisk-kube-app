@@ -4,7 +4,7 @@ import type { Secret } from '../types';
 import { timeAgo } from '../utils';
 import { getAuthToken } from '../utils/auth';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface SecretDetailPanelProps {
   secret: Secret;
@@ -86,9 +86,7 @@ export const SecretDetailPanel = ({ secret, onClose, onOpenYamlEditor, onDelete 
       <DrawerItem name="Data keys">{secret.data_keys ?? '-'}</DrawerItem>
       <DrawerItem name="Age">{timeAgo(secret.age)}</DrawerItem>
 
-      <DrawerCollapsibleSection title="Metadata">
-        <DrawerLabelsAnnotations labels={secret.labels} annotations={secret.annotations} />
-      </DrawerCollapsibleSection>
+      <DrawerLabelsAnnotations labels={secret.labels} annotations={secret.annotations} />
 
       {isTls && certInfo && (
         <>

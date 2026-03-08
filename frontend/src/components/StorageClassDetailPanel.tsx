@@ -3,7 +3,7 @@ import type { StorageClass } from '../types';
 import { timeAgo } from '../utils';
 import { StatusBadge } from './StatusBadge';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface StorageClassDetailPanelProps {
   storageClass: StorageClass;
@@ -36,8 +36,6 @@ export const StorageClassDetailPanel = ({ storageClass, onClose, onOpenYamlEdito
     <DrawerItem name="Allow Volume Expansion"><StatusBadge status={storageClass.allow_volume_expansion ? 'Yes' : 'No'} /></DrawerItem>
     <DrawerItem name="Default">{storageClass.is_default ? <StatusBadge status="Default" /> : 'No'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(storageClass.age)}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={storageClass.labels} annotations={storageClass.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={storageClass.labels} annotations={storageClass.annotations} />
   </ResourceDetailPanelLayout>
 );

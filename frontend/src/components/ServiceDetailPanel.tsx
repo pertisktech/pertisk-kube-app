@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Service } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 import { createPortForward, usePortForwards } from '../hooks/useKubernetes';
 
 // Parse "80/TCP, 443/TCP" -> [80, 443]
@@ -72,9 +72,7 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
       <DrawerItem name="Ports">{service.ports ?? '-'}</DrawerItem>
       <DrawerItem name="Age">{timeAgo(service.age)}</DrawerItem>
 
-      <DrawerCollapsibleSection title="Metadata">
-        <DrawerLabelsAnnotations labels={service.labels} annotations={service.annotations} />
-      </DrawerCollapsibleSection>
+      <DrawerLabelsAnnotations labels={service.labels} annotations={service.annotations} />
 
       {servicePorts.length > 0 && (
         <>

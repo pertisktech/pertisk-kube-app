@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { PersistentVolumeClaim } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface PVCDetailPanelProps {
   pvc: PersistentVolumeClaim;
@@ -37,8 +37,6 @@ export const PVCDetailPanel = ({ pvc, onClose, onOpenYamlEditor, onDelete }: PVC
     <DrawerItem name="Access Modes">{pvc.access_modes ?? '-'}</DrawerItem>
     <DrawerItem name="Storage Class">{pvc.storage_class ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(pvc.age)}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={pvc.labels} annotations={pvc.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={pvc.labels} annotations={pvc.annotations} />
   </ResourceDetailPanelLayout>
 );

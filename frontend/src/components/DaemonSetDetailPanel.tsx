@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { DaemonSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface DaemonSetDetailPanelProps {
   daemonSet: DaemonSet;
@@ -66,9 +66,7 @@ export const DaemonSetDetailPanel = ({ daemonSet, onClose, onOpenYamlEditor, onD
           </div>
         </DrawerItem>
       ) : null}
-      <DrawerCollapsibleSection title="Metadata">
-        <DrawerLabelsAnnotations labels={daemonSet.labels} annotations={daemonSet.annotations} />
-      </DrawerCollapsibleSection>
+      <DrawerLabelsAnnotations labels={daemonSet.labels} annotations={daemonSet.annotations} />
     </ResourceDetailPanelLayout>
   );
 };

@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { Lease } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface LeaseDetailPanelProps {
   lease: Lease;
@@ -33,8 +33,6 @@ export const LeaseDetailPanel = ({ lease, onClose, onOpenYamlEditor, onDelete }:
     <DrawerItem name="Holder Identity">{lease.holder_identity ?? '-'}</DrawerItem>
     <DrawerItem name="Lease Duration">{lease.lease_duration_seconds != null ? `${lease.lease_duration_seconds}s` : '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(lease.age)}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={lease.labels} annotations={lease.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={lease.labels} annotations={lease.annotations} />
   </ResourceDetailPanelLayout>
 );

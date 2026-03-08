@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { Namespace } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface NamespaceDetailPanelProps {
   namespace: Namespace;
@@ -12,10 +12,23 @@ interface NamespaceDetailPanelProps {
   onDelete?: (name: string) => Promise<void>;
 }
 
+/** Parse "key1=val1,key2=val2" into Record */
+function parseLabelsString(s: string): Record<string, string> {
+  if (!s || s === '-') return {};
+  const out: Record<string, string> = {};
+  s.split(',').forEach((item) => {
+    const eq = item.trim().indexOf('=');
+    if (eq >= 0) {
+      const k = item.trim().slice(0, eq).trim();
+      const v = item.trim().slice(eq + 1).trim();
+      if (k) out[k] = v;
+    }
+  });
+  return out;
+}
+
 export const NamespaceDetailPanel = ({ namespace, onClose, getStatusClass, onOpenYamlEditor, onDelete }: NamespaceDetailPanelProps) => {
-  const labelItems = namespace.labels && namespace.labels !== '-'
-    ? namespace.labels.split(',').map((item) => item.trim()).filter(Boolean)
-    : [];
+  const labels = parseLabelsString(namespace.labels);
 
   return (
     <ResourceDetailPanelLayout
@@ -39,19 +52,7 @@ export const NamespaceDetailPanel = ({ namespace, onClose, getStatusClass, onOpe
         <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${getStatusClass(namespace.phase)}`}>{namespace.phase}</span>
       </DrawerItem>
       <DrawerItem name="Age">{timeAgo(namespace.age)}</DrawerItem>
-      <DrawerCollapsibleSection title="Metadata">
-        <DrawerItem name="Labels" labelsOnly>
-          {labelItems.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {labelItems.map((label) => (
-                <span key={label} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{label}</span>
-              ))}
-            </div>
-          ) : (
-            <span className="text-xs" style={{ color: 'var(--color-muted)' }}>No labels</span>
-          )}
-        </DrawerItem>
-      </DrawerCollapsibleSection>
+      <DrawerLabelsAnnotations labels={labels} annotations={{}} />
     </ResourceDetailPanelLayout>
   );
 };

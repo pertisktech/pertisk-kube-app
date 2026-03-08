@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { Job } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface JobDetailPanelProps {
   job: Job;
@@ -43,8 +43,6 @@ export const JobDetailPanel = ({ job, onClose, onOpenYamlEditor, onDelete }: Job
     <DrawerItem name="Completions">{job.completions ?? '-'}</DrawerItem>
     <DrawerItem name="Duration">{job.duration ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(job.age)}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={job.labels} annotations={job.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={job.labels} annotations={job.annotations} />
   </ResourceDetailPanelLayout>
 );

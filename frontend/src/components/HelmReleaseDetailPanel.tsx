@@ -2,7 +2,7 @@ import { Box, Upload, Trash2 } from './Icons';
 import type { HelmRelease } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 const getStatusClass = (status: string) => {
   const s = status.toLowerCase();
@@ -81,8 +81,6 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYaml, onDelete 
     <DrawerItem name="Version">{release.chart_version ?? '—'}</DrawerItem>
     <DrawerItem name="App Version">{release.app_version ?? '—'}</DrawerItem>
     <DrawerItem name="Revision">{release.revision ?? '—'}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={release.labels} annotations={release.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={release.labels} annotations={release.annotations} />
   </ResourceDetailPanelLayout>
 );

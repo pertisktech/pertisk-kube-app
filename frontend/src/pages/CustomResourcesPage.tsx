@@ -6,7 +6,7 @@ import { deleteCustomResource, useCrds, useCustomResources } from '../hooks/useK
 import { DataTable } from '../components';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ResourceDetailPanelLayout, PanelActionButton } from '../components/ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerParamToggler, DrawerLabelsAnnotations } from '../components/drawer';
+import { DrawerItem, DrawerTitle, DrawerParamToggler, DrawerLabelsAnnotations } from '../components/drawer';
 import { useNamespace } from '../context/NamespaceContext';
 import { openPanelTab } from '../components/BottomPanel';
 import { timeAgo, safeJsonPathValue, formatJsonValue, matchesResourceNameFilter } from '../utils';
@@ -224,9 +224,7 @@ const DetailPanel = ({
           <DrawerItem name="Name">{item.name}</DrawerItem>
           {item.namespace ? <DrawerItem name="Namespace">{item.namespace}</DrawerItem> : null}
           <DrawerItem name="Age">{timeAgo(item.created_at)}</DrawerItem>
-          <DrawerCollapsibleSection title="Metadata">
-            <DrawerLabelsAnnotations labels={item.labels ?? undefined} annotations={item.annotations ?? undefined} />
-          </DrawerCollapsibleSection>
+          <DrawerLabelsAnnotations labels={item.labels ?? undefined} annotations={item.annotations ?? undefined} />
           {printerColumns.length > 0 && <DrawerTitle>Columns</DrawerTitle>}
           {printerColumns.map((col) => {
             const value = safeJsonPathValue(resourceObj, getPrinterColumnJsonPath(col));
@@ -252,7 +250,7 @@ const DetailPanel = ({
             </div>
           </DrawerParamToggler>
           {item.status && Object.keys(item.status).length > 0 && (
-            <DrawerParamToggler label="Status" className="border-t border-border pt-3 mt-1">
+            <DrawerParamToggler label="Status" className="pt-1">
               <div className="py-2 font-mono text-xs overflow-x-auto">
                 <JsonTree value={item.status} />
               </div>

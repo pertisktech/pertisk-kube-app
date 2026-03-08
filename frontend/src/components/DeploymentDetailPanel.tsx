@@ -4,7 +4,7 @@ import type { Deployment, Pod, ReplicaSet, KubernetesEvent } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 import { useRealtimeReplicaSets, useRealtimeEvents } from '../hooks/useRealtimeResources';
 import { usePods } from '../hooks/useKubernetes';
 
@@ -308,30 +308,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
             </div>
           )}
 
-          <DrawerCollapsibleSection title="Metadata">
-            <DrawerItem name="Labels" labelsOnly>
-              {Object.keys(labels).length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {Object.entries(labels).map(([key, value]) => (
-                    <span key={key} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }} title={`${key}=${value}`}>{key}={value}</span>
-                  ))}
-                </div>
-              ) : (
-                <span className="text-xs" style={{ color: 'var(--color-muted)' }}>No labels</span>
-              )}
-            </DrawerItem>
-            <DrawerItem name="Annotations" labelsOnly>
-              {Object.keys(annotations).length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {Object.entries(annotations).map(([key, value]) => (
-                    <span key={key} className="inline-flex px-2 py-0.5 rounded text-xs border border-border break-all" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }} title={`${key}=${value}`}>{key}={value}</span>
-                  ))}
-                </div>
-              ) : (
-                <span className="text-xs" style={{ color: 'var(--color-muted)' }}>No annotations</span>
-              )}
-            </DrawerItem>
-          </DrawerCollapsibleSection>
+          <DrawerLabelsAnnotations labels={labels} annotations={annotations} />
 
           <DrawerTitle>Deploy Revisions</DrawerTitle>
           {deploymentReplicaSets.length > 0 ? (

@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { Vwc } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface VwcDetailPanelProps {
   vwc: Vwc;
@@ -31,8 +31,6 @@ export const VwcDetailPanel = ({ vwc, onClose, onOpenYamlEditor, onDelete }: Vwc
     <DrawerItem name="Name">{vwc.name}</DrawerItem>
     <DrawerItem name="Webhooks">{String(vwc.webhooks_count ?? 0)}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(vwc.age)}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={vwc.labels} annotations={vwc.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={vwc.labels} annotations={vwc.annotations} />
   </ResourceDetailPanelLayout>
 );

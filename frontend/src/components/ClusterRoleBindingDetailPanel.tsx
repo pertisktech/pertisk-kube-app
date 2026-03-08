@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from './Icons';
 import type { ClusterRoleBinding } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerCollapsibleSection, DrawerLabelsAnnotations } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface ClusterRoleBindingDetailPanelProps {
   clusterRoleBinding: ClusterRoleBinding;
@@ -32,8 +32,6 @@ export const ClusterRoleBindingDetailPanel = ({ clusterRoleBinding: crb, onClose
     <DrawerItem name="Role">{crb.role ?? '-'}</DrawerItem>
     <DrawerItem name="Subjects">{crb.subjects ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(crb.age)}</DrawerItem>
-    <DrawerCollapsibleSection title="Metadata">
-      <DrawerLabelsAnnotations labels={crb.labels} annotations={crb.annotations} />
-    </DrawerCollapsibleSection>
+    <DrawerLabelsAnnotations labels={crb.labels} annotations={crb.annotations} />
   </ResourceDetailPanelLayout>
 );
