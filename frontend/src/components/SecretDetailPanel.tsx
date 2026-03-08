@@ -14,17 +14,26 @@ interface SecretDetailPanelProps {
 
 const MASK = '••••••••';
 
+interface SecretDataResponse {
+  data?: Record<string, string>;
+  cert_info?: { issued: string; expires: string };
+}
+
 export const SecretDetailPanel = ({ secret, onClose, onOpenYamlEditor, onDelete }: SecretDetailPanelProps) => {
   const [dataKeys, setDataKeys] = useState<Record<string, string> | null>(null);
+  const [certInfo, setCertInfo] = useState<{ issued: string; expires: string } | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
   const [revealValues, setRevealValues] = useState(false);
+
+  const isTls = secret.secret_type === 'kubernetes.io/tls';
 
   useEffect(() => {
     let cancelled = false;
     setDataLoading(true);
     setDataError(null);
     setRevealValues(false);
+    setCertInfo(null);
     const token = getAuthToken();
     fetch(
       `/api/secrets/${encodeURIComponent(secret.namespace)}/${encodeURIComponent(secret.name)}/data`,
@@ -34,8 +43,11 @@ export const SecretDetailPanel = ({ secret, onClose, onOpenYamlEditor, onDelete 
         if (!res.ok) throw new Error(res.statusText);
         return res.json();
       })
-      .then((body: { data?: Record<string, string> }) => {
-        if (!cancelled) setDataKeys(body.data ?? {});
+      .then((body: SecretDataResponse) => {
+        if (!cancelled) {
+          setDataKeys(body.data ?? {});
+          if (body.cert_info) setCertInfo(body.cert_info);
+        }
       })
       .catch((err) => {
         if (!cancelled) setDataError(err instanceof Error ? err.message : 'Failed to load data');
@@ -93,6 +105,12 @@ export const SecretDetailPanel = ({ secret, onClose, onOpenYamlEditor, onDelete 
         <DetailRow label="Data keys" value={secret.data_keys ?? '-'} />
         <DetailRow label="Age" value={timeAgo(secret.age)} />
       </DetailSection>
+      {isTls && certInfo && (
+        <DetailSection title="TLS Certificate">
+          <DetailRow label="Issued" value={certInfo.issued} />
+          <DetailRow label="Expires" value={certInfo.expires} />
+        </DetailSection>
+      )}
       <DetailSection title="Data">
         <div className="flex items-center justify-between gap-2 mb-2">
           <span className="text-xs font-medium" style={{ color: 'var(--color-muted)' }}>Decoded values</span>

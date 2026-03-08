@@ -713,6 +713,19 @@ pub async fn get_secret_yaml(
     }
 }
 
+fn parse_tls_cert_dates(pem_str: &str) -> Option<(String, String)> {
+    use x509_parser::pem::Pem;
+
+    let bytes = pem_str.as_bytes();
+    let mut iter = Pem::iter_from_buffer(bytes);
+    let pem = iter.next()?.ok()?;
+    let cert = pem.parse_x509().ok()?;
+    let validity = cert.validity();
+    let issued = validity.not_before.to_string();
+    let expires = validity.not_after.to_string();
+    Some((issued, expires))
+}
+
 pub async fn get_secret_data(
     Path((namespace, name)): Path<(String, String)>,
     State(state): State<AppState>,
@@ -731,13 +744,31 @@ pub async fn get_secret_data(
                 }
             }
 
-            (
-                StatusCode::OK,
-                Json(serde_json::json!({
-                    "data": decoded,
-                })),
-            )
-                .into_response()
+            let mut response = serde_json::json!({ "data": decoded });
+
+            // For TLS secrets, parse certificate and add issued/expires
+            let is_tls = secret
+                .type_
+                .as_deref()
+                .map(|t| t == "kubernetes.io/tls")
+                .unwrap_or(false);
+            if is_tls {
+                if let Some(serde_json::Value::String(tls_crt)) = decoded.get("tls.crt") {
+                    if let Some((issued, expires)) = parse_tls_cert_dates(tls_crt) {
+                        if let Some(obj) = response.as_object_mut() {
+                            obj.insert(
+                                "cert_info".to_string(),
+                                serde_json::json!({
+                                    "issued": issued,
+                                    "expires": expires,
+                                }),
+                            );
+                        }
+                    }
+                }
+            }
+
+            (StatusCode::OK, Json(response)).into_response()
         }
         Err(err) => {
             error!("Error getting secret data {}/{}: {:?}", namespace, name, err);
