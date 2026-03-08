@@ -7,7 +7,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ServiceDetailPanel, ConfirmDialog } from '../components';
 import type { Service } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type ServiceSortKey = 'name' | 'namespace' | 'service_type' | 'cluster_ip' | 'external_ip' | 'ports' | 'age';
@@ -41,7 +41,7 @@ const getKey = (item: Service) => `${item.namespace}/${item.name}`;
 
 export const ServicesPage = () => {
   const { data, isLoading, error } = useRealtimeServices();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<Service | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -101,6 +101,7 @@ export const ServicesPage = () => {
   const sortedData = useMemo((): (Service & { id: string })[] => {
     let src = [...(data || [])];
     if (selectedNamespaces.length > 0) src = src.filter((i) => selectedNamespaces.includes(i.namespace));
+    if (resourceNameFilter.trim()) src = src.filter((i) => matchesResourceNameFilter(i.name, resourceNameFilter));
     const withId = src.map((i) => ({ ...i, id: getKey(i) }));
     const f = sortState.direction === 'asc' ? 1 : -1;
     return withId.sort((a, b) => {
@@ -113,7 +114,7 @@ export const ServicesPage = () => {
       const at = Date.parse(a.age || ''); const bt = Date.parse(b.age || '');
       return ((Number.isNaN(at) ? 0 : at) - (Number.isNaN(bt) ? 0 : bt)) * f;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

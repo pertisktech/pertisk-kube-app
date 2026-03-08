@@ -7,7 +7,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, HPADetailPanel, ConfirmDialog } from '../components';
 import type { HPA } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type HPASortKey = 'name' | 'namespace' | 'reference' | 'current_replicas' | 'targets' | 'age';
@@ -47,7 +47,7 @@ const sanitizeHPAYamlForEdit = (yamlText: string) => {
 
 export const HPAPage = () => {
   const { data, isLoading, error } = useRealtimeHPA();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedHPA, setSelectedHPA] = useState<HPA | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -188,6 +188,9 @@ export const HPAPage = () => {
     if (selectedNamespaces.length > 0) {
       source = source.filter((h) => selectedNamespaces.includes(h.namespace));
     }
+    if (resourceNameFilter.trim()) {
+      source = source.filter((h) => matchesResourceNameFilter(h.name, resourceNameFilter));
+    }
 
     const sourceWithId = source.map((item) => ({
       ...item,
@@ -207,7 +210,7 @@ export const HPAPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

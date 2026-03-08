@@ -7,7 +7,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, IngressDetailPanel, ConfirmDialog } from '../components';
 import type { Ingress } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type IngressSortKey = 'name' | 'namespace' | 'ingress_class' | 'hosts' | 'address' | 'rules' | 'age';
@@ -32,7 +32,7 @@ const getKey = (item: Ingress) => `${item.namespace}/${item.name}`;
 
 export const IngressesPage = () => {
   const { data, isLoading, error } = useRealtimeIngresses();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<Ingress | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -63,6 +63,7 @@ export const IngressesPage = () => {
   const sortedData = useMemo((): (Ingress & { id: string })[] => {
     let src = [...(data || [])];
     if (selectedNamespaces.length > 0) src = src.filter((i) => selectedNamespaces.includes(i.namespace));
+    if (resourceNameFilter.trim()) src = src.filter((i) => matchesResourceNameFilter(i.name, resourceNameFilter));
     const withId = src.map((i) => ({ ...i, id: getKey(i) }));
     const f = sortState.direction === 'asc' ? 1 : -1;
     return withId.sort((a, b) => {
@@ -75,7 +76,7 @@ export const IngressesPage = () => {
       const at = Date.parse(a.age || ''); const bt = Date.parse(b.age || '');
       return ((Number.isNaN(at) ? 0 : at) - (Number.isNaN(bt) ? 0 : bt)) * f;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
 
   const handleOpenYamlEditorFromPanel = async (item: Ingress) => {

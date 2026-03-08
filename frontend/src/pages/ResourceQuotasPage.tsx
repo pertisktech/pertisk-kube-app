@@ -7,7 +7,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ResourceQuotaDetailPanel, ConfirmDialog } from '../components';
 import type { ResourceQuota } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type ResourceQuotaSortKey = 'name' | 'namespace' | 'status' | 'age';
@@ -47,7 +47,7 @@ const sanitizeResourceQuotaYamlForEdit = (yamlText: string) => {
 
 export const ResourceQuotasPage = () => {
   const { data, isLoading, error } = useRealtimeResourceQuotas();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedResourceQuota, setSelectedResourceQuota] = useState<ResourceQuota | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -173,6 +173,9 @@ export const ResourceQuotasPage = () => {
     if (selectedNamespaces.length > 0) {
       source = source.filter((rq) => selectedNamespaces.includes(rq.namespace));
     }
+    if (resourceNameFilter.trim()) {
+      source = source.filter((rq) => matchesResourceNameFilter(rq.name, resourceNameFilter));
+    }
 
     const sourceWithId = source.map((item) => ({
       ...item,
@@ -190,7 +193,7 @@ export const ResourceQuotasPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

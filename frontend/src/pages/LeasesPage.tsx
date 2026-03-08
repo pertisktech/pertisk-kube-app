@@ -6,13 +6,13 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
 import { LeaseDetailPanel, ConfirmDialog } from '../components';
 import type { Lease } from '../types';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 
 type LeaseSortKey = 'name' | 'namespace' | 'holder_identity' | 'lease_duration_seconds' | 'age';
 
 export const LeasesPage = () => {
   const { data, isLoading, error } = useRealtimeLeases();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedLease, setSelectedLease] = useState<Lease | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -73,9 +73,12 @@ export const LeasesPage = () => {
 
   const sortedAndFilteredData = useMemo(() => {
     if (!data) return [];
-    const filtered = data.filter(
+    let filtered = data.filter(
       (lease) => selectedNamespaces.length === 0 || selectedNamespaces.includes(lease.namespace)
     );
+    if (resourceNameFilter.trim()) {
+      filtered = filtered.filter((lease) => matchesResourceNameFilter(lease.name, resourceNameFilter));
+    }
     const sorted = [...filtered].map((item) => ({ ...item, id: `${item.namespace}/${item.name}` }));
     const factor = sortState.direction === 'asc' ? 1 : -1;
     const compareText = (left: unknown, right: unknown) =>
@@ -110,7 +113,7 @@ export const LeasesPage = () => {
     });
 
     return sorted;
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   const columns = [
     {

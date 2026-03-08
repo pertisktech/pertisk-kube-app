@@ -7,7 +7,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, NetworkPolicyDetailPanel, ConfirmDialog } from '../components';
 import type { NetworkPolicy } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type NetworkPolicySortKey = 'name' | 'namespace' | 'pod_selector' | 'policy_types' | 'ingress_rules' | 'egress_rules' | 'age';
@@ -30,7 +30,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 
 export const NetworkPoliciesPage = () => {
   const { data, isLoading, error } = useRealtimeNetworkPolicies();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<NetworkPolicy | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -59,7 +59,10 @@ export const NetworkPoliciesPage = () => {
   ];
 
   const sortedData = useMemo((): (NetworkPolicy & { id: string })[] => {
-    const filtered = (data || []).filter((i) => selectedNamespaces.length === 0 || selectedNamespaces.includes(i.namespace));
+    let filtered = (data || []).filter((i) => selectedNamespaces.length === 0 || selectedNamespaces.includes(i.namespace));
+    if (resourceNameFilter.trim()) {
+      filtered = filtered.filter((i) => matchesResourceNameFilter(i.name, resourceNameFilter));
+    }
     const withId = filtered.map((i) => ({ ...i, id: `${i.namespace}/${i.name}` }));
     const f = sortState.direction === 'asc' ? 1 : -1;
     return withId.sort((a, b) => {
@@ -72,7 +75,7 @@ export const NetworkPoliciesPage = () => {
       const at = Date.parse(a.age || ''); const bt = Date.parse(b.age || '');
       return ((Number.isNaN(at) ? 0 : at) - (Number.isNaN(bt) ? 0 : bt)) * f;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
 
   const handleOpenYamlEditorFromPanel = async (item: NetworkPolicy) => {

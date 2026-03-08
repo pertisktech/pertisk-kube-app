@@ -7,7 +7,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, PVCDetailPanel, ConfirmDialog } from '../components';
 import type { PersistentVolumeClaim } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { StatusBadge } from '../components/StatusBadge';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -31,7 +31,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 
 export const PersistentVolumeClaimsPage = () => {
   const { data, isLoading, error } = useRealtimePersistentVolumeClaims();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<PersistentVolumeClaim | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -74,6 +74,7 @@ export const PersistentVolumeClaimsPage = () => {
   const sortedData = useMemo(() => {
     let source = data || [];
     if (selectedNamespaces.length > 0) source = source.filter((p) => selectedNamespaces.includes(p.namespace));
+    if (resourceNameFilter.trim()) source = source.filter((p) => matchesResourceNameFilter(p.name, resourceNameFilter));
     const withId = source.map((p) => ({ ...p, id: `${p.namespace}/${p.name}` }));
     const f = sortState.direction === 'asc' ? 1 : -1;
     return withId.sort((a, b) => {
@@ -84,7 +85,7 @@ export const PersistentVolumeClaimsPage = () => {
       const at = Date.parse(a.age || ''); const bt = Date.parse(b.age || '');
       return ((Number.isNaN(at) ? 0 : at) - (Number.isNaN(bt) ? 0 : bt)) * f;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
 
   const handleOpenYamlEditorFromPanel = async (item: PersistentVolumeClaim) => {

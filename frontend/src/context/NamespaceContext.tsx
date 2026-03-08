@@ -9,6 +9,9 @@ interface NamespaceContextType {
   setNamespaces: (namespaces: string[]) => void;
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
+  /** Text filter for resource name (e.g. pod, deployment name). Applied on list pages. */
+  resourceNameFilter: string;
+  setResourceNameFilter: (value: string) => void;
 }
 
 const NamespaceContext = createContext<NamespaceContextType | undefined>(undefined);
@@ -23,6 +26,18 @@ export const NamespaceProvider = ({ children }: { children: ReactNode }) => {
     return stored ? JSON.parse(stored) : [];
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [resourceNameFilter, setResourceNameFilterState] = useState<string>(() => {
+    return localStorage.getItem('resourceNameFilter') ?? '';
+  });
+
+  const setResourceNameFilter = (value: string) => {
+    setResourceNameFilterState(value);
+    if (value) {
+      localStorage.setItem('resourceNameFilter', value);
+    } else {
+      localStorage.removeItem('resourceNameFilter');
+    }
+  };
 
   const setSelectedNamespaces = (newNamespaces: string[]) => {
     setSelectedNamespacesState(newNamespaces);
@@ -83,6 +98,8 @@ export const NamespaceProvider = ({ children }: { children: ReactNode }) => {
         setNamespaces,
         isLoading,
         setIsLoading,
+        resourceNameFilter,
+        setResourceNameFilter,
       }}
     >
       {children}

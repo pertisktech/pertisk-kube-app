@@ -7,7 +7,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, SecretDetailPanel, ConfirmDialog } from '../components';
 import type { Secret } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type SecretSortKey = 'name' | 'namespace' | 'secret_type' | 'data_keys' | 'age';
@@ -47,7 +47,7 @@ const sanitizeSecretYamlForEdit = (yamlText: string) => {
 
 export const SecretsPage = () => {
   const { data, isLoading, error } = useRealtimeSecrets();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedSecret, setSelectedSecret] = useState<Secret | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -168,6 +168,9 @@ export const SecretsPage = () => {
     if (selectedNamespaces.length > 0) {
       source = source.filter((s) => selectedNamespaces.includes(s.namespace));
     }
+    if (resourceNameFilter.trim()) {
+      source = source.filter((s) => matchesResourceNameFilter(s.name, resourceNameFilter));
+    }
 
     const sourceWithId = source.map((item) => ({
       ...item,
@@ -186,7 +189,7 @@ export const SecretsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

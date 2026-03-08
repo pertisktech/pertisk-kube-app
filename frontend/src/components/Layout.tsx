@@ -164,7 +164,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const namespaceMenuRef = useRef<HTMLDivElement>(null);
   const theme = useTheme();
-  const { selectedNamespaces, setSelectedNamespaces, toggleNamespace, clearNamespaces, namespaces, setNamespaces } = useNamespace();
+  const { selectedNamespaces, setSelectedNamespaces, toggleNamespace, clearNamespaces, namespaces, setNamespaces, resourceNameFilter, setResourceNameFilter } = useNamespace();
   const { data: realtimeNamespaces } = useRealtimeNamespaces();
   const { data: apiNamespaces } = useNamespaces();
 
@@ -926,6 +926,16 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
             </nav>
           </div>
           <div className="flex items-center gap-2">
+            {shouldShowNamespaceFilter && (
+              <input
+                type="text"
+                placeholder="Filter by name..."
+                value={resourceNameFilter}
+                onChange={(e) => setResourceNameFilter(e.target.value)}
+                className="w-40 px-3 py-1.5 rounded-lg border border-border bg-surface text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                aria-label="Filter resources by name"
+              />
+            )}
             {namespaces.length > 0 && shouldShowNamespaceFilter && (
               <div ref={namespaceMenuRef} className="relative z-[80]">
                 <button

@@ -7,7 +7,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, LimitRangeDetailPanel, ConfirmDialog } from '../components';
 import type { LimitRange } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type LimitRangeSortKey = 'name' | 'namespace' | 'limits' | 'age';
@@ -47,7 +47,7 @@ const sanitizeLimitRangeYamlForEdit = (yamlText: string) => {
 
 export const LimitRangesPage = () => {
   const { data, isLoading, error } = useRealtimeLimitRanges();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedLimitRange, setSelectedLimitRange] = useState<LimitRange | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -168,6 +168,9 @@ export const LimitRangesPage = () => {
     if (selectedNamespaces.length > 0) {
       source = source.filter((lr) => selectedNamespaces.includes(lr.namespace));
     }
+    if (resourceNameFilter.trim()) {
+      source = source.filter((lr) => matchesResourceNameFilter(lr.name, resourceNameFilter));
+    }
 
     const sourceWithId = source.map((item) => ({
       ...item,
@@ -185,7 +188,7 @@ export const LimitRangesPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

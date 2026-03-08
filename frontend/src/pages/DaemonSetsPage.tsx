@@ -6,7 +6,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DaemonSetDetailPanel, DataTable, ConfirmDialog } from '../components';
 import type { DaemonSet } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { getStatusColor, timeAgo, truncateString } from '../utils';
+import { getStatusColor, timeAgo, truncateString, matchesResourceNameFilter } from '../utils';
 import { deleteDaemonSet } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -56,7 +56,7 @@ const sanitizeDaemonSetYamlForEdit = (yamlText: string) => {
 
 export const DaemonSetsPage = () => {
   const { data, isLoading, error } = useRealtimeDaemonSets();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedDaemonSet, setSelectedDaemonSet] = useState<DaemonSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -214,10 +214,13 @@ export const DaemonSetsPage = () => {
     let source = [...(data || [])];
     
     // Filter by selected namespaces (if any are selected)
-    if (selectedNamespaces.length > 0) {
+if (selectedNamespaces.length > 0) {
       source = source.filter((daemonSet) => selectedNamespaces.includes(daemonSet.namespace));
     }
-    
+    if (resourceNameFilter.trim()) {
+      source = source.filter((d) => matchesResourceNameFilter(d.name, resourceNameFilter));
+    }
+
     // Add unique id for row selection
     source = source.map((item) => ({
       ...item,
@@ -242,7 +245,7 @@ export const DaemonSetsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     }) as (DaemonSet & { id: string })[];
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

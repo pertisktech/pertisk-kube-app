@@ -6,7 +6,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ReplicaSetDetailPanel, ConfirmDialog } from '../components';
 import type { ReplicaSet } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { getStatusColor, timeAgo, truncateString } from '../utils';
+import { getStatusColor, timeAgo, truncateString, matchesResourceNameFilter } from '../utils';
 import { deleteReplicaSet } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -56,7 +56,7 @@ const sanitizeReplicaSetYamlForEdit = (yamlText: string) => {
 
 export const ReplicaSetsPage = () => {
   const { data, isLoading, error } = useRealtimeReplicaSets();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedReplicaSet, setSelectedReplicaSet] = useState<ReplicaSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -214,10 +214,13 @@ export const ReplicaSetsPage = () => {
     let source = [...(data || [])];
     
     // Filter by selected namespaces (if any are selected)
-    if (selectedNamespaces.length > 0) {
+if (selectedNamespaces.length > 0) {
       source = source.filter((replicaSet) => selectedNamespaces.includes(replicaSet.namespace));
     }
-    
+    if (resourceNameFilter.trim()) {
+      source = source.filter((r) => matchesResourceNameFilter(r.name, resourceNameFilter));
+    }
+
     // Add unique id for row selection
     const sourceWithId = source.map((item) => ({
       ...item,
@@ -242,7 +245,7 @@ export const ReplicaSetsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

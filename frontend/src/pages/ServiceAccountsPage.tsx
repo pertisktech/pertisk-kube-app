@@ -7,7 +7,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ServiceAccountDetailPanel, ConfirmDialog } from '../components';
 import type { ServiceAccount } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type ServiceAccountsSortKey = 'name' | 'namespace' | 'age';
@@ -30,7 +30,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 
 export const ServiceAccountsPage = () => {
   const { data, isLoading, error } = useRealtimeServiceAccounts();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<ServiceAccount | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -62,6 +62,7 @@ export const ServiceAccountsPage = () => {
   const sortedData = useMemo(() => {
     let source = data || [];
     if (selectedNamespaces.length > 0) source = source.filter((r) => selectedNamespaces.includes((r as any).namespace));
+    if (resourceNameFilter.trim()) source = source.filter((r) => matchesResourceNameFilter(r.name, resourceNameFilter));
     const withId = source.map((r) => ({ ...r, id: `${(r as any).namespace}/${r.name}` }));
     const f = sortState.direction === 'asc' ? 1 : -1;
     return withId.sort((a, b) => {
@@ -70,7 +71,7 @@ export const ServiceAccountsPage = () => {
       const at = Date.parse((a as any).age || ''); const bt = Date.parse((b as any).age || '');
       return ((Number.isNaN(at) ? 0 : at) - (Number.isNaN(bt) ? 0 : bt)) * f;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
 
   const handleOpenYamlEditorFromPanel = async (item: ServiceAccount) => {

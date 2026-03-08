@@ -7,7 +7,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ConfigMapDetailPanel, ConfirmDialog } from '../components';
 import type { ConfigMap } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type ConfigMapSortKey = 'name' | 'namespace' | 'data_keys' | 'age';
@@ -47,7 +47,7 @@ const sanitizeConfigMapYamlForEdit = (yamlText: string) => {
 
 export const ConfigMapsPage = () => {
   const { data, isLoading, error } = useRealtimeConfigMaps();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedConfigMap, setSelectedConfigMap] = useState<ConfigMap | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -159,6 +159,9 @@ export const ConfigMapsPage = () => {
     if (selectedNamespaces.length > 0) {
       source = source.filter((cm) => selectedNamespaces.includes(cm.namespace));
     }
+    if (resourceNameFilter.trim()) {
+      source = source.filter((cm) => matchesResourceNameFilter(cm.name, resourceNameFilter));
+    }
 
     const sourceWithId = source.map((item) => ({
       ...item,
@@ -176,7 +179,7 @@ export const ConfigMapsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

@@ -6,7 +6,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, JobDetailPanel, ConfirmDialog } from '../components';
 import type { Job } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { getStatusColor, timeAgo } from '../utils';
+import { getStatusColor, timeAgo, matchesResourceNameFilter } from '../utils';
 import { deleteJob } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -47,7 +47,7 @@ const sanitizeJobYamlForEdit = (yamlText: string) => {
 
 export const JobsPage = () => {
   const { data, isLoading, error } = useRealtimeJobs();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -214,6 +214,9 @@ export const JobsPage = () => {
     if (selectedNamespaces.length > 0) {
       source = source.filter((job) => selectedNamespaces.includes(job.namespace));
     }
+    if (resourceNameFilter.trim()) {
+      source = source.filter((job) => matchesResourceNameFilter(job.name, resourceNameFilter));
+    }
     
     // Add unique id for row selection
     source = source.map((job) => ({
@@ -243,7 +246,7 @@ export const JobsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     }) as (Job & { id: string })[];
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

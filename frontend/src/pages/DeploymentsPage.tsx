@@ -9,7 +9,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { Deployment } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { restartDeployment, scaleDeployment, deleteDeployment } from '../hooks/useKubernetes';
-import { getStatusColor, timeAgo } from '../utils';
+import { getStatusColor, timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type DeploymentSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'updated' | 'available' | 'images' | 'age';
@@ -53,7 +53,7 @@ const sanitizeDeploymentYamlForEdit = (yamlText: string) => {
 
 export const DeploymentsPage = () => {
   const { data, isLoading, error } = useRealtimeDeployments();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedDeployment, setSelectedDeployment] = useState<Deployment | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -210,6 +210,9 @@ export const DeploymentsPage = () => {
     if (selectedNamespaces.length > 0) {
       source = source.filter((deployment) => selectedNamespaces.includes(deployment.namespace));
     }
+    if (resourceNameFilter.trim()) {
+      source = source.filter((d) => matchesResourceNameFilter(d.name, resourceNameFilter));
+    }
     
     // Add unique id for row selection
     source = source.map((item) => ({
@@ -234,7 +237,7 @@ export const DeploymentsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     }) as (Deployment & { id: string })[];
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

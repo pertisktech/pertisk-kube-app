@@ -6,7 +6,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { CronJobDetailPanel, DataTable, ConfirmDialog } from '../components';
 import type { CronJob } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { deleteCronJob } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -56,7 +56,7 @@ const sanitizeCronJobYamlForEdit = (yamlText: string) => {
 
 export const CronJobsPage = () => {
   const { data, isLoading, error } = useRealtimeCronJobs();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedCronJob, setSelectedCronJob] = useState<CronJob | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -138,6 +138,9 @@ export const CronJobsPage = () => {
     if (selectedNamespaces.length > 0) {
       source = source.filter((cronJob) => selectedNamespaces.includes(cronJob.namespace));
     }
+    if (resourceNameFilter.trim()) {
+      source = source.filter((c) => matchesResourceNameFilter(c.name, resourceNameFilter));
+    }
     
     // Add unique id for row selection
     source = source.map((item) => ({
@@ -171,7 +174,7 @@ export const CronJobsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     }) as (CronJob & { id: string })[];
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   const columns = [
     {

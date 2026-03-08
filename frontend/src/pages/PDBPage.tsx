@@ -7,7 +7,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, PDBDetailPanel, ConfirmDialog } from '../components';
 import type { PDB } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type PDBSortKey = 'name' | 'namespace' | 'allowed_disruptions' | 'status' | 'age';
@@ -47,7 +47,7 @@ const sanitizePDBYamlForEdit = (yamlText: string) => {
 
 export const PDBPage = () => {
   const { data, isLoading, error } = useRealtimePDB();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedPDB, setSelectedPDB] = useState<PDB | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -166,6 +166,9 @@ export const PDBPage = () => {
     if (selectedNamespaces.length > 0) {
       source = source.filter((pdb) => selectedNamespaces.includes(pdb.namespace));
     }
+    if (resourceNameFilter.trim()) {
+      source = source.filter((p) => matchesResourceNameFilter(p.name, resourceNameFilter));
+    }
 
     const sourceWithId = source.map((item) => ({
       ...item,
@@ -185,7 +188,7 @@ export const PDBPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

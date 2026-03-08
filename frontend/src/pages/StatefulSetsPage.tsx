@@ -6,7 +6,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, StatefulSetDetailPanel, ConfirmDialog } from '../components';
 import type { StatefulSet } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { getStatusColor, timeAgo, truncateString } from '../utils';
+import { getStatusColor, timeAgo, truncateString, matchesResourceNameFilter } from '../utils';
 import { deleteStatefulSet } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -47,7 +47,7 @@ const sanitizeStatefulSetYamlForEdit = (yamlText: string) => {
 
 export const StatefulSetsPage = () => {
   const { data, isLoading, error } = useRealtimeStatefulSets();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedStatefulSet, setSelectedStatefulSet] = useState<StatefulSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -200,6 +200,9 @@ export const StatefulSetsPage = () => {
     if (selectedNamespaces.length > 0) {
       source = source.filter((statefulSet) => selectedNamespaces.includes(statefulSet.namespace));
     }
+    if (resourceNameFilter.trim()) {
+      source = source.filter((s) => matchesResourceNameFilter(s.name, resourceNameFilter));
+    }
 
     // Add unique id for row selection
     const sourceWithId = source.map((item) => ({
@@ -224,7 +227,7 @@ export const StatefulSetsPage = () => {
       const secondAge = Date.parse(second.age || '');
       return ((Number.isNaN(firstAge) ? 0 : firstAge) - (Number.isNaN(secondAge) ? 0 : secondAge)) * factor;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

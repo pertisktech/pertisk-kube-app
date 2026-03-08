@@ -1,3 +1,11 @@
+/** Returns true if name matches the resource name filter (case-insensitive substring). Empty filter matches all. */
+export const matchesResourceNameFilter = (name: string | undefined, filter: string): boolean => {
+  const q = filter.trim();
+  if (!q) return true;
+  if (!name) return false;
+  return name.toLowerCase().includes(q.toLowerCase());
+};
+
 export const formatDate = (timestamp?: string | null): string => {
   if (!timestamp) return '-';
   const date = new Date(timestamp);

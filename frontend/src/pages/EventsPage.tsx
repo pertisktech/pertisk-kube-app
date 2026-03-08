@@ -3,13 +3,13 @@ import { useRealtimeEvents } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
 import type { KubernetesEvent } from '../types';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 
 type EventSortKey = 'name' | 'namespace' | 'involved_object' | 'reason' | 'message' | 'count' | 'last_timestamp' | 'type';
 
 export const EventsPage = () => {
   const { data, isLoading, error } = useRealtimeEvents();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [sortState, setSortState] = useState<{ key: EventSortKey; direction: 'asc' | 'desc' }>({
     key: 'last_timestamp',
     direction: 'desc',
@@ -88,6 +88,11 @@ export const EventsPage = () => {
     if (selectedNamespaces.length > 0) {
       source = source.filter((event) => selectedNamespaces.includes(event.namespace));
     }
+    if (resourceNameFilter.trim()) {
+      source = source.filter(
+        (e) => matchesResourceNameFilter(e.name, resourceNameFilter) || matchesResourceNameFilter(e.involved_object, resourceNameFilter)
+      );
+    }
     
     // Add unique id for row selection
     source = source.map((item) => ({
@@ -110,7 +115,7 @@ export const EventsPage = () => {
       const secondTime = Date.parse(second.last_timestamp || '');
       return ((Number.isNaN(firstTime) ? 0 : firstTime) - (Number.isNaN(secondTime) ? 0 : secondTime)) * factor;
     }) as (KubernetesEvent & { id: string })[];
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   return (
     <div className="space-y-4">

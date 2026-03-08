@@ -7,7 +7,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, EndpointDetailPanel, ConfirmDialog } from '../components';
 import type { Endpoint } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type EndpointSortKey = 'name' | 'namespace' | 'addresses' | 'not_ready' | 'ports' | 'age';
@@ -32,7 +32,7 @@ const getKey = (item: Endpoint) => `${item.namespace}/${item.name}`;
 
 export const EndpointsPage = () => {
   const { data, isLoading, error } = useRealtimeEndpoints();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<Endpoint | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -62,6 +62,7 @@ export const EndpointsPage = () => {
   const sortedData = useMemo((): (Endpoint & { id: string })[] => {
     let src = [...(data || [])];
     if (selectedNamespaces.length > 0) src = src.filter((i) => selectedNamespaces.includes(i.namespace));
+    if (resourceNameFilter.trim()) src = src.filter((i) => matchesResourceNameFilter(i.name, resourceNameFilter));
     const withId = src.map((i) => ({ ...i, id: getKey(i) }));
     const f = sortState.direction === 'asc' ? 1 : -1;
     return withId.sort((a, b) => {
@@ -73,7 +74,7 @@ export const EndpointsPage = () => {
       const at = Date.parse(a.age || ''); const bt = Date.parse(b.age || '');
       return ((Number.isNaN(at) ? 0 : at) - (Number.isNaN(bt) ? 0 : bt)) * f;
     });
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
 
   const handleOpenYamlEditorFromPanel = async (item: Endpoint) => {

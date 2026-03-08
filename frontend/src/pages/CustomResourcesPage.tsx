@@ -15,7 +15,7 @@ import {
 } from '../components/ResourceDetailPanelLayout';
 import { useNamespace } from '../context/NamespaceContext';
 import { openPanelTab } from '../components/BottomPanel';
-import { timeAgo, safeJsonPathValue, formatJsonValue } from '../utils';
+import { timeAgo, safeJsonPathValue, formatJsonValue, matchesResourceNameFilter } from '../utils';
 import { getAuthToken } from '../utils/auth';
 import type { CustomResource, Crd, CrdPrinterColumn } from '../types';
 
@@ -244,7 +244,7 @@ export const CustomResourcesPage = () => {
   const decodedCrdName = crdName ? decodeURIComponent(crdName) : '';
 
   const { data: crds } = useRealtimeCrds();
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
 
   const crd = crds?.find((c) => c.name === decodedCrdName);
   const isNamespaced = crd?.scope === 'Namespaced';
@@ -351,12 +351,18 @@ export const CustomResourcesPage = () => {
     return base;
   }, [crd?.printer_columns, isNamespaced, hasPrinterColumns, printerColumns]);
 
-  // Apply namespace filter client-side when multiple are selected
+  // Apply namespace and name filter client-side
   const filtered = useMemo(() => {
     if (!data) return [];
-    if (!isNamespaced || selectedNamespaces.length === 0) return data;
-    return data.filter((r) => !r.namespace || selectedNamespaces.includes(r.namespace));
-  }, [data, isNamespaced, selectedNamespaces]);
+    let out = data;
+    if (isNamespaced && selectedNamespaces.length > 0) {
+      out = out.filter((r) => !r.namespace || selectedNamespaces.includes(r.namespace));
+    }
+    if (resourceNameFilter.trim()) {
+      out = out.filter((r) => matchesResourceNameFilter(r.name, resourceNameFilter));
+    }
+    return out;
+  }, [data, isNamespaced, selectedNamespaces, resourceNameFilter]);
 
   const sortedData = useMemo(() => {
     const f = sortState.direction === 'asc' ? 1 : -1;

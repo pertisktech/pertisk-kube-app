@@ -9,7 +9,7 @@ import { PodDetailPanel } from '../components/PodDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { StatusBadge } from '../components/StatusBadge';
 import type { Pod } from '../types';
-import { timeAgo } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { getAuthToken } from '../utils/auth';
 import { deletePod, fetchSecretData } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
@@ -66,7 +66,7 @@ export const PodsPage = () => {
   
   const isLoading = !isConnected && data.length === 0;
   
-  const { selectedNamespaces } = useNamespace();
+  const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedPod, setSelectedPod] = useState<Pod | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -303,6 +303,9 @@ export const PodsPage = () => {
     if (selectedNamespaces.length > 0) {
       source = source.filter((pod) => selectedNamespaces.includes(pod.namespace));
     }
+    if (resourceNameFilter.trim()) {
+      source = source.filter((pod) => matchesResourceNameFilter(pod.name, resourceNameFilter));
+    }
     
     // Add unique id for row selection
     source = source.map((pod) => ({
@@ -338,7 +341,7 @@ export const PodsPage = () => {
 
       return 0;
     }) as (Pod & { id: string })[];
-  }, [data, sortState, selectedNamespaces]);
+  }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
   const selectedPodWithEvents = useMemo(() => {
     if (!selectedPod) return null;
