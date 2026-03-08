@@ -6,7 +6,6 @@
 
  [workspace.package]
  edition = "2021"
- authors = ["Pertisk Tech"]
  license = "MIT OR Apache-2.0"
  description = "Pertisk Kubernetes web dashboard (Rust backend + React Admin UI)"
 
