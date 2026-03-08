@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { PriorityClass } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface PriorityClassDetailPanelProps {
   priorityClass: PriorityClass;
@@ -26,13 +27,10 @@ export const PriorityClassDetailPanel = ({ priorityClass, onClose, onOpenYamlEdi
     }
     onClose={onClose}
   >
-    <DetailSection title="Priority Class">
-      <DetailRow label="Name" value={priorityClass.name} />
-      <DetailRow label="Value" value={priorityClass.value ?? '-'} />
-      <DetailRow label="Global Default" value={priorityClass.global_default ? 'Yes' : 'No'} />
-      <DetailRow label="Age" value={timeAgo(priorityClass.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={priorityClass.labels} />
-    <DetailAnnotationsSection annotations={priorityClass.annotations} />
+    <DrawerItem name="Name">{priorityClass.name}</DrawerItem>
+    <DrawerItem name="Value">{priorityClass.value ?? '-'}</DrawerItem>
+    <DrawerItem name="Global Default">{priorityClass.global_default ? 'Yes' : 'No'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(priorityClass.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={priorityClass.labels} annotations={priorityClass.annotations} />
   </ResourceDetailPanelLayout>
 );

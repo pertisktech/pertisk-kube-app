@@ -3,7 +3,8 @@ import { Pencil, Trash2, Cable, X } from './Icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Service } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 import { createPortForward, usePortForwards } from '../hooks/useKubernetes';
 
 // Parse "80/TCP, 443/TCP" -> [80, 443]
@@ -46,28 +47,8 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
 
   const actions = (
     <>
-      <div className="group relative">
-        <button
-          type="button"
-          onClick={() => onOpenYamlEditor?.(service)}
-          className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
-          aria-label="Edit service YAML"
-        >
-          <Pencil size={12} />
-        </button>
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Edit YAML</div>
-      </div>
-      <div className="group relative">
-        <button
-          type="button"
-          onClick={() => onDelete?.(service.namespace, service.name)}
-          className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors"
-          aria-label="Delete service"
-        >
-          <Trash2 size={12} />
-        </button>
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Delete</div>
-      </div>
+      <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor?.(service)} />
+      {onDelete && <PanelActionButton icon={Trash2} label="Delete" danger onClick={() => onDelete(service.namespace, service.name)} />}
     </>
   );
 
@@ -82,30 +63,29 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
       actions={actions}
       onClose={onClose}
     >
-      <DetailSection title="Service">
-        <DetailRow label="Name" value={service.name} />
-        <DetailRow label="Namespace" value={service.namespace} />
-        <DetailRow label="Type" value={service.service_type ?? '-'} />
-        <DetailRow label="Cluster IP" value={service.cluster_ip ?? '-'} mono />
-        <DetailRow label="External IP" value={service.external_ip ?? '-'} mono />
-        <DetailRow label="Ports" value={service.ports ?? '-'} mono />
-        <DetailRow label="Age" value={timeAgo(service.age)} />
-      </DetailSection>
+      <DrawerItem name="Name">{service.name}</DrawerItem>
+      <DrawerItem name="Namespace">{service.namespace}</DrawerItem>
+      <DrawerItem name="Type">{service.service_type ?? '-'}</DrawerItem>
+      <DrawerItem name="Cluster IP">{service.cluster_ip ?? '-'}</DrawerItem>
+      <DrawerItem name="External IP">{service.external_ip ?? '-'}</DrawerItem>
+      <DrawerItem name="Ports">{service.ports ?? '-'}</DrawerItem>
+      <DrawerItem name="Age">{timeAgo(service.age)}</DrawerItem>
+
+      <DrawerLabelsAnnotations labels={service.labels} annotations={service.annotations} />
 
       {servicePorts.length > 0 && (
-        <DetailSection title="Port forward">
-          <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+        <>
+          <DrawerTitle className="-mx-5">Port forward</DrawerTitle>
+          <div className="space-y-0">
             {servicePorts.map((port) => {
               const isForwarding = activeForwards.some((pf) => pf.remote_port === port);
               return (
                 <div
                   key={port}
-                  className="px-4 py-3 flex items-center justify-between"
-                  style={{ borderColor: 'var(--color-border)' }}
+                  className="py-2 flex items-center justify-between border-b border-border last:border-b-0"
+                  style={{ color: 'var(--color-text)' }}
                 >
-                  <span className="text-sm font-mono" style={{ color: 'var(--color-text)' }}>
-                    Port {port}
-                  </span>
+                  <span className="text-xs font-mono">Port {port}</span>
                   <button
                     type="button"
                     onClick={() => setPortForwardModal({ remotePort: port, localPort: port === 80 ? 8080 : port })}
@@ -120,7 +100,7 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
               );
             })}
           </div>
-        </DetailSection>
+        </>
       )}
 
       {portForwardModal && (
@@ -197,9 +177,6 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
           </div>
         </div>
       )}
-
-      <DetailLabelsSection labels={service.labels} />
-      <DetailAnnotationsSection annotations={service.annotations} />
     </ResourceDetailPanelLayout>
   );
 };

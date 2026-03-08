@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { Endpoint } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface EndpointDetailPanelProps {
   endpoint: Endpoint;
@@ -26,15 +27,12 @@ export const EndpointDetailPanel = ({ endpoint, onClose, onOpenYamlEditor, onDel
     }
     onClose={onClose}
   >
-    <DetailSection title="Endpoint">
-      <DetailRow label="Name" value={endpoint.name} />
-      <DetailRow label="Namespace" value={endpoint.namespace} />
-      <DetailRow label="Ready Addresses" value={endpoint.addresses ?? 0} />
-      <DetailRow label="Not Ready Addresses" value={endpoint.not_ready ?? 0} />
-      <DetailRow label="Ports" value={endpoint.ports ?? '-'} mono />
-      <DetailRow label="Age" value={timeAgo(endpoint.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={endpoint.labels} />
-    <DetailAnnotationsSection annotations={endpoint.annotations} />
+    <DrawerItem name="Name">{endpoint.name}</DrawerItem>
+    <DrawerItem name="Namespace">{endpoint.namespace}</DrawerItem>
+    <DrawerItem name="Ready Addresses">{endpoint.addresses ?? 0}</DrawerItem>
+    <DrawerItem name="Not Ready Addresses">{endpoint.not_ready ?? 0}</DrawerItem>
+    <DrawerItem name="Ports">{endpoint.ports ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(endpoint.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={endpoint.labels} annotations={endpoint.annotations} />
   </ResourceDetailPanelLayout>
 );

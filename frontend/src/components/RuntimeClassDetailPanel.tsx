@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { RuntimeClass } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface RuntimeClassDetailPanelProps {
   runtimeClass: RuntimeClass;
@@ -26,13 +27,10 @@ export const RuntimeClassDetailPanel = ({ runtimeClass, onClose, onOpenYamlEdito
     }
     onClose={onClose}
   >
-    <DetailSection title="Runtime Class">
-      <DetailRow label="Name" value={runtimeClass.name} />
-      <DetailRow label="Handler" value={runtimeClass.handler ?? '-'} />
-      <DetailRow label="Scheduling" value={runtimeClass.scheduling ?? '-'} />
-      <DetailRow label="Age" value={timeAgo(runtimeClass.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={runtimeClass.labels} />
-    <DetailAnnotationsSection annotations={runtimeClass.annotations} />
+    <DrawerItem name="Name">{runtimeClass.name}</DrawerItem>
+    <DrawerItem name="Handler">{runtimeClass.handler ?? '-'}</DrawerItem>
+    <DrawerItem name="Scheduling">{runtimeClass.scheduling ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(runtimeClass.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={runtimeClass.labels} annotations={runtimeClass.annotations} />
   </ResourceDetailPanelLayout>
 );

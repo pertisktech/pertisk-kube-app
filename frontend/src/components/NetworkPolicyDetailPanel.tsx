@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { NetworkPolicy } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface NetworkPolicyDetailPanelProps {
   networkPolicy: NetworkPolicy;
@@ -26,16 +27,13 @@ export const NetworkPolicyDetailPanel = ({ networkPolicy, onClose, onOpenYamlEdi
     }
     onClose={onClose}
   >
-    <DetailSection title="Network Policy">
-      <DetailRow label="Name" value={networkPolicy.name} />
-      <DetailRow label="Namespace" value={networkPolicy.namespace} />
-      <DetailRow label="Pod Selector" value={networkPolicy.pod_selector ?? '-'} />
-      <DetailRow label="Policy Types" value={networkPolicy.policy_types ?? '-'} />
-      <DetailRow label="Ingress Rules" value={networkPolicy.ingress_rules ?? 0} />
-      <DetailRow label="Egress Rules" value={networkPolicy.egress_rules ?? 0} />
-      <DetailRow label="Age" value={timeAgo(networkPolicy.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={networkPolicy.labels} />
-    <DetailAnnotationsSection annotations={networkPolicy.annotations} />
+    <DrawerItem name="Name">{networkPolicy.name}</DrawerItem>
+    <DrawerItem name="Namespace">{networkPolicy.namespace}</DrawerItem>
+    <DrawerItem name="Pod Selector">{networkPolicy.pod_selector ?? '-'}</DrawerItem>
+    <DrawerItem name="Policy Types">{networkPolicy.policy_types ?? '-'}</DrawerItem>
+    <DrawerItem name="Ingress Rules">{networkPolicy.ingress_rules ?? 0}</DrawerItem>
+    <DrawerItem name="Egress Rules">{networkPolicy.egress_rules ?? 0}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(networkPolicy.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={networkPolicy.labels} annotations={networkPolicy.annotations} />
   </ResourceDetailPanelLayout>
 );

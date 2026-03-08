@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { HPA } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface HPADetailPanelProps {
   hpa: HPA;
@@ -26,16 +27,13 @@ export const HPADetailPanel = ({ hpa, onClose, onOpenYamlEditor, onDelete }: HPA
     }
     onClose={onClose}
   >
-    <DetailSection title="HPA">
-      <DetailRow label="Name" value={hpa.name} />
-      <DetailRow label="Namespace" value={hpa.namespace} />
-      <DetailRow label="Reference" value={hpa.reference ?? '-'} />
-      <DetailRow label="Replicas" value={`Current: ${hpa.current_replicas} / Desired: ${hpa.desired_replicas}`} />
-      <DetailRow label="Min/Max Replicas" value={`${hpa.min_replicas} / ${hpa.max_replicas}`} />
-      <DetailRow label="Targets" value={hpa.targets ?? '-'} />
-      <DetailRow label="Age" value={timeAgo(hpa.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={hpa.labels} />
-    <DetailAnnotationsSection annotations={hpa.annotations} />
+    <DrawerItem name="Name">{hpa.name}</DrawerItem>
+    <DrawerItem name="Namespace">{hpa.namespace}</DrawerItem>
+    <DrawerItem name="Reference">{hpa.reference ?? '-'}</DrawerItem>
+    <DrawerItem name="Replicas">{`Current: ${hpa.current_replicas} / Desired: ${hpa.desired_replicas}`}</DrawerItem>
+    <DrawerItem name="Min/Max Replicas">{`${hpa.min_replicas} / ${hpa.max_replicas}`}</DrawerItem>
+    <DrawerItem name="Targets">{hpa.targets ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(hpa.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={hpa.labels} annotations={hpa.annotations} />
   </ResourceDetailPanelLayout>
 );

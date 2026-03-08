@@ -1,18 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import YAML from 'yaml';
-import { ChevronDown, Clock, Layers, Pencil, Trash2 } from '../components/Icons';
+import { ChevronDown, Layers, Pencil, Trash2 } from '../components/Icons';
 import { useRealtimeCrds, useRealtimeCustomResources } from '../hooks/useRealtimeResources';
 import { deleteCustomResource } from '../hooks/useKubernetes';
 import { DataTable } from '../components';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import {
-  ResourceDetailPanelLayout,
-  DetailSection,
-  DetailRow,
-  PanelActionButton,
-  CollapsibleSection,
-} from '../components/ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from '../components/ResourceDetailPanelLayout';
+import { DrawerItem, DrawerTitle } from '../components/drawer';
 import { useNamespace } from '../context/NamespaceContext';
 import { openPanelTab } from '../components/BottomPanel';
 import { timeAgo, safeJsonPathValue, formatJsonValue, matchesResourceNameFilter } from '../utils';
@@ -188,48 +183,47 @@ const DetailPanel = ({
             ...(item.namespace ? [{ label: 'Namespace', value: item.namespace }] : []),
             { label: 'Age', value: timeAgo(item.created_at) },
           ]}
-          quickInfo={[{ icon: Clock, label: 'Age', value: timeAgo(item.created_at) }]}
           actions={actions}
           onClose={onClose}
         >
-          {printerColumns.length > 0 && (
-            <DetailSection title="Details" icon={Layers}>
+          <DrawerItem name="Name">{item.name}</DrawerItem>
+          {item.namespace ? <DrawerItem name="Namespace">{item.namespace}</DrawerItem> : null}
+          <DrawerItem name="Age">{timeAgo(item.created_at)}</DrawerItem>
+          {printerColumns.length > 0 ? (
+            <>
+              <DrawerTitle className="-mx-5">Details</DrawerTitle>
               {printerColumns.map((col) => {
                 const value = safeJsonPathValue(resourceObj, col.jsonPath);
                 const display = formatDetailValue(value);
                 return (
-                  <DetailRow
-                    key={col.name}
-                    label={drawerLabel(col.name)}
-                    value={display}
-                    mono={typeof value === 'object' && value !== null}
-                  />
+                  <DrawerItem key={col.name} name={drawerLabel(col.name)}>
+                    {display}
+                  </DrawerItem>
                 );
               })}
-            </DetailSection>
-          )}
-          {conditions.length > 0 && (
-            <DetailSection title="Conditions">
+            </>
+          ) : null}
+          {conditions.length > 0 ? (
+            <>
+              <DrawerTitle className="-mx-5">Conditions</DrawerTitle>
               {conditions.map((c, i) => (
-                <DetailRow
-                  key={i}
-                  label={c.type ?? 'Condition'}
-                  value={c.status === 'True' ? 'True' : c.status === 'False' ? 'False' : (c.reason ?? String(c.status))}
-                />
+                <DrawerItem key={i} name={c.type ?? 'Condition'}>
+                  {c.status === 'True' ? 'True' : c.status === 'False' ? 'False' : (c.reason ?? String(c.status))}
+                </DrawerItem>
               ))}
-            </DetailSection>
-          )}
-          <CollapsibleSection title="Spec" defaultExpanded={false}>
-            <div className="px-4 py-3 font-mono text-xs overflow-x-auto">
-              <JsonTree value={item.spec} />
-            </div>
-          </CollapsibleSection>
+            </>
+          ) : null}
+          <DrawerTitle className="-mx-5">Spec</DrawerTitle>
+          <div className="py-2 font-mono text-xs overflow-x-auto">
+            <JsonTree value={item.spec} />
+          </div>
           {item.status && Object.keys(item.status).length > 0 && (
-            <CollapsibleSection title="Status" defaultExpanded={false}>
-              <div className="px-4 py-3 font-mono text-xs overflow-x-auto">
+            <>
+              <DrawerTitle className="-mx-5">Status</DrawerTitle>
+              <div className="py-2 font-mono text-xs overflow-x-auto">
                 <JsonTree value={item.status} />
               </div>
-            </CollapsibleSection>
+            </>
           )}
         </ResourceDetailPanelLayout>
       </div>

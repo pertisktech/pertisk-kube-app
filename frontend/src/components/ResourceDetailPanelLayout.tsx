@@ -94,7 +94,7 @@ export const ResourceDetailPanelLayout = ({
   kindIcon: KindIcon,
   title,
   statusCards = [],
-  quickInfo = [],
+  quickInfo: _quickInfo = [],
   keyInfo = [],
   actions,
   titleFullText = false,
@@ -104,137 +104,56 @@ export const ResourceDetailPanelLayout = ({
   const useBaseStyle = kind != null;
   const titleClass = titleFullText ? 'text-lg font-bold break-words' : 'text-lg font-bold truncate';
 
+  const keyInfoItems = keyInfo.length > 0 ? keyInfo : statusCards.map((c) => ({ label: c.label, value: c.value }));
+
   return (
     <ResizablePanel>
-      <div className="h-full flex flex-col">
-        {/* Header row: title/kind on left; actions + close grouped on right */}
-        <div style={{ borderBottom: '1px solid var(--color-border)' }}>
-          <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-            {useBaseStyle && KindIcon ? (
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <KindIcon size={18} className="text-[var(--color-primary)] flex-shrink-0" />
-                <h2 className="text-sm font-semibold truncate" style={{ color: 'var(--color-muted)' }}>
-                  {kind}
-                </h2>
-              </div>
-            ) : (
-              <div className="flex-1 min-w-0">
-                <h2 className={titleClass} style={{ color: 'var(--color-text)' }} title={titleFullText ? undefined : title}>
-                  {title}
-                </h2>
-              </div>
-            )}
-            <div
-              className="flex items-center flex-shrink-0 rounded-lg border overflow-hidden"
-              style={{
-                borderColor: 'var(--color-border)',
-                backgroundColor: 'var(--color-bg)',
-              }}
-            >
-              {actions && (
-                <div className="flex items-center">
-                  {actions}
+      <div className="h-full min-h-0 flex flex-col">
+        {/* Freelens-style header: gradient + key info bar */}
+        <div className="bg-gradient-to-r from-surface to-surface-elevated border-b border-border px-5 py-4 flex-shrink-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              {useBaseStyle && KindIcon ? (
+                <div className="flex items-center gap-2">
+                  <KindIcon size={18} className="text-[var(--color-primary)] flex-shrink-0" />
+                  <h2 className="text-sm font-semibold truncate" style={{ color: 'var(--color-muted)' }}>{kind}</h2>
+                </div>
+              ) : null}
+              <h2 className={`${titleClass} mt-1`} style={{ color: 'var(--color-text)' }} title={titleFullText ? undefined : title}>
+                {title}
+              </h2>
+              {status != null && status !== '' && (
+                <div className="mt-2">
+                  <span
+                    className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-[var(--color-icon-success)]/10 text-[var(--color-icon-success)]"
+                    style={{ border: '1px solid var(--color-icon-success)/30' }}
+                  >
+                    {status}
+                  </span>
                 </div>
               )}
+            </div>
+            <div
+              className="flex items-center flex-shrink-0 rounded-lg border overflow-hidden"
+              style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
+            >
+              {actions && <div className="flex items-center">{actions}</div>}
               <button
                 type="button"
                 onClick={onClose}
                 className="p-2 rounded-r-md transition-all duration-150 hover:opacity-80 flex-shrink-0"
-                style={{
-                  color: 'var(--color-muted)',
-                  backgroundColor: actions ? 'transparent' : 'transparent',
-                  borderLeft: actions ? '1px solid var(--color-border)' : 'none',
-                }}
+                style={{ color: 'var(--color-muted)', borderLeft: actions ? '1px solid var(--color-border)' : 'none' }}
                 aria-label="Close panel"
               >
                 <X size={18} />
               </button>
             </div>
           </div>
-
-          {/* Summary block: name, namespace, status cards, quick info (base style) */}
-          {(useBaseStyle || statusCards.length > 0 || quickInfo.length > 0) && (
-            <div className="px-4 pb-3 space-y-3">
-              {(useBaseStyle || statusCards.length > 0 || quickInfo.length > 0) && (
-                <>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <h3
-                        className={titleFullText ? 'text-lg font-bold break-words' : 'text-lg font-bold truncate'}
-                        style={{ color: 'var(--color-text)' }}
-                        title={titleFullText ? undefined : title}
-                      >
-                        {title}
-                      </h3>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--color-muted)' }}>
-                        {keyInfo.find((k) => k.label === 'Namespace')?.value ?? ''}
-                      </p>
-                    </div>
-                  </div>
-
-                  {statusCards.length > 0 && (
-                    <div className="grid grid-cols-3 gap-2">
-                      {statusCards.map((card, idx) => (
-                        <div
-                          key={idx}
-                          className={`rounded-lg p-2 ${card.bgClass ?? ''}`}
-                          style={{
-                            border: '1px solid var(--color-border)',
-                            backgroundColor: card.bgClass ? undefined : 'var(--color-bg)',
-                          }}
-                        >
-                          <div className="flex items-center gap-1 mb-0.5">
-                            <span className="text-xs font-medium" style={{ color: 'var(--color-muted)' }}>
-                              {card.label}
-                            </span>
-                          </div>
-                          <div
-                            className={`text-sm font-bold ${card.colorClass ?? ''}`}
-                            style={card.colorClass ? undefined : { color: 'var(--color-text)' }}
-                          >
-                            {card.value}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {quickInfo.length > 0 && (
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      {quickInfo.map((item, idx) => (
-                        <div key={idx} className="flex items-center gap-1.5 min-w-0">
-                          {item.icon && (
-                            <item.icon size={12} className="text-blue-400 flex-shrink-0" />
-                          )}
-                          <span style={{ color: 'var(--color-muted)' }}>{item.label}:</span>
-                          <span className="font-semibold truncate" style={{ color: 'var(--color-text)' }}>
-                            {item.value}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {!useBaseStyle && keyInfo.length > 0 && (
-                <div className="flex items-center gap-3 text-xs pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
-                  {keyInfo.map((item, idx) => (
-                    <div key={idx} className="flex-1 min-w-0">
-                      <p className="mb-1" style={{ color: 'var(--color-muted)' }}>{item.label}</p>
-                      <p className="font-medium truncate" style={{ color: 'var(--color-text)' }}>{item.value}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {!useBaseStyle && keyInfo.length > 0 && statusCards.length === 0 && quickInfo.length === 0 && (
-            <div className="px-4 pb-3 flex items-center gap-3 text-xs">
-              {keyInfo.map((item, idx) => (
+          {keyInfoItems.length > 0 && (
+            <div className="flex items-center gap-3 text-xs mt-3 pt-3 border-t border-border">
+              {keyInfoItems.map((item, idx) => (
                 <div key={idx} className="flex-1 min-w-0">
-                  <p className="mb-1" style={{ color: 'var(--color-muted)' }}>{item.label}</p>
+                  <p className="mb-1" style={{ color: 'var(--color-text-secondary)' }}>{item.label}</p>
                   <p className="font-medium truncate" style={{ color: 'var(--color-text)' }}>{item.value}</p>
                 </div>
               ))}
@@ -242,8 +161,8 @@ export const ResourceDetailPanelLayout = ({
           )}
         </div>
 
-        {/* Content: scrollable sections — base project style */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ color: 'var(--color-text)' }}>
+        {/* Content: drawer-style scrollable area */}
+        <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden px-5 py-5 text-sm" style={{ color: 'var(--color-text)' }}>
           {children}
         </div>
       </div>

@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { DaemonSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface DaemonSetDetailPanelProps {
   daemonSet: DaemonSet;
@@ -37,45 +38,34 @@ export const DaemonSetDetailPanel = ({ daemonSet, onClose, onOpenYamlEditor, onD
       }
       onClose={onClose}
     >
-      <DetailSection title="DaemonSet">
-        <DetailRow label="Name" value={daemonSet.name} />
-        <DetailRow label="Namespace" value={daemonSet.namespace} />
-        <DetailRow label="Status" value={<span className={getStatusTextClass(daemonSet.status || 'Unknown')}>{daemonSet.status || 'Unknown'}</span>} />
-      </DetailSection>
-      <DetailSection title="Replicas & details">
-        <DetailRow label="Desired" value={daemonSet.desired ?? 0} />
-        <DetailRow label="Current" value={daemonSet.current ?? 0} />
-        <DetailRow label="Ready" value={daemonSet.ready ?? 0} />
-        <DetailRow label="Available" value={daemonSet.available ?? 0} />
-        <DetailRow label="Updated" value={daemonSet.updated ?? 0} />
-        <DetailRow label="Age" value={timeAgo(daemonSet.age)} />
-        <div className="mt-2 pt-2 border-t border-border">
-          <p className="text-text-secondary font-medium text-xs mb-1">Node Selector</p>
-          {selectorEntries.length ? (
-            <div className="flex flex-wrap gap-1.5">
-              {selectorEntries.map(([key, value]) => (
-                <span key={`${key}-${value}`} className="inline-flex px-2 py-1 rounded-md bg-hover text-text text-xs break-all">{key}={value}</span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-text text-xs">-</p>
-          )}
-        </div>
-        <div className="mt-2 pt-2 border-t border-border">
-          <p className="text-text-secondary font-medium text-xs mb-1">Images</p>
-          {daemonSet.images?.length ? (
-            <div className="flex flex-wrap gap-1.5">
-              {daemonSet.images.map((image) => (
-                <span key={image} className="inline-flex px-2 py-1 rounded-md bg-hover text-text text-xs break-all">{image}</span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-text text-xs">-</p>
-          )}
-        </div>
-      </DetailSection>
-      <DetailLabelsSection labels={daemonSet.labels} />
-      <DetailAnnotationsSection annotations={daemonSet.annotations} />
+      <DrawerItem name="Name">{daemonSet.name}</DrawerItem>
+      <DrawerItem name="Namespace">{daemonSet.namespace}</DrawerItem>
+      <DrawerItem name="Status"><span className={getStatusTextClass(daemonSet.status || 'Unknown')}>{daemonSet.status || 'Unknown'}</span></DrawerItem>
+      <DrawerItem name="Desired">{daemonSet.desired ?? 0}</DrawerItem>
+      <DrawerItem name="Current">{daemonSet.current ?? 0}</DrawerItem>
+      <DrawerItem name="Ready">{daemonSet.ready ?? 0}</DrawerItem>
+      <DrawerItem name="Available">{daemonSet.available ?? 0}</DrawerItem>
+      <DrawerItem name="Updated">{daemonSet.updated ?? 0}</DrawerItem>
+      <DrawerItem name="Age">{timeAgo(daemonSet.age)}</DrawerItem>
+      {selectorEntries.length > 0 ? (
+        <DrawerItem name="Node Selector" labelsOnly>
+          <div className="flex flex-wrap gap-1.5">
+            {selectorEntries.map(([key, value]) => (
+              <span key={`${key}-${value}`} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{key}={value}</span>
+            ))}
+          </div>
+        </DrawerItem>
+      ) : null}
+      {daemonSet.images?.length ? (
+        <DrawerItem name="Images" labelsOnly>
+          <div className="flex flex-wrap gap-1.5">
+            {daemonSet.images.map((image) => (
+              <span key={image} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{image}</span>
+            ))}
+          </div>
+        </DrawerItem>
+      ) : null}
+      <DrawerLabelsAnnotations labels={daemonSet.labels} annotations={daemonSet.annotations} />
     </ResourceDetailPanelLayout>
   );
 };

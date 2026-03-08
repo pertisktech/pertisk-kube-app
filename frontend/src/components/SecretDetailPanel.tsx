@@ -3,7 +3,8 @@ import { Pencil, Trash2, Eye, EyeOff } from './Icons';
 import type { Secret } from '../types';
 import { timeAgo } from '../utils';
 import { getAuthToken } from '../utils/auth';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface SecretDetailPanelProps {
   secret: Secret;
@@ -78,58 +79,58 @@ export const SecretDetailPanel = ({ secret, onClose, onOpenYamlEditor, onDelete 
       actions={actions}
       onClose={onClose}
     >
-      <DetailSection title="Secret">
-        <DetailRow label="Name" value={secret.name} />
-        <DetailRow label="Namespace" value={secret.namespace} />
-        <DetailRow label="Type" value={secret.secret_type ?? '-'} />
-        <DetailRow label="Data keys" value={secret.data_keys ?? '-'} />
-        <DetailRow label="Age" value={timeAgo(secret.age)} />
-      </DetailSection>
+      <DrawerItem name="Name">{secret.name}</DrawerItem>
+      <DrawerItem name="Namespace">{secret.namespace}</DrawerItem>
+      <DrawerItem name="Type">{secret.secret_type ?? '-'}</DrawerItem>
+      <DrawerItem name="Data keys">{secret.data_keys ?? '-'}</DrawerItem>
+      <DrawerItem name="Age">{timeAgo(secret.age)}</DrawerItem>
+
+      <DrawerLabelsAnnotations labels={secret.labels} annotations={secret.annotations} />
+
       {isTls && certInfo && (
-        <DetailSection title="TLS Certificate">
-          <DetailRow label="Issued" value={certInfo.issued} />
-          <DetailRow label="Expires" value={certInfo.expires} />
-        </DetailSection>
+        <>
+          <DrawerTitle className="-mx-5">TLS Certificate</DrawerTitle>
+          <DrawerItem name="Issued">{certInfo.issued}</DrawerItem>
+          <DrawerItem name="Expires">{certInfo.expires}</DrawerItem>
+        </>
       )}
-      <DetailSection title="Data">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <span className="text-xs font-medium" style={{ color: 'var(--color-muted)' }}>Decoded values</span>
-          <button
-            type="button"
-            onClick={() => setRevealValues((v) => !v)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded text-xs border transition-colors"
-            style={{
-              borderColor: 'var(--color-border)',
-              color: revealValues ? 'var(--color-primary)' : 'var(--color-muted)',
-              backgroundColor: 'var(--color-bg)',
-            }}
-            aria-pressed={revealValues}
-            aria-label={revealValues ? 'Hide secret values' : 'Show secret values'}
-          >
-            {revealValues ? <EyeOff size={12} /> : <Eye size={12} />}
-            {revealValues ? 'Hide' : 'Show'}
-          </button>
+
+      <DrawerTitle className="-mx-5">Data</DrawerTitle>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="text-xs font-medium" style={{ color: 'var(--color-muted)' }}>Decoded values</span>
+        <button
+          type="button"
+          onClick={() => setRevealValues((v) => !v)}
+          className="flex items-center gap-1.5 px-2 py-1 rounded text-xs border transition-colors"
+          style={{
+            borderColor: 'var(--color-border)',
+            color: revealValues ? 'var(--color-primary)' : 'var(--color-muted)',
+            backgroundColor: 'var(--color-bg)',
+          }}
+          aria-pressed={revealValues}
+          aria-label={revealValues ? 'Hide secret values' : 'Show secret values'}
+        >
+          {revealValues ? <EyeOff size={12} /> : <Eye size={12} />}
+          {revealValues ? 'Hide' : 'Show'}
+        </button>
+      </div>
+      {dataLoading && <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>Loading…</p>}
+      {dataError && <p className="text-xs py-2" style={{ color: 'var(--color-icon-danger)' }}>{dataError}</p>}
+      {!dataLoading && !dataError && dataKeys && Object.keys(dataKeys).length === 0 && (
+        <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>No data</p>
+      )}
+      {!dataLoading && !dataError && dataKeys && Object.keys(dataKeys).length > 0 && (
+        <div className="space-y-3 mt-2">
+          {Object.entries(dataKeys).map(([key, value]) => (
+            <div key={key} className="rounded border p-2" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+              <div className="text-xs font-mono font-medium mb-1" style={{ color: 'var(--color-primary)' }}>{key}</div>
+              <pre className="text-xs font-mono whitespace-pre-wrap break-words m-0" style={{ color: 'var(--color-text)' }}>
+                {revealValues ? value : MASK}
+              </pre>
+            </div>
+          ))}
         </div>
-        {dataLoading && <p className="text-xs" style={{ color: 'var(--color-muted)' }}>Loading…</p>}
-        {dataError && <p className="text-xs" style={{ color: 'var(--color-icon-danger)' }}>{dataError}</p>}
-        {!dataLoading && !dataError && dataKeys && Object.keys(dataKeys).length === 0 && (
-          <p className="text-xs" style={{ color: 'var(--color-muted)' }}>No data</p>
-        )}
-        {!dataLoading && !dataError && dataKeys && Object.keys(dataKeys).length > 0 && (
-          <div className="space-y-3">
-            {Object.entries(dataKeys).map(([key, value]) => (
-              <div key={key} className="rounded border p-2" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
-                <div className="text-xs font-mono font-medium mb-1" style={{ color: 'var(--color-primary)' }}>{key}</div>
-                <pre className="text-xs font-mono whitespace-pre-wrap break-words m-0" style={{ color: 'var(--color-text)' }}>
-                  {revealValues ? value : MASK}
-                </pre>
-              </div>
-            ))}
-          </div>
-        )}
-      </DetailSection>
-      <DetailLabelsSection labels={secret.labels} />
-      <DetailAnnotationsSection annotations={secret.annotations} />
+      )}
     </ResourceDetailPanelLayout>
   );
 };

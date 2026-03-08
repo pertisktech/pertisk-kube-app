@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { PersistentVolumeClaim } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface PVCDetailPanelProps {
   pvc: PersistentVolumeClaim;
@@ -27,17 +28,14 @@ export const PVCDetailPanel = ({ pvc, onClose, onOpenYamlEditor, onDelete }: PVC
     }
     onClose={onClose}
   >
-    <DetailSection title="PVC">
-      <DetailRow label="Name" value={pvc.name} />
-      <DetailRow label="Namespace" value={pvc.namespace} />
-      <DetailRow label="Status" value={pvc.status} />
-      <DetailRow label="Volume" value={pvc.volume ?? '-'} />
-      <DetailRow label="Capacity" value={pvc.capacity ?? '-'} />
-      <DetailRow label="Access Modes" value={pvc.access_modes ?? '-'} />
-      <DetailRow label="Storage Class" value={pvc.storage_class ?? '-'} />
-      <DetailRow label="Age" value={timeAgo(pvc.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={pvc.labels} />
-    <DetailAnnotationsSection annotations={pvc.annotations} />
+    <DrawerItem name="Name">{pvc.name}</DrawerItem>
+    <DrawerItem name="Namespace">{pvc.namespace}</DrawerItem>
+    <DrawerItem name="Status">{pvc.status}</DrawerItem>
+    <DrawerItem name="Volume">{pvc.volume ?? '-'}</DrawerItem>
+    <DrawerItem name="Capacity">{pvc.capacity ?? '-'}</DrawerItem>
+    <DrawerItem name="Access Modes">{pvc.access_modes ?? '-'}</DrawerItem>
+    <DrawerItem name="Storage Class">{pvc.storage_class ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(pvc.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={pvc.labels} annotations={pvc.annotations} />
   </ResourceDetailPanelLayout>
 );

@@ -20,7 +20,7 @@ export {
   type QuickInfoItem,
 } from './ResourceDetailPanelLayout';
 export { NamespaceDetailPanel } from './NamespaceDetailPanel';
-export { DrawerItem, DrawerTitle, DrawerParamToggler } from './drawer';
+export { DrawerItem, DrawerTitle, DrawerParamToggler, DrawerLabelsAnnotations } from './drawer';
 export { NodeDetailPanel } from './NodeDetailPanel';
 export { PodDetailPanel } from './PodDetailPanel';
 export { DeploymentDetailPanel } from './DeploymentDetailPanel';

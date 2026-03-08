@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { ClusterRoleBinding } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface ClusterRoleBindingDetailPanelProps {
   clusterRoleBinding: ClusterRoleBinding;
@@ -26,13 +27,10 @@ export const ClusterRoleBindingDetailPanel = ({ clusterRoleBinding: crb, onClose
     }
     onClose={onClose}
   >
-    <DetailSection title="Cluster Role Binding">
-      <DetailRow label="Name" value={crb.name} />
-      <DetailRow label="Role" value={crb.role ?? '-'} />
-      <DetailRow label="Subjects" value={crb.subjects ?? '-'} />
-      <DetailRow label="Age" value={timeAgo(crb.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={crb.labels} />
-    <DetailAnnotationsSection annotations={crb.annotations} />
+    <DrawerItem name="Name">{crb.name}</DrawerItem>
+    <DrawerItem name="Role">{crb.role ?? '-'}</DrawerItem>
+    <DrawerItem name="Subjects">{crb.subjects ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(crb.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={crb.labels} annotations={crb.annotations} />
   </ResourceDetailPanelLayout>
 );

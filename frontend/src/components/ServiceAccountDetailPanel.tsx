@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { ServiceAccount } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface ServiceAccountDetailPanelProps {
   serviceAccount: ServiceAccount;
@@ -26,13 +27,10 @@ export const ServiceAccountDetailPanel = ({ serviceAccount: sa, onClose, onOpenY
     }
     onClose={onClose}
   >
-    <DetailSection title="Service Account">
-      <DetailRow label="Name" value={sa.name} />
-      <DetailRow label="Namespace" value={sa.namespace} />
-      <DetailRow label="Secrets" value={sa.secrets ?? '-'} />
-      <DetailRow label="Age" value={timeAgo(sa.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={sa.labels} />
-    <DetailAnnotationsSection annotations={sa.annotations} />
+    <DrawerItem name="Name">{sa.name}</DrawerItem>
+    <DrawerItem name="Namespace">{sa.namespace}</DrawerItem>
+    <DrawerItem name="Secrets">{sa.secrets ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(sa.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={sa.labels} annotations={sa.annotations} />
   </ResourceDetailPanelLayout>
 );

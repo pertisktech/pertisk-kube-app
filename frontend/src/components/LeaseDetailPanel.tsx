@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { Lease } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface LeaseDetailPanelProps {
   lease: Lease;
@@ -26,14 +27,11 @@ export const LeaseDetailPanel = ({ lease, onClose, onOpenYamlEditor, onDelete }:
     }
     onClose={onClose}
   >
-    <DetailSection title="Lease">
-      <DetailRow label="Name" value={lease.name} />
-      <DetailRow label="Namespace" value={lease.namespace} />
-      <DetailRow label="Holder Identity" value={lease.holder_identity ?? '-'} />
-      <DetailRow label="Lease Duration" value={lease.lease_duration_seconds != null ? `${lease.lease_duration_seconds}s` : '-'} />
-      <DetailRow label="Age" value={timeAgo(lease.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={lease.labels} />
-    <DetailAnnotationsSection annotations={lease.annotations} />
+    <DrawerItem name="Name">{lease.name}</DrawerItem>
+    <DrawerItem name="Namespace">{lease.namespace}</DrawerItem>
+    <DrawerItem name="Holder Identity">{lease.holder_identity ?? '-'}</DrawerItem>
+    <DrawerItem name="Lease Duration">{lease.lease_duration_seconds != null ? `${lease.lease_duration_seconds}s` : '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(lease.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={lease.labels} annotations={lease.annotations} />
   </ResourceDetailPanelLayout>
 );

@@ -2,7 +2,8 @@ import { Pencil, Trash2 } from './Icons';
 import type { StorageClass } from '../types';
 import { timeAgo } from '../utils';
 import { StatusBadge } from './StatusBadge';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface StorageClassDetailPanelProps {
   storageClass: StorageClass;
@@ -27,16 +28,13 @@ export const StorageClassDetailPanel = ({ storageClass, onClose, onOpenYamlEdito
     }
     onClose={onClose}
   >
-    <DetailSection title="Storage Class">
-      <DetailRow label="Name" value={storageClass.name} />
-      <DetailRow label="Provisioner" value={storageClass.provisioner ?? '-'} />
-      <DetailRow label="Reclaim Policy" value={storageClass.reclaim_policy ?? '-'} />
-      <DetailRow label="Volume Binding Mode" value={storageClass.volume_binding_mode ?? '-'} />
-      <DetailRow label="Allow Volume Expansion" value={<StatusBadge status={storageClass.allow_volume_expansion ? 'Yes' : 'No'} />} />
-      <DetailRow label="Default" value={storageClass.is_default ? <StatusBadge status="Default" /> : 'No'} />
-      <DetailRow label="Age" value={timeAgo(storageClass.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={storageClass.labels} />
-    <DetailAnnotationsSection annotations={storageClass.annotations} />
+    <DrawerItem name="Name">{storageClass.name}</DrawerItem>
+    <DrawerItem name="Provisioner">{storageClass.provisioner ?? '-'}</DrawerItem>
+    <DrawerItem name="Reclaim Policy">{storageClass.reclaim_policy ?? '-'}</DrawerItem>
+    <DrawerItem name="Volume Binding Mode">{storageClass.volume_binding_mode ?? '-'}</DrawerItem>
+    <DrawerItem name="Allow Volume Expansion"><StatusBadge status={storageClass.allow_volume_expansion ? 'Yes' : 'No'} /></DrawerItem>
+    <DrawerItem name="Default">{storageClass.is_default ? <StatusBadge status="Default" /> : 'No'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(storageClass.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={storageClass.labels} annotations={storageClass.annotations} />
   </ResourceDetailPanelLayout>
 );

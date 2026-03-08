@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { StatefulSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface StatefulSetDetailPanelProps {
   statefulSet: StatefulSet;
@@ -35,30 +36,24 @@ export const StatefulSetDetailPanel = ({ statefulSet, onClose, onOpenYamlEditor,
     }
     onClose={onClose}
   >
-    <DetailSection title="StatefulSet">
-      <DetailRow label="Name" value={statefulSet.name} />
-      <DetailRow label="Namespace" value={statefulSet.namespace} />
-      <DetailRow label="Status" value={<span className={getStatusTextClass(statefulSet.status || 'Unknown')}>{statefulSet.status || 'Unknown'}</span>} />
-    </DetailSection>
-    <DetailSection title="Replicas & images">
-      <DetailRow label="Ready" value={statefulSet.ready ?? '-'} />
-      <DetailRow label="Current" value={statefulSet.current ?? 0} />
-      <DetailRow label="Updated" value={statefulSet.updated ?? 0} />
-      <DetailRow label="Age" value={timeAgo(statefulSet.age)} />
-      <div className="mt-2 pt-2 border-t border-border">
-        <p className="text-text-secondary font-medium text-xs mb-1">Images</p>
-        {statefulSet.images?.length ? (
-          <div className="flex flex-wrap gap-1.5">
-            {statefulSet.images.map((image) => (
-              <span key={image} className="inline-flex px-2 py-1 rounded-md bg-hover text-text text-xs break-all">{image}</span>
-            ))}
-          </div>
-        ) : (
-          <p className="text-text text-xs">-</p>
-        )}
-      </div>
-    </DetailSection>
-    <DetailLabelsSection labels={statefulSet.labels} />
-    <DetailAnnotationsSection annotations={statefulSet.annotations} />
+    <DrawerItem name="Name">{statefulSet.name}</DrawerItem>
+    <DrawerItem name="Namespace">{statefulSet.namespace}</DrawerItem>
+    <DrawerItem name="Status">
+      <span className={getStatusTextClass(statefulSet.status || 'Unknown')}>{statefulSet.status || 'Unknown'}</span>
+    </DrawerItem>
+    <DrawerItem name="Ready">{statefulSet.ready ?? '-'}</DrawerItem>
+    <DrawerItem name="Current">{statefulSet.current ?? 0}</DrawerItem>
+    <DrawerItem name="Updated">{statefulSet.updated ?? 0}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(statefulSet.age)}</DrawerItem>
+    {statefulSet.images?.length ? (
+      <DrawerItem name="Images" labelsOnly>
+        <div className="flex flex-wrap gap-1.5">
+          {statefulSet.images.map((image) => (
+            <span key={image} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{image}</span>
+          ))}
+        </div>
+      </DrawerItem>
+    ) : null}
+    <DrawerLabelsAnnotations labels={statefulSet.labels} annotations={statefulSet.annotations} />
   </ResourceDetailPanelLayout>
 );

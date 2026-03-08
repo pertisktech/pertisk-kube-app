@@ -1,7 +1,8 @@
 import { Upload, Trash2 } from './Icons';
 import type { HelmRelease } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 const getStatusClass = (status: string) => {
   const s = status.toLowerCase();
@@ -35,21 +36,14 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYaml, onDelete 
     }
     onClose={onClose}
   >
-    <DetailSection title="Release">
-      <DetailRow label="Name" value={release.name} />
-      <DetailRow label="Namespace" value={release.namespace} />
-      <DetailRow label="Status" value={<span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(release.status)}`}>{release.status}</span>} />
-    </DetailSection>
-    <DetailSection title="Chart">
-      <DetailRow label="Chart Name" value={release.chart !== '-' ? release.chart : release.name} />
-      <DetailRow label="Chart Version" value={release.chart_version ?? '-'} mono />
-      <DetailRow label="App Version" value={release.app_version ?? '-'} mono />
-    </DetailSection>
-    <DetailSection title="Deploy">
-      <DetailRow label="Revision" value={release.revision ?? '-'} />
-      <DetailRow label="Last Updated" value={release.updated ? timeAgo(release.updated) : '-'} />
-    </DetailSection>
-    <DetailLabelsSection labels={release.labels} />
-    <DetailAnnotationsSection annotations={release.annotations} />
+    <DrawerItem name="Name">{release.name}</DrawerItem>
+    <DrawerItem name="Namespace">{release.namespace}</DrawerItem>
+    <DrawerItem name="Status"><span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(release.status)}`}>{release.status}</span></DrawerItem>
+    <DrawerItem name="Chart Name">{release.chart !== '-' ? release.chart : release.name}</DrawerItem>
+    <DrawerItem name="Chart Version">{release.chart_version ?? '-'}</DrawerItem>
+    <DrawerItem name="App Version">{release.app_version ?? '-'}</DrawerItem>
+    <DrawerItem name="Revision">{release.revision ?? '-'}</DrawerItem>
+    <DrawerItem name="Last Updated">{release.updated ? timeAgo(release.updated) : '-'}</DrawerItem>
+    <DrawerLabelsAnnotations labels={release.labels} annotations={release.annotations} />
   </ResourceDetailPanelLayout>
 );

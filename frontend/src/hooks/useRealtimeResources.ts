@@ -99,6 +99,8 @@ function transformDeployment(raw: any): Deployment {
     available,
     images,
     age: metadata.creationTimestamp || '',
+    labels: (metadata.labels as Record<string, string> | undefined) ?? undefined,
+    annotations: (metadata.annotations as Record<string, string> | undefined) ?? undefined,
   };
 }
 

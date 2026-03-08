@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { PDB } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface PDBDetailPanelProps {
   pdb: PDB;
@@ -26,15 +27,12 @@ export const PDBDetailPanel = ({ pdb, onClose, onOpenYamlEditor, onDelete }: PDB
     }
     onClose={onClose}
   >
-    <DetailSection title="Pod Disruption Budget">
-      <DetailRow label="Name" value={pdb.name} />
-      <DetailRow label="Namespace" value={pdb.namespace} />
-      <DetailRow label="Min Available" value={pdb.min_available ?? '-'} />
-      <DetailRow label="Allowed Disruptions" value={pdb.allowed_disruptions ?? '-'} />
-      <DetailRow label="Status" value={pdb.status ?? '-'} />
-      <DetailRow label="Age" value={timeAgo(pdb.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={pdb.labels} />
-    <DetailAnnotationsSection annotations={pdb.annotations} />
+    <DrawerItem name="Name">{pdb.name}</DrawerItem>
+    <DrawerItem name="Namespace">{pdb.namespace}</DrawerItem>
+    <DrawerItem name="Min Available">{pdb.min_available ?? '-'}</DrawerItem>
+    <DrawerItem name="Allowed Disruptions">{pdb.allowed_disruptions ?? '-'}</DrawerItem>
+    <DrawerItem name="Status">{pdb.status ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(pdb.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={pdb.labels} annotations={pdb.annotations} />
   </ResourceDetailPanelLayout>
 );

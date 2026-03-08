@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { RoleBinding } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface RoleBindingDetailPanelProps {
   roleBinding: RoleBinding;
@@ -26,14 +27,11 @@ export const RoleBindingDetailPanel = ({ roleBinding: rb, onClose, onOpenYamlEdi
     }
     onClose={onClose}
   >
-    <DetailSection title="Role Binding">
-      <DetailRow label="Name" value={rb.name} />
-      <DetailRow label="Namespace" value={rb.namespace} />
-      <DetailRow label="Role" value={rb.role ?? '-'} />
-      <DetailRow label="Subjects" value={rb.subjects ?? '-'} />
-      <DetailRow label="Age" value={timeAgo(rb.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={rb.labels} />
-    <DetailAnnotationsSection annotations={rb.annotations} />
+    <DrawerItem name="Name">{rb.name}</DrawerItem>
+    <DrawerItem name="Namespace">{rb.namespace}</DrawerItem>
+    <DrawerItem name="Role">{rb.role ?? '-'}</DrawerItem>
+    <DrawerItem name="Subjects">{rb.subjects ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(rb.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={rb.labels} annotations={rb.annotations} />
   </ResourceDetailPanelLayout>
 );

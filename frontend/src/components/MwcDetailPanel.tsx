@@ -1,14 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { Mwc } from '../types';
 import { timeAgo } from '../utils';
-import {
-  ResourceDetailPanelLayout,
-  DetailSection,
-  DetailRow,
-  DetailLabelsSection,
-  DetailAnnotationsSection,
-  PanelActionButton,
-} from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface MwcDetailPanelProps {
   mwc: Mwc;
@@ -33,12 +27,9 @@ export const MwcDetailPanel = ({ mwc, onClose, onOpenYamlEditor, onDelete }: Mwc
     }
     onClose={onClose}
   >
-    <DetailSection title="Mutating Webhook Configuration">
-      <DetailRow label="Name" value={mwc.name} />
-      <DetailRow label="Webhooks" value={String(mwc.webhooks_count ?? 0)} />
-      <DetailRow label="Age" value={timeAgo(mwc.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={mwc.labels} />
-    <DetailAnnotationsSection annotations={mwc.annotations} />
+    <DrawerItem name="Name">{mwc.name}</DrawerItem>
+    <DrawerItem name="Webhooks">{String(mwc.webhooks_count ?? 0)}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(mwc.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={mwc.labels} annotations={mwc.annotations} />
   </ResourceDetailPanelLayout>
 );

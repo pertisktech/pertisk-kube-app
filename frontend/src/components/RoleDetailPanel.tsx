@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { Role } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface RoleDetailPanelProps {
   role: Role;
@@ -26,13 +27,10 @@ export const RoleDetailPanel = ({ role, onClose, onOpenYamlEditor, onDelete }: R
     }
     onClose={onClose}
   >
-    <DetailSection title="Role">
-      <DetailRow label="Name" value={role.name} />
-      <DetailRow label="Namespace" value={role.namespace} />
-      <DetailRow label="Rules" value={role.rules ?? '-'} />
-      <DetailRow label="Age" value={timeAgo(role.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={role.labels} />
-    <DetailAnnotationsSection annotations={role.annotations} />
+    <DrawerItem name="Name">{role.name}</DrawerItem>
+    <DrawerItem name="Namespace">{role.namespace}</DrawerItem>
+    <DrawerItem name="Rules">{role.rules ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(role.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={role.labels} annotations={role.annotations} />
   </ResourceDetailPanelLayout>
 );

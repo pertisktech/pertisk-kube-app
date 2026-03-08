@@ -4,3 +4,5 @@ export { DrawerTitle } from './DrawerTitle';
 export type { DrawerTitleProps } from './DrawerTitle';
 export { DrawerParamToggler } from './DrawerParamToggler';
 export type { DrawerParamTogglerProps } from './DrawerParamToggler';
+export { DrawerLabelsAnnotations } from './DrawerLabelsAnnotations';
+export type { DrawerLabelsAnnotationsProps } from './DrawerLabelsAnnotations';

@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { ResourceQuota } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface ResourceQuotaDetailPanelProps {
   resourceQuota: ResourceQuota;
@@ -26,13 +27,10 @@ export const ResourceQuotaDetailPanel = ({ resourceQuota, onClose, onOpenYamlEdi
     }
     onClose={onClose}
   >
-    <DetailSection title="Resource Quota">
-      <DetailRow label="Name" value={resourceQuota.name} />
-      <DetailRow label="Namespace" value={resourceQuota.namespace} />
-      <DetailRow label="Status" value={resourceQuota.status ?? '-'} />
-      <DetailRow label="Age" value={timeAgo(resourceQuota.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={resourceQuota.labels} />
-    <DetailAnnotationsSection annotations={resourceQuota.annotations} />
+    <DrawerItem name="Name">{resourceQuota.name}</DrawerItem>
+    <DrawerItem name="Namespace">{resourceQuota.namespace}</DrawerItem>
+    <DrawerItem name="Status">{resourceQuota.status ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(resourceQuota.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={resourceQuota.labels} annotations={resourceQuota.annotations} />
   </ResourceDetailPanelLayout>
 );

@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { PersistentVolume } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface PVDetailPanelProps {
   pv: PersistentVolume;
@@ -27,17 +28,14 @@ export const PVDetailPanel = ({ pv, onClose, onOpenYamlEditor, onDelete }: PVDet
     }
     onClose={onClose}
   >
-    <DetailSection title="Persistent Volume">
-      <DetailRow label="Name" value={pv.name} />
-      <DetailRow label="Capacity" value={pv.capacity ?? '-'} />
-      <DetailRow label="Access Modes" value={pv.access_modes ?? '-'} />
-      <DetailRow label="Reclaim Policy" value={pv.reclaim_policy ?? '-'} />
-      <DetailRow label="Status" value={pv.status} />
-      <DetailRow label="Claim" value={pv.claim ?? '-'} />
-      <DetailRow label="Storage Class" value={pv.storage_class ?? '-'} />
-      <DetailRow label="Age" value={timeAgo(pv.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={pv.labels} />
-    <DetailAnnotationsSection annotations={pv.annotations} />
+    <DrawerItem name="Name">{pv.name}</DrawerItem>
+    <DrawerItem name="Capacity">{pv.capacity ?? '-'}</DrawerItem>
+    <DrawerItem name="Access Modes">{pv.access_modes ?? '-'}</DrawerItem>
+    <DrawerItem name="Reclaim Policy">{pv.reclaim_policy ?? '-'}</DrawerItem>
+    <DrawerItem name="Status">{pv.status}</DrawerItem>
+    <DrawerItem name="Claim">{pv.claim ?? '-'}</DrawerItem>
+    <DrawerItem name="Storage Class">{pv.storage_class ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(pv.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={pv.labels} annotations={pv.annotations} />
   </ResourceDetailPanelLayout>
 );

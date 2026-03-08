@@ -1,7 +1,8 @@
 import { Pencil, Trash2 } from './Icons';
 import type { CronJob } from '../types';
 import { timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerLabelsAnnotations } from './drawer';
 
 interface CronJobDetailPanelProps {
   cronJob: CronJob;
@@ -26,20 +27,15 @@ export const CronJobDetailPanel = ({ cronJob, onClose, onOpenYamlEditor, onDelet
     }
     onClose={onClose}
   >
-    <DetailSection title="CronJob">
-      <DetailRow label="Name" value={cronJob.name} />
-      <DetailRow label="Namespace" value={cronJob.namespace} />
-      <DetailRow label="Schedule" value={cronJob.schedule ?? '-'} />
-    </DetailSection>
-    <DetailSection title="Status">
-      <DetailRow label="Suspend" value={cronJob.suspend ? 'Yes' : 'No'} />
-      <DetailRow label="Active" value={cronJob.active ?? 0} />
-      <DetailRow label="Last Schedule" value={cronJob.last_schedule ? timeAgo(cronJob.last_schedule) : '-'} />
-      <DetailRow label="Next Execution" value={cronJob.next_execution ? timeAgo(cronJob.next_execution) : '-'} />
-      <DetailRow label="Time Zone" value={cronJob.time_zone ?? '-'} />
-      <DetailRow label="Age" value={timeAgo(cronJob.age)} />
-    </DetailSection>
-    <DetailLabelsSection labels={cronJob.labels} />
-    <DetailAnnotationsSection annotations={cronJob.annotations} />
+    <DrawerItem name="Name">{cronJob.name}</DrawerItem>
+    <DrawerItem name="Namespace">{cronJob.namespace}</DrawerItem>
+    <DrawerItem name="Schedule">{cronJob.schedule ?? '-'}</DrawerItem>
+    <DrawerItem name="Suspend">{cronJob.suspend ? 'Yes' : 'No'}</DrawerItem>
+    <DrawerItem name="Active">{cronJob.active ?? 0}</DrawerItem>
+    <DrawerItem name="Last Schedule">{cronJob.last_schedule ? timeAgo(cronJob.last_schedule) : '-'}</DrawerItem>
+    <DrawerItem name="Next Execution">{cronJob.next_execution ? timeAgo(cronJob.next_execution) : '-'}</DrawerItem>
+    <DrawerItem name="Time Zone">{cronJob.time_zone ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(cronJob.age)}</DrawerItem>
+    <DrawerLabelsAnnotations labels={cronJob.labels} annotations={cronJob.annotations} />
   </ResourceDetailPanelLayout>
 );

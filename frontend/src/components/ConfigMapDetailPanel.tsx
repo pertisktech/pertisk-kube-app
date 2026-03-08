@@ -3,7 +3,8 @@ import { Pencil, Trash2 } from './Icons';
 import type { ConfigMap } from '../types';
 import { timeAgo } from '../utils';
 import { getAuthToken } from '../utils/auth';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection, PanelActionButton } from './ResourceDetailPanelLayout';
+import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface ConfigMapDetailPanelProps {
   configMap: ConfigMap;
@@ -62,31 +63,29 @@ export const ConfigMapDetailPanel = ({ configMap, onClose, onOpenYamlEditor, onD
       actions={actions}
       onClose={onClose}
     >
-      <DetailSection title="ConfigMap">
-        <DetailRow label="Name" value={configMap.name} />
-        <DetailRow label="Namespace" value={configMap.namespace} />
-        <DetailRow label="Data keys" value={configMap.data_keys ?? '-'} />
-        <DetailRow label="Age" value={timeAgo(configMap.age)} />
-      </DetailSection>
-      <DetailSection title="Data">
-        {dataLoading && <p className="text-xs" style={{ color: 'var(--color-muted)' }}>Loading…</p>}
-        {dataError && <p className="text-xs" style={{ color: 'var(--color-icon-danger)' }}>{dataError}</p>}
-        {!dataLoading && !dataError && dataKeys && Object.keys(dataKeys).length === 0 && (
-          <p className="text-xs" style={{ color: 'var(--color-muted)' }}>No data</p>
-        )}
-        {!dataLoading && !dataError && dataKeys && Object.keys(dataKeys).length > 0 && (
-          <div className="space-y-3">
-            {Object.entries(dataKeys).map(([key, value]) => (
-              <div key={key} className="rounded border p-2" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
-                <div className="text-xs font-mono font-medium mb-1" style={{ color: 'var(--color-primary)' }}>{key}</div>
-                <pre className="text-xs font-mono whitespace-pre-wrap break-words m-0" style={{ color: 'var(--color-text)' }}>{value}</pre>
-              </div>
-            ))}
-          </div>
-        )}
-      </DetailSection>
-      <DetailLabelsSection labels={configMap.labels} />
-      <DetailAnnotationsSection annotations={configMap.annotations} />
+      <DrawerItem name="Name">{configMap.name}</DrawerItem>
+      <DrawerItem name="Namespace">{configMap.namespace}</DrawerItem>
+      <DrawerItem name="Data keys">{configMap.data_keys ?? '-'}</DrawerItem>
+      <DrawerItem name="Age">{timeAgo(configMap.age)}</DrawerItem>
+
+      <DrawerLabelsAnnotations labels={configMap.labels} annotations={configMap.annotations} />
+
+      <DrawerTitle className="-mx-5">Data</DrawerTitle>
+      {dataLoading && <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>Loading…</p>}
+      {dataError && <p className="text-xs py-2" style={{ color: 'var(--color-icon-danger)' }}>{dataError}</p>}
+      {!dataLoading && !dataError && dataKeys && Object.keys(dataKeys).length === 0 && (
+        <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>No data</p>
+      )}
+      {!dataLoading && !dataError && dataKeys && Object.keys(dataKeys).length > 0 && (
+        <div className="space-y-3 mt-2">
+          {Object.entries(dataKeys).map(([key, value]) => (
+            <div key={key} className="rounded border p-2" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+              <div className="text-xs font-mono font-medium mb-1" style={{ color: 'var(--color-primary)' }}>{key}</div>
+              <pre className="text-xs font-mono whitespace-pre-wrap break-words m-0" style={{ color: 'var(--color-text)' }}>{value}</pre>
+            </div>
+          ))}
+        </div>
+      )}
     </ResourceDetailPanelLayout>
   );
 };

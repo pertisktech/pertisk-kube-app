@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Pencil, Terminal, ScrollText, Trash2, ChevronDown, Cable, Eye, EyeOff } from './Icons';
+import { X, Pencil, Terminal, ScrollText, Trash2, Cable, Eye, EyeOff } from './Icons';
 import { StatusBadge } from './StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';
@@ -70,8 +70,6 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
       pf.status === 'running'
   );
 
-  const [expandedLabels, setExpandedLabels] = useState(false);
-  const [expandedAnnotations, setExpandedAnnotations] = useState(false);
   const [hiddenEnvVars, setHiddenEnvVars] = useState<Record<string, Set<string>>>({});
   const status = pod.status || pod.phase || 'Unknown';
   const hasCpuMetrics = pod.cpu_usage_percent != null;
@@ -101,7 +99,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
   return (
     <>
     <ResizablePanel>
-      <div className="h-full flex flex-col">
+      <div className="h-full min-h-0 flex flex-col">
         {/* Header: same as Node panel (gradient + key info bar) */}
         <div className="bg-gradient-to-r from-surface to-surface-elevated border-b border-border px-5 py-4 flex-shrink-0">
           <div className="flex items-start justify-between gap-3">
@@ -150,7 +148,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto overflow-x-hidden p-4 text-sm drawer-content PodDetails">
+        <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden px-5 py-5 text-sm drawer-content PodDetails">
           {/* Freelens-style order: Status, Node, Pod IPs, Service Account, QoS, then rest */}
           <DrawerItem name="Status">{status}</DrawerItem>
           {pod.node && <DrawerItem name="Node">{pod.node}</DrawerItem>}
@@ -167,6 +165,34 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           <DrawerItem name="QoS Class">{pod.qos_class || pod.qos || '-'}</DrawerItem>
           <DrawerItem name="Created">{timeAgo(pod.created || pod.age)}</DrawerItem>
           <DrawerItem name="Controller">{pod.controlled_by || '-'}</DrawerItem>
+
+          <DrawerItem name="Labels" labelsOnly>
+            {Object.keys(labels).length > 0 ? (
+              <>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(labels).map(([key, value]) => (
+                    <span key={key} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }} title={`${key}=${value}`}>{key}={value}</span>
+                  ))}
+                </div>
+              </>
+            ) : (
+              '—'
+            )}
+          </DrawerItem>
+
+          <DrawerItem name="Annotations" labelsOnly>
+            {Object.keys(annotations).length > 0 ? (
+              <>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(annotations).map(([key, value]) => (
+                    <span key={key} className="inline-flex px-2 py-0.5 rounded text-xs border border-border break-all" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }} title={`${key}=${value}`}>{key}={value}</span>
+                  ))}
+                </div>
+              </>
+            ) : (
+              '—'
+            )}
+          </DrawerItem>
 
           {tolerations.length > 0 && (
             <DrawerItem name="Tolerations" className="PodDetailsTolerations">
@@ -251,48 +277,6 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             </DrawerItem>
           )}
 
-          {Object.keys(labels).length > 0 && (
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => setExpandedLabels((prev) => !prev)}
-                className="w-full flex items-center justify-between py-2 text-left"
-                style={{ color: 'var(--color-muted)' }}
-              >
-                <span className="text-xs font-semibold uppercase tracking-wide">Labels ({Object.keys(labels).length})</span>
-                <ChevronDown size={14} className={`transition-transform ${expandedLabels ? 'rotate-180' : ''}`} />
-              </button>
-              {expandedLabels && (
-                <div className="space-y-0 border-t border-border pt-2">
-                  {Object.entries(labels).map(([key, value]) => (
-                    <DrawerItem key={key} name={key}>{value}</DrawerItem>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {Object.keys(annotations).length > 0 && (
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => setExpandedAnnotations((prev) => !prev)}
-                className="w-full flex items-center justify-between py-2 text-left"
-                style={{ color: 'var(--color-muted)' }}
-              >
-                <span className="text-xs font-semibold uppercase tracking-wide">Annotations ({Object.keys(annotations).length})</span>
-                <ChevronDown size={14} className={`transition-transform ${expandedAnnotations ? 'rotate-180' : ''}`} />
-              </button>
-              {expandedAnnotations && (
-                <div className="space-y-0 border-t border-border pt-2">
-                  {Object.entries(annotations).map(([key, value]) => (
-                    <DrawerItem key={key} name={key}>{value}</DrawerItem>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
           <DrawerItem name="CPU">
             {hasCpuMetrics ? `${pod.cpu || '-'} / ${pod.cpu_capacity || '-'} (${Math.round(cpuPercent)}%)` : pod.cpu || '-'}
           </DrawerItem>
@@ -311,7 +295,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             </div>
           )}
 
-          <DrawerTitle>Containers</DrawerTitle>
+          <DrawerTitle className="-mx-5">Containers</DrawerTitle>
           {containers.length > 0 ? (
             containers.map((c, i) => (
               <div key={`${c.name}-${i}`} className="PodDetailsContainer mt-4 mb-4">
@@ -494,7 +478,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>No container data available</p>
           )}
 
-          <DrawerTitle>Volumes ({volumes.length})</DrawerTitle>
+          <DrawerTitle className="-mx-5">Volumes ({volumes.length})</DrawerTitle>
           {volumes.length > 0 ? (
             <div className="space-y-2">
               {volumes.map((v, i) => (
@@ -510,7 +494,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>No volume data</p>
           )}
 
-          <DrawerTitle>Events ({events.length})</DrawerTitle>
+          <DrawerTitle className="-mx-5">Events ({events.length})</DrawerTitle>
           {events.length > 0 ? (
             <div className="overflow-x-auto border border-border rounded-md -mx-4 px-4">
               <table className="w-full text-xs">
