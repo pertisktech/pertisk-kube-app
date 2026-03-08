@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{
     extract::{Path, Query, State},
     http::{header, StatusCode},
@@ -15,6 +17,31 @@ use tracing::error;
 use crate::models::*;
 use crate::AppState;
 
+fn custom_resource_from_dynamic(obj: DynamicObject) -> CustomResourceItem {
+    let labels = obj
+        .metadata
+        .labels
+        .as_ref()
+        .map(|bt| bt.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<HashMap<_, _>>());
+    let annotations = obj
+        .metadata
+        .annotations
+        .as_ref()
+        .map(|bt| bt.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<HashMap<_, _>>());
+    CustomResourceItem {
+        name: obj.metadata.name.unwrap_or_default(),
+        namespace: obj.metadata.namespace,
+        created_at: obj
+            .metadata
+            .creation_timestamp
+            .map(|t| t.0.to_rfc3339()),
+        spec: obj.data.get("spec").cloned().unwrap_or(serde_json::Value::Null),
+        status: obj.data.get("status").cloned(),
+        labels,
+        annotations,
+    }
+}
+
 #[derive(Deserialize)]
 pub struct NamespaceQuery {
     pub namespace: Option<String>,
@@ -31,6 +58,25 @@ pub async fn list_crds(State(state): State<AppState>) -> impl IntoResponse {
                     let meta = &crd.metadata;
                     let spec = &crd.spec;
                     let names = &spec.names;
+                    let storage_version = spec
+                        .versions
+                        .iter()
+                        .find(|v| v.storage)
+                        .or_else(|| spec.versions.first());
+                    let printer_columns = storage_version
+                        .and_then(|v| v.additional_printer_columns.as_ref())
+                        .map(|cols| {
+                            cols.iter()
+                                .filter(|c| !c.json_path.is_empty() && !c.name.eq_ignore_ascii_case("age"))
+                                .map(|c| CrdPrinterColumnItem {
+                                    name: c.name.clone(),
+                                    json_path: c.json_path.clone(),
+                                    type_: Some(c.type_.clone()),
+                                    priority: c.priority,
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .filter(|v| !v.is_empty());
 
                     CrdItem {
                         name: meta.name.clone().unwrap_or_default(),
@@ -53,6 +99,7 @@ pub async fn list_crds(State(state): State<AppState>) -> impl IntoResponse {
                             .creation_timestamp
                             .as_ref()
                             .map(|t| t.0.to_rfc3339()),
+                        printer_columns,
                     }
                 })
                 .collect();
@@ -105,16 +152,7 @@ pub async fn list_custom_resources(
                 Ok(list) => list
                     .items
                     .into_iter()
-                    .map(|obj| CustomResourceItem {
-                        name: obj.metadata.name.unwrap_or_default(),
-                        namespace: obj.metadata.namespace,
-                        created_at: obj
-                            .metadata
-                            .creation_timestamp
-                            .map(|t| t.0.to_rfc3339()),
-                        spec: obj.data.get("spec").cloned().unwrap_or(serde_json::Value::Null),
-                        status: obj.data.get("status").cloned(),
-                    })
+                    .map(|obj| custom_resource_from_dynamic(obj))
                     .collect(),
                 Err(err) => {
                     error!("Error listing custom resources for {}: {:?}", crd_name, err);
@@ -128,16 +166,7 @@ pub async fn list_custom_resources(
                 Ok(list) => list
                     .items
                     .into_iter()
-                    .map(|obj| CustomResourceItem {
-                        name: obj.metadata.name.unwrap_or_default(),
-                        namespace: obj.metadata.namespace,
-                        created_at: obj
-                            .metadata
-                            .creation_timestamp
-                            .map(|t| t.0.to_rfc3339()),
-                        spec: obj.data.get("spec").cloned().unwrap_or(serde_json::Value::Null),
-                        status: obj.data.get("status").cloned(),
-                    })
+                    .map(|obj| custom_resource_from_dynamic(obj))
                     .collect(),
                 Err(err) => {
                     error!("Error listing custom resources for {}: {:?}", crd_name, err);
@@ -151,16 +180,7 @@ pub async fn list_custom_resources(
             Ok(list) => list
                 .items
                 .into_iter()
-                .map(|obj| CustomResourceItem {
-                    name: obj.metadata.name.unwrap_or_default(),
-                    namespace: obj.metadata.namespace,
-                    created_at: obj
-                        .metadata
-                        .creation_timestamp
-                        .map(|t| t.0.to_rfc3339()),
-                    spec: obj.data.get("spec").cloned().unwrap_or(serde_json::Value::Null),
-                    status: obj.data.get("status").cloned(),
-                })
+                .map(|obj| custom_resource_from_dynamic(obj))
                 .collect(),
             Err(err) => {
                 error!("Error listing cluster-scoped custom resources for {}: {:?}", crd_name, err);

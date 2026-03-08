@@ -798,7 +798,9 @@ function transformCustomResource(raw: any): CustomResource {
   const created_at = metadata.creationTimestamp ? new Date(metadata.creationTimestamp).toISOString() : null;
   const spec = (raw.data && raw.data.spec) ? raw.data.spec : (raw.spec || {});
   const status = (raw.data && raw.data.status) != null ? raw.data.status : (raw.status != null ? raw.status : null);
-  return { name, namespace, created_at, spec, status };
+  const labels = (metadata.labels as Record<string, string> | undefined) ?? undefined;
+  const annotations = (metadata.annotations as Record<string, string> | undefined) ?? undefined;
+  return { name, namespace, created_at, spec, status, labels, annotations };
 }
 
 function transformCrd(raw: any): Crd {

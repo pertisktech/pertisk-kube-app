@@ -2,25 +2,30 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import YAML from 'yaml';
 import { ChevronDown, Layers, Pencil, Trash2 } from '../components/Icons';
-import { useRealtimeCrds } from '../hooks/useRealtimeResources';
-import { deleteCustomResource, useCustomResources } from '../hooks/useKubernetes';
+import { deleteCustomResource, useCrds, useCustomResources } from '../hooks/useKubernetes';
 import { DataTable } from '../components';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ResourceDetailPanelLayout, PanelActionButton } from '../components/ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle, DrawerParamToggler } from '../components/drawer';
+import { DrawerItem, DrawerTitle, DrawerParamToggler, DrawerLabelsAnnotations } from '../components/drawer';
 import { useNamespace } from '../context/NamespaceContext';
 import { openPanelTab } from '../components/BottomPanel';
 import { timeAgo, safeJsonPathValue, formatJsonValue, matchesResourceNameFilter } from '../utils';
 import { getAuthToken } from '../utils/auth';
 import type { CustomResource, Crd, CrdPrinterColumn } from '../types';
 
-/** Build a K8s-like object from CustomResource for JSONPath resolution (.metadata, .spec, .status) */
+/**
+ * Build a K8s-like object from CustomResource for JSONPath resolution (matches Freelens / kubectl).
+ * Must include metadata (name, namespace, creationTimestamp, labels, annotations), spec, and status
+ * so CRD printer column paths like .metadata.labels, .spec.addresses, .status.conditions resolve.
+ */
 function resourceObjectForJsonPath(item: CustomResource): Record<string, unknown> {
   return {
     metadata: {
       name: item.name,
       namespace: item.namespace ?? '',
       creationTimestamp: item.created_at ?? null,
+      labels: item.labels ?? {},
+      annotations: item.annotations ?? {},
     },
     spec: item.spec ?? {},
     status: item.status ?? {},
@@ -126,17 +131,46 @@ const JsonTree = ({ value, depth = 0 }: { value: unknown; depth?: number }) => {
   return <span>{String(value)}</span>;
 };
 
-/** Format a printer column value for display (same style as other detail panels) */
-function formatDetailValue(value: unknown): React.ReactNode {
-  if (value == null) return '—';
+/**
+ * Render printer column value for detail panel (Freelens-style: arrays as list, objects as JSON block).
+ */
+function convertSpecValue(value: unknown): React.ReactNode {
+  if (value === null || value === undefined) return '—';
+  if (Array.isArray(value)) {
+    return (
+      <ul className="list-disc list-inside pl-1 space-y-0.5 text-xs" style={{ color: 'var(--color-text)' }}>
+        {value.map((item, index) => (
+          <li key={index}>{convertSpecValue(item)}</li>
+        ))}
+      </ul>
+    );
+  }
+  if (typeof value === 'object') {
+    return (
+      <pre className="text-xs whitespace-pre-wrap break-words mt-1 p-2 rounded border border-border bg-surface-elevated overflow-x-auto" style={{ color: 'var(--color-text)' }}>
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    );
+  }
   if (typeof value === 'boolean') return value ? 'True' : 'False';
-  if (typeof value === 'object') return JSON.stringify(value, null, 2);
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
   return String(value);
 }
 
-/** Humanized label from CRD column name */
-function drawerLabel(name: string): string {
-  return name.replace(/([A-Z])/g, ' $1').trim() || name;
+/**
+ * Humanize CRD column name for display: add spaces before capitals but keep trailing
+ * acronyms together (e.g. "InternalIP" -> "Internal IP", "CiliumInternalIP" -> "Cilium Internal IP").
+ */
+function humanizeColumnName(name: string): string {
+  if (!name) return name;
+  const withSpaces = name.replace(/([A-Z])/g, ' $1').trim();
+  // Merge trailing " I P" or " A P I" into " IP", " API"
+  return withSpaces.replace(/( [A-Z])+$/g, (m) => ' ' + m.replace(/\s/g, '')).trim();
+}
+
+/** Resolve jsonPath from printer column (API may send jsonPath or json_path) */
+function getPrinterColumnJsonPath(col: CrdPrinterColumn & { json_path?: string }): string {
+  return col.jsonPath ?? col.json_path ?? '';
 }
 
 const DetailPanel = ({
@@ -189,12 +223,12 @@ const DetailPanel = ({
           <DrawerItem name="Name">{item.name}</DrawerItem>
           {item.namespace ? <DrawerItem name="Namespace">{item.namespace}</DrawerItem> : null}
           <DrawerItem name="Age">{timeAgo(item.created_at)}</DrawerItem>
+          <DrawerLabelsAnnotations labels={item.labels ?? undefined} annotations={item.annotations ?? undefined} />
           {printerColumns.map((col) => {
-            const value = safeJsonPathValue(resourceObj, col.jsonPath);
-            const display = formatDetailValue(value);
+            const value = safeJsonPathValue(resourceObj, getPrinterColumnJsonPath(col));
             return (
-              <DrawerItem key={col.name} name={drawerLabel(col.name)}>
-                {display}
+              <DrawerItem key={col.name} name={humanizeColumnName(col.name)}>
+                {convertSpecValue(value)}
               </DrawerItem>
             );
           })}
@@ -214,7 +248,7 @@ const DetailPanel = ({
             </div>
           </DrawerParamToggler>
           {item.status && Object.keys(item.status).length > 0 && (
-            <DrawerParamToggler label="Status">
+            <DrawerParamToggler label="Status" className="border-t border-border pt-3 mt-1">
               <div className="py-2 font-mono text-xs overflow-x-auto">
                 <JsonTree value={item.status} />
               </div>
@@ -232,7 +266,7 @@ export const CustomResourcesPage = () => {
   const { crdName } = useParams<{ crdName: string }>();
   const decodedCrdName = crdName ? decodeURIComponent(crdName) : '';
 
-  const { data: crds } = useRealtimeCrds();
+  const { data: crds, isLoading: crdsLoading } = useCrds(Boolean(decodedCrdName));
   const { selectedNamespaces, resourceNameFilter } = useNamespace();
 
   const crd = crds?.find((c) => c.name === decodedCrdName);
@@ -240,8 +274,10 @@ export const CustomResourcesPage = () => {
 
   const { data: restData, isLoading: queryLoading, error, isFetched } = useCustomResources(decodedCrdName || '');
   const rawData = restData ?? [];
-  // Avoid show/hide flicker: show loading until we have a settled result (data or fetched empty)
-  const isLoading = Boolean(decodedCrdName && (queryLoading || (!isFetched && restData === undefined)));
+  // Wait for both CRD definition and resources so columns are stable from first paint (no show/hide flicker)
+  const isLoading = Boolean(
+    decodedCrdName && (queryLoading || !isFetched || restData === undefined || crdsLoading)
+  );
   // For namespaced CRDs filter by selected namespaces when set
   const data = useMemo(() => {
     if (!rawData?.length) return rawData ?? [];
@@ -314,10 +350,10 @@ export const CustomResourcesPage = () => {
         : []),
       ...(hasPrinterColumns
         ? printerColumns.map((col: CrdPrinterColumn) => ({
-            header: col.name.replace(/([A-Z])/g, ' $1').trim(),
+            header: humanizeColumnName(col.name),
             accessor: (r: CustomResource) => {
               const obj = resourceObjectForJsonPath(r);
-              return formatJsonValue(safeJsonPathValue(obj, col.jsonPath));
+              return formatJsonValue(safeJsonPathValue(obj, getPrinterColumnJsonPath(col)));
             },
             width: '15%' as const,
             sortable: true,
@@ -370,10 +406,11 @@ export const CustomResourcesPage = () => {
       }
       const printerCol = printerColumns.find((c) => c.name === sortKey);
       if (printerCol) {
+        const path = getPrinterColumnJsonPath(printerCol);
         const objA = resourceObjectForJsonPath(a);
         const objB = resourceObjectForJsonPath(b);
-        const valA = safeJsonPathValue(objA, printerCol.jsonPath);
-        const valB = safeJsonPathValue(objB, printerCol.jsonPath);
+        const valA = safeJsonPathValue(objA, path);
+        const valB = safeJsonPathValue(objB, path);
         const strA = formatJsonValue(valA);
         const strB = formatJsonValue(valB);
         return strA.localeCompare(strB, undefined, { numeric: true }) * f;

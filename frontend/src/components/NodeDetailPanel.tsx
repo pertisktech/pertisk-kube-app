@@ -149,7 +149,7 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
         </div>
 
         {/* Scrollable content: DrawerItem / DrawerTitle layout like freelens */}
-        <div className="flex-1 overflow-auto overflow-x-hidden p-4 text-sm drawer-content">
+        <div className="flex-1 overflow-auto overflow-x-hidden p-4 text-xs drawer-content">
           {hasAddresses && (
             <DrawerItem name="Addresses">
               <div className="space-y-1">

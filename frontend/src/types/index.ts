@@ -56,6 +56,8 @@ export interface CustomResource {
   created_at: string | null;
   spec: Record<string, unknown>;
   status: Record<string, unknown> | null;
+  labels?: Record<string, string> | null;
+  annotations?: Record<string, string> | null;
 }
 
 export interface Namespace {

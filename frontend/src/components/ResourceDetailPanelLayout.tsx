@@ -162,7 +162,7 @@ export const ResourceDetailPanelLayout = ({
         </div>
 
         {/* Content: drawer-style scrollable area */}
-        <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden px-5 py-5 text-sm" style={{ color: 'var(--color-text)' }}>
+        <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden px-5 py-5 text-xs" style={{ color: 'var(--color-text)' }}>
           {children}
         </div>
       </div>
@@ -263,7 +263,7 @@ export const DetailSection = ({
   );
 };
 
-/** Single key-value row inside a section — base project style (px-4 py-3, text-sm) */
+/** Single key-value row inside a section — base project style (px-4 py-3, text-xs) */
 export const DetailRow = ({
   label,
   value,
@@ -279,12 +279,12 @@ export const DetailRow = ({
     className="px-4 py-3 flex items-center justify-between"
     style={{ borderColor: 'var(--color-border)' }}
   >
-    <span className="text-sm flex items-center gap-2" style={{ color: 'var(--color-muted)' }}>
+    <span className="text-xs flex items-center gap-2" style={{ color: 'var(--color-muted)' }}>
       {Icon && <Icon size={14} className="flex-shrink-0" />}
       {label}
     </span>
     <span
-      className={`text-sm font-medium truncate max-w-[220px] text-right ${mono ? 'font-mono' : ''}`}
+      className={`text-xs font-medium truncate max-w-[220px] text-right ${mono ? 'font-mono' : ''}`}
       style={{ color: 'var(--color-text)' }}
     >
       {value ?? '-'}
@@ -324,7 +324,7 @@ export const DetailLabelsSection = ({ labels }: { labels?: Record<string, string
             entries.map(([key, value]) => (
               <div
                 key={key}
-                className="py-3 flex items-center justify-between gap-2 text-sm"
+                className="py-3 flex items-center justify-between gap-2 text-xs"
                 style={{ borderColor: 'var(--color-border)' }}
               >
                 <span className="truncate" style={{ color: 'var(--color-muted)' }}>{key}</span>
@@ -332,7 +332,7 @@ export const DetailLabelsSection = ({ labels }: { labels?: Record<string, string
               </div>
             ))
           ) : (
-            <p className="py-3 text-sm" style={{ color: 'var(--color-muted)' }}>No labels</p>
+            <p className="py-3 text-xs" style={{ color: 'var(--color-muted)' }}>No labels</p>
           )}
         </div>
       )}
@@ -372,7 +372,7 @@ export const DetailAnnotationsSection = ({ annotations }: { annotations?: Record
             entries.map(([key, value]) => (
               <div
                 key={key}
-                className="py-3 flex items-center justify-between gap-2 text-sm"
+                className="py-3 flex items-center justify-between gap-2 text-xs"
                 style={{ borderColor: 'var(--color-border)' }}
               >
                 <span className="truncate" style={{ color: 'var(--color-muted)' }}>{key}</span>
@@ -380,7 +380,7 @@ export const DetailAnnotationsSection = ({ annotations }: { annotations?: Record
               </div>
             ))
           ) : (
-            <p className="py-3 text-sm" style={{ color: 'var(--color-muted)' }}>No annotations</p>
+            <p className="py-3 text-xs" style={{ color: 'var(--color-muted)' }}>No annotations</p>
           )}
         </div>
       )}

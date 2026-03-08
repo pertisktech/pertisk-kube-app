@@ -514,6 +514,18 @@ pub struct CrdVersionItem {
     pub storage: bool,
 }
 
+/// Printer column for CRD table (matches frontend CrdPrinterColumn).
+#[derive(Serialize)]
+pub struct CrdPrinterColumnItem {
+    pub name: String,
+    #[serde(rename = "jsonPath")]
+    pub json_path: String,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub type_: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i32>,
+}
+
 #[derive(Serialize)]
 pub struct CrdItem {
     pub name: String,
@@ -525,6 +537,8 @@ pub struct CrdItem {
     pub short_names: Vec<String>,
     pub versions: Vec<CrdVersionItem>,
     pub created_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub printer_columns: Option<Vec<CrdPrinterColumnItem>>,
 }
 
 #[derive(Serialize)]
@@ -534,6 +548,10 @@ pub struct CustomResourceItem {
     pub created_at: Option<String>,
     pub spec: serde_json::Value,
     pub status: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<std::collections::HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Serialize)]

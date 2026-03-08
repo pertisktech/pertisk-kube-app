@@ -148,7 +148,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden px-5 py-5 text-sm drawer-content PodDetails">
+        <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden px-5 py-5 text-xs drawer-content PodDetails">
           {/* Freelens-style order: Status, Node, Pod IPs, Service Account, QoS, then rest */}
           <DrawerItem name="Status">{status}</DrawerItem>
           {pod.node && <DrawerItem name="Node">{pod.node}</DrawerItem>}
@@ -538,7 +538,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+            <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
               Port forward pod/{pod.name}
             </h3>
             <button type="button" onClick={() => setPortForwardModal(null)} className="p-1 rounded hover:bg-hover text-text-secondary">
@@ -559,7 +559,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                   prev ? { ...prev, localPort: parseInt(e.target.value, 10) || 8080 } : null
                 )
               }
-              className="flex-1 px-2 py-1.5 rounded border text-sm font-mono"
+              className="flex-1 px-2 py-1.5 rounded border text-xs font-mono"
               style={{
                 backgroundColor: 'var(--color-bg)',
                 borderColor: 'var(--color-border)',
@@ -567,7 +567,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
               }}
             />
             <span className="text-text-secondary">→</span>
-            <span className="font-mono text-sm text-text">{portForwardModal.remotePort}</span>
+            <span className="font-mono text-xs text-text">{portForwardModal.remotePort}</span>
           </div>
           {createPfMutation.isError && (
             <p className="text-xs text-red-400 mb-2">{(createPfMutation.error as Error).message}</p>
@@ -576,7 +576,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             <button
               type="button"
               onClick={() => setPortForwardModal(null)}
-              className="px-3 py-1.5 rounded border border-border text-text-secondary text-sm hover:bg-hover"
+              className="px-3 py-1.5 rounded border border-border text-text-secondary text-xs hover:bg-hover"
             >
               Cancel
             </button>
@@ -592,7 +592,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                 });
               }}
               disabled={createPfMutation.isPending}
-              className="px-3 py-1.5 rounded bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50"
+              className="px-3 py-1.5 rounded bg-green-600 text-white text-xs hover:bg-green-700 disabled:opacity-50"
             >
               {createPfMutation.isPending ? 'Starting...' : 'Start'}
             </button>

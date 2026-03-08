@@ -207,7 +207,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto overflow-x-hidden p-4 text-sm drawer-content DeploymentDetails">
+        <div className="flex-1 overflow-auto overflow-x-hidden p-4 text-xs drawer-content DeploymentDetails">
           <DrawerItem name="Replicas">
             {`${currentDesiredReplicas} desired, ${deployment.updated ?? 0} updated, ${currentAvailableReplicas} available`}
           </DrawerItem>

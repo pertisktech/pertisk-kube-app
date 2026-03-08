@@ -115,7 +115,7 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+              <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
                 Port forward svc/{service.name}
               </h3>
               <button type="button" onClick={() => setPortForwardModal(null)} className="p-1 rounded hover:bg-hover text-text-secondary">
@@ -136,7 +136,7 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
                     prev ? { ...prev, localPort: parseInt(e.target.value, 10) || 8080 } : null
                   )
                 }
-                className="flex-1 px-2 py-1.5 rounded border text-sm font-mono"
+                className="flex-1 px-2 py-1.5 rounded border text-xs font-mono"
                 style={{
                   backgroundColor: 'var(--color-bg)',
                   borderColor: 'var(--color-border)',
@@ -144,7 +144,7 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
                 }}
               />
               <span className="text-text-secondary">→</span>
-              <span className="font-mono text-sm text-text">{portForwardModal.remotePort}</span>
+              <span className="font-mono text-xs text-text">{portForwardModal.remotePort}</span>
             </div>
             {createPfMutation.isError && (
               <p className="text-xs text-red-400 mb-2">{(createPfMutation.error as Error).message}</p>
@@ -153,7 +153,7 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
               <button
                 type="button"
                 onClick={() => setPortForwardModal(null)}
-                className="px-3 py-1.5 rounded border border-border text-text-secondary text-sm hover:bg-hover"
+                className="px-3 py-1.5 rounded border border-border text-text-secondary text-xs hover:bg-hover"
               >
                 Cancel
               </button>
@@ -169,7 +169,7 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
                   });
                 }}
                 disabled={createPfMutation.isPending}
-                className="px-3 py-1.5 rounded bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50"
+                className="px-3 py-1.5 rounded bg-green-600 text-white text-xs hover:bg-green-700 disabled:opacity-50"
               >
                 {createPfMutation.isPending ? 'Starting...' : 'Start'}
               </button>

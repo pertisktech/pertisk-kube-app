@@ -1,3 +1,5 @@
+import { JSONPath } from '@astronautlabs/jsonpath';
+
 /** Returns true if name matches the resource name filter (case-insensitive substring). Empty filter matches all. */
 export const matchesResourceNameFilter = (name: string | undefined, filter: string): boolean => {
   const q = filter.trim();
@@ -176,50 +178,71 @@ export const cn = (...classes: (string | false | undefined)[]): string => {
   return classes.filter(Boolean).join(' ');
 };
 
+const SLASH_DASH = /[/\\-]/g;
+const PATH_BY_BARE_DOTS = /(?<=\w)\./;
+const TEXT_BEFORE_FIRST_SQUARE = /^.*(?=\[)/g;
+const KUBECTL_PREFIX = /^\$?\.?(?<pathExpression>.*)/s;
+const SLICE_EMPTY = /\[\]/g;
+const TRIPLE_DOT = /\.\.\.(?<trailing>.)/g;
+const TRAILING_DOTDOT = /\.\.$/;
+
 /**
- * Resolve a Kubernetes-style JSONPath (e.g. .spec.replicas, .status.conditions[0].status) from an object.
- * Supports dot notation and [index] for arrays. Leading . or $. is stripped.
+ * Convert kubectl/CRD JSONPath shorthands to standard JSONPath (Freelens-style).
+ * - Leading $ and . are optional; [] => [0]; keys with / or - use bracket notation; strip \.
+ */
+function convertKubectlJsonPathToNodeJsonPath(jsonPath: string): string {
+  const m = jsonPath.match(KUBECTL_PREFIX);
+  let pathExpression = m?.groups?.pathExpression?.trim() ?? '';
+  if (pathExpression.match(SLASH_DASH)) {
+    const parts = pathExpression.split(PATH_BY_BARE_DOTS);
+    const first = parts[0] ?? '';
+    const rest = parts.slice(1);
+    pathExpression =
+      convertToIndexNotation(first, true) +
+      rest.map((v) => convertToIndexNotation(v)).join('');
+  }
+  pathExpression = pathExpression.replace(TRAILING_DOTDOT, '').replace(TRIPLE_DOT, '..$<trailing>');
+  let start = '$';
+  if (!pathExpression.startsWith('[')) start += '.';
+  return start + pathExpression.replace(/\\/g, '').replace(SLICE_EMPTY, '[0]');
+}
+
+function convertToIndexNotation(key: string, firstItem = false): string {
+  if (!key.match(SLASH_DASH)) {
+    return (firstItem ? '' : '.') + key;
+  }
+  if (key.includes('[')) {
+    const before = key.match(TEXT_BEFORE_FIRST_SQUARE)?.[0];
+    if (before && before.match(SLASH_DASH)) {
+      return key.replace(before, `['${before}']`);
+    }
+    return '.' + key;
+  }
+  return `['${key}']`;
+}
+
+/**
+ * Resolve a Kubernetes/CRD JSONPath from an object (Freelens-compatible).
+ * Uses @astronautlabs/jsonpath and kubectl path conversion so paths like
+ * .spec.addresses[0].ip, .metadata.labels, and keys with - or / work.
  */
 export function safeJsonPathValue(obj: unknown, path: string): unknown {
   if (obj == null || typeof path !== 'string') return undefined;
-  let s = path.replace(/^\$?\.?/, '').trim();
-  if (!s) return obj;
-  const parts: string[] = [];
-  let i = 0;
-  while (i < s.length) {
-    if (s[i] === '[') {
-      const end = s.indexOf(']', i);
-      if (end === -1) break;
-      parts.push(s.slice(i, end + 1));
-      i = end + 1;
-      if (s[i] === '.') i += 1;
-    } else {
-      const dot = s.indexOf('.', i);
-      const bracket = s.indexOf('[', i);
-      let next = s.length;
-      if (dot !== -1) next = Math.min(next, dot);
-      if (bracket !== -1) next = Math.min(next, bracket);
-      const segment = s.slice(i, next).trim();
-      if (segment) parts.push(segment);
-      i = next >= s.length ? s.length : next + (s[next] === '.' ? 1 : 0);
-    }
+  const trimmed = path.trim();
+  if (!trimmed) return obj;
+  try {
+    const normalizedPath = convertKubectlJsonPathToNodeJsonPath(trimmed);
+    const parsed = JSONPath.parse(normalizedPath);
+    const isSlice = parsed.some(
+      (exp: { expression?: { type?: string } }) =>
+        exp.expression?.type === 'slice' || exp.expression?.type === 'wildcard'
+    );
+    const value = JSONPath.query(obj as object, JSONPath.stringify(parsed), isSlice ? Infinity : 1);
+    if (isSlice) return value;
+    return value[0];
+  } catch {
+    return undefined;
   }
-  let current: unknown = obj;
-  for (const p of parts) {
-    if (current == null) return undefined;
-    if (p.startsWith('[') && p.endsWith(']')) {
-      const inner = p.slice(1, -1).trim();
-      const idx = inner === '' ? 0 : parseInt(inner, 10);
-      if (Number.isNaN(idx)) return undefined;
-      current = Array.isArray(current) ? current[idx] : undefined;
-    } else {
-      current =
-        typeof current === 'object' && current !== null && p in (current as object)
-          ? (current as Record<string, unknown>)[p]
-          : undefined;
-    }
-  }
-  return current;
 }
 
 /** Format a value for display in CRD printer columns (like kubectl). */
