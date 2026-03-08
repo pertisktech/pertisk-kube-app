@@ -11,7 +11,7 @@ export const ResizablePanel = ({
   children,
   minWidth = 320,
   maxWidth = 800,
-  defaultWidth = '25%',
+  defaultWidth = '520px',
 }: ResizablePanelProps) => {
   const [width, setWidth] = useState<string>(defaultWidth);
   const [isResizing, setIsResizing] = useState(false);
@@ -55,8 +55,12 @@ export const ResizablePanel = ({
   return (
     <aside
       ref={panelRef}
-      className="fixed top-0 right-0 z-[100] h-screen bg-surface-elevated border-l border-border shadow-2xl"
-      style={{ width }}
+      className="fixed top-0 right-0 z-[100] h-screen shadow-2xl"
+      style={{
+        width,
+        backgroundColor: 'var(--color-surface)',
+        borderLeft: '1px solid var(--color-border)',
+      }}
     >
       {/* Resize handle */}
       <div

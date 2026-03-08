@@ -739,3 +739,74 @@ export const getHelmReleaseYaml = async (namespace: string, name: string): Promi
   if (!res.ok) throw new Error(`Failed to load YAML (${res.status})`);
   return res.text();
 };
+
+// Port forwarding
+export interface PortForward {
+  id: number;
+  namespace: string;
+  resource_type: string;
+  resource_name: string;
+  local_port: number;
+  remote_port: number;
+  status: string;
+  created_at: string;
+}
+
+export interface CreatePortForwardRequest {
+  namespace: string;
+  resource_type: string;
+  resource_name: string;
+  local_port: number;
+  remote_port: number;
+}
+
+export const usePortForwards = () => {
+  return useQuery({
+    queryKey: ['port-forwards'],
+    queryFn: async () => {
+      const res = await apiFetch('/port-forwards');
+      if (!res.ok) throw new Error('Failed to fetch port forwards');
+      const data = (await res.json()) as PortForward[];
+      return data;
+    },
+    refetchInterval: 5000,
+  });
+};
+
+export const createPortForward = async (request: CreatePortForwardRequest): Promise<PortForward> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/port-forwards`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: token } : {}),
+    },
+    body: JSON.stringify(request),
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(err.error || `Failed to create port forward (${res.status})`);
+  }
+  return res.json();
+};
+
+export const stopPortForward = async (id: number): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/port-forwards/${id}/stop`, {
+    method: 'POST',
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) throw new Error(`Failed to stop port forward (${res.status})`);
+};
+
+export const deletePortForward = async (id: number): Promise<void> => {
+  await apiDelete(`/port-forwards/${id}`);
+};

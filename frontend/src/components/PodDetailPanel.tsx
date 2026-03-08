@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { X, Pencil, Terminal, ScrollText, Trash2, ChevronDown, ChevronRight, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { X, Pencil, Terminal, ScrollText, Trash2, ChevronDown, ChevronRight, Cable, Eye, EyeOff } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
+import { createPortForward, usePortForwards } from '../hooks/useKubernetes';
 
 interface PodDetailPanelProps {
   pod: Pod;
@@ -31,7 +33,27 @@ const usageBarWidth = (percent: number) => {
   return Math.max(percent, 6);
 };
 
-export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, onOpenLogs, onDelete, onPortForward }: PodDetailPanelProps) => {
+export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, onOpenLogs, onDelete }: PodDetailPanelProps) => {
+  const queryClient = useQueryClient();
+  const { data: portForwards = [] } = usePortForwards();
+  const [portForwardModal, setPortForwardModal] = useState<{ remotePort: number; localPort: number } | null>(null);
+
+  const createPfMutation = useMutation({
+    mutationFn: createPortForward,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['port-forwards'] });
+      setPortForwardModal(null);
+    },
+  });
+
+  const activePodForwards = portForwards.filter(
+    (pf) =>
+      pf.resource_type === 'pod' &&
+      pf.resource_name === pod.name &&
+      pf.namespace === pod.namespace &&
+      pf.status === 'running'
+  );
+
   const [expandedLabels, setExpandedLabels] = useState(false);
   const [expandedAnnotations, setExpandedAnnotations] = useState(false);
   const [expandedTolerations, setExpandedTolerations] = useState(false);
@@ -61,6 +83,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
   const displayConditions = [...orderedConditions, ...extraConditions];
 
   return (
+    <>
     <ResizablePanel>
       <div className="h-full flex flex-col">
         <div className="bg-surface border-b border-border px-5 py-4">
@@ -366,20 +389,25 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                         <p><span className="text-text">Ports:</span></p>
                         {c.ports && c.ports.length > 0 ? (
                           <div className="mt-1 space-y-1">
-                            {c.ports.map((port, portIdx) => (
-                              <div key={`${c.name}-port-${portIdx}`} className="flex items-center gap-1.5 rounded border border-border px-2 py-1">
-                                <span className="text-text break-all flex-1">{port}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => onPortForward?.(pod, port)}
-                                  className="p-1 rounded border border-border text-text-secondary hover:text-text hover:border-[var(--color-primary)] transition-colors"
-                                  title="Port-forward (integration next)"
-                                  aria-label={`Port forward ${port}`}
-                                >
-                                  <ArrowRight size={12} />
-                                </button>
-                              </div>
-                            ))}
+                            {c.ports.map((port, portIdx) => {
+                              const remotePort = parseInt(String(port).split('/')[0], 10) || 0;
+                              const isForwarding = activePodForwards.some((pf) => pf.remote_port === remotePort);
+                              return (
+                                <div key={`${c.name}-port-${portIdx}`} className="flex items-center gap-1.5 rounded border border-border px-2 py-1">
+                                  <span className="text-text break-all flex-1">{port}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPortForwardModal({ remotePort: remotePort || 8080, localPort: remotePort === 80 ? 8080 : remotePort })}
+                                    disabled={createPfMutation.isPending || isForwarding || !remotePort}
+                                    className="p-1 rounded border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-50 transition-colors"
+                                    title={isForwarding ? 'Port forward active' : 'Port forward'}
+                                    aria-label={`Port forward ${port}`}
+                                  >
+                                    <Cable size={12} />
+                                  </button>
+                                </div>
+                              );
+                            })}
                           </div>
                         ) : (
                           <p className="mt-1">-</p>
@@ -507,5 +535,81 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
         </div>
       </div>
     </ResizablePanel>
+
+    {portForwardModal && (
+      <div
+        className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]"
+        onClick={() => setPortForwardModal(null)}
+        role="presentation"
+      >
+        <div
+          className="rounded-lg p-4 w-full max-w-sm shadow-xl border border-border"
+          style={{ backgroundColor: 'var(--color-surface)' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+              Port forward pod/{pod.name}
+            </h3>
+            <button type="button" onClick={() => setPortForwardModal(null)} className="p-1 rounded hover:bg-hover text-text-secondary">
+              <X size={16} />
+            </button>
+          </div>
+          <p className="text-xs mb-3" style={{ color: 'var(--color-muted)' }}>
+            Local port → remote port {portForwardModal.remotePort}
+          </p>
+          <div className="flex items-center gap-2 mb-3">
+            <input
+              type="number"
+              min={1}
+              max={65535}
+              value={portForwardModal.localPort}
+              onChange={(e) =>
+                setPortForwardModal((prev) =>
+                  prev ? { ...prev, localPort: parseInt(e.target.value, 10) || 8080 } : null
+                )
+              }
+              className="flex-1 px-2 py-1.5 rounded border text-sm font-mono"
+              style={{
+                backgroundColor: 'var(--color-bg)',
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text)',
+              }}
+            />
+            <span className="text-text-secondary">→</span>
+            <span className="font-mono text-sm text-text">{portForwardModal.remotePort}</span>
+          </div>
+          {createPfMutation.isError && (
+            <p className="text-xs text-red-400 mb-2">{(createPfMutation.error as Error).message}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setPortForwardModal(null)}
+              className="px-3 py-1.5 rounded border border-border text-text-secondary text-sm hover:bg-hover"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                createPfMutation.mutate({
+                  namespace: pod.namespace,
+                  resource_type: 'pod',
+                  resource_name: pod.name,
+                  local_port: portForwardModal.localPort,
+                  remote_port: portForwardModal.remotePort,
+                });
+              }}
+              disabled={createPfMutation.isPending}
+              className="px-3 py-1.5 rounded bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50"
+            >
+              {createPfMutation.isPending ? 'Starting...' : 'Start'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   );
 };

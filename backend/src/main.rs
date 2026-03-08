@@ -7,7 +7,7 @@ use axum::{
     Json, Router,
 };
 use kube::Client;
-use std::{env, net::SocketAddr, path::PathBuf};
+use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
 use tower_http::{
     cors::{Any, CorsLayer},
     services::{ServeDir, ServeFile},
@@ -32,6 +32,7 @@ use handlers::{
     helm::*,
     namespaces::*,
     network::*,
+    portforward::*,
     rbac::*,
     storage::*,
     workloads::*,
@@ -44,6 +45,7 @@ pub struct AppState {
     pub username: String,
     pub password: String,
     pub jwt_secret: String,
+    pub port_forward_state: Option<Arc<handlers::portforward::PortForwardState>>,
 }
 
 #[tokio::main]
@@ -63,11 +65,13 @@ async fn main() -> anyhow::Result<()> {
     let password = env::var("PASSWORD").unwrap_or_else(|_| "admin".to_string());
     let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key-change-in-production".to_string());
     
+    let port_forward_state = Some(Arc::new(handlers::portforward::PortForwardState::new()));
     let state = AppState {
         client,
         username,
         password,
         jwt_secret,
+        port_forward_state,
     };
 
     let cors = CorsLayer::new()
@@ -270,6 +274,9 @@ async fn main() -> anyhow::Result<()> {
             get(get_clusterrolebinding_yaml).put(update_clusterrolebinding_yaml),
         )
         .route("/clusterrolebindings/:name", delete(delete_clusterrolebinding))
+        .route("/port-forwards", get(list_port_forwards).post(create_port_forward))
+        .route("/port-forwards/:id/stop", post(stop_port_forward))
+        .route("/port-forwards/:id", delete(delete_port_forward))
         .route("/apply", post(apply_yaml))
         .route("/crds", get(list_crds))
         .route("/crds/:crd_name/resources", get(list_custom_resources))

@@ -14,7 +14,10 @@ export {
   DetailLabelsSection,
   DetailAnnotationsSection,
   PanelActionButton,
+  CollapsibleSection,
   type KeyInfoItem,
+  type StatusCardItem,
+  type QuickInfoItem,
 } from './ResourceDetailPanelLayout';
 export { NamespaceDetailPanel } from './NamespaceDetailPanel';
 export { NodeDetailPanel } from './NodeDetailPanel';

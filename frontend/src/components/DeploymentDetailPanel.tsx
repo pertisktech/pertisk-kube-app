@@ -1,8 +1,15 @@
-import { Pencil, RotateCcw, Trash2 } from 'lucide-react';
+import { Layers, Clock, Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Deployment } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
-import { ResourceDetailPanelLayout, DetailSection, DetailRow, DetailLabelsSection, DetailAnnotationsSection } from './ResourceDetailPanelLayout';
+import {
+  ResourceDetailPanelLayout,
+  DetailSection,
+  DetailRow,
+  DetailLabelsSection,
+  DetailAnnotationsSection,
+  PanelActionButton,
+} from './ResourceDetailPanelLayout';
 
 interface DeploymentDetailPanelProps {
   deployment: Deployment;
@@ -116,32 +123,60 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
     }
   };
 
+  const status = deployment.status ?? 'Unknown';
+  const statusColor = getStatusColor(status);
+  const statusBgClass =
+    statusColor === 'green'
+      ? 'bg-green-500/20'
+      : statusColor === 'yellow'
+        ? 'bg-yellow-500/20'
+        : statusColor === 'red'
+          ? 'bg-red-500/20'
+          : 'bg-gray-500/20';
+  const statusTextClass =
+    statusColor === 'green'
+      ? 'text-green-400'
+      : statusColor === 'yellow'
+        ? 'text-yellow-400'
+        : statusColor === 'red'
+          ? 'text-red-400'
+          : 'text-gray-400';
+
   const actions = (
     <>
-      <div className="group relative">
-        <button type="button" onClick={handleRestart} disabled={isRestarting} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Restart deployment"><RotateCcw size={12} className={isRestarting ? 'animate-spin' : ''} /></button>
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Restart</div>
-      </div>
-      <div className="group relative">
-        <button type="button" onClick={() => onOpenYamlEditor(deployment)} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors" aria-label="Edit deployment YAML"><Pencil size={12} /></button>
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Edit YAML</div>
-      </div>
-      <div className="group relative">
-        <button type="button" onClick={() => onDelete?.(deployment.namespace, deployment.name)} className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors" aria-label="Delete deployment"><Trash2 size={12} /></button>
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Delete</div>
-      </div>
+      <PanelActionButton
+        icon={RotateCcw}
+        label="Restart"
+        onClick={handleRestart}
+        disabled={isRestarting}
+        colorClass="text-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-300"
+      />
+      <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor(deployment)} colorClass="text-amber-400 hover:bg-amber-500/20 hover:text-amber-300" />
+      <PanelActionButton
+        icon={Trash2}
+        label="Delete"
+        onClick={() => onDelete?.(deployment.namespace, deployment.name)}
+        danger
+      />
     </>
   );
 
   return (
     <ResourceDetailPanelLayout
+      kind="DEPLOYMENT"
+      kindIcon={Layers}
       title={deployment.name}
-      status={deployment.status ?? undefined}
       keyInfo={[
         { label: 'Namespace', value: deployment.namespace },
         { label: 'Ready', value: deployment.ready ?? '-' },
         { label: 'Age', value: timeAgo(deployment.age) },
       ]}
+      statusCards={[
+        { label: 'Status', value: status, colorClass: statusTextClass, bgClass: statusBgClass },
+        { label: 'Ready', value: deployment.ready ?? '-' },
+        { label: 'Updated', value: deployment.updated ?? '-' },
+      ]}
+      quickInfo={[{ icon: Clock, label: 'Age', value: timeAgo(deployment.age) }]}
       actions={actions}
       onClose={onClose}
     >
