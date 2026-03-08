@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Pencil, Terminal, ScrollText, Trash2, ChevronDown, ChevronRight, Cable, Eye, EyeOff } from './Icons';
+import { X, Pencil, Terminal, ScrollText, Trash2, ChevronDown, Cable, Eye, EyeOff } from './Icons';
 import { StatusBadge } from './StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton } from './ResourceDetailPanelLayout';
+import { DrawerItem, DrawerTitle, DrawerParamToggler } from './drawer';
 import { createPortForward, usePortForwards } from '../hooks/useKubernetes';
 
 interface PodDetailPanelProps {
@@ -34,6 +35,20 @@ const usageBarWidth = (percent: number) => {
   return Math.max(percent, 6);
 };
 
+/** Parse "cpu: 100m, memory: 128Mi" into ["cpu=100m", "memory=128Mi"] for badge display */
+const parseResourceString = (s: string | undefined): string[] => {
+  if (!s || s === '-') return [];
+  return s
+    .split(',')
+    .map((part) => {
+      const trimmed = part.trim();
+      const colon = trimmed.indexOf(': ');
+      if (colon === -1) return trimmed;
+      return `${trimmed.slice(0, colon).trim()}=${trimmed.slice(colon + 2).trim()}`;
+    })
+    .filter(Boolean);
+};
+
 export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, onOpenLogs, onDelete }: PodDetailPanelProps) => {
   const queryClient = useQueryClient();
   const { data: portForwards = [] } = usePortForwards();
@@ -57,9 +72,6 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
 
   const [expandedLabels, setExpandedLabels] = useState(false);
   const [expandedAnnotations, setExpandedAnnotations] = useState(false);
-  const [expandedTolerations, setExpandedTolerations] = useState(false);
-  const [expandedContainers, setExpandedContainers] = useState<Record<string, boolean>>({});
-  const [expandedEnvVars, setExpandedEnvVars] = useState<Record<string, boolean>>({});
   const [hiddenEnvVars, setHiddenEnvVars] = useState<Record<string, Set<string>>>({});
   const status = pod.status || pod.phase || 'Unknown';
   const hasCpuMetrics = pod.cpu_usage_percent != null;
@@ -83,14 +95,18 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
   const extraConditions = conditions.filter((condition) => !conditionOrder.includes(condition.type));
   const displayConditions = [...orderedConditions, ...extraConditions];
 
+  const requestsBadges = containers.flatMap((c) => parseResourceString(c.requests));
+  const limitsBadges = containers.flatMap((c) => parseResourceString(c.limits));
+
   return (
     <>
     <ResizablePanel>
       <div className="h-full flex flex-col">
-        <div className="bg-surface border-b border-border px-5 py-4">
+        {/* Header: same as Node panel (gradient + key info bar) */}
+        <div className="bg-gradient-to-r from-surface to-surface-elevated border-b border-border px-5 py-4 flex-shrink-0">
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-bold text-text truncate">{pod.name || 'Pod'}</h2>
+              <h2 className="text-lg font-bold truncate" style={{ color: 'var(--color-text)' }}>{pod.name || 'Pod'}</h2>
               <div className="mt-2">
                 <StatusBadge status={status} />
               </div>
@@ -107,7 +123,10 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
                 type="button"
                 onClick={onClose}
                 className="p-2 rounded-r-md transition-all duration-150 hover:opacity-80 flex-shrink-0"
-                style={{ color: 'var(--color-muted)', borderLeft: '1px solid var(--color-border)' }}
+                style={{
+                  color: 'var(--color-muted)',
+                  borderLeft: '1px solid var(--color-border)',
+                }}
                 aria-label="Close pod panel"
               >
                 <X size={18} />
@@ -115,397 +134,410 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-sm mt-3 pt-3 border-t border-border">
+          <div className="flex items-center gap-3 text-xs mt-3 pt-3 border-t border-border">
             <div className="flex-1">
-              <p className="text-text-secondary mb-1">Namespace</p>
-              <p className="text-text font-medium truncate">{pod.namespace || '-'}</p>
+              <p className="mb-1" style={{ color: 'var(--color-text-secondary)' }}>Namespace</p>
+              <p className="font-medium truncate" style={{ color: 'var(--color-text)' }}>{pod.namespace || '-'}</p>
             </div>
             <div className="flex-1">
-              <p className="text-text-secondary mb-1">Ready</p>
-              <p className="text-text font-medium">{pod.ready || '-'}</p>
+              <p className="mb-1" style={{ color: 'var(--color-text-secondary)' }}>Ready</p>
+              <p className="font-medium" style={{ color: 'var(--color-text)' }}>{pod.ready || '-'}</p>
             </div>
             <div className="flex-1">
-              <p className="text-text-secondary mb-1">Restarts</p>
-              <p className="text-text font-medium">{pod.restarts ?? 0}</p>
+              <p className="mb-1" style={{ color: 'var(--color-text-secondary)' }}>Restarts</p>
+              <p className="font-medium" style={{ color: 'var(--color-text)' }}>{pod.restarts ?? 0}</p>
             </div>
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto overflow-x-hidden p-4 text-sm space-y-4">
-          <section className="bg-surface border border-border rounded-lg p-3.5">
-            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Pod Info</h3>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm py-2 px-2 rounded-md border border-border">
-                <span className="text-text-secondary min-w-20">Created</span>
-                <span className="text-text font-medium ml-auto">{timeAgo(pod.created || pod.age)}</span>
+        <div className="flex-1 overflow-auto overflow-x-hidden p-4 text-sm drawer-content PodDetails">
+          {/* Freelens-style order: Status, Node, Pod IPs, Service Account, QoS, then rest */}
+          <DrawerItem name="Status">{status}</DrawerItem>
+          {pod.node && <DrawerItem name="Node">{pod.node}</DrawerItem>}
+          {(podIps.length > 0 || pod.pod_ip) && (
+            <DrawerItem name="Pod IPs" labelsOnly>
+              <div className="flex flex-wrap gap-1.5">
+                {(podIps.length ? podIps : [pod.pod_ip!].filter(Boolean)).map((ip) => (
+                  <span key={ip} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{ip}</span>
+                ))}
               </div>
-              <div className="flex items-center gap-2 text-sm py-2 px-2 rounded-md border border-border">
-                <span className="text-text-secondary min-w-20">Name</span>
-                <span className="text-text font-medium ml-auto text-right break-all">{pod.name || '-'}</span>
+            </DrawerItem>
+          )}
+          <DrawerItem name="Service Account">{pod.service_account || '-'}</DrawerItem>
+          <DrawerItem name="QoS Class">{pod.qos_class || pod.qos || '-'}</DrawerItem>
+          <DrawerItem name="Created">{timeAgo(pod.created || pod.age)}</DrawerItem>
+          <DrawerItem name="Controller">{pod.controlled_by || '-'}</DrawerItem>
+
+          {tolerations.length > 0 && (
+            <DrawerItem name="Tolerations" className="PodDetailsTolerations">
+              <DrawerParamToggler label={tolerations.length}>
+                <div className="overflow-x-auto border border-border rounded-md">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border" style={{ backgroundColor: 'var(--color-bg)' }}>
+                        <th className="text-left py-2 px-2 font-medium" style={{ color: 'var(--color-muted)' }}>Key</th>
+                        <th className="text-left py-2 px-2 font-medium" style={{ color: 'var(--color-muted)' }}>Operator</th>
+                        <th className="text-left py-2 px-2 font-medium" style={{ color: 'var(--color-muted)' }}>Effect</th>
+                        <th className="text-left py-2 px-2 font-medium" style={{ color: 'var(--color-muted)' }}>Seconds</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tolerations.map((tol, idx) => (
+                        <tr key={`${tol.key}-${tol.effect}-${idx}`} className="border-b border-border last:border-b-0">
+                          <td className="py-2 px-2 break-all" style={{ color: 'var(--color-text)' }}>{tol.key}{tol.value ? `=${tol.value}` : ''}</td>
+                          <td className="py-2 px-2" style={{ color: 'var(--color-text-secondary)' }}>{tol.operator}</td>
+                          <td className="py-2 px-2" style={{ color: 'var(--color-text-secondary)' }}>{tol.effect}</td>
+                          <td className="py-2 px-2" style={{ color: 'var(--color-text-secondary)' }}>{tol.seconds}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </DrawerParamToggler>
+            </DrawerItem>
+          )}
+
+          {podAntiAffinities.length > 0 && (
+            <DrawerItem name="Affinities" className="PodDetailsAffinities">
+              <DrawerParamToggler label={podAntiAffinities.length}>
+                <div className="space-y-1">
+                  {podAntiAffinities.map((rule, idx) => (
+                    <p key={`${rule}-${idx}`} className="break-all text-xs" style={{ color: 'var(--color-text)' }}>{rule}</p>
+                  ))}
+                </div>
+              </DrawerParamToggler>
+            </DrawerItem>
+          )}
+
+          {displayConditions.length > 0 && (
+            <DrawerItem name="Conditions" labelsOnly className="conditions">
+              <div className="flex flex-wrap gap-1.5">
+                {displayConditions.map((condition) => {
+                  const isTrue = String(condition.status).toLowerCase() === 'true';
+                  return (
+                    <span
+                      key={condition.type}
+                      className={`inline-flex px-2 py-0.5 rounded text-xs border ${
+                        isTrue
+                          ? 'bg-[var(--color-icon-success)]/10 text-[var(--color-icon-success)] border-[var(--color-icon-success)]/30'
+                          : 'opacity-60 bg-[var(--color-icon-danger)]/10 text-[var(--color-icon-danger)] border-[var(--color-icon-danger)]/30'
+                      }`}
+                      title={[condition.type, condition.status, condition.reason].filter(Boolean).join(' — ')}
+                    >
+                      {condition.type}
+                    </span>
+                  );
+                })}
               </div>
-              <div className="flex items-center gap-2 text-sm py-2 px-2 rounded-md border border-border">
-                <span className="text-text-secondary min-w-20">Namespace</span>
-                <span className="text-text font-medium ml-auto text-right break-all">{pod.namespace || '-'}</span>
+            </DrawerItem>
+          )}
+
+          {requestsBadges.length > 0 && (
+            <DrawerItem name="Requests" labelsOnly>
+              <div className="flex flex-wrap gap-1.5">
+                {requestsBadges.map((r, i) => (
+                  <span key={`req-${i}`} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{r}</span>
+                ))}
               </div>
-              <div className="flex items-center gap-2 text-sm py-2 px-2 rounded-md border border-border">
-                <span className="text-text-secondary min-w-20">Status</span>
-                <span className="text-text font-medium ml-auto text-right break-all">{status}</span>
+            </DrawerItem>
+          )}
+          {limitsBadges.length > 0 && (
+            <DrawerItem name="Limits" labelsOnly>
+              <div className="flex flex-wrap gap-1.5">
+                {limitsBadges.map((l, i) => (
+                  <span key={`lim-${i}`} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{l}</span>
+                ))}
               </div>
-              <div className="flex items-center gap-2 text-sm py-2 px-2 rounded-md border border-border">
-                <span className="text-text-secondary min-w-20">Controller</span>
-                <span className="text-text font-medium ml-auto text-right break-all">{pod.controlled_by || '-'}</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm py-2 px-2 rounded-md border border-border">
-                <span className="text-text-secondary min-w-20">Pod IP</span>
-                <span className="text-text font-medium ml-auto text-right break-all">{pod.pod_ip || '-'}</span>
-              </div>
-              <div className="border-t border-border pt-2">
-                <p className="text-sm text-text-secondary">Pod IPs</p>
-                <p className="text-text font-medium text-sm mt-1 break-all">{podIps.length > 0 ? podIps.join(', ') : '-'}</p>
-              </div>
-              <div className="flex items-center justify-between text-sm py-1.5 border-t border-border pt-2"><span className="text-text-secondary">Service Account</span><span className="text-text font-medium text-right break-all">{pod.service_account || '-'}</span></div>
-              <div className="flex items-center justify-between text-sm py-1.5 border-t border-border pt-2"><span className="text-text-secondary">QoS Class</span><span className="text-text font-medium text-right break-all">{pod.qos_class || pod.qos || '-'}</span></div>
-              <div className="border-t border-border pt-2">
-                <p className="text-sm text-text-secondary">Conditions</p>
-                {displayConditions.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {displayConditions.map((condition, idx) => {
-                      const isTrue = String(condition.status).toLowerCase() === 'true';
-                      return (
-                        <span
-                          key={`${condition.type}-${idx}`}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-sm border ${
-                            isTrue
-                              ? 'bg-[var(--color-icon-success)]/10 text-[var(--color-icon-success)] border-[var(--color-icon-success)]/30'
-                              : 'bg-[var(--color-icon-danger)]/10 text-[var(--color-icon-danger)] border-[var(--color-icon-danger)]/30'
-                          }`}
-                          title={condition.reason || condition.type}
-                        >
-                          <span>{condition.type}</span>
-                          <span className="opacity-80">{isTrue ? 'True' : 'False'}</span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-text font-medium text-sm mt-1">-</p>
-                )}
-              </div>
-              <div className="border-t border-border pt-2">
-                <button
-                  type="button"
-                  onClick={() => setExpandedTolerations((prev) => !prev)}
-                  className="w-full flex items-center justify-between"
-                >
-                  <p className="text-sm text-text-secondary">Tolerations ({tolerations.length})</p>
-                  <ChevronDown
-                    size={14}
-                    className={`transform transition-transform text-text-secondary ${expandedTolerations ? 'rotate-180' : ''}`}
+            </DrawerItem>
+          )}
+
+          {Object.keys(labels).length > 0 && (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setExpandedLabels((prev) => !prev)}
+                className="w-full flex items-center justify-between py-2 text-left"
+                style={{ color: 'var(--color-muted)' }}
+              >
+                <span className="text-xs font-semibold uppercase tracking-wide">Labels ({Object.keys(labels).length})</span>
+                <ChevronDown size={14} className={`transition-transform ${expandedLabels ? 'rotate-180' : ''}`} />
+              </button>
+              {expandedLabels && (
+                <div className="space-y-0 border-t border-border pt-2">
+                  {Object.entries(labels).map(([key, value]) => (
+                    <DrawerItem key={key} name={key}>{value}</DrawerItem>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {Object.keys(annotations).length > 0 && (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setExpandedAnnotations((prev) => !prev)}
+                className="w-full flex items-center justify-between py-2 text-left"
+                style={{ color: 'var(--color-muted)' }}
+              >
+                <span className="text-xs font-semibold uppercase tracking-wide">Annotations ({Object.keys(annotations).length})</span>
+                <ChevronDown size={14} className={`transition-transform ${expandedAnnotations ? 'rotate-180' : ''}`} />
+              </button>
+              {expandedAnnotations && (
+                <div className="space-y-0 border-t border-border pt-2">
+                  {Object.entries(annotations).map(([key, value]) => (
+                    <DrawerItem key={key} name={key}>{value}</DrawerItem>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DrawerItem name="CPU">
+            {hasCpuMetrics ? `${pod.cpu || '-'} / ${pod.cpu_capacity || '-'} (${Math.round(cpuPercent)}%)` : pod.cpu || '-'}
+          </DrawerItem>
+          {hasCpuMetrics && (
+            <div className="h-2 rounded-full overflow-hidden mb-2" style={{ backgroundColor: 'var(--color-hover)' }}>
+              <div className="h-full rounded-full" style={{ width: `${usageBarWidth(cpuPercent)}%`, backgroundColor: usageBarColor(cpuPercent) }} />
+            </div>
+          )}
+
+          <DrawerItem name="Memory">
+            {hasMemoryMetrics ? `${pod.memory || '-'} / ${pod.memory_capacity || '-'} (${Math.round(memoryPercent)}%)` : pod.memory || '-'}
+          </DrawerItem>
+          {hasMemoryMetrics && (
+            <div className="h-2 rounded-full overflow-hidden mb-2" style={{ backgroundColor: 'var(--color-hover)' }}>
+              <div className="h-full rounded-full" style={{ width: `${usageBarWidth(memoryPercent)}%`, backgroundColor: usageBarColor(memoryPercent) }} />
+            </div>
+          )}
+
+          <DrawerTitle>Containers</DrawerTitle>
+          {containers.length > 0 ? (
+            containers.map((c, i) => (
+              <div key={`${c.name}-${i}`} className="PodDetailsContainer mt-4 mb-4">
+                <div className="pod-container-title flex items-center gap-2 font-bold mb-2">
+                  <span
+                    className="StatusBrick w-2 h-2 rounded-sm flex-shrink-0"
+                    style={{
+                      backgroundColor: c.ready ? 'var(--color-icon-success)' : 'var(--color-icon-warning)',
+                    }}
+                    title={c.status || (c.ready ? 'Ready' : 'Not Ready')}
                   />
-                </button>
-                {expandedTolerations && (
-                  tolerations.length > 0 ? (
-                    <div className="mt-2 overflow-x-auto border border-border rounded-md">
-                      <table className="w-full text-sm">
+                  <span style={{ color: 'var(--color-text)' }}>{c.name}</span>
+                </div>
+                <DrawerItem name="Status">
+                  <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    {c.status || (c.ready ? 'ready' : 'not ready')}
+                    {c.restart_count != null && c.restart_count > 0 ? `, restarted ${c.restart_count}` : ''}
+                  </span>
+                </DrawerItem>
+                <DrawerItem name="Image">
+                  <span className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{c.image || '-'}</span>
+                </DrawerItem>
+                {c.image_pull_policy && c.image_pull_policy !== 'IfNotPresent' && (
+                  <DrawerItem name="ImagePullPolicy">{c.image_pull_policy}</DrawerItem>
+                )}
+                {c.ports && c.ports.length > 0 && (
+                  <DrawerItem name="Ports">
+                    <div className="w-full overflow-x-auto border border-border rounded-md">
+                      <table className="w-full text-xs table-fixed">
+                        <colgroup>
+                          <col style={{ width: '70%' }} />
+                          <col style={{ width: '30%' }} />
+                        </colgroup>
                         <thead>
-                          <tr className="border-b border-border bg-bg/50">
-                            <th className="text-left py-2 px-2 text-text-secondary font-medium">Key</th>
-                            <th className="text-left py-2 px-2 text-text-secondary font-medium">Operation</th>
-                            <th className="text-left py-2 px-2 text-text-secondary font-medium">Effect</th>
-                            <th className="text-left py-2 px-2 text-text-secondary font-medium">Seconds</th>
+                          <tr className="border-b border-border" style={{ backgroundColor: 'var(--color-bg)' }}>
+                            <th className="text-left py-1.5 px-3 font-medium" style={{ color: 'var(--color-muted)' }}>Port</th>
+                            <th className="text-left py-1.5 px-3 font-medium" style={{ color: 'var(--color-muted)' }}>Forward</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {tolerations.map((tol, idx) => (
-                            <tr key={`${tol.key}-${tol.effect}-${idx}`} className="border-b border-border last:border-b-0 hover:bg-hover/40">
-                              <td className="py-2 px-2 text-text break-all">{tol.key}{tol.value ? `=${tol.value}` : ''}</td>
-                              <td className="py-2 px-2 text-text-secondary">{tol.operator}</td>
-                              <td className="py-2 px-2 text-text-secondary">{tol.effect}</td>
-                              <td className="py-2 px-2 text-text-secondary">{tol.seconds}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="text-text font-medium text-sm mt-2">-</p>
-                  )
-                )}
-              </div>
-              <div className="border-t border-border pt-2">
-                <p className="text-sm text-text-secondary">Pod Anti Affinities</p>
-                {podAntiAffinities.length > 0 ? (
-                  <div className="mt-1 space-y-1">
-                    {podAntiAffinities.map((rule, idx) => (
-                      <p key={`${rule}-${idx}`} className="text-text font-medium text-sm break-all">{rule}</p>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-text font-medium text-sm mt-1">-</p>
-                )}
-              </div>
-              <div className="border-t border-border pt-2">
-                <button
-                  type="button"
-                  onClick={() => setExpandedLabels((prev) => !prev)}
-                  className="w-full flex items-center justify-between"
-                >
-                  <p className="text-sm text-text-secondary">Labels ({Object.keys(labels).length})</p>
-                  <ChevronDown
-                    size={14}
-                    className={`transform transition-transform text-text-secondary ${expandedLabels ? 'rotate-180' : ''}`}
-                  />
-                </button>
-                {expandedLabels && (
-                  Object.keys(labels).length > 0 ? (
-                    <div className="mt-2 space-y-1">
-                      {Object.entries(labels).map(([key, value]) => (
-                        <p key={key} className="text-text font-medium text-sm break-all">{key}: {value}</p>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-text font-medium text-sm mt-2">-</p>
-                  )
-                )}
-              </div>
-              <div className="border-t border-border pt-2">
-                <button
-                  type="button"
-                  onClick={() => setExpandedAnnotations((prev) => !prev)}
-                  className="w-full flex items-center justify-between"
-                >
-                  <p className="text-sm text-text-secondary">Annotations ({Object.keys(annotations).length})</p>
-                  <ChevronDown
-                    size={14}
-                    className={`transform transition-transform text-text-secondary ${expandedAnnotations ? 'rotate-180' : ''}`}
-                  />
-                </button>
-                {expandedAnnotations && (
-                  Object.keys(annotations).length > 0 ? (
-                    <div className="mt-2 space-y-1">
-                      {Object.entries(annotations).map(([key, value]) => (
-                        <p key={key} className="text-text font-medium text-sm break-all">{key}: {value}</p>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-text font-medium text-sm mt-2">-</p>
-                  )
-                )}
-              </div>
-
-              <div className="border-t border-border pt-2">
-                <p className="text-sm text-text-secondary">CPU</p>
-                <p className="text-text font-medium text-sm mt-1 break-all">{hasCpuMetrics ? `${pod.cpu || '-'} / ${pod.cpu_capacity || '-'} (${Math.round(cpuPercent)}%)` : pod.cpu || '-'}</p>
-                {hasCpuMetrics && (
-                  <div className="mt-2 h-2 rounded-full bg-hover overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${usageBarWidth(cpuPercent)}%`, backgroundColor: usageBarColor(cpuPercent) }} />
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-border pt-2">
-                <p className="text-sm text-text-secondary">Memory</p>
-                <p className="text-text font-medium text-sm mt-1 break-all">{hasMemoryMetrics ? `${pod.memory || '-'} / ${pod.memory_capacity || '-'} (${Math.round(memoryPercent)}%)` : pod.memory || '-'}</p>
-                {hasMemoryMetrics && (
-                  <div className="mt-2 h-2 rounded-full bg-hover overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${usageBarWidth(memoryPercent)}%`, backgroundColor: usageBarColor(memoryPercent) }} />
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-
-          <section className="bg-surface border border-border rounded-lg p-3.5">
-            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Pod Volumes ({volumes.length})</h3>
-            {volumes.length > 0 ? (
-              <div className="space-y-2 text-sm">
-                {volumes.map((v, i) => (
-                  <div key={`${v.name}-${i}`} className="border border-border rounded-md p-2">
-                    <p className="text-text font-medium break-all">{v.name}</p>
-                    <p className="text-text-secondary mt-1 break-all">Type: {v.type || '-'}</p>
-                    <p className="text-text-secondary mt-1 break-all">Source: {v.source || '-'}</p>
-                    <p className="text-text-secondary mt-1">Read only: {v.read_only ? 'Yes' : 'No'}</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-text-secondary">No volume data available</p>
-            )}
-          </section>
-
-          <section className="bg-surface border border-border rounded-lg p-3.5">
-            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Containers ({containers.length})</h3>
-            {containers.length > 0 ? (
-              <div className="space-y-2">
-                {containers.map((c, i) => (
-                  <div key={`${c.name}-${i}`} className="border border-border rounded-md p-2">
-                    <button
-                      type="button"
-                      onClick={() => setExpandedContainers(prev => ({ ...prev, [c.name]: !prev[c.name] }))}
-                      className="w-full flex items-center justify-between gap-2"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        {expandedContainers[c.name] ? (
-                          <ChevronDown size={14} className="text-text-secondary flex-shrink-0" />
-                        ) : (
-                          <ChevronRight size={14} className="text-text-secondary flex-shrink-0" />
-                        )}
-                        <p className="text-text font-medium text-sm break-all text-left">{c.name}</p>
-                      </div>
-                      <span className={`text-sm px-2 py-0.5 rounded-full ${c.ready ? 'bg-[var(--color-icon-success)]/10 text-[var(--color-icon-success)]' : 'bg-[var(--color-icon-warning)]/10 text-[var(--color-icon-warning)]'}`}>
-                        {c.status || (c.ready ? 'Ready' : 'Not Ready')}
-                      </span>
-                    </button>
-                    {expandedContainers[c.name] && <div className="mt-2 space-y-1">
-                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Image:</span> {c.image || '-'}</p>
-                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Image Pull Policy:</span> {c.image_pull_policy || '-'}</p>
-                      <div className="text-sm text-text-secondary">
-                        <p><span className="text-text">Ports:</span></p>
-                        {c.ports && c.ports.length > 0 ? (
-                          <div className="mt-1 space-y-1">
-                            {c.ports.map((port, portIdx) => {
-                              const remotePort = parseInt(String(port).split('/')[0], 10) || 0;
-                              const isForwarding = activePodForwards.some((pf) => pf.remote_port === remotePort);
-                              return (
-                                <div key={`${c.name}-port-${portIdx}`} className="flex items-center gap-1.5 rounded border border-border px-2 py-1">
-                                  <span className="text-text break-all flex-1">{port}</span>
+                          {c.ports.map((port, portIdx) => {
+                            const remotePort = parseInt(String(port).split('/')[0], 10) || 0;
+                            const isForwarding = activePodForwards.some((pf) => pf.remote_port === remotePort);
+                            return (
+                              <tr key={`${c.name}-port-${portIdx}`} className="border-b border-border last:border-b-0">
+                                <td className="py-1.5 px-3 font-mono align-middle break-all" style={{ color: 'var(--color-text)' }}>{port}</td>
+                                <td className="py-1.5 px-3 align-middle">
                                   <button
                                     type="button"
                                     onClick={() => setPortForwardModal({ remotePort: remotePort || 8080, localPort: remotePort === 80 ? 8080 : remotePort })}
                                     disabled={createPfMutation.isPending || isForwarding || !remotePort}
-                                    className="p-1 rounded border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-50 transition-colors"
+                                    className="p-1 rounded border text-xs transition-colors"
+                                    style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
                                     title={isForwarding ? 'Port forward active' : 'Port forward'}
                                     aria-label={`Port forward ${port}`}
                                   >
                                     <Cable size={12} />
                                   </button>
-                                </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </DrawerItem>
+                )}
+                {c.environment_variables && c.environment_variables.length > 0 && (
+                  <div className="ContainerEnvironment w-full mt-2">
+                    <DrawerParamToggler label={`Environment (${c.environment_variables.length})`}>
+                      <div className="overflow-x-auto border border-border rounded-md w-full">
+                        <table className="w-full text-xs table-fixed">
+                          <colgroup>
+                            <col style={{ width: '30%' }} />
+                            <col style={{ width: '70%' }} />
+                          </colgroup>
+                          <thead>
+                            <tr className="border-b border-border" style={{ backgroundColor: 'var(--color-bg)' }}>
+                              <th className="text-left py-1.5 px-3 font-medium" style={{ color: 'var(--color-muted)' }}>Key</th>
+                              <th className="text-left py-1.5 px-3 font-medium" style={{ color: 'var(--color-muted)' }}>Value</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {c.environment_variables.map((env, idx) => {
+                              const isSensitive = env.source === 'secret' || (env.value && env.value.length > 50);
+                              const isExplicitlyShown = hiddenEnvVars[c.name]?.has(`${env.key}-${idx}`);
+                              const shouldHide = isSensitive && !isExplicitlyShown;
+                              let displayValue = '';
+                              if (shouldHide) {
+                                displayValue = env.source === 'secret' ? '[Secret value hidden]' : '••••••••';
+                              } else {
+                                if (env.source === 'secret') displayValue = env.decoded_value || `[Secret: ${env.value}]`;
+                                else if (env.source === 'configMap') displayValue = `[ConfigMap: ${env.value}]`;
+                                else if (env.source === 'fieldRef') displayValue = `[FieldRef: ${env.value}]`;
+                                else displayValue = env.value || '(empty)';
+                              }
+                              return (
+                                <tr key={`${c.name}-${env.key}-${idx}`} className="border-b border-border">
+                                  <td className="py-1.5 px-3 font-mono align-top break-all" style={{ color: 'var(--color-text)' }}>{env.key}</td>
+                                  <td className="py-1.5 px-3 font-mono align-top min-w-0 break-words whitespace-normal">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <span className={`min-w-0 break-words whitespace-pre-wrap ${env.source === 'secret' && !shouldHide ? 'text-[var(--color-icon-warning)]' : ''}`} style={{ color: 'var(--color-text-secondary)' }}>{displayValue}</span>
+                                      {isSensitive && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setHiddenEnvVars(prev => {
+                                            const newSet = new Set(prev[c.name] ?? []);
+                                            const key = `${env.key}-${idx}`;
+                                            if (newSet.has(key)) newSet.delete(key);
+                                            else newSet.add(key);
+                                            return { ...prev, [c.name]: newSet };
+                                          })}
+                                          className="flex-shrink-0 p-0 border-0 bg-transparent cursor-pointer"
+                                          style={{ color: 'var(--color-muted)' }}
+                                          title={shouldHide ? 'Show value' : 'Hide value'}
+                                        >
+                                          {shouldHide ? <Eye size={14} /> : <EyeOff size={14} />}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
                               );
                             })}
-                          </div>
-                        ) : (
-                          <p className="mt-1">-</p>
-                        )}
+                          </tbody>
+                        </table>
                       </div>
-                      {c.environment_variables && c.environment_variables.length > 0 ? (
-                        <div className="mt-2 border border-border rounded-md overflow-hidden">
-                          <button
-                            onClick={() => setExpandedEnvVars(prev => ({
-                              ...prev,
-                              [c.name]: !prev[c.name]
-                            }))}
-                            className="w-full flex items-center justify-between bg-bg/50 hover:bg-bg/70 px-2 py-1.5 transition-colors"
-                          >
-                            <span className="text-sm text-text font-medium">Environment Variables ({c.environment_variables.length})</span>
-                            <ChevronDown size={14} className={`text-text-secondary transition-transform ${expandedEnvVars[c.name] ? '' : '-rotate-90'}`} />
-                          </button>
-                          {expandedEnvVars[c.name] && (
-                            <div className="border-t border-border overflow-x-auto">
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="border-b border-border bg-bg/50">
-                                    <th className="text-left py-1.5 px-2 text-text-secondary font-medium w-32">Key</th>
-                                    <th className="text-left py-1.5 px-2 text-text-secondary font-medium">Value</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {c.environment_variables.map((env, idx) => {
-                                    const isSensitive = env.source === 'secret' || (env.value && env.value.length > 50);
-                                    const isExplicitlyShown = hiddenEnvVars[c.name]?.has(`${env.key}-${idx}`);
-                                    const shouldHide = isSensitive && !isExplicitlyShown;
-                                    let displayValue = '';
-                                    if (shouldHide) {
-                                      displayValue = env.source === 'secret' ? '[Secret value hidden]' : '••••••••';
-                                    } else {
-                                      if (env.source === 'secret') {
-                                        displayValue = env.decoded_value || `[Secret: ${env.value}]`;
-                                      } else if (env.source === 'configMap') {
-                                        displayValue = `[ConfigMap: ${env.value}]`;
-                                      } else if (env.source === 'fieldRef') {
-                                        displayValue = `[FieldRef: ${env.value}]`;
-                                      } else {
-                                        displayValue = env.value || '(empty)';
-                                      }
-                                    }
-                                    return (
-                                      <tr key={`${c.name}-${env.key}-${idx}`} className="border-b border-border hover:bg-bg/30">
-                                        <td className="py-1.5 px-2 text-text break-all font-mono text-sm align-top">{env.key}</td>
-                                        <td className="py-1.5 px-2 text-text-secondary font-mono text-sm">
-                                          <div className="flex items-center justify-between gap-2">
-                                            <span className={env.source === 'secret' && !shouldHide ? 'text-[var(--color-icon-warning)]' : ''}>{displayValue}</span>
-                                            {isSensitive && (
-                                              <button
-                                                onClick={() => setHiddenEnvVars(prev => {
-                                                  const newSet = new Set(prev[c.name]);
-                                                  const key = `${env.key}-${idx}`;
-                                                  if (newSet.has(key)) newSet.delete(key);
-                                                  else newSet.add(key);
-                                                  return { ...prev, [c.name]: newSet };
-                                                })}
-                                                className="flex-shrink-0 text-text-secondary hover:text-text transition-colors"
-                                                title={shouldHide ? 'Show value' : 'Hide value'}
-                                              >
-                                                  {shouldHide ? <Eye size={14} /> : <EyeOff size={14} />}
-                                              </button>
-                                            )}
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-text-secondary break-all"><span className="text-text">Environment Variables:</span> -</p>
-                      )}
-                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Mounts:</span> {c.mounts && c.mounts.length > 0 ? c.mounts.join(' | ') : '-'}</p>
-                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Liveness:</span> {c.liveness || '-'}</p>
-                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Readiness:</span> {c.readiness || '-'}</p>
-                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Startup:</span> {c.startup || '-'}</p>
-                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Requests:</span> {c.requests || '-'}</p>
-                      <p className="text-sm text-text-secondary break-all"><span className="text-text">Limits:</span> {c.limits || '-'}</p>
-                    </div>}
+                    </DrawerParamToggler>
                   </div>
-                ))}
+                )}
+                {c.mounts && c.mounts.length > 0 && (
+                  <DrawerItem name="Mounts">
+                    <span className="text-xs font-mono block" style={{ color: 'var(--color-text-secondary)' }}>{c.mounts.join(', ')}</span>
+                  </DrawerItem>
+                )}
+                {(c.liveness || c.readiness || c.startup) && (
+                  <>
+                    {c.liveness && (
+                      <DrawerItem name="Liveness" labelsOnly>
+                        <span className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{c.liveness}</span>
+                      </DrawerItem>
+                    )}
+                    {c.readiness && (
+                      <DrawerItem name="Readiness" labelsOnly>
+                        <span className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{c.readiness}</span>
+                      </DrawerItem>
+                    )}
+                    {c.startup && (
+                      <DrawerItem name="Startup" labelsOnly>
+                        <span className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{c.startup}</span>
+                      </DrawerItem>
+                    )}
+                  </>
+                )}
+                {(parseResourceString(c.requests).length > 0 || parseResourceString(c.limits).length > 0) && (
+                  <>
+                    {parseResourceString(c.requests).length > 0 && (
+                      <DrawerItem name="Requests" labelsOnly>
+                        <div className="flex flex-wrap gap-1.5">
+                          {parseResourceString(c.requests).map((r, i) => (
+                            <span key={`${c.name}-req-${i}`} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{r}</span>
+                          ))}
+                        </div>
+                      </DrawerItem>
+                    )}
+                    {parseResourceString(c.limits).length > 0 && (
+                      <DrawerItem name="Limits" labelsOnly>
+                        <div className="flex flex-wrap gap-1.5">
+                          {parseResourceString(c.limits).map((l, i) => (
+                            <span key={`${c.name}-lim-${i}`} className="inline-flex px-2 py-0.5 rounded text-xs border border-border" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}>{l}</span>
+                          ))}
+                        </div>
+                      </DrawerItem>
+                    )}
+                  </>
+                )}
               </div>
-            ) : (
-              <p className="text-sm text-text-secondary">No container data available</p>
-            )}
-          </section>
+            ))
+          ) : (
+            <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>No container data available</p>
+          )}
 
-          <section className="bg-surface border border-border rounded-lg p-3.5">
-            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Events ({events.length})</h3>
-            {events.length > 0 ? (
-              <div className="overflow-x-auto border border-border rounded-md">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-bg/50">
-                      <th className="text-left py-2 px-2 text-text-secondary font-medium">Summary</th>
-                      <th className="text-left py-2 px-2 text-text-secondary font-medium w-16">Count</th>
-                      <th className="text-left py-2 px-2 text-text-secondary font-medium w-20">Age</th>
+          <DrawerTitle>Volumes ({volumes.length})</DrawerTitle>
+          {volumes.length > 0 ? (
+            <div className="space-y-2">
+              {volumes.map((v, i) => (
+                <div key={`${v.name}-${i}`} className="border border-border rounded-md p-2 text-xs">
+                  <DrawerItem name="Name">{v.name}</DrawerItem>
+                  <DrawerItem name="Type">{v.type || '-'}</DrawerItem>
+                  <DrawerItem name="Source">{v.source || '-'}</DrawerItem>
+                  <DrawerItem name="Read only">{v.read_only ? 'Yes' : 'No'}</DrawerItem>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>No volume data</p>
+          )}
+
+          <DrawerTitle>Events ({events.length})</DrawerTitle>
+          {events.length > 0 ? (
+            <div className="overflow-x-auto border border-border rounded-md -mx-4 px-4">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border" style={{ backgroundColor: 'var(--color-bg)' }}>
+                    <th className="text-left py-2 px-2 font-medium" style={{ color: 'var(--color-muted)' }}>Summary</th>
+                    <th className="text-left py-2 px-2 font-medium w-16" style={{ color: 'var(--color-muted)' }}>Count</th>
+                    <th className="text-left py-2 px-2 font-medium w-20" style={{ color: 'var(--color-muted)' }}>Age</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.slice(0, 20).map((e, i) => (
+                    <tr key={`${e.reason || 'event'}-${i}`} className="border-b border-border last:border-b-0">
+                      <td className="py-2 px-2 align-top">
+                        <p className="font-medium" style={{ color: 'var(--color-text)' }}>{e.reason || e.type || 'Event'}</p>
+                        <p className="mt-1 break-all" style={{ color: 'var(--color-text-secondary)' }}>{e.message || '-'}</p>
+                      </td>
+                      <td className="py-2 px-2 align-top" style={{ color: 'var(--color-text)' }}>{e.count ?? 1}</td>
+                      <td className="py-2 px-2 align-top" style={{ color: 'var(--color-text-secondary)' }}>{e.age || '-'}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {events.slice(0, 20).map((e, i) => (
-                      <tr key={`${e.reason || 'event'}-${i}`} className="border-b border-border last:border-b-0 hover:bg-hover/40">
-                        <td className="py-2 px-2 align-top">
-                          <p className="text-text font-medium">{e.reason || e.type || 'Event'}</p>
-                          <p className="text-text-secondary mt-1 break-all">{e.message || '-'}</p>
-                        </td>
-                        <td className="py-2 px-2 align-top text-text">{e.count ?? 1}</td>
-                        <td className="py-2 px-2 align-top text-text-secondary">{e.age || '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-sm text-text-secondary">No recent events</p>
-            )}
-          </section>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>No recent events</p>
+          )}
         </div>
       </div>
     </ResizablePanel>
