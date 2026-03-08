@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import YAML from 'yaml';
 import { ChevronDown, Layers, Pencil, Trash2 } from '../components/Icons';
-import { useRealtimeCrds, useRealtimeCustomResources } from '../hooks/useRealtimeResources';
-import { deleteCustomResource } from '../hooks/useKubernetes';
+import { useRealtimeCrds } from '../hooks/useRealtimeResources';
+import { deleteCustomResource, useCustomResources } from '../hooks/useKubernetes';
 import { DataTable } from '../components';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ResourceDetailPanelLayout, PanelActionButton } from '../components/ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle } from '../components/drawer';
+import { DrawerItem, DrawerTitle, DrawerParamToggler } from '../components/drawer';
 import { useNamespace } from '../context/NamespaceContext';
 import { openPanelTab } from '../components/BottomPanel';
 import { timeAgo, safeJsonPathValue, formatJsonValue, matchesResourceNameFilter } from '../utils';
@@ -189,20 +189,15 @@ const DetailPanel = ({
           <DrawerItem name="Name">{item.name}</DrawerItem>
           {item.namespace ? <DrawerItem name="Namespace">{item.namespace}</DrawerItem> : null}
           <DrawerItem name="Age">{timeAgo(item.created_at)}</DrawerItem>
-          {printerColumns.length > 0 ? (
-            <>
-              <DrawerTitle className="-mx-5">Details</DrawerTitle>
-              {printerColumns.map((col) => {
-                const value = safeJsonPathValue(resourceObj, col.jsonPath);
-                const display = formatDetailValue(value);
-                return (
-                  <DrawerItem key={col.name} name={drawerLabel(col.name)}>
-                    {display}
-                  </DrawerItem>
-                );
-              })}
-            </>
-          ) : null}
+          {printerColumns.map((col) => {
+            const value = safeJsonPathValue(resourceObj, col.jsonPath);
+            const display = formatDetailValue(value);
+            return (
+              <DrawerItem key={col.name} name={drawerLabel(col.name)}>
+                {display}
+              </DrawerItem>
+            );
+          })}
           {conditions.length > 0 ? (
             <>
               <DrawerTitle className="-mx-5">Conditions</DrawerTitle>
@@ -213,17 +208,17 @@ const DetailPanel = ({
               ))}
             </>
           ) : null}
-          <DrawerTitle className="-mx-5">Spec</DrawerTitle>
-          <div className="py-2 font-mono text-xs overflow-x-auto">
-            <JsonTree value={item.spec} />
-          </div>
+          <DrawerParamToggler label="Spec">
+            <div className="py-2 font-mono text-xs overflow-x-auto">
+              <JsonTree value={item.spec} />
+            </div>
+          </DrawerParamToggler>
           {item.status && Object.keys(item.status).length > 0 && (
-            <>
-              <DrawerTitle className="-mx-5">Status</DrawerTitle>
+            <DrawerParamToggler label="Status">
               <div className="py-2 font-mono text-xs overflow-x-auto">
                 <JsonTree value={item.status} />
               </div>
-            </>
+            </DrawerParamToggler>
           )}
         </ResourceDetailPanelLayout>
       </div>
@@ -243,7 +238,10 @@ export const CustomResourcesPage = () => {
   const crd = crds?.find((c) => c.name === decodedCrdName);
   const isNamespaced = crd?.scope === 'Namespaced';
 
-  const { data: rawData, isLoading, error } = useRealtimeCustomResources(decodedCrdName || null);
+  const { data: restData, isLoading: queryLoading, error, isFetched } = useCustomResources(decodedCrdName || '');
+  const rawData = restData ?? [];
+  // Avoid show/hide flicker: show loading until we have a settled result (data or fetched empty)
+  const isLoading = Boolean(decodedCrdName && (queryLoading || (!isFetched && restData === undefined)));
   // For namespaced CRDs filter by selected namespaces when set
   const data = useMemo(() => {
     if (!rawData?.length) return rawData ?? [];
@@ -390,33 +388,34 @@ export const CustomResourcesPage = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Layers size={18} className="text-primary" />
-          <h2 className="text-lg font-semibold text-text">{title}</h2>
+      <div>
+        <h1 className="text-xl font-semibold text-text">
+          {title}
           {crd && (
-            <span className="text-xs px-2 py-0.5 rounded bg-hover text-text-secondary">
-              {crd.scope}
+            <span className="ml-2 text-sm font-normal text-text-secondary">
+              ({crd.scope})
             </span>
           )}
-        </div>
+        </h1>
       </div>
-      <DataTable
-        columns={columns}
-        data={withId}
-        isLoading={isLoading}
-        error={error ? String(error) : null}
-        rowKey="id"
-        selectedRowKey={
-          selectedItem ? `${selectedItem.name}/${selectedItem.namespace ?? ''}` : undefined
-        }
-        onRowClick={(row) => {
-          setSelectedItem(row);
-          setPanelOpen(true);
-        }}
-        sortState={sortState}
-        onSortChange={(s) => setSortState(s as { key: SortKey; direction: 'asc' | 'desc' })}
-      />
+      <div className="space-y-2">
+        <DataTable
+          columns={columns}
+          data={withId}
+          isLoading={isLoading}
+          error={error ? String(error) : null}
+          rowKey="id"
+          selectedRowKey={
+            selectedItem ? `${selectedItem.name}/${selectedItem.namespace ?? ''}` : undefined
+          }
+          onRowClick={(row) => {
+            setSelectedItem(row);
+            setPanelOpen(true);
+          }}
+          sortState={sortState}
+          onSortChange={(s) => setSortState(s as { key: SortKey; direction: 'asc' | 'desc' })}
+        />
+      </div>
       {panelOpen && selectedItem && (
         <DetailPanel
           item={selectedItem}

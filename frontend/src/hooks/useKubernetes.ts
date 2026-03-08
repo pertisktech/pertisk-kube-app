@@ -696,6 +696,8 @@ export const useCustomResources = (crdName: string, namespace?: string) => {
       return data.data;
     },
     enabled: Boolean(crdName),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 };
 

@@ -58,30 +58,6 @@ export const DataTable = <T extends Record<string, any>>({
     );
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="flex flex-col items-center gap-2">
-          <Loader size={32} className="text-primary animate-spin" />
-          <p className="text-text-secondary">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="bg-surface border border-border rounded-lg overflow-hidden">
-        <div className="px-3 py-2 border-b border-border bg-surface-elevated text-xs text-text-secondary">
-          Total: 0 records
-        </div>
-        <div className="p-8 text-center">
-          <p className="text-text-secondary">No data available</p>
-        </div>
-      </div>
-    );
-  }
-
   const handleSelectAll = (checked: boolean) => {
     if (onRowSelectionChange) {
       if (checked) {
@@ -190,7 +166,23 @@ export const DataTable = <T extends Record<string, any>>({
             </tr>
           </thead>
           <tbody>
-            {data.map((row, rowIdx) => {
+            {isLoading ? (
+              <tr>
+                <td colSpan={columns.length} className="px-3 py-12 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <Loader size={32} className="text-primary animate-spin" />
+                    <p className="text-text-secondary">Loading...</p>
+                  </div>
+                </td>
+              </tr>
+            ) : data.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="px-3 py-8 text-center text-text-secondary">
+                  No data available
+                </td>
+              </tr>
+            ) : (
+            data.map((row, rowIdx) => {
               const rowKeyValue = getRowKeyValue(row);
               const isSelected = selectedRows.includes(rowKeyValue);
 
@@ -248,7 +240,8 @@ export const DataTable = <T extends Record<string, any>>({
                   ))}
                 </tr>
               );
-            })}
+            })
+            )}
           </tbody>
         </table>
       </div>
