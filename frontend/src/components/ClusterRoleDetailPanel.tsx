@@ -1,6 +1,8 @@
-import { X, Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import type { ClusterRole } from '../types';
 import { timeAgo } from '../utils';
+import { DetailPanelHeader } from './DetailPanelHeader';
+import { ResizablePanel } from './ResizablePanel';
 
 interface ClusterRoleDetailPanelProps {
   clusterRole: ClusterRole;
@@ -11,18 +13,20 @@ interface ClusterRoleDetailPanelProps {
 
 export const ClusterRoleDetailPanel = ({ clusterRole: cr, onClose, onOpenYamlEditor, onDelete }: ClusterRoleDetailPanelProps) => {
   return (
-    <aside className="fixed top-0 right-0 z-[100] h-screen w-[420px] max-w-[94vw] bg-surface-elevated border-l border-border shadow-2xl">
+    <ResizablePanel>
       <div className="h-full flex flex-col">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="text-lg font-semibold text-text">Cluster Role Info</h2>
-          <button type="button" onClick={onClose} className="p-2 rounded-md hover:bg-hover text-text-secondary" aria-label="Close panel"><X size={16} /></button>
-        </div>
-        <div className="px-5 py-3 border-b border-border">
-          <div className="bg-surface border border-border rounded-lg p-1.5 flex items-center gap-2">
-            <button type="button" onClick={() => onOpenYamlEditor?.(cr)} className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover" data-tooltip="Edit YAML"><Pencil size={13} /></button>
-            <button type="button" onClick={() => onDelete?.(cr.name)} className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover" data-tooltip="Delete"><Trash2 size={13} /></button>
+        <DetailPanelHeader title="Cluster Role Info" onClose={onClose}>
+          <div className="flex gap-2">
+            <div className="group relative">
+              <button type="button" onClick={() => onOpenYamlEditor?.(cr)} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors" aria-label="Edit clusterrole YAML"><Pencil size={12} /></button>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Edit YAML</div>
+            </div>
+            <div className="group relative">
+              <button type="button" onClick={() => onDelete?.(cr.name)} className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors" aria-label="Delete clusterrole"><Trash2 size={12} /></button>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Delete</div>
+            </div>
           </div>
-        </div>
+        </DetailPanelHeader>
         <div className="flex-1 overflow-auto overflow-x-hidden p-5 space-y-5 text-sm">
           <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
             <div className="space-y-3">
@@ -33,6 +37,6 @@ export const ClusterRoleDetailPanel = ({ clusterRole: cr, onClose, onOpenYamlEdi
           </section>
         </div>
       </div>
-    </aside>
+    </ResizablePanel>
   );
 };

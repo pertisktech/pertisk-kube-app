@@ -1,6 +1,8 @@
-import { X, Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import type { ConfigMap } from '../types';
 import { timeAgo } from '../utils';
+import { DetailPanelHeader } from './DetailPanelHeader';
+import { ResizablePanel } from './ResizablePanel';
 
 interface ConfigMapDetailPanelProps {
   configMap: ConfigMap;
@@ -11,42 +13,38 @@ interface ConfigMapDetailPanelProps {
 
 export const ConfigMapDetailPanel = ({ configMap, onClose, onOpenYamlEditor, onDelete }: ConfigMapDetailPanelProps) => {
   return (
-    <aside className="fixed top-0 right-0 z-[100] h-screen w-[420px] max-w-[94vw] bg-surface-elevated border-l border-border shadow-2xl">
+    <ResizablePanel>
       <div className="h-full flex flex-col">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="text-lg font-semibold text-text">ConfigMap Info</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-md hover:bg-hover text-text-secondary"
-            aria-label="Close configmap panel"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="px-5 py-3 border-b border-border">
-          <div className="bg-surface border border-border rounded-lg p-1.5 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onOpenYamlEditor?.(configMap)}
-              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
-              aria-label="Edit configmap YAML"
-              data-tooltip="Edit YAML"
-            >
-              <Pencil size={13} />
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete?.(configMap.namespace, configMap.name)}
-              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
-              aria-label="Delete configmap"
-              data-tooltip="Delete ConfigMap"
-            >
-              <Trash2 size={13} />
-            </button>
+        <DetailPanelHeader title="ConfigMap Info" onClose={onClose}>
+          <div className="flex gap-2">
+            <div className="group relative">
+              <button
+                type="button"
+                onClick={() => onOpenYamlEditor?.(configMap)}
+                className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors"
+                aria-label="Edit configmap YAML"
+              >
+                <Pencil size={12} />
+              </button>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">
+                Edit YAML
+              </div>
+            </div>
+            <div className="group relative">
+              <button
+                type="button"
+                onClick={() => onDelete?.(configMap.namespace, configMap.name)}
+                className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors"
+                aria-label="Delete configmap"
+              >
+                <Trash2 size={12} />
+              </button>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">
+                Delete
+              </div>
+            </div>
           </div>
-        </div>
+        </DetailPanelHeader>
 
         <div className="flex-1 overflow-auto overflow-x-hidden p-5 space-y-5 text-sm">
           <section className="min-w-0 bg-surface border border-border rounded-lg p-4">
@@ -71,6 +69,6 @@ export const ConfigMapDetailPanel = ({ configMap, onClose, onOpenYamlEditor, onD
           </section>
         </div>
       </div>
-    </aside>
+    </ResizablePanel>
   );
 };

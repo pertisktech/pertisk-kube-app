@@ -1,7 +1,9 @@
-import { Pencil, RotateCcw, X, Trash2 } from 'lucide-react';
+import { Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Deployment } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
+import { DetailPanelHeader } from './DetailPanelHeader';
+import { ResizablePanel } from './ResizablePanel';
 
 interface DeploymentDetailPanelProps {
   deployment: Deployment;
@@ -116,53 +118,27 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
   };
 
   return (
-    <aside className="fixed top-0 right-0 z-[100] h-screen w-[420px] max-w-[94vw] bg-surface-elevated border-l border-border shadow-2xl">
+    <ResizablePanel>
       <div className="h-full flex flex-col">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="text-lg font-semibold text-text">Deployment Info</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-md hover:bg-hover text-text-secondary"
-            aria-label="Close deployment panel"
-          >
-            <X size={16} />
-          </button>
-        </div>
+        <DetailPanelHeader title="Deployment Info" onClose={onClose}>
+          <div className="flex gap-2">
+            <div className="group relative">
+              <button type="button" onClick={handleRestart} disabled={isRestarting} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Restart deployment"><RotateCcw size={12} className={isRestarting ? 'animate-spin' : ''} /></button>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Restart</div>
+            </div>
+            <div className="group relative">
+              <button type="button" onClick={() => onOpenYamlEditor(deployment)} className="p-2 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 transition-colors" aria-label="Edit deployment YAML"><Pencil size={12} /></button>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Edit YAML</div>
+            </div>
+            <div className="group relative">
+              <button type="button" onClick={() => onDelete?.(deployment.namespace, deployment.name)} className="p-2 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors" aria-label="Delete deployment"><Trash2 size={12} /></button>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-elevated text-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 border border-border">Delete</div>
+            </div>
+          </div>
+        </DetailPanelHeader>
 
         <div className="px-5 py-3 border-b border-border">
           <div className="grid grid-cols-1 gap-2">
-            <div className="bg-surface border border-border rounded-lg p-1.5 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleRestart}
-                disabled={isRestarting}
-                className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label="Restart deployment"
-                data-tooltip="Restart Deployment"
-              >
-                <RotateCcw size={13} className={isRestarting ? 'animate-spin' : ''} />
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenYamlEditor(deployment)}
-                className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-hover"
-                aria-label="Edit deployment YAML"
-                data-tooltip="Edit YAML"
-              >
-                <Pencil size={13} />
-              </button>
-              <button
-                type="button"
-                onClick={() => onDelete?.(deployment.namespace, deployment.name)}
-                className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-[var(--color-icon-danger)] text-[var(--color-icon-danger)] hover:bg-hover"
-                aria-label="Delete deployment"
-                data-tooltip="Delete Deployment"
-              >
-                <Trash2 size={13} />
-              </button>
-            </div>
-
             <div className="bg-surface border border-border rounded-lg p-2 space-y-2">
               <p className="text-[11px] uppercase tracking-wide text-text-secondary">Scale</p>
               <p className="text-xs text-text-secondary">
@@ -300,6 +276,6 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
           </section>
         </div>
       </div>
-    </aside>
+    </ResizablePanel>
   );
 };

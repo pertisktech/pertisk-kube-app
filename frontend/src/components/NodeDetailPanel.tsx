@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { X, Terminal, Trash2, Loader, ChevronDown, FileText, Lock, Unlock, Droplet } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import { usePods } from '../hooks/useKubernetes';
+import { ResizablePanel } from './ResizablePanel';
 import type { K8sNode } from '../types';
 
 interface NodeDetailPanelProps {
@@ -58,45 +59,8 @@ const ResourceCard = ({ title, resources }: { title: string; resources: { cpu?: 
 export const NodeDetailPanel = ({ node, onClose, onEditYaml, onOpenShell, onCordonToggle, onDrain, onDelete, cordonLoading }: NodeDetailPanelProps) => {
   const [expandedLabels, setExpandedLabels] = useState(false);
   const [expandedAnnotations, setExpandedAnnotations] = useState(false);
-  const [panelWidth, setPanelWidth] = useState(() => {
-    // Default to 30% of screen width
-    return Math.max(300, Math.min(800, window.innerWidth * 0.3));
-  });
-  const resizeRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
 
   const { data: allPods } = usePods();
-
-  // Handle panel resize
-  useEffect(() => {
-    const handleMouseDown = (e: MouseEvent) => {
-      e.preventDefault();
-      const startX = e.clientX;
-      const startWidth = panelWidth;
-
-      const handleMouseMove = (moveEvent: MouseEvent) => {
-        const delta = startX - moveEvent.clientX;
-        const newWidth = Math.max(300, Math.min(800, startWidth + delta));
-        setPanelWidth(newWidth);
-      };
-
-      const handleMouseUp = () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-      };
-
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    };
-
-    const element = resizeRef.current;
-    if (element) {
-      element.addEventListener('mousedown', handleMouseDown);
-      return () => {
-        element.removeEventListener('mousedown', handleMouseDown);
-      };
-    }
-  }, [panelWidth]);
 
   const status = String(node.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady';
   const taints = node.taints?.length ? node.taints : [];
@@ -125,17 +89,8 @@ export const NodeDetailPanel = ({ node, onClose, onEditYaml, onOpenShell, onCord
   // Note: ResourceCard component is defined above
 
   return (
-    <aside
-      ref={panelRef}
-      className="fixed top-0 right-0 z-[100] h-screen bg-surface-elevated border-l border-border shadow-2xl flex flex-col"
-      style={{ width: `${panelWidth}px`, maxWidth: '94vw' }}
-    >
-      {/* Resize Handle - Left Edge */}
-      <div
-        ref={resizeRef}
-        className="absolute left-0 top-0 w-1 h-full hover:bg-primary/60 hover:cursor-col-resize transition-colors cursor-col-resize group"
-        title="Drag to resize panel"
-      />
+    <ResizablePanel>
+      <div className="h-full flex flex-col">
       {/* Enhanced Header Section */}
       <div className="bg-gradient-to-r from-surface to-surface-elevated border-b border-border px-5 py-4">
         <div className="flex items-start justify-between gap-3 mb-3">
@@ -412,6 +367,7 @@ export const NodeDetailPanel = ({ node, onClose, onEditYaml, onOpenShell, onCord
           <p className="text-xs text-text-secondary mt-2">Recent events will be displayed here</p>
         </section>
       </div>
-    </aside>
+    </div>
+    </ResizablePanel>
   );
 };
