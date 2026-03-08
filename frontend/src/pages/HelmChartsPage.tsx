@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Cable, Star } from '../components/Icons';
-import { useHelmCharts } from '../hooks/useKubernetes';
+import { useHelmCharts, useHelmReleases } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';
 import { HelmChartDetailPanel } from '../components/HelmChartDetailPanel';
 import { openPanelTab } from '../components/BottomPanel';
 import type { HelmChart } from '../types';
 
-type ChartSortKey = 'name' | 'version' | 'app_version' | 'repository' | 'stars';
+type ChartSortKey = 'name' | 'version' | 'app_version' | 'repository' | 'stars' | 'installed';
 
 function chartRowKey(chart: HelmChart): string {
   return `${chart.repository}/${chart.name}`;
@@ -14,6 +14,8 @@ function chartRowKey(chart: HelmChart): string {
 
 export const HelmChartsPage = () => {
   const { data, isLoading, error } = useHelmCharts();
+  const { data: releases } = useHelmReleases();
+  const [searchQuery, setSearchQuery] = useState('');
   const [sortState, setSortState] = useState<{ key: ChartSortKey; direction: 'asc' | 'desc' }>({
     key: 'stars',
     direction: 'desc',
@@ -21,15 +23,52 @@ export const HelmChartsPage = () => {
   const [selectedChart, setSelectedChart] = useState<HelmChart | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
+  /** Chart names that have at least one release installed (release.chart === chart name). */
+  const installedChartNames = useMemo(() => {
+    const set = new Set<string>();
+    releases?.forEach((r) => {
+      if (r.chart && r.chart !== '-') set.add(r.chart);
+    });
+    return set;
+  }, [releases]);
+
+  /** For each chart name, count how many releases use it (e.g. same chart in multiple namespaces). */
+  const installedChartCount = useMemo(() => {
+    const map = new Map<string, number>();
+    releases?.forEach((r) => {
+      if (r.chart && r.chart !== '-') map.set(r.chart, (map.get(r.chart) ?? 0) + 1);
+    });
+    return map;
+  }, [releases]);
+
   const columns = [
     {
       header: 'Name',
       accessor: (row: HelmChart) => (
         <span className="font-medium text-text">{row.name}</span>
       ),
-      width: '16%',
+      width: '14%',
       sortable: true,
       sortKey: 'name',
+    },
+    {
+      header: 'Status',
+      accessor: (row: HelmChart) => {
+        const installed = installedChartNames.has(row.name);
+        const count = installedChartCount.get(row.name) ?? 0;
+        if (!installed) return <span className="text-text-secondary">—</span>;
+        return (
+          <span
+            className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium status-green"
+            title={count > 1 ? `Installed in ${count} release(s)` : 'Installed'}
+          >
+            Installed{count > 1 ? ` (${count})` : ''}
+          </span>
+        );
+      },
+      width: '12%',
+      sortable: true,
+      sortKey: 'installed',
     },
     {
       header: 'Description',
@@ -38,7 +77,7 @@ export const HelmChartsPage = () => {
           {row.description || '-'}
         </span>
       ),
-      width: '32%',
+      width: '26%',
     },
     {
       header: 'Version',
@@ -97,8 +136,19 @@ export const HelmChartsPage = () => {
     },
   ];
 
-  const sortedCharts = useMemo(() => {
-    const source = [...(data || [])];
+  const filteredAndSortedCharts = useMemo(() => {
+    let source = [...(data || [])];
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      source = source.filter(
+        (c) =>
+          (c.name && c.name.toLowerCase().includes(q)) ||
+          (c.description && c.description.toLowerCase().includes(q)) ||
+          (c.repository && c.repository.toLowerCase().includes(q)) ||
+          (c.version && c.version.toLowerCase().includes(q)) ||
+          (c.app_version && c.app_version.toLowerCase().includes(q)),
+      );
+    }
     const factor = sortState.direction === 'asc' ? 1 : -1;
     const compareText = (a: unknown, b: unknown) =>
       String(a ?? '').localeCompare(String(b ?? ''), undefined, { sensitivity: 'base' });
@@ -113,15 +163,21 @@ export const HelmChartsPage = () => {
           return compareText(a.app_version, b.app_version) * factor;
         case 'repository':
           return compareText(a.repository, b.repository) * factor;
+        case 'installed': {
+          const aInstalled = installedChartNames.has(a.name) ? 1 : 0;
+          const bInstalled = installedChartNames.has(b.name) ? 1 : 0;
+          const diff = aInstalled - bInstalled;
+          return (diff !== 0 ? diff : compareText(a.name, b.name)) * factor;
+        }
         default:
           return compareText(a.name, b.name) * factor;
       }
     });
-  }, [data, sortState]);
+  }, [data, sortState, installedChartNames, searchQuery]);
 
   return (
     <div className="space-y-4">
-      <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-text">
           Charts{' '}
           <span className="text-base font-normal text-text-secondary">
@@ -136,11 +192,19 @@ export const HelmChartsPage = () => {
             </a>
           </span>
         </h1>
+        <input
+          type="text"
+          placeholder="Search charts..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-56 px-3 py-1.5 rounded-lg border border-border bg-surface text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+          aria-label="Search charts by name, description, repository, version"
+        />
       </div>
 
       <DataTable
         columns={columns}
-        data={sortedCharts}
+        data={filteredAndSortedCharts}
         isLoading={isLoading}
         error={error?.message ?? null}
         rowKey={chartRowKey}

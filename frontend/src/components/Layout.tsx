@@ -168,8 +168,8 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const { data: realtimeNamespaces } = useRealtimeNamespaces();
   const { data: apiNamespaces } = useNamespaces();
 
-  // Hide namespace filter on Dashboard, Nodes, and Namespaces pages
-  const shouldShowNamespaceFilter = location.pathname !== '/' && location.pathname !== '/nodes' && location.pathname !== '/namespaces';
+  // Hide namespace filter on Dashboard, Nodes, Namespaces, and Helm Charts pages
+  const shouldShowNamespaceFilter = location.pathname !== '/' && location.pathname !== '/nodes' && location.pathname !== '/namespaces' && location.pathname !== '/helm/charts';
 
   // Connect to host machine or Kubernetes pod
   // (handled by BottomPanel via openPanelTab)
