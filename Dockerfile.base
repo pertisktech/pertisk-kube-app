@@ -55,6 +55,8 @@ FROM alpine:latest AS runtime
 
 WORKDIR /app
 
+ARG TARGETARCH
+
 RUN apk add --no-cache \
     ca-certificates \
     kubectl \
@@ -65,9 +67,30 @@ RUN apk add --no-cache \
     wget \
     bash \
     unzip \
+    tar \
+    fastfetch \
     fontconfig \
     font-freefont \
     && adduser -D -u 65532 appuser
+
+# Install Ookla Speedtest CLI for the target architecture.
+RUN set -eux; \
+    case "${TARGETARCH:-$(apk --print-arch)}" in \
+        amd64|x86_64) \
+            SPEEDTEST_URL="https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-x86_64.tgz" \
+            ;; \
+        arm64|aarch64) \
+            SPEEDTEST_URL="https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-aarch64.tgz" \
+            ;; \
+        *) \
+            echo "Unsupported architecture for speedtest: ${TARGETARCH:-$(apk --print-arch)}" >&2; \
+            exit 1 \
+            ;; \
+    esac; \
+    wget -O /tmp/speedtest.tgz "$SPEEDTEST_URL"; \
+    tar -xzf /tmp/speedtest.tgz -C /tmp; \
+    install -m 0755 /tmp/speedtest /usr/local/bin/speedtest; \
+    rm -f /tmp/speedtest.tgz /tmp/speedtest /tmp/speedtest.md
 
 # System-wide PATH for all shell types
 RUN echo 'export PATH=/usr/local/bin:/usr/bin:/bin' >> /etc/profile && \
