@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-K3S_KUBECONFIG ?= /Users/nat/.kube/talos-omni-hz-cluister-kubeconfig.yaml
+K8S_KUBECONFIG ?= /Users/nat/.kube/talos-omni-hz-cluister-kubeconfig.yaml
 VERSION ?= $(shell V=$$(git describe --tags --always --abbrev=7 2>/dev/null || echo ""); \
 	if echo "$$V" | grep -qE '^v?[0-9]+\.'; then \
 		echo "$$V" | sed 's/^v//; s/-/./g'; \
@@ -18,7 +18,7 @@ HELM_NAMESPACE ?= pertisk-rproxy
 APP_PORT ?= 8091
 GRPC_PORT ?= 50051
 
-.PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run-monolith run-ingress-k3s
+.PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run-monolith run-ingress-k8s
 .PHONY: docker-build docker-build-amd64 docker-build-arm64 docker-build-multi docker-push docker-push-multi
 .PHONY: docker-base-build docker-base-push docker-base-push-multi
 .PHONY: helm-install helm-upgrade helm-uninstall helm-template helm-deploy port-forward ingress-hosts lb-url
@@ -57,8 +57,8 @@ build-backend:
 run-monolith: frontend-build
 	STATIC_DIR=frontend/dist cargo run -p pertisk-kube-backend
 
-# Simulate running as an ingress-style controller talking to k3s/k8s via kubeconfig.
-run-ingress-k3s: tools frontend-build
+# Simulate running as an ingress-style controller talking to k8s via kubeconfig.
+run-ingress-k8s: tools frontend-build
 	@pkill -f "cargo-watch watch -x run -p pertisk-kube-backend" 2>/dev/null || true
 	@pkill -f "target/debug/pertisk-kube-backend" 2>/dev/null || true
 	@EXISTING_PIDS=$$(lsof -ti:8091 -ti:50051 2>/dev/null | sort -u); \
@@ -70,13 +70,13 @@ run-ingress-k3s: tools frontend-build
 	@echo "Starting frontend build watcher (npm install && npm run build -- --watch)..."
 	@$(MAKE) frontend-build-watch & FRONTEND_WATCH_PID=$$!; \
 	trap 'kill $$FRONTEND_WATCH_PID 2>/dev/null || true' INT TERM EXIT; \
-	if [ -f "$(K3S_KUBECONFIG)" ]; then \
-		echo "Using local k3s kubeconfig: $(K3S_KUBECONFIG)"; \
-		KUBECONFIG="$(K3S_KUBECONFIG)" \
+	if [ -f "$(K8S_KUBECONFIG)" ]; then \
+		echo "Using local k8s kubeconfig: $(K8S_KUBECONFIG)"; \
+		KUBECONFIG="$(K8S_KUBECONFIG)" \
 		STATIC_DIR=frontend/dist \
 		cargo watch -x 'run -p pertisk-kube-backend'; \
 	else \
-		echo "k3s kubeconfig not found at $(K3S_KUBECONFIG); using current kubeconfig context instead."; \
+		echo "k8s kubeconfig not found at $(K8S_KUBECONFIG); using current kubeconfig context instead."; \
 		STATIC_DIR=frontend/dist \
 		cargo watch -x 'run -p pertisk-kube-backend'; \
 	fi
@@ -223,15 +223,15 @@ release: docker-build-multi helm-deploy
 skaffold-run:
 	@FOUR_DIGIT_TAG=$$(( (RANDOM % 9000) + 1000 )); \
 	echo "Using FOUR_DIGIT_TAG=$$FOUR_DIGIT_TAG"; \
-	FOUR_DIGIT_TAG=$$FOUR_DIGIT_TAG skaffold run --kubeconfig=$(K3S_KUBECONFIG)
+	FOUR_DIGIT_TAG=$$FOUR_DIGIT_TAG skaffold run --kubeconfig=$(K8S_KUBECONFIG)
 
 # Run once with production profile (git tag versioning + prod values)
 skaffold-run-prod:
-	skaffold run -p prod --kubeconfig=$(K3S_KUBECONFIG)
+	skaffold run -p prod --kubeconfig=$(K8S_KUBECONFIG)
 
 # Watch mode: rebuild and redeploy on source changes
 skaffold-dev:
-	skaffold dev --kubeconfig=$(K3S_KUBECONFIG)
+	skaffold dev --kubeconfig=$(K8S_KUBECONFIG)
 
 # Build and push the image only (no deploy)
 skaffold-build:
@@ -239,7 +239,7 @@ skaffold-build:
 
 # Tear down the Helm release deployed by Skaffold
 skaffold-delete:
-	skaffold delete --kubeconfig=$(K3S_KUBECONFIG)
+	skaffold delete --kubeconfig=$(K8S_KUBECONFIG)
 
 # Show current version from git
 version:
