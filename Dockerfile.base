@@ -64,6 +64,7 @@ ARG TARGETARCH
 RUN apk add --no-cache \
     ca-certificates \
     kubectl \
+    helm \
     aws-cli \
     zsh \
     git \

@@ -275,14 +275,14 @@ const InstallChartTabContent = ({
     valuesFetchedRef.current = false;
   }, [selectedVersion]);
 
-  const { data: fetchedValues, isLoading: valuesLoading, isError: valuesFetchFailed } = useQuery({
+  const { data: fetchedValues, isLoading: valuesLoading, isError: valuesFetchFailed, error: valuesFetchError, refetch: refetchValues } = useQuery({
     queryKey: ['helm-chart-values', chart.repository_url, chart.name, selectedVersion],
     queryFn: () => getHelmChartValues(chart.repository_url, chart.name, selectedVersion),
     enabled: !!chart.repository_url?.trim() && !!selectedVersion,
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: readmeContent, isLoading: readmeLoading, isError: readmeError } = useQuery({
+  const { data: readmeContent, isLoading: readmeLoading, isError: readmeError, error: readmeFetchError, refetch: refetchReadme } = useQuery({
     queryKey: ['helm-chart-readme', chart.repository_url, chart.name, selectedVersion],
     queryFn: () => getHelmChartReadme(chart.repository_url, chart.name, selectedVersion),
     enabled: !!chart.repository_url?.trim() && !!selectedVersion && subTab === 'readme',
@@ -301,10 +301,11 @@ const InstallChartTabContent = ({
   }, [fetchedValues]);
 
   useEffect(() => {
-    if (valuesFetchFailed) {
-      toast.error('Could not load chart default values. Edit the template below or add the repo manually.');
+    if (valuesFetchFailed && valuesFetchError) {
+      const msg = valuesFetchError instanceof Error ? valuesFetchError.message : 'Could not load chart default values.';
+      toast.error(msg.length > 120 ? `${msg.slice(0, 120)}…` : msg);
     }
-  }, [valuesFetchFailed]);
+  }, [valuesFetchFailed, valuesFetchError]);
 
   const nsList = namespaces?.map((ns) => ns.name) ?? [];
   const chartRef = `${chart.repository}/${chart.name}`;
@@ -434,15 +435,32 @@ const InstallChartTabContent = ({
       {/* Content: Values editor or README */}
       {subTab === 'values' ? (
         <div className="flex-1 min-h-0 flex flex-col p-4">
-          <label className="text-text-secondary font-medium mb-2 flex items-center gap-2">
-            Values
-            {valuesLoading && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-normal text-primary">
-                <Loader size={12} className="animate-spin flex-shrink-0" />
-                Loading… (fetching Helm values)
-              </span>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <label className="text-text-secondary font-medium flex items-center gap-2">
+              Values
+              {valuesLoading && (
+                <span className="inline-flex items-center gap-1.5 text-xs font-normal text-primary">
+                  <Loader size={12} className="animate-spin flex-shrink-0" />
+                  Loading… (fetching Helm values)
+                </span>
+              )}
+            </label>
+            {valuesFetchFailed && (
+              <button
+                type="button"
+                onClick={() => void refetchValues()}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+              >
+                <RotateCw size={12} className="flex-shrink-0" />
+                Retry
+              </button>
             )}
-          </label>
+          </div>
+          {valuesFetchFailed && valuesFetchError && (
+            <p className="text-red-500 text-xs mb-2 break-words" role="alert">
+              {valuesFetchError instanceof Error ? valuesFetchError.message : 'Failed to load default values.'}
+            </p>
+          )}
           <div
             className={cn(
               'yaml-editor-pane flex-1 min-h-[200px] rounded-lg overflow-hidden border bg-surface-elevated',
@@ -465,23 +483,35 @@ const InstallChartTabContent = ({
         </div>
       ) : (
         <div className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden">
-          <label className="text-text-secondary font-medium mb-2 flex items-center gap-2">
-            <ScrollText size={14} className="flex-shrink-0" />
-            README
-            {readmeLoading && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-normal text-primary">
-                <Loader size={12} className="animate-spin flex-shrink-0" />
-                Loading…
-              </span>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <label className="text-text-secondary font-medium flex items-center gap-2">
+              <ScrollText size={14} className="flex-shrink-0" />
+              README
+              {readmeLoading && (
+                <span className="inline-flex items-center gap-1.5 text-xs font-normal text-primary">
+                  <Loader size={12} className="animate-spin flex-shrink-0" />
+                  Loading…
+                </span>
+              )}
+            </label>
+            {readmeError && (
+              <button
+                type="button"
+                onClick={() => void refetchReadme()}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+              >
+                <RotateCw size={12} className="flex-shrink-0" />
+                Retry
+              </button>
             )}
-          </label>
+          </div>
           <div
             className="flex-1 min-h-0 rounded-lg border border-border bg-surface-elevated overflow-auto p-4 text-sm markdown-viewer"
             style={{ color: 'var(--color-text)' }}
           >
-            {readmeError && (
-              <p className="text-red-500" role="alert">
-                Failed to load README. The chart may not provide one.
+            {readmeError && readmeFetchError && (
+              <p className="text-red-500 text-xs break-words mb-2" role="alert">
+                {readmeFetchError instanceof Error ? readmeFetchError.message : 'Failed to load README.'}
               </p>
             )}
             {readmeContent != null && readmeContent !== '' && !readmeLoading && (
