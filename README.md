@@ -12,11 +12,11 @@ This project is structured as a **single workspace**:
 ## 🎯 Core Features
 
 ### Dashboard Overview
-- **Cluster Health Status** - Real-time cluster health indicators
-- **Resource Utilization** - CPU, Memory, Storage, and Pod capacity monitoring
-- **Node Information** - Detailed node status with allocatable resources, taints, and labels
-- **Workload Summary** - Quick overview of all workload types (Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, ReplicaSets)
-- **Metrics Charts** - Interactive charts for:
+- **Cluster Health Status** – Real-time cluster health indicators
+- **Resource Utilization** – CPU, Memory, Storage, and Pod capacity monitoring (gauges and charts)
+- **Node Information** – Detailed node status with allocatable resources, taints, and labels
+- **Workload Summary** – Overview of Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, ReplicaSets with pie charts
+- **Metrics Charts** – Interactive charts (dark green primary series) for:
   - Pod status distribution (Running, Pending, Failed, Succeeded, Unknown)
   - Node status (Ready vs NotReady)
   - Pod distribution by namespace (top 10)
@@ -24,70 +24,87 @@ This project is structured as a **single workspace**:
 ### Kubernetes Resources Management
 
 #### Workloads
-- **Deployments** - Full CRUD with YAML editor, real-time pod tracking, **dynamic scaling (adjust replica count)**
-- **StatefulSets** - Manage stateful applications with YAML editor
-- **DaemonSets** - Monitor daemon pods with node selection and YAML editor
-- **Jobs** - View and manage batch jobs with YAML editor
-- **CronJobs** - Scheduled job management with YAML editor
-- **ReplicaSets** - Replica management and pod distribution with YAML editor
-- **Pods** - Pod management with YAML editor and execution terminal (exec into containers)
+- **Deployments** – Full CRUD, YAML editor, real-time pod tracking, **scale replicas**, **restart** (rollout restart)
+- **StatefulSets** – Manage stateful applications with YAML editor and delete
+- **DaemonSets** – Monitor daemon pods with YAML editor and delete
+- **Jobs** – View and manage batch jobs with YAML editor and delete
+- **CronJobs** – Scheduled job management with YAML editor and delete
+- **ReplicaSets** – Replica management with YAML editor and delete
+- **Pods** – List with real-time CPU/memory metrics, YAML editor, **logs** (streaming), **exec terminal**, **port-forward** (create/stop from UI), delete
+
+#### Nodes
+- **Node List & Detail** – Status, capacity, allocatable, taints, labels, annotations
+- **Node Actions** – Cordon, uncordon, drain, delete; YAML get/put
 
 #### Configuration & Secrets
-- **ConfigMaps** - Create and manage configuration files
-- **Secrets** - Secure secret management
-- **Resource Quotas** - Monitor namespace resource limits
-- **Limit Ranges** - View and manage resource constraints
+- **ConfigMaps** – List, YAML get/put, view data, delete
+- **Secrets** – List, YAML get/put, view data, delete
+- **Resource Quotas** – List, YAML get/put, delete
+- **Limit Ranges** – List, YAML get/put, delete
 
 #### Networking
-- **Services** - Expose and manage services (ClusterIP, NodePort, LoadBalancer)
-- **Endpoints** - View service endpoints
-- **Ingresses** - Manage ingress routes and rules
-- **Ingress Classes** - Configure ingress class definitions
-- **Network Policies** - Define network access rules
+- **Services** – List, YAML get/put, delete (ClusterIP, NodePort, LoadBalancer)
+- **Endpoints** – List, YAML get/put, delete
+- **Ingresses** – List, YAML get/put, delete
+- **Ingress Classes** – List, YAML get/put, delete
+- **Network Policies** – List, YAML get/put, delete
+- **Port Forwarding** – List active port-forwards, create (pod/port), stop, delete (backend-managed)
 
 #### Storage
-- **Persistent Volumes (PV)** - Manage cluster-level storage
-- **Persistent Volume Claims (PVC)** - Application storage requests
-- **Storage Classes** - Configure storage provisioning
-- **Storage Resources** - Overview and management interface
+- **Persistent Volumes (PV)** – List, YAML get/put, delete
+- **Persistent Volume Claims (PVC)** – List, YAML get/put, delete
+- **Storage Classes** – List, YAML get/put, delete
 
 #### Access Control (RBAC)
-- **Service Accounts** - User and service identity management
-- **Roles** - Namespace-scoped permissions
-- **Role Bindings** - Bind roles to users/groups
-- **Cluster Roles** - Cluster-wide permissions
-- **Cluster Role Bindings** - Bind cluster roles to users/groups
-- **Access Control Pages** - Unified RBAC management interface
+- **Service Accounts** – List, YAML get/put, delete
+- **Roles** – List, YAML get/put, delete
+- **Role Bindings** – List, YAML get/put, delete
+- **Cluster Roles** – List, YAML get/put, delete
+- **Cluster Role Bindings** – List, YAML get/put, delete
 
-#### Advanced Features
-- **Horizontal Pod Autoscaling (HPA)** - Auto-scaling configurations
-- **Pod Disruption Budgets (PDB)** - Availability guarantees
-- **Priority Classes** - Pod scheduling priorities
-- **Runtime Classes** - Container runtime selection
-- **Leases** - Distributed coordination leases
-- **Helm Resources** - View and manage Helm releases
+#### Config & Advanced
+- **Horizontal Pod Autoscaling (HPA)** – List, YAML get/put, delete
+- **Pod Disruption Budgets (PDB)** – List, YAML get/put, delete
+- **Priority Classes** – List, YAML get/put, delete
+- **Runtime Classes** – List, YAML get/put, delete
+- **Leases** – List, YAML get/put, delete
+- **Mutating/Validating Webhook Configs (MWC/VWC)** – List, YAML get/put, delete
+
+#### Helm
+- **Helm Charts** – Browse repos and charts; **install** from UI with:
+  - **Values** – Default values from `helm show values`, editable YAML, then **Apply** (`helm upgrade --install`)
+  - **README** – Chart README in bottom panel with **markdown viewer**
+- **Helm Releases** – List by namespace; detail panel with:
+  - **Revisions** – Table of revision history (revision, updated, status, chart, description)
+  - **Rollback** – Rollback to a prior revision with **confirmation dialog** before running `helm rollback`
+  - Upgrade release, view YAML, uninstall (with confirmation)
+
+#### Namespaces & Events
+- **Namespaces** – List, delete (with confirmation)
+- **Events** – Cluster/namespace-scoped events list
+- **Custom Resources (CRDs)** – List CRDs; list and manage custom resources per CRD
 
 ### Real-Time Features
-- **WebSocket-based Updates** - Live resource streaming via gRPC
-- **Pod Logs** - Real-time pod log streaming
-- **Pod Execution Terminal** - Interactive shell access to containers
-- **Auto-Refresh Metrics** - Automatic dashboard updates every 30 seconds
+- **WebSocket (gRPC-Web)** – Live pod/resource streaming for dashboard and pod lists
+- **Pod Logs** – Real-time log streaming (tail, follow)
+- **Pod Exec** – Interactive shell (e.g. `/bin/sh`) via WebSocket
+- **Auto-Refresh** – Dashboard metrics refresh; token refresh before expiry
 
 ### Security & Authentication
-- **JWT Token Authentication** - Secure login system with JWT tokens (1-hour expiration)
-- **Automatic Token Refresh** - Expired tokens trigger re-login automatically
-- **Bearer Token Support** - API endpoints accept Bearer tokens in Authorization header
-- **RBAC Integration** - Respects Kubernetes RBAC policies
-- **Kubernetes-aware Permissions** - Uses service account credentials
-- **Secure YAML Editing** - Safe resource modification with validation
+- **JWT Authentication** – Login with username/password; JWT with 1-hour expiration
+- **Token Refresh** – `POST /api/refresh` to extend session; frontend auto-refresh before expiry
+- **Bearer Token** – Protected APIs require `Authorization: Bearer <token>`
+- **RBAC** – Backend uses Kubernetes RBAC (service account / kubeconfig)
+- **Secure YAML** – Edit and apply with validation
 
 ### User Interface
-- **Omni-inspired Dark Theme** - Modern, eye-friendly color scheme
-- **Responsive Design** - Works on desktop, tablet, and mobile
-- **Real-time Theme Support** - Automatic light/dark mode detection
-- **Data Tables** - Sortable, filterable resource lists
-- **Detail Panels** - Comprehensive resource information in sidebars
-- **Dashboard Metrics** - Visual gauges and charts for utilization
+- **Dark / Light Theme** – Omni-inspired dark theme; system-aware light/dark
+- **Responsive Layout** – Sidebar navigation, data tables, detail drawers
+- **Data Tables** – Sortable, filterable; font size aligned with sidebar
+- **Detail Panels** – Key/value layout; **Labels** and **Annotations** in title case; aligned key/value columns
+- **Dashboard** – Gauges and charts (primary color dark green)
+- **Confirm Dialogs** – Confirm before destructive actions (delete, uninstall, rollback)
+- **Markdown Viewer** – Helm chart README rendered in bottom panel
 
 ## 📋 Build & Development
 
@@ -101,9 +118,11 @@ This project is structured as a **single workspace**:
 
 ```bash
 # build Rust backend
+make build-backend
+# or
 cargo build -p pertisk-kube-backend
 
-# run backend
+# run backend (no static files unless STATIC_DIR set)
 cargo run -p pertisk-kube-backend
 ```
 
@@ -121,106 +140,147 @@ Builds the React frontend and serves it from the Rust backend on a single port (
 make dev
 ```
 
-- Backend hot reload uses `cargo watch` (auto-installed via `make tools`)
+- Backend hot reload uses `cargo watch` (install with `make tools` if needed)
 - Frontend hot reload uses Vite dev server on `http://localhost:3000`
 
+### Local run with Kubernetes (k8s kubeconfig)
+
+```bash
+make run-ingress-k8s
+```
+
+- Uses `K8S_KUBECONFIG` (default: `~/.kube/...` or set it) for cluster access
+- Builds frontend, runs backend with static files and cargo watch; frontend build watcher runs in parallel
+- Override: `make run-ingress-k8s K8S_KUBECONFIG=/path/to/kubeconfig.yaml`
+
 ## 🚀 Deployment
+
+### Makefile (recommended)
+
+| Target | Description |
+|--------|-------------|
+| `make docker-base-build` | Build base images (frontend-deps, backend-deps, runtime) from `Dockerfile.base` |
+| `make docker-base-push` | Build and push base images (single-arch) |
+| `make docker-base-push-multi` | Build and push multi-arch base images |
+| `make docker-build` | Build app image (uses base; single-arch) |
+| `make docker-build-multi` | Build and push multi-arch app image |
+| `make helm-template` | Render Helm templates (no install) |
+| `make helm-install` | Helm install with image tag from `DOCKER_TAG` |
+| `make helm-upgrade` | Helm upgrade with `DOCKER_TAG` |
+| `make helm-deploy` | Build multi-arch image and `helm upgrade --install` |
+| `make release` | Same as helm-deploy (full release) |
+| `make port-forward` | Forward app service to localhost (APP_PORT / GRPC_PORT) |
+| `make ingress-hosts` | Print ingress host(s) for the release |
+| `make lb-url` | Print LoadBalancer URL if service type is LoadBalancer |
+| `make run-ingress-k8s` | Dev: frontend build watch + backend with `K8S_KUBECONFIG` |
+
+Override defaults: `DOCKER_TAG`, `HELM_NAMESPACE`, `HELM_RELEASE`, `K8S_KUBECONFIG`, etc. See top of `Makefile`.
+
+**Skaffold:** `make skaffold-run`, `make skaffold-run-prod`, `make skaffold-dev`, `make skaffold-delete` (use `K8S_KUBECONFIG` for kubeconfig).
 
 ### Kubernetes Deployment via Helm
 
 ```bash
+# Using Make
+make helm-install
+# or deploy after building image
+make helm-deploy
+
+# Or manually
 helm install pertisk-kube ./helm/pertisk-kube \
-  -n pertisk-system \
+  -n pertisk-rproxy \
   --create-namespace \
-  -f ./helm/pertisk-kube/values.yaml
+  --set app.image.tag=latest
 ```
 
-### Docker Deployment
+### Docker
+
+- **Base images** (Dockerfile.base): frontend-deps, backend-deps, runtime (includes kubectl, helm). Build once when deps change.
+- **App image** (Dockerfile): copies built frontend and backend binary from base stages.
 
 ```bash
-# Build images
-docker build -t pertisk-kube-backend:latest ./backend -f ./backend/Dockerfile
-docker build -t pertisk-kube-frontend:latest ./frontend -f ./frontend/Dockerfile
-
-# Run with docker-compose
-docker-compose up -d
+make docker-base-build
+make docker-build
+# Or multi-arch and push
+make docker-build-multi
 ```
 
 ## 🔧 API Endpoints
 
-### Public Endpoints
-- `GET /api/health` - Health check
-- `GET /api/readiness` - Readiness check
-- `POST /api/login` - Authentication (returns JWT token with 1-hour expiration)
+All API routes are under `/api`. Protected routes require `Authorization: Bearer <JWT>` (or Basic auth).
 
-### Protected Endpoints (Require JWT Bearer Token or Basic Auth)
+### Public
+- `GET /api/health` – Health check
+- `GET /api/readiness` – Readiness check
+- `POST /api/login` – Login (returns JWT, 1h expiry)
 
-#### Cluster
-- `GET /api/dashboard` - Dashboard summary
+### Token
+- `POST /api/refresh` – Refresh JWT (protected; extends session)
 
-#### Compute Resources
-- `GET /api/nodes` - List nodes
-- `GET /api/namespaces` - List namespaces
-- `GET /api/pods` - List pods
-- `PUT /api/pods/:namespace/:name/yaml` - Update pod YAML
+### Protected – Cluster & Compute
+- `GET /api/dashboard` – Dashboard summary
+- `GET /api/nodes` – List nodes
+- `GET /api/nodes/:name/yaml`, `PUT /api/nodes/:name/yaml` – Node YAML
+- `DELETE /api/nodes/:name` – Delete node
+- `POST /api/nodes/:name/cordon` – Cordon node
+- `POST /api/nodes/:name/uncordon` – Uncordon node
+- `POST /api/nodes/:name/drain` – Drain node
+- `GET /api/namespaces` – List namespaces
+- `DELETE /api/namespaces/:name` – Delete namespace
+- `GET /api/pods` – List pods
+- `GET /api/pods/:namespace/:name/yaml`, `PUT /api/pods/:namespace/:name/yaml` – Pod YAML
+- `DELETE /api/pods/:namespace/:name` – Delete pod
+- `GET /api/pods/:namespace/:name/logs` – Pod logs (streaming)
+- `GET /api/events` – List events
 
-#### Workloads
-- `GET /api/deployments` - List deployments
-- `POST /api/deployments/:namespace/:name/scale` - Scale deployment replicas
-- `GET /api/deployments/:namespace/:name/yaml` - Get deployment YAML
-- `PUT /api/deployments/:namespace/:name/yaml` - Update deployment YAML
-- `GET /api/statefulsets` - List statefulsets
-- `GET /api/statefulsets/:namespace/:name/yaml` - Get statefulset YAML
-- `PUT /api/statefulsets/:namespace/:name/yaml` - Update statefulset YAML
-- `GET /api/daemonsets` - List daemonsets
-- `GET /api/daemonsets/:namespace/:name/yaml` - Get daemonset YAML
-- `PUT /api/daemonsets/:namespace/:name/yaml` - Update daemonset YAML
-- `GET /api/replicasets` - List replicasets
-- `GET /api/replicasets/:namespace/:name/yaml` - Get replicaset YAML
-- `PUT /api/replicasets/:namespace/:name/yaml` - Update replicaset YAML
-- `GET /api/jobs` - List jobs
-- `GET /api/jobs/:namespace/:name/yaml` - Get job YAML
-- `PUT /api/jobs/:namespace/:name/yaml` - Update job YAML
-- `GET /api/cronjobs` - List cronjobs
-- `GET /api/cronjobs/:namespace/:name/yaml` - Get cronjob YAML
-- `PUT /api/cronjobs/:namespace/:name/yaml` - Update cronjob YAML
+### Protected – Workloads
+- **Deployments:** `GET /api/deployments`, `GET|PUT .../yaml`, `DELETE ...`, `POST .../scale`, `POST .../restart`
+- **StatefulSets / DaemonSets / ReplicaSets / Jobs / CronJobs:** `GET` list, `GET|PUT .../yaml`, `DELETE ...`
 
-#### Configuration
-- `GET /api/configmaps` - List configmaps
-- `GET /api/secrets` - List secrets
-- `GET /api/resourcequotas` - List resource quotas
-- `GET /api/limitranges` - List limit ranges
+### Protected – Config & Secrets
+- **ConfigMaps:** `GET`, `GET|PUT .../yaml`, `GET .../data`, `DELETE`
+- **Secrets:** `GET`, `GET|PUT .../yaml`, `GET .../data`, `DELETE`
+- **ResourceQuotas / LimitRanges:** `GET`, `GET|PUT .../yaml`, `DELETE`
+- **HPA / PDB:** `GET`, `GET|PUT .../yaml`, `DELETE`
+- **PriorityClasses / RuntimeClasses:** `GET`, `GET|PUT .../yaml`, `DELETE`
+- **Leases:** `GET`, `GET|PUT .../yaml`, `DELETE`
+- **MWC / VWC:** `GET /api/mwcs`, `GET|PUT /api/mwcs/:name/yaml`, `DELETE`; same for `vwcs`
 
-#### Networking
-- `GET /api/services` - List services
-- `GET /api/endpoints` - List endpoints
-- `GET /api/ingresses` - List ingresses
-- `GET /api/ingressclasses` - List ingress classes
-- `GET /api/networkpolicies` - List network policies
+### Protected – Networking
+- **Services / Endpoints / Ingresses / IngressClasses / NetworkPolicies:** `GET`, `GET|PUT .../yaml`, `DELETE`
+- **Port-forward:** `GET /api/port-forwards`, `POST /api/port-forwards`, `POST /api/port-forwards/:id/stop`, `DELETE /api/port-forwards/:id`
 
-#### Storage
-- `GET /api/persistentvolumes` - List persistent volumes
-- `GET /api/persistentvolumeclaims` - List persistent volume claims
-- `GET /api/storageclasses` - List storage classes
+### Protected – Storage
+- **PersistentVolumes / PersistentVolumeClaims / StorageClasses:** `GET`, `GET|PUT .../yaml`, `DELETE`
 
-#### Access Control
-- `GET /api/serviceaccounts` - List service accounts
-- `GET /api/roles` - List roles
-- `GET /api/rolebindings` - List role bindings
-- `GET /api/clusterroles` - List cluster roles
-- `GET /api/clusterrolebindings` - List cluster role bindings
+### Protected – RBAC
+- **ServiceAccounts / Roles / RoleBindings / ClusterRoles / ClusterRoleBindings:** `GET`, `GET|PUT .../yaml`, `DELETE`
 
-#### Advanced
-- `GET /api/events` - List events
-- `GET /api/hpa` - List horizontal pod autoscalers
-- `GET /api/pdb` - List pod disruption budgets
-- `GET /api/priorityclasses` - List priority classes
-- `GET /api/runtimeclasses` - List runtime classes
-- `GET /api/leases` - List leases
+### Protected – Generic & Helm
+- `POST /api/apply` – Apply YAML manifest(s)
+- **CRDs:** `GET /api/crds`, `GET /api/crds/:crd_name/resources`, `GET .../resources/:name/yaml`, `DELETE .../resources/:name`
+- **Helm releases:** `GET /api/helm/releases`, `GET /api/helm/releases/:namespace/:name/yaml`, `GET .../history`, `POST .../rollback`, `POST .../upgrade`, `DELETE ...`
+- **Helm charts:** `GET /api/helm/charts`, `GET /api/helm/charts/versions`, `GET /api/helm/charts/values`, `GET /api/helm/charts/readme`, `POST /api/helm/charts/install`
 
-### WebSocket Endpoints
-- `WS /ws` - Real-time resource streaming (gRPC-Web)
-- `WS /api/exec` - Pod execution terminal
+### WebSocket
+- `WS /ws` – Real-time resource streaming (gRPC-Web)
+- `WS /api/exec` – Pod exec terminal
+
+### Frontend routes (SPA)
+
+| Path | Page |
+|------|------|
+| `/` | Dashboard |
+| `/workloads` | Workload overview |
+| `/namespaces`, `/nodes`, `/pods` | Namespaces, Nodes, Pods |
+| `/deployments` … `/cronjobs` | Workload resources |
+| `/config/configmaps` … `/config/leases`, `/config/mwc`, `/config/vwc` | Config & advanced |
+| `/network`, `/network/services` … `/network/portforwarding` | Networking |
+| `/storage`, `/storage/pvc`, `/storage/pv`, `/storage/storageclasses` | Storage |
+| `/helm/charts`, `/helm/releases` | Helm charts & releases |
+| `/access-control` … `/access-control/rolebindings` | RBAC |
+| `/events` | Events |
+| `/crds/:crdName` | Custom resources for a CRD |
 
 ## 📊 Technology Stack
 
@@ -240,6 +300,7 @@ docker-compose up -d
 - **Tailwind CSS** - Utility-first CSS framework
 - **Recharts** - React charting library
 - **Chart.js** - Data visualization
+- **react-markdown** / **remark-gfm** - Markdown rendering (e.g. Helm chart README)
 - **Lucide React** - Icon library
 
 ### Deployment
@@ -297,6 +358,12 @@ curl -X POST http://localhost:8091/api/deployments/default/my-app/scale \
   -H "Content-Type: application/json" \
   -d '{"replicas": 2}'
 ```
+
+### Helm release rollback
+
+1. Go to **Helm → Releases**, select a release to open the detail panel.
+2. In **Revisions**, pick a past revision and click **Rollback**.
+3. Confirm in the dialog; the release rolls back to that revision (`helm rollback`).
 
 ### Authentication & Token Management
 
