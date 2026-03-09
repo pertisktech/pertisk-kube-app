@@ -18,6 +18,16 @@ export interface HelmRelease {
   annotations?: Record<string, string>;
 }
 
+/** Single revision entry from helm history. */
+export interface HelmRevision {
+  revision: number;
+  updated: string;
+  status: string;
+  chart: string;
+  app_version: string;
+  description: string;
+}
+
 export interface HelmChart {
   name: string;
   description: string;

@@ -351,6 +351,180 @@ pub async fn get_helm_release_yaml(
     }
 }
 
+// ── Helm Release History (helm history -o json) ───────────────────────────────
+
+#[derive(Serialize, Deserialize)]
+pub struct HelmHistoryEntry {
+    #[serde(alias = "Revision")]
+    pub revision: u32,
+    #[serde(alias = "Updated")]
+    pub updated: String,
+    #[serde(alias = "Status")]
+    pub status: String,
+    #[serde(alias = "Chart")]
+    pub chart: String,
+    #[serde(alias = "app_version", alias = "AppVersion", default)]
+    pub app_version: String,
+    #[serde(alias = "Description", default)]
+    pub description: String,
+}
+
+/// GET /helm/releases/:namespace/:name/history — returns release revision history.
+pub async fn get_helm_release_history(
+    Path((namespace, name)): Path<(String, String)>,
+    State(_state): State<AppState>,
+) -> impl IntoResponse {
+    let namespace = namespace.trim();
+    let name = name.trim();
+    if name.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "data": [], "message": "Release name is required" })),
+        )
+            .into_response();
+    }
+    let ns = if namespace.is_empty() { "default" } else { namespace };
+
+    let output = Command::new("helm")
+        .args(["history", name, "--namespace", ns, "--max", "256", "--output", "json"])
+        .output()
+        .await;
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            match serde_json::from_str::<Vec<HelmHistoryEntry>>(&stdout) {
+                Ok(entries) => {
+                    let data: Vec<serde_json::Value> = entries
+                        .into_iter()
+                        .map(|e| {
+                            serde_json::json!({
+                                "revision": e.revision,
+                                "updated": e.updated,
+                                "status": e.status,
+                                "chart": e.chart,
+                                "app_version": e.app_version,
+                                "description": e.description
+                            })
+                        })
+                        .collect();
+                    (
+                        StatusCode::OK,
+                        Json(serde_json::json!({ "data": data })),
+                    )
+                        .into_response()
+                }
+                Err(e) => {
+                    error!("helm history JSON parse error: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({
+                            "data": [],
+                            "message": format!("Failed to parse helm history: {}", e)
+                        })),
+                    )
+                        .into_response()
+                }
+            }
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if stderr.contains("not found") || stderr.contains("No such release") {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({ "data": [], "message": stderr.to_string() })),
+                )
+                    .into_response();
+            }
+            error!("helm history failed: {}", stderr);
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "data": [], "message": stderr.to_string() })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            error!("helm history error: {}", e);
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "data": [],
+                    "message": format!("Helm not available: {}", e)
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+// ── Helm Release Rollback (helm rollback) ──────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct RollbackRequest {
+    pub revision: u32,
+}
+
+/// POST /helm/releases/:namespace/:name/rollback — rollback release to a revision.
+pub async fn rollback_helm_release(
+    Path((namespace, name)): Path<(String, String)>,
+    State(_state): State<AppState>,
+    Json(req): Json<RollbackRequest>,
+) -> impl IntoResponse {
+    let namespace = namespace.trim();
+    let name = name.trim();
+    if name.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "message": "Release name is required"
+            })),
+        )
+            .into_response();
+    }
+    let ns = if namespace.is_empty() { "default" } else { namespace };
+    let revision = req.revision;
+
+    let output = Command::new("helm")
+        .args(["rollback", name, &revision.to_string(), "--namespace", ns])
+        .output()
+        .await;
+
+    match output {
+        Ok(o) if o.status.success() => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": format!("Release '{}' rolled back to revision {}", name, revision)
+            })),
+        )
+            .into_response(),
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            error!("helm rollback failed: {}", stderr);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": stderr.to_string()
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            error!("helm rollback error: {}", e);
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Helm not available: {}", e)
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
 // ── Helm Release Delete (uninstall — runs helm uninstall) ─────────────────────
 
 pub async fn delete_helm_release(

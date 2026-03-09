@@ -38,6 +38,7 @@ import type {
   CustomResource,
   HelmRelease,
   HelmChart,
+  HelmRevision,
 } from '../types';
 import { getAuthToken } from '../utils/auth';
 
@@ -791,6 +792,58 @@ export const getHelmReleaseYaml = async (namespace: string, name: string): Promi
   }
   if (!res.ok) throw new Error(`Failed to load YAML (${res.status})`);
   return res.text();
+};
+
+/** Fetches release revision history (helm history -o json). */
+export const getHelmReleaseHistory = async (
+  namespace: string,
+  name: string,
+): Promise<HelmRevision[]> => {
+  const res = await apiFetch(
+    `/helm/releases/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/history`,
+  );
+  if (!res.ok) {
+    const json = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(json.message || `Failed to load history (${res.status})`);
+  }
+  const json = (await res.json()) as { data?: HelmRevision[] };
+  return Array.isArray(json.data) ? json.data : [];
+};
+
+export const useHelmReleaseHistory = (namespace: string, name: string) => {
+  return useQuery({
+    queryKey: ['helm-release-history', namespace, name],
+    queryFn: () => getHelmReleaseHistory(namespace, name),
+    enabled: !!namespace && !!name,
+  });
+};
+
+/** Rollback release to a revision (helm rollback). */
+export const rollbackHelmRelease = async (
+  namespace: string,
+  name: string,
+  revision: number,
+): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(
+    `${API_BASE}/helm/releases/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/rollback`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: token } : {}),
+      },
+      body: JSON.stringify({ revision }),
+    },
+  );
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const json = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(json.message || `Rollback failed (${res.status})`);
+  }
 };
 
 /** Fetches a Helm chart's default values.yaml from the backend (runs helm show values). */
