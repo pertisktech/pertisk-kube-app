@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useDashboard, useNodes, usePods } from '../hooks/useKubernetes';
-import { DataTable } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
 import { WorkloadSummary } from '../components/WorkloadSummary';
 import { MetricsCharts } from '../components/MetricsCharts';
@@ -20,7 +19,7 @@ import {
   ExternalLink,
   Loader,
 } from '../components/Icons';
-import { timeAgo, formatMemoryUsedAlloc, formatCpuRange } from '../utils';
+import { formatCpuRange, formatMemoryUsedAlloc } from '../utils';
 import { K8sNode } from '../types';
 
 const CHART_USED = 'var(--color-dashboard-metric-primary)';
@@ -68,6 +67,54 @@ function formatNodeIPs(node: K8sNode): string {
   return parts.join(' | ');
 }
 
+// Helper to get IPv4 and IPv6 for display (values only, no labels)
+function getNodeIPv4IPv6(node: K8sNode): { ipv4: string | null; ipv6: string | null } {
+  const ips: string[] = [];
+  if (node.internal_ip) ips.push(...node.internal_ip.split(',').map((s) => s.trim()).filter(Boolean));
+  if (node.external_ip && node.external_ip !== node.internal_ip) {
+    node.external_ip.split(',').map((s) => s.trim()).filter(Boolean).forEach((ip) => {
+      if (!ips.includes(ip)) ips.push(ip);
+    });
+  }
+  const ipv4First = ips.filter((ip) => !ip.includes(':'))[0];
+  const ipv6First = ips.filter((ip) => ip.includes(':'))[0];
+  return {
+    ipv4: ipv4First || node.ipv4 || node.ip || null,
+    ipv6: ipv6First || node.ipv6 || null,
+  };
+}
+
+// Role badge colors: control-plane, master, worker (distinct from Ready status)
+function getRoleBadgeStyle(role: string): { bg: string; color: string; border: string } {
+  const r = role.toLowerCase();
+  if (r === 'control-plane') {
+    return {
+      bg: 'var(--color-dashboard-metric-secondary-bg)',
+      color: 'var(--color-dashboard-metric-secondary)',
+      border: 'color-mix(in srgb, var(--color-dashboard-metric-secondary) 40%, transparent)',
+    };
+  }
+  if (r === 'master') {
+    return {
+      bg: 'var(--color-dashboard-warning-bg)',
+      color: 'var(--color-dashboard-warning)',
+      border: 'color-mix(in srgb, var(--color-dashboard-warning) 40%, transparent)',
+    };
+  }
+  if (r === 'worker') {
+    return {
+      bg: 'var(--color-dashboard-metric-quaternary-bg)',
+      color: 'var(--color-dashboard-metric-quaternary)',
+      border: 'color-mix(in srgb, var(--color-dashboard-metric-quaternary) 40%, transparent)',
+    };
+  }
+  return {
+    bg: 'var(--color-hover)',
+    color: 'var(--color-text-secondary)',
+    border: 'var(--color-border)',
+  };
+}
+
 // Helper to parse CPU string (e.g., "4" or "4000m")
 function parseCPU(cpuStr?: string): number {
   if (!cpuStr) return 0;
@@ -110,52 +157,18 @@ const usageBarWidth = (percent: number) => (percent <= 0 ? 0 : Math.max(percent,
 const toPercent = (value?: number) =>
   value == null || Number.isNaN(value) ? 0 : Math.max(0, Math.min(100, value));
 
-type NodeSortKey = 'name' | 'status' | 'ip' | 'cpu' | 'memory' | 'roles' | 'os_image' | 'kubelet_version' | 'age';
-
 export const Dashboard = () => {
   const { data: dashboard, isLoading: dashLoading } = useDashboard();
   const { data: nodes, isLoading: nodesLoading } = useNodes({ refetchInterval: 30_000 });
   const { data: pods, isLoading: podsLoading } = usePods();
 
-  const [nodeSortState, setNodeSortState] = useState<{ key: NodeSortKey; direction: 'asc' | 'desc' }>({
-    key: 'name',
-    direction: 'asc',
-  });
-
   const isLoading = dashLoading || nodesLoading || podsLoading;
 
   const sortedNodes = useMemo(() => {
     const list = [...(nodes ?? [])];
-    const f = nodeSortState.direction === 'asc' ? 1 : -1;
-    list.sort((a, b) => {
-      switch (nodeSortState.key) {
-        case 'name':
-          return a.name.localeCompare(b.name) * f;
-        case 'status': {
-          const ra = String(a.ready).toLowerCase() === 'true' ? 1 : 0;
-          const rb = String(b.ready).toLowerCase() === 'true' ? 1 : 0;
-          return (ra - rb) * f;
-        }
-        case 'ip':
-          return (formatNodeIPs(a) || '').localeCompare(formatNodeIPs(b) || '') * f;
-        case 'cpu':
-          return ((a.cpu_usage_percent ?? 0) - (b.cpu_usage_percent ?? 0)) * f;
-        case 'memory':
-          return ((a.memory_usage_percent ?? 0) - (b.memory_usage_percent ?? 0)) * f;
-        case 'roles':
-          return (a.roles?.join(', ') ?? '').localeCompare(b.roles?.join(', ') ?? '') * f;
-        case 'os_image':
-          return (a.os_image ?? '').localeCompare(b.os_image ?? '') * f;
-        case 'kubelet_version':
-          return (a.kubelet_version ?? '').localeCompare(b.kubelet_version ?? '') * f;
-        case 'age':
-          return (new Date(a.age ?? 0).getTime() - new Date(b.age ?? 0).getTime()) * f;
-        default:
-          return 0;
-      }
-    });
+    list.sort((a, b) => a.name.localeCompare(b.name));
     return list;
-  }, [nodes, nodeSortState]);
+  }, [nodes]);
 
   if (isLoading) {
     return (
@@ -209,146 +222,6 @@ export const Dashboard = () => {
   } else if (nodeHealthPercent < 95 || podFailurePercent > 5) {
     healthStatus = 'warning';
   }
-
-  const nodeColumns = [
-    {
-      header: 'Name',
-      accessor: (row: K8sNode) => (
-        <span className="font-medium text-text truncate block max-w-[180px]" title={row.name}>
-          {row.name}
-        </span>
-      ),
-      width: '18%',
-      sortable: true,
-      sortKey: 'name' as NodeSortKey,
-    },
-    {
-      header: 'Status',
-      accessor: (row: K8sNode) => (
-        <StatusBadge status={String(row.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady'} />
-      ),
-      width: '7%',
-      sortable: true,
-      sortKey: 'status' as NodeSortKey,
-    },
-    {
-      header: 'IP',
-      accessor: (row: K8sNode) => (
-        <span className="text-text-secondary text-xs font-mono truncate block max-w-[140px]" title={formatNodeIPs(row)}>
-          {formatNodeIPs(row) || '-'}
-        </span>
-      ),
-      width: '14%',
-      sortable: true,
-      sortKey: 'ip' as NodeSortKey,
-    },
-    {
-      header: 'CPU',
-      accessor: (row: K8sNode) => {
-        const used = row.cpu_used ?? '-';
-        const alloc = row.cpu ?? '-';
-        const label = alloc !== '-' ? formatCpuRange(used, alloc) : '-';
-        const percent = toPercent(row.cpu_usage_percent);
-        const hasMetrics = row.cpu_usage_percent != null;
-        return (
-          <div className="flex items-center gap-2 w-full">
-            <span className="text-xs text-text-secondary min-w-[10.5rem] flex-shrink-0 whitespace-nowrap" title={label}>
-              {label}
-            </span>
-            {hasMetrics ? (
-              <>
-                <div className="h-1.5 w-16 flex-shrink-0 rounded-full bg-hover overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-blue-500"
-                    style={{ width: `${usageBarWidth(percent)}%` }}
-                  />
-                </div>
-                <span className="text-xs font-medium text-text w-9 text-right flex-shrink-0">{Math.round(percent)}%</span>
-              </>
-            ) : (
-              <span className="text-xs text-text-secondary">-</span>
-            )}
-          </div>
-        );
-      },
-      width: '22%',
-      sortable: true,
-      sortKey: 'cpu' as NodeSortKey,
-    },
-    {
-      header: 'Memory',
-      accessor: (row: K8sNode) => {
-        const label = formatMemoryUsedAlloc(row.memory_used, row.memory);
-        const percent = toPercent(row.memory_usage_percent);
-        const hasMetrics = row.memory_usage_percent != null;
-        return (
-          <div className="flex items-center gap-2 w-full">
-            <span className="text-xs text-text-secondary min-w-[11rem] flex-shrink-0 whitespace-nowrap" title={label}>
-              {label}
-            </span>
-            {hasMetrics ? (
-              <>
-                <div className="h-1.5 w-16 flex-shrink-0 rounded-full bg-hover overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-purple-500"
-                    style={{ width: `${usageBarWidth(percent)}%` }}
-                  />
-                </div>
-                <span className="text-xs font-medium text-text w-9 text-right flex-shrink-0">{Math.round(percent)}%</span>
-              </>
-            ) : (
-              <span className="text-xs text-text-secondary">-</span>
-            )}
-          </div>
-        );
-      },
-      width: '20%',
-      sortable: true,
-      sortKey: 'memory' as NodeSortKey,
-    },
-    {
-      header: 'Roles',
-      accessor: (row: K8sNode) => (
-        <span className="text-xs text-text-secondary truncate block max-w-[100px]" title={row.roles?.join(', ')}>
-          {row.roles?.length ? row.roles.join(', ') : '-'}
-        </span>
-      ),
-      width: '11%',
-      sortable: true,
-      sortKey: 'roles' as NodeSortKey,
-    },
-    {
-      header: 'OS',
-      accessor: (row: K8sNode) => (
-        <span className="text-xs text-text-secondary truncate block max-w-[120px]" title={row.os_image ?? ''}>
-          {row.os_image ?? '-'}
-        </span>
-      ),
-      width: '12%',
-      sortable: true,
-      sortKey: 'os_image' as NodeSortKey,
-    },
-    {
-      header: 'Version',
-      accessor: (row: K8sNode) => (
-        <span className="text-xs font-mono text-text-secondary" title={row.kubelet_version ?? ''}>
-          {row.kubelet_version ?? '-'}
-        </span>
-      ),
-      width: '11%',
-      sortable: true,
-      sortKey: 'kubelet_version' as NodeSortKey,
-    },
-    {
-      header: 'Age',
-      accessor: (row: K8sNode) => (
-        <span className="text-xs text-text-secondary">{row.age ? timeAgo(row.age) : '-'}</span>
-      ),
-      width: '10%',
-      sortable: true,
-      sortKey: 'age' as NodeSortKey,
-    },
-  ];
 
   return (
     <div className="space-y-4">
@@ -565,31 +438,145 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* Nodes table (same style as Nodes page) */}
-      <div className="bg-surface border border-border rounded-lg p-6 backdrop-blur-sm">
-        <div className="flex items-center justify-between mb-4">
+      {/* Nodes — dashboard card grid */}
+      <div className="bg-surface border border-border rounded-xl p-6 backdrop-blur-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
           <div className="flex items-center gap-3">
-            <Server size={24} className="text-dashboard-metric-primary" />
-            <h2 className="text-2xl font-bold text-text">Nodes</h2>
-            <span className="text-sm text-text-secondary">{nodes?.length ?? 0} nodes</span>
+            <div className="p-2 rounded-lg bg-[var(--color-dashboard-metric-primary-bg)]">
+              <Server size={24} className="text-[var(--color-dashboard-metric-primary)]" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-text">Nodes</h2>
+              <p className="text-sm text-text-secondary">
+                {readyNodeCount}/{totalNodeCount} ready
+                {totalNodeCount > 0 && ` · ${totalNodeCount} total`}
+              </p>
+            </div>
           </div>
-          <Link
-            to="/nodes"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline"
-          >
-            View all
-            <ExternalLink size={14} />
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              to="/nodes"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline"
+            >
+              View all
+              <ExternalLink size={14} />
+            </Link>
+          </div>
         </div>
-        <DataTable<K8sNode>
-          columns={nodeColumns}
-          data={sortedNodes}
-          isLoading={nodesLoading}
-          error={null}
-          rowKey="name"
-          sortState={nodeSortState}
-          onSortChange={(s) => setNodeSortState(s as { key: NodeSortKey; direction: 'asc' | 'desc' })}
-        />
+        {nodesLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader size={28} className="text-[var(--color-primary)] animate-spin" />
+          </div>
+        ) : !sortedNodes?.length ? (
+          <div className="text-center py-12 text-text-secondary rounded-lg border border-dashed" style={{ borderColor: 'var(--color-border)' }}>
+            No nodes found
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {sortedNodes.map((node) => {
+              const cpuPct = toPercent(node.cpu_usage_percent);
+              const memPct = toPercent(node.memory_usage_percent);
+              const isReady = String(node.ready).toLowerCase() === 'true';
+              return (
+                <Link
+                  key={node.name}
+                  to="/nodes"
+                  className="block rounded-xl border p-4 transition-all hover:border-[var(--color-primary)]/40 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
+                  style={{ backgroundColor: 'var(--color-bg)', borderColor: 'var(--color-border)' }}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <span className="font-semibold text-text truncate min-w-0" title={node.name}>
+                      {node.name}
+                    </span>
+                    <StatusBadge status={isReady ? 'Ready' : 'NotReady'} />
+                  </div>
+                  {node.roles?.length ? (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {node.roles.map((role) => {
+                        const roleStyle = getRoleBadgeStyle(role);
+                        return (
+                          <span
+                            key={role}
+                            className="inline-flex px-2 py-0.5 rounded-md text-xs font-medium border shrink-0"
+                            style={{
+                              backgroundColor: roleStyle.bg,
+                              color: roleStyle.color,
+                              borderColor: roleStyle.border,
+                            }}
+                          >
+                            {role}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {(() => {
+                    const { ipv4, ipv6 } = getNodeIPv4IPv6(node);
+                    const line = [ipv4, ipv6].filter(Boolean).join(' / ');
+                    if (!line) return <div className="mb-4" />;
+                    return (
+                      <p className="text-xs font-mono text-text-secondary truncate mb-4" title={line}>
+                        {line}
+                      </p>
+                    );
+                  })()}
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span style={{ color: 'var(--color-muted)' }}>CPU</span>
+                        <span className="font-medium text-text truncate ml-1" title={node.cpu != null || node.cpu_used != null ? formatCpuRange(node.cpu_used, node.cpu) : undefined}>
+                          {node.cpu != null || node.cpu_used != null
+                            ? formatCpuRange(node.cpu_used, node.cpu)
+                            : node.cpu_usage_percent != null
+                              ? `${Math.round(cpuPct)}%`
+                              : '—'}
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-hover)' }}>
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${usageBarWidth(cpuPct)}%`,
+                            backgroundColor: 'var(--color-dashboard-metric-primary)',
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span style={{ color: 'var(--color-muted)' }}>Memory</span>
+                        <span className="font-medium text-text truncate ml-1" title={node.memory != null || node.memory_used != null ? formatMemoryUsedAlloc(node.memory_used, node.memory) : undefined}>
+                          {node.memory != null || node.memory_used != null
+                            ? formatMemoryUsedAlloc(node.memory_used, node.memory)
+                            : node.memory_usage_percent != null
+                              ? `${Math.round(memPct)}%`
+                              : '—'}
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-hover)' }}>
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${usageBarWidth(memPct)}%`,
+                            backgroundColor: 'var(--color-dashboard-metric-quaternary)',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 pt-3 border-t flex items-center justify-between text-xs" style={{ borderColor: 'var(--color-border)' }}>
+                    <span className="truncate text-text-secondary" title={node.os_image ?? ''}>
+                      {node.os_image ?? '—'}
+                    </span>
+                    <span className="font-mono text-text-secondary shrink-0 ml-2" title={node.kubelet_version ?? ''}>
+                      {node.kubelet_version ?? '—'}
+                    </span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Workload Summary */}
