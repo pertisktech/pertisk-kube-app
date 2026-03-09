@@ -254,8 +254,8 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
           <DrawerItem name="CPU">
             {hasCpuMetrics
               ? `${formatCpuRange(pod.cpu, pod.cpu_capacity)} (${Math.round(cpuPercent)}%)`
-              : pod.cpu
-                ? `${formatCpuCores(parseCpuToCores(pod.cpu))} cores`
+              : pod.cpu != null && pod.cpu !== '' && pod.cpu !== '-'
+                ? `${formatCpuCores(parseCpuToCores(String(pod.cpu)))} cores`
                 : '—'}
           </DrawerItem>
           {hasCpuMetrics && (

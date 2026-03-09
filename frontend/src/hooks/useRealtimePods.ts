@@ -463,10 +463,12 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                     const oldStatus = (updated[foundIndex] as any).status;
                     const existingPod = updated[foundIndex] as any;
                     // Preserve metrics and metadata from last API sync if websocket update returns '-'
+                    const keepOrFallback = (val: unknown, existing: unknown) =>
+                      val !== '-' && val !== undefined && val !== null && val !== '' ? val : (existing != null && existing !== '' ? existing : '-');
                     const mergedPod = {
                       ...transformedPod,
-                      cpu: transformedPod.cpu !== '-' ? transformedPod.cpu : (existingPod.cpu || '-'),
-                      memory: transformedPod.memory !== '-' ? transformedPod.memory : (existingPod.memory || '-'),
+                      cpu: keepOrFallback(transformedPod.cpu, existingPod.cpu),
+                      memory: keepOrFallback(transformedPod.memory, existingPod.memory),
                       controlled_by: transformedPod.controlled_by !== '-' ? transformedPod.controlled_by : (existingPod.controlled_by || '-'),
                       qos: transformedPod.qos !== '-' ? transformedPod.qos : (existingPod.qos || '-'),
                     };

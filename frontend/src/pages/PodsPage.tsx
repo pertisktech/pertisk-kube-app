@@ -259,7 +259,7 @@ export const PodsPage = () => {
     },
     {
       header: 'CPU (cores)',
-      accessor: (row: Pod) => (row.cpu ? formatCpuCores(parseCpuToCores(row.cpu)) : '-'),
+      accessor: (row: Pod) => (row.cpu != null && row.cpu !== '' && row.cpu !== '-' ? formatCpuCores(parseCpuToCores(String(row.cpu))) : '-'),
       width: '11%',
       sortable: true,
       sortKey: 'cpu',

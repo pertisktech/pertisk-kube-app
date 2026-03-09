@@ -28,11 +28,9 @@ export const parseCpuToCores = (cpuStr?: string | null): number => {
   return Number.isNaN(n) ? 0 : n;
 };
 
-/** Format a single CPU value in cores for display (e.g. 0.429 -> "0.43", 7.95 -> "7.95"). */
+/** Format a single CPU value in cores for display; 3 decimal places for consistency (0 -> "0.000", 0.003 -> "0.003"). */
 export const formatCpuCores = (cores: number): string => {
-  if (cores === 0) return '0';
-  if (Number.isInteger(cores)) return String(cores);
-  return cores.toFixed(2);
+  return Number(cores).toFixed(3);
 };
 
 /**

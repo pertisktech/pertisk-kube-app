@@ -22,10 +22,12 @@ import {
   Upload,
   X,
 } from './Icons';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import YAML from 'yaml';
 import { toast } from 'sonner';
 import { Terminal as TerminalComponent } from './Terminal';
-import { getHelmChartValues, installHelmChart, useHelmChartVersions, useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
+import { getHelmChartReadme, getHelmChartValues, installHelmChart, useHelmChartVersions, useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
 import { getAuthToken } from '../utils/auth';
 import { cn } from '../utils';
 
@@ -237,6 +239,8 @@ const NodeSelector = ({ onSelect }: { onSelect: (nodeName: string) => void }) =>
 
 // ── InstallChartTab (Freelens-style: controls + Values editor + Install button) ──
 
+type InstallChartSubTab = 'values' | 'readme';
+
 const InstallChartTabContent = ({
   chart,
   onInstallSuccess,
@@ -255,6 +259,7 @@ const InstallChartTabContent = ({
   const valuesFetchedRef = useRef(false);
   const [valuesError, setValuesError] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [subTab, setSubTab] = useState<InstallChartSubTab>('values');
 
   useEffect(() => {
     setSelectedVersion(chart.version);
@@ -276,6 +281,17 @@ const InstallChartTabContent = ({
     enabled: !!chart.repository_url?.trim() && !!selectedVersion,
     staleTime: 5 * 60 * 1000,
   });
+
+  const { data: readmeContent, isLoading: readmeLoading, isError: readmeError } = useQuery({
+    queryKey: ['helm-chart-readme', chart.repository_url, chart.name, selectedVersion],
+    queryFn: () => getHelmChartReadme(chart.repository_url, chart.name, selectedVersion),
+    enabled: !!chart.repository_url?.trim() && !!selectedVersion && subTab === 'readme',
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    setSubTab('values');
+  }, [chart.repository_url, chart.name, selectedVersion]);
 
   useEffect(() => {
     if (fetchedValues != null && fetchedValues.trim() && !valuesFetchedRef.current) {
@@ -387,37 +403,100 @@ const InstallChartTabContent = ({
           <p className="text-red-500 text-xs" role="alert">Values: {valuesError}</p>
         )}
       </div>
-      {/* Values editor — YAML syntax highlighting (same as YAML tab) */}
-      <div className="flex-1 min-h-0 flex flex-col p-4">
-        <label className="text-text-secondary font-medium mb-2 flex items-center gap-2">
-          Values
-          {valuesLoading && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-normal text-primary">
-              <Loader size={12} className="animate-spin flex-shrink-0" />
-              Loading… (fetching Helm values)
-            </span>
-          )}
-        </label>
-        <div
+      {/* Sub-tabs: Values | README */}
+      <div className="flex-shrink-0 flex border-b border-border bg-surface-elevated px-4 gap-1">
+        <button
+          type="button"
+          onClick={() => setSubTab('values')}
           className={cn(
-            'yaml-editor-pane flex-1 min-h-[200px] rounded-lg overflow-hidden border bg-surface-elevated',
-            valuesError ? 'border-red-500' : 'border-border'
+            'px-3 py-2 text-sm font-medium border-b-2 transition-colors',
+            subTab === 'values'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-text-secondary hover:text-text hover:bg-hover'
           )}
         >
-          <AceEditor
-            mode="yaml"
-            theme="tomorrow_night"
-            value={valuesYaml}
-            onChange={(value) => handleValuesChange(value)}
-            readOnly={valuesLoading}
-            width="100%"
-            height="100%"
-            setOptions={{ useWorker: false, tabSize: 2 }}
-            editorProps={{ $blockScrolling: true }}
-            style={{ fontSize: 12, minHeight: 200 }}
-          />
-        </div>
+          Values
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubTab('readme')}
+          className={cn(
+            'px-3 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5',
+            subTab === 'readme'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-text-secondary hover:text-text hover:bg-hover'
+          )}
+        >
+          <ScrollText size={14} className="flex-shrink-0" />
+          README
+        </button>
       </div>
+      {/* Content: Values editor or README */}
+      {subTab === 'values' ? (
+        <div className="flex-1 min-h-0 flex flex-col p-4">
+          <label className="text-text-secondary font-medium mb-2 flex items-center gap-2">
+            Values
+            {valuesLoading && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-normal text-primary">
+                <Loader size={12} className="animate-spin flex-shrink-0" />
+                Loading… (fetching Helm values)
+              </span>
+            )}
+          </label>
+          <div
+            className={cn(
+              'yaml-editor-pane flex-1 min-h-[200px] rounded-lg overflow-hidden border bg-surface-elevated',
+              valuesError ? 'border-red-500' : 'border-border'
+            )}
+          >
+            <AceEditor
+              mode="yaml"
+              theme="tomorrow_night"
+              value={valuesYaml}
+              onChange={(value) => handleValuesChange(value)}
+              readOnly={valuesLoading}
+              width="100%"
+              height="100%"
+              setOptions={{ useWorker: false, tabSize: 2 }}
+              editorProps={{ $blockScrolling: true }}
+              style={{ fontSize: 12, minHeight: 200 }}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden">
+          <label className="text-text-secondary font-medium mb-2 flex items-center gap-2">
+            <ScrollText size={14} className="flex-shrink-0" />
+            README
+            {readmeLoading && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-normal text-primary">
+                <Loader size={12} className="animate-spin flex-shrink-0" />
+                Loading…
+              </span>
+            )}
+          </label>
+          <div
+            className="flex-1 min-h-0 rounded-lg border border-border bg-surface-elevated overflow-auto p-4 text-sm markdown-viewer"
+            style={{ color: 'var(--color-text)' }}
+          >
+            {readmeError && (
+              <p className="text-red-500" role="alert">
+                Failed to load README. The chart may not provide one.
+              </p>
+            )}
+            {readmeContent != null && readmeContent !== '' && !readmeLoading && (
+              <div className="markdown-viewer-content">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {readmeContent}
+                </ReactMarkdown>
+              </div>
+            )}
+            {readmeContent === '' && !readmeLoading && !readmeError && (
+              <p className="text-text-secondary">No README content for this chart.</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

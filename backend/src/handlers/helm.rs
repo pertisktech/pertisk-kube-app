@@ -749,6 +749,112 @@ pub async fn get_helm_chart_values(
     }
 }
 
+/// Fetches the chart's README by running `helm repo add` + `helm show readme`.
+pub async fn get_helm_chart_readme(
+    Query(q): Query<ChartValuesQuery>,
+    _state: State<AppState>,
+) -> impl IntoResponse {
+    let repo_url = q.repo_url.trim();
+    let chart = q.chart.trim();
+    let version = q.version.trim();
+
+    if repo_url.is_empty() || chart.is_empty() || version.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::response::Response::builder()
+                .header("content-type", "text/plain; charset=utf-8")
+                .body(axum::body::Body::from("Missing repo_url, chart, or version"))
+                .unwrap(),
+        )
+            .into_response();
+    }
+
+    let repo_name = format!(
+        "chartreadme_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
+
+    let add = Command::new("helm")
+        .args(["repo", "add", &repo_name, repo_url])
+        .output()
+        .await;
+
+    let _ = match add {
+        Ok(o) if o.status.success() => o,
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            error!("helm repo add failed (readme): {}", stderr);
+            let _ = Command::new("helm").args(["repo", "remove", &repo_name]).output().await;
+            return (
+                StatusCode::BAD_GATEWAY,
+                axum::response::Response::builder()
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(axum::body::Body::from(format!("Failed to add repo: {}", stderr)))
+                    .unwrap(),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            error!("helm repo add error (readme): {}", e);
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::response::Response::builder()
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(axum::body::Body::from(format!("Helm not available: {}", e)))
+                    .unwrap(),
+            )
+                .into_response();
+        }
+    };
+
+    let chart_ref = format!("{}/{}", repo_name, chart);
+    let show_out = Command::new("helm")
+        .args(["show", "readme", &chart_ref, "--version", version])
+        .output()
+        .await;
+
+    let _ = Command::new("helm").args(["repo", "remove", &repo_name]).output().await;
+
+    match show_out {
+        Ok(o) if o.status.success() => {
+            let readme = String::from_utf8_lossy(&o.stdout).to_string();
+            axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "text/plain; charset=utf-8")
+                .header("content-disposition", "inline")
+                .body(axum::body::Body::from(readme))
+                .unwrap()
+                .into_response()
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            error!("helm show readme failed: {}", stderr);
+            (
+                StatusCode::BAD_GATEWAY,
+                axum::response::Response::builder()
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(axum::body::Body::from(stderr.to_string()))
+                    .unwrap(),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            error!("helm show readme error: {}", e);
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::response::Response::builder()
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(axum::body::Body::from(e.to_string()))
+                    .unwrap(),
+            )
+                .into_response()
+        }
+    }
+}
+
 /// Returns available chart versions (helm search repo <repo>/<chart> --versions).
 pub async fn get_helm_chart_versions(
     Query(q): Query<ChartVersionsQuery>,

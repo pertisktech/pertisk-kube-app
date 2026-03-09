@@ -819,6 +819,32 @@ export const getHelmChartValues = async (
   return res.text();
 };
 
+/** Fetches a Helm chart's README from the backend (runs helm show readme). */
+export const getHelmChartReadme = async (
+  repoUrl: string,
+  chart: string,
+  version: string,
+): Promise<string> => {
+  const params = new URLSearchParams({
+    repo_url: repoUrl,
+    chart,
+    version,
+  });
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/helm/charts/readme?${params.toString()}`, {
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Failed to load chart README (${res.status})`);
+  }
+  return res.text();
+};
+
 export interface InstallHelmChartParams {
   namespace: string;
   release_name: string;
