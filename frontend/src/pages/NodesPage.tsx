@@ -19,6 +19,8 @@ type NodeSortKey =
   | 'ipv6'
   | 'taints'
   | 'runtime'
+  | 'os_image'
+  | 'kubelet_version'
   | 'age'
   | 'cpu_used'
   | 'cpu_pct'
@@ -217,6 +219,28 @@ export const NodesPage = () => {
       sortKey: 'runtime',
     },
     {
+      header: 'OS',
+      accessor: (row: K8sNode) => (
+        <span className="text-xs text-text-secondary truncate block max-w-[140px]" title={row.os_image ?? ''}>
+          {row.os_image ?? '-'}
+        </span>
+      ),
+      width: '12%',
+      sortable: true,
+      sortKey: 'os_image',
+    },
+    {
+      header: 'Version',
+      accessor: (row: K8sNode) => (
+        <span className="text-xs font-mono text-text-secondary" title={row.kubelet_version ?? ''}>
+          {row.kubelet_version ?? '-'}
+        </span>
+      ),
+      width: '11%',
+      sortable: true,
+      sortKey: 'kubelet_version',
+    },
+    {
       header: 'CPU',
       accessor: (row: K8sNode) => {
         const used = row.cpu_used ?? '-';
@@ -322,6 +346,12 @@ export const NodesPage = () => {
       }
       if (sortState.key === 'age') {
         return (first.age || '').localeCompare(second.age || '') * factor;
+      }
+      if (sortState.key === 'os_image') {
+        return (first.os_image || '').localeCompare(second.os_image || '') * factor;
+      }
+      if (sortState.key === 'kubelet_version') {
+        return (first.kubelet_version || '').localeCompare(second.kubelet_version || '') * factor;
       }
 
       return (first.runtime || '').localeCompare(second.runtime || '') * factor;

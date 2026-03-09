@@ -110,7 +110,7 @@ const usageBarWidth = (percent: number) => (percent <= 0 ? 0 : Math.max(percent,
 const toPercent = (value?: number) =>
   value == null || Number.isNaN(value) ? 0 : Math.max(0, Math.min(100, value));
 
-type NodeSortKey = 'name' | 'status' | 'ip' | 'cpu' | 'memory' | 'roles' | 'age';
+type NodeSortKey = 'name' | 'status' | 'ip' | 'cpu' | 'memory' | 'roles' | 'os_image' | 'kubelet_version' | 'age';
 
 export const Dashboard = () => {
   const { data: dashboard, isLoading: dashLoading } = useDashboard();
@@ -144,6 +144,10 @@ export const Dashboard = () => {
           return ((a.memory_usage_percent ?? 0) - (b.memory_usage_percent ?? 0)) * f;
         case 'roles':
           return (a.roles?.join(', ') ?? '').localeCompare(b.roles?.join(', ') ?? '') * f;
+        case 'os_image':
+          return (a.os_image ?? '').localeCompare(b.os_image ?? '') * f;
+        case 'kubelet_version':
+          return (a.kubelet_version ?? '').localeCompare(b.kubelet_version ?? '') * f;
         case 'age':
           return (new Date(a.age ?? 0).getTime() - new Date(b.age ?? 0).getTime()) * f;
         default:
@@ -312,6 +316,28 @@ export const Dashboard = () => {
       width: '11%',
       sortable: true,
       sortKey: 'roles' as NodeSortKey,
+    },
+    {
+      header: 'OS',
+      accessor: (row: K8sNode) => (
+        <span className="text-xs text-text-secondary truncate block max-w-[120px]" title={row.os_image ?? ''}>
+          {row.os_image ?? '-'}
+        </span>
+      ),
+      width: '12%',
+      sortable: true,
+      sortKey: 'os_image' as NodeSortKey,
+    },
+    {
+      header: 'Version',
+      accessor: (row: K8sNode) => (
+        <span className="text-xs font-mono text-text-secondary" title={row.kubelet_version ?? ''}>
+          {row.kubelet_version ?? '-'}
+        </span>
+      ),
+      width: '11%',
+      sortable: true,
+      sortKey: 'kubelet_version' as NodeSortKey,
     },
     {
       header: 'Age',
