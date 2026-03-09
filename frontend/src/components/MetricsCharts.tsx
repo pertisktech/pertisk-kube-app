@@ -43,11 +43,12 @@ export const MetricsCharts = () => {
     );
   }
 
-  // Calculate theme colors
+  // Calculate theme colors — chart primary (dark green) matches dashboard/workload overview
   const isDark = theme?.isDark;
   const textColor = isDark ? '#d4d4d4' : '#000000';
   const gridColor = isDark ? '#333333' : '#e5e5e5';
   const backgroundColor = isDark ? '#1e1e1e' : '#ffffff';
+  const chartPrimaryGreen = '#2d9663'; // --color-green-g2, dark green for chart series
 
   // Pod Status Distribution
   const podStatusCounts = {
@@ -71,7 +72,7 @@ export const MetricsCharts = () => {
           podStatusCounts.unknown,
         ],
         backgroundColor: [
-          '#10b981',
+          chartPrimaryGreen,
           '#f59e0b',
           '#ef4444',
           '#6366f1',
@@ -96,7 +97,7 @@ export const MetricsCharts = () => {
       {
         label: 'Node Status',
         data: [readyNodes, notReadyNodes],
-        backgroundColor: ['#10b981', '#ef4444'],
+        backgroundColor: [chartPrimaryGreen, '#ef4444'],
         borderColor: backgroundColor,
         borderWidth: 2,
       },
@@ -120,7 +121,7 @@ export const MetricsCharts = () => {
       {
         label: 'Pods per Namespace',
         data: topNamespaces.map(([, count]) => count),
-        backgroundColor: '#3b82f6',
+        backgroundColor: chartPrimaryGreen,
         borderColor: textColor,
         borderWidth: 1,
       },

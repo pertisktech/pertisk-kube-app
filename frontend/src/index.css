@@ -70,8 +70,9 @@
   --color-dashboard-danger-bg: color-mix(in srgb, var(--color-red-r1) 12%, transparent);
   --color-dashboard-info: var(--color-blue-b1);
   --color-dashboard-info-bg: color-mix(in srgb, var(--color-blue-b1) 12%, transparent);
-  --color-dashboard-metric-primary: var(--color-primary-p3);
-  --color-dashboard-metric-primary-bg: color-mix(in srgb, var(--color-primary-p3) 12%, transparent);
+  /* Primary chart/series color — dark green for dashboard & workload overview charts */
+  --color-dashboard-metric-primary: var(--color-green-g2);
+  --color-dashboard-metric-primary-bg: color-mix(in srgb, var(--color-green-g2) 12%, transparent);
   --color-dashboard-metric-secondary: #7c3aed;
   --color-dashboard-metric-secondary-bg: rgba(124, 58, 237, 0.12);
   --color-dashboard-metric-tertiary: #ec4899;
