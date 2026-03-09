@@ -948,7 +948,7 @@ pub async fn get_helm_chart_versions(
     }
 }
 
-// ── Helm chart install (run helm install) ─────────────────────────────────────
+// ── Helm chart install (run helm upgrade --install) ───────────────────────────
 
 #[derive(Deserialize)]
 pub struct InstallChartRequest {
@@ -960,7 +960,7 @@ pub struct InstallChartRequest {
     pub values_yaml: String,
 }
 
-/// Runs `helm repo add` + `helm install` with the given values, then removes the temp repo.
+/// Runs `helm repo add` + `helm upgrade --install` with the given values, then removes the temp repo.
 pub async fn install_helm_chart(
     State(_state): State<AppState>,
     Json(req): Json<InstallChartRequest>,
@@ -1031,7 +1031,8 @@ pub async fn install_helm_chart(
 
     let chart_ref = format!("{}/{}", repo_name, chart);
     let mut cmd = Command::new("helm");
-    cmd.arg("install")
+    cmd.arg("upgrade")
+        .arg("--install")
         .arg(release_name)
         .arg(&chart_ref)
         .arg("--version")
@@ -1053,7 +1054,7 @@ pub async fn install_helm_chart(
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({
                     "success": false,
-                    "message": format!("Failed to run helm install: {}", e)
+                    "message": format!("Failed to run helm upgrade --install: {}", e)
                 })),
             )
                 .into_response();
@@ -1084,7 +1085,7 @@ pub async fn install_helm_chart(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
                     "success": false,
-                    "message": format!("Helm install failed: {}", e)
+                    "message": format!("Helm upgrade --install failed: {}", e)
                 })),
             )
                 .into_response();
@@ -1098,7 +1099,7 @@ pub async fn install_helm_chart(
             StatusCode::OK,
             Json(serde_json::json!({
                 "success": true,
-                "message": format!("Release '{}' installed in namespace '{}'", release_name, ns)
+                "message": format!("Release '{}' installed/upgraded in namespace '{}'", release_name, ns)
             })),
         )
             .into_response()
