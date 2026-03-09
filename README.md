@@ -85,10 +85,34 @@ This project is structured as a **single workspace**:
 - **Custom Resources (CRDs)** – List CRDs; list and manage custom resources per CRD
 
 ### Real-Time Features
-- **WebSocket (gRPC-Web)** – Live pod/resource streaming for dashboard and pod lists
-- **Pod Logs** – Real-time log streaming (tail, follow)
-- **Pod Exec** – Interactive shell (e.g. `/bin/sh`) via WebSocket
-- **Auto-Refresh** – Dashboard metrics refresh; token refresh before expiry
+
+#### WebSocket live updates (`/ws` – Kubernetes watch)
+Resource list pages subscribe over a single WebSocket and receive watch events (add/update/delete). No polling; list updates as soon as the cluster state changes.
+
+- **Workloads:** Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs, **Pods** (list from watch; CPU/memory merged from REST)
+- **Cluster:** Namespaces, **Nodes**, Events
+- **Config:** ConfigMaps, Secrets, ResourceQuotas, LimitRanges, HPA, PDB, PriorityClasses, RuntimeClasses, Leases, MWC, VWC
+- **Network:** Services, Endpoints, Ingresses, IngressClasses, NetworkPolicies
+- **Storage:** PersistentVolumes, PersistentVolumeClaims, StorageClasses
+- **RBAC:** ServiceAccounts, Roles, RoleBindings, ClusterRoles, ClusterRoleBindings
+- **Custom:** CRDs list (sidebar), custom resources per CRD  
+- **Workload overview** page uses the same WebSocket hooks for all workload types.
+
+**Pods:** Pod list is realtime via WebSocket; CPU/memory metrics come from the metrics API and are merged in (so metrics update when the pod list or REST metrics response updates).
+
+#### Other realtime
+- **Pod Exec** – Interactive shell (`/bin/sh`) via WebSocket **`/api/exec`** (bidirectional stream).
+- **Token refresh** – Frontend refreshes JWT before expiry.
+
+#### Polling (REST + refetchInterval)
+- **Dashboard** – Summary and pod count from REST (no interval); **nodes** (list + metrics) polled every **30s**.
+- **Nodes page** – List is WebSocket; **node metrics** (CPU/memory, `kubectl top`) polled every **30s**.
+- **Helm releases** – List polled every **30s** (no WebSocket).
+- **Port forwards** – List polled every **5s**.
+
+#### Not realtime
+- **Pod logs** – Single REST request returns full log output (no streaming or follow).
+- **Helm charts** – Cached ~10 min; no live updates.
 
 ### Security & Authentication
 - **JWT Authentication** – Login with username/password; JWT with 1-hour expiration
