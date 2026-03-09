@@ -203,7 +203,7 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
                 onClick={() => setExpandedLabels(!expandedLabels)}
                 className="w-full flex items-center justify-between py-2 text-left"
               >
-                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Labels ({labelCount})</span>
+                <span className="text-xs font-semibold tracking-wide" style={{ color: 'var(--color-muted)' }}>Labels ({labelCount})</span>
                 <span style={{ color: 'var(--color-primary)' }}>
                   <ChevronDown size={14} color="var(--color-primary)" className={`transition-transform ${expandedLabels ? 'rotate-180' : ''}`} />
                 </span>
@@ -228,7 +228,7 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
                 onClick={() => setExpandedAnnotations(!expandedAnnotations)}
                 className="w-full flex items-center justify-between py-2 text-left"
               >
-                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>Annotations ({annotationCount})</span>
+                <span className="text-xs font-semibold tracking-wide" style={{ color: 'var(--color-muted)' }}>Annotations ({annotationCount})</span>
                 <span style={{ color: 'var(--color-primary)' }}>
                   <ChevronDown size={14} color="var(--color-primary)" className={`transition-transform ${expandedAnnotations ? 'rotate-180' : ''}`} />
                 </span>

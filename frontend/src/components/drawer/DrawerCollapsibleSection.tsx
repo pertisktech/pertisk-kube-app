@@ -35,7 +35,7 @@ export function DrawerCollapsibleSection({
         aria-expanded={expanded}
         aria-label={expanded ? `Collapse ${title}` : `Expand ${title}`}
       >
-        <span className="DrawerItem-name text-xs font-semibold uppercase tracking-wide overflow-hidden text-ellipsis pr-2 min-w-0" style={{ color: 'var(--color-muted)' }}>
+        <span className="DrawerItem-name text-xs font-semibold tracking-wide overflow-hidden text-ellipsis pr-2 min-w-0" style={{ color: 'var(--color-muted)' }}>
           {title}
         </span>
         <span className="DrawerItem-value flex items-center justify-end min-w-0" style={{ color: 'var(--color-primary)' }}>

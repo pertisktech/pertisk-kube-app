@@ -176,7 +176,7 @@ export const ResourceDetailPanelLayout = ({
   );
 };
 
-/** Collapsible section (base project style): uppercase header + chevron, divide-y rows when expanded */
+/** Collapsible section (base project style): header + chevron, divide-y rows when expanded */
 export const CollapsibleSection = ({
   title,
   defaultExpanded = false,
@@ -208,7 +208,7 @@ export const CollapsibleSection = ({
       >
         <div className="flex items-center gap-2" style={{ color: 'var(--color-muted)' }}>
           {Icon && <Icon size={12} />}
-          <span className="text-xs font-semibold uppercase tracking-wider">{title}</span>
+          <span className="text-xs font-semibold tracking-wider">{title}</span>
         </div>
         <span style={{ color: 'var(--color-primary)' }}>{expanded ? <ChevronUp size={16} color="var(--color-primary)" /> : <ChevronDown size={16} color="var(--color-primary)" />}</span>
       </button>
@@ -251,7 +251,7 @@ export const DetailSection = ({
       }}
     >
       <div
-        className="px-4 py-2 text-xs font-semibold uppercase tracking-wider"
+        className="px-4 py-2 text-xs font-semibold tracking-wider"
         style={{
           backgroundColor: 'var(--color-surface)',
           color: 'var(--color-muted)',
@@ -268,7 +268,7 @@ export const DetailSection = ({
   );
 };
 
-/** Single key-value row inside a section — base project style (px-4 py-3, text-xs) */
+/** Single key-value row inside a section — base project style (px-4 py-3, text-xs); grid aligns with DrawerItem */
 export const DetailRow = ({
   label,
   value,
@@ -281,15 +281,15 @@ export const DetailRow = ({
   icon?: IconComponent;
 }) => (
   <div
-    className="px-4 py-3 flex items-center justify-between"
-    style={{ borderColor: 'var(--color-border)' }}
+    className="px-4 py-3 grid gap-x-3 items-center"
+    style={{ borderColor: 'var(--color-border)', gridTemplateColumns: 'minmax(30%, min-content) 1fr' }}
   >
-    <span className="text-xs flex items-center gap-2" style={{ color: 'var(--color-muted)' }}>
+    <span className="text-xs flex items-center gap-2 min-w-0 truncate" style={{ color: 'var(--color-muted)' }}>
       {Icon && <Icon size={14} className="flex-shrink-0" />}
       {label}
     </span>
     <span
-      className={`text-xs font-medium truncate max-w-[220px] text-right ${mono ? 'font-mono' : ''}`}
+      className={`text-xs font-medium text-right break-words min-w-0 ${mono ? 'font-mono' : ''}`}
       style={{ color: 'var(--color-text)' }}
     >
       {value ?? '-'}
@@ -319,7 +319,7 @@ export const DetailLabelsSection = ({ labels }: { labels?: Record<string, string
         }}
         onClick={() => setExpanded((e) => !e)}
       >
-        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>Labels ({count})</span>
+        <span className="text-xs font-semibold tracking-wider" style={{ color: 'var(--color-muted)' }}>Labels ({count})</span>
         <span style={{ color: 'var(--color-primary)' }}>{expanded ? <ChevronUp size={16} color="var(--color-primary)" /> : <ChevronDown size={16} color="var(--color-primary)" />}</span>
       </button>
       {expanded && (
@@ -328,11 +328,11 @@ export const DetailLabelsSection = ({ labels }: { labels?: Record<string, string
             entries.map(([key, value]) => (
               <div
                 key={key}
-                className="py-3 flex items-center justify-between gap-2 text-xs"
-                style={{ borderColor: 'var(--color-border)' }}
+                className="py-3 grid gap-x-3 text-xs"
+                style={{ borderColor: 'var(--color-border)', gridTemplateColumns: 'minmax(30%, min-content) 1fr' }}
               >
-                <span className="truncate" style={{ color: 'var(--color-muted)' }}>{key}</span>
-                <span className="font-medium text-right break-all" style={{ color: 'var(--color-text)' }}>{value}</span>
+                <span className="truncate min-w-0" style={{ color: 'var(--color-muted)' }}>{key}</span>
+                <span className="font-medium text-right break-words min-w-0" style={{ color: 'var(--color-text)' }}>{value}</span>
               </div>
             ))
           ) : (
@@ -366,7 +366,7 @@ export const DetailAnnotationsSection = ({ annotations }: { annotations?: Record
         }}
         onClick={() => setExpanded((e) => !e)}
       >
-        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>Annotations ({count})</span>
+        <span className="text-xs font-semibold tracking-wider" style={{ color: 'var(--color-muted)' }}>Annotations ({count})</span>
         <span style={{ color: 'var(--color-primary)' }}>{expanded ? <ChevronUp size={16} color="var(--color-primary)" /> : <ChevronDown size={16} color="var(--color-primary)" />}</span>
       </button>
       {expanded && (
@@ -375,11 +375,11 @@ export const DetailAnnotationsSection = ({ annotations }: { annotations?: Record
             entries.map(([key, value]) => (
               <div
                 key={key}
-                className="py-3 flex items-center justify-between gap-2 text-xs"
-                style={{ borderColor: 'var(--color-border)' }}
+                className="py-3 grid gap-x-3 text-xs"
+                style={{ borderColor: 'var(--color-border)', gridTemplateColumns: 'minmax(30%, min-content) 1fr' }}
               >
-                <span className="truncate" style={{ color: 'var(--color-muted)' }}>{key}</span>
-                <span className="font-medium text-right break-all" style={{ color: 'var(--color-text)' }}>{value}</span>
+                <span className="truncate min-w-0" style={{ color: 'var(--color-muted)' }}>{key}</span>
+                <span className="font-medium text-right break-words min-w-0" style={{ color: 'var(--color-text)' }}>{value}</span>
               </div>
             ))
           ) : (

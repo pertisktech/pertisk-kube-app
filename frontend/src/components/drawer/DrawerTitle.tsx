@@ -18,7 +18,7 @@ export function DrawerTitle({ className = '', children }: DrawerTitleProps) {
         backgroundColor: 'var(--color-surface-elevated, var(--color-bg))',
       }}
     >
-      <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+      <span className="text-xs font-semibold tracking-wide" style={{ color: 'var(--color-muted)' }}>
         {children}
       </span>
     </div>
