@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useDashboard, useNodes, usePods } from '../hooks/useKubernetes';
@@ -24,48 +24,6 @@ import { K8sNode } from '../types';
 
 const CHART_USED = 'var(--color-dashboard-metric-primary)';
 const CHART_AVAILABLE = 'var(--color-muted)';
-
-// Helper to format node IPs
-function formatNodeIPs(node: K8sNode): string {
-  const ips: string[] = [];
-
-  if (node.internal_ip) {
-    const internalIps = node.internal_ip
-      .split(',')
-      .map((ip) => ip.trim())
-      .filter((ip) => ip);
-    ips.push(...internalIps);
-  }
-
-  if (node.external_ip && node.external_ip !== node.internal_ip) {
-    const externalIps = node.external_ip
-      .split(',')
-      .map((ip) => ip.trim())
-      .filter((ip) => ip);
-    externalIps.forEach((ip) => {
-      if (!ips.includes(ip)) {
-        ips.push(ip);
-      }
-    });
-  }
-
-  if (ips.length === 0) {
-    return 'No IP';
-  }
-
-  const ipv4s = ips.filter((ip) => !ip.includes(':'));
-  const ipv6s = ips.filter((ip) => ip.includes(':'));
-
-  const parts: string[] = [];
-  if (ipv4s.length > 0) {
-    parts.push(ipv4s.join(', '));
-  }
-  if (ipv6s.length > 0) {
-    parts.push(ipv6s.join(', '));
-  }
-
-  return parts.join(' | ');
-}
 
 // Helper to get IPv4 and IPv6 for display (values only, no labels)
 function getNodeIPv4IPv6(node: K8sNode): { ipv4: string | null; ipv6: string | null } {
