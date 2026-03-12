@@ -124,7 +124,19 @@ export const Dashboard = () => {
 
   const sortedNodes = useMemo(() => {
     const list = [...(nodes ?? [])];
-    list.sort((a, b) => a.name.localeCompare(b.name));
+    const roleOrder = (node: { roles?: string[] }) => {
+      const r = (node.roles ?? []).map((s) => s.toLowerCase());
+      if (r.includes('control-plane')) return 0;
+      if (r.includes('master')) return 1;
+      if (r.includes('worker')) return 2;
+      return 3;
+    };
+    list.sort((a, b) => {
+      const orderA = roleOrder(a);
+      const orderB = roleOrder(b);
+      if (orderA !== orderB) return orderA - orderB;
+      return a.name.localeCompare(b.name);
+    });
     return list;
   }, [nodes]);
 
