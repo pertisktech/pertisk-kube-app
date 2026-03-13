@@ -6,7 +6,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ReplicaSetDetailPanel, ConfirmDialog } from '../components';
 import type { ReplicaSet } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { getStatusColor, timeAgo, truncateString, matchesResourceNameFilter } from '../utils';
+import { getStatusColor, timeAgo, matchesResourceNameFilter } from '../utils';
 import { deleteReplicaSet } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -18,7 +18,6 @@ type ReplicaSetSortKey =
   | 'current'
   | 'ready'
   | 'available'
-  | 'images'
   | 'age';
 
 const sanitizeReplicaSetYamlForEdit = (yamlText: string) => {
@@ -194,14 +193,6 @@ export const ReplicaSetsPage = () => {
       sortKey: 'available',
     },
     {
-      header: 'Images',
-      accessor: (row: ReplicaSet) =>
-        truncateString(row.images?.join(', ') || '-', 25),
-      width: '20%',
-      sortable: true,
-      sortKey: 'images',
-    },
-    {
       header: 'Age',
       accessor: (row: ReplicaSet) => timeAgo(row.age),
       width: '10%',
@@ -237,9 +228,6 @@ if (selectedNamespaces.length > 0) {
       if (sortState.key === 'current') return ((first.current ?? 0) - (second.current ?? 0)) * factor;
       if (sortState.key === 'ready') return ((first.ready ?? 0) - (second.ready ?? 0)) * factor;
       if (sortState.key === 'available') return ((first.available ?? 0) - (second.available ?? 0)) * factor;
-      if (sortState.key === 'images') {
-        return (first.images?.join(',') || '').localeCompare(second.images?.join(',') || '') * factor;
-      }
 
       const firstAge = Date.parse(first.age || '');
       const secondAge = Date.parse(second.age || '');

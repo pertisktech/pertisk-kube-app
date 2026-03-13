@@ -6,11 +6,11 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, StatefulSetDetailPanel, ConfirmDialog } from '../components';
 import type { StatefulSet } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { getStatusColor, timeAgo, truncateString, matchesResourceNameFilter } from '../utils';
+import { getStatusColor, timeAgo, matchesResourceNameFilter } from '../utils';
 import { deleteStatefulSet } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
-type StatefulSetSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'current' | 'updated' | 'images' | 'age';
+type StatefulSetSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'current' | 'updated' | 'age';
 
 const sanitizeStatefulSetYamlForEdit = (yamlText: string) => {
   try {
@@ -178,13 +178,6 @@ export const StatefulSetsPage = () => {
       sortKey: 'updated',
     },
     {
-      header: 'Images',
-      accessor: (row: StatefulSet) => truncateString(row.images?.join(', ') || '-', 24),
-      width: '14%',
-      sortable: true,
-      sortKey: 'images',
-    },
-    {
       header: 'Age',
       accessor: (row: StatefulSet) => timeAgo(row.age),
       width: '10%',
@@ -219,9 +212,6 @@ export const StatefulSetsPage = () => {
       if (sortState.key === 'ready') return (first.ready || '').localeCompare(second.ready || '') * factor;
       if (sortState.key === 'current') return ((first.current ?? 0) - (second.current ?? 0)) * factor;
       if (sortState.key === 'updated') return ((first.updated ?? 0) - (second.updated ?? 0)) * factor;
-      if (sortState.key === 'images') {
-        return (first.images?.join(',') || '').localeCompare(second.images?.join(',') || '') * factor;
-      }
 
       const firstAge = Date.parse(first.age || '');
       const secondAge = Date.parse(second.age || '');

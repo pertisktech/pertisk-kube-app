@@ -6,7 +6,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DaemonSetDetailPanel, DataTable, ConfirmDialog } from '../components';
 import type { DaemonSet } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { getStatusColor, timeAgo, truncateString, matchesResourceNameFilter } from '../utils';
+import { getStatusColor, timeAgo, matchesResourceNameFilter } from '../utils';
 import { deleteDaemonSet } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -18,7 +18,7 @@ type DaemonSetSortKey =
   | 'current'
   | 'ready'
   | 'available'
-  | 'images'
+  | 'node_selector'
   | 'age';
 
 const sanitizeDaemonSetYamlForEdit = (yamlText: string) => {
@@ -194,12 +194,15 @@ export const DaemonSetsPage = () => {
       sortKey: 'available',
     },
     {
-      header: 'Images',
-      accessor: (row: DaemonSet) =>
-        truncateString(row.images?.join(', ') || '-', 20),
+      header: 'Node Selector',
+      accessor: (row: DaemonSet) => {
+        const entries = Object.entries(row.node_selector || {});
+        if (entries.length === 0) return '-';
+        return entries.map(([key, value]) => `${key}=${value}`).join(', ');
+      },
       width: '15%',
       sortable: true,
-      sortKey: 'images',
+      sortKey: 'node_selector',
     },
     {
       header: 'Age',
@@ -237,8 +240,14 @@ if (selectedNamespaces.length > 0) {
       if (sortState.key === 'current') return ((first.current ?? 0) - (second.current ?? 0)) * factor;
       if (sortState.key === 'ready') return ((first.ready ?? 0) - (second.ready ?? 0)) * factor;
       if (sortState.key === 'available') return ((first.available ?? 0) - (second.available ?? 0)) * factor;
-      if (sortState.key === 'images') {
-        return (first.images?.join(',') || '').localeCompare(second.images?.join(',') || '') * factor;
+      if (sortState.key === 'node_selector') {
+        const firstSelector = Object.entries(first.node_selector || {})
+          .map(([key, value]) => `${key}=${value}`)
+          .join(',');
+        const secondSelector = Object.entries(second.node_selector || {})
+          .map(([key, value]) => `${key}=${value}`)
+          .join(',');
+        return firstSelector.localeCompare(secondSelector) * factor;
       }
 
       const firstAge = Date.parse(first.age || '');

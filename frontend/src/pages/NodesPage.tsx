@@ -37,6 +37,36 @@ const toPercent = (value?: number) => {
   return Math.max(0, Math.min(100, value));
 };
 
+function getRoleBadgeStyle(role: string): { bg: string; color: string; border: string } {
+  const r = role.toLowerCase();
+  if (r === 'control-plane') {
+    return {
+      bg: 'var(--color-dashboard-metric-secondary-bg)',
+      color: 'var(--color-dashboard-metric-secondary)',
+      border: 'color-mix(in srgb, var(--color-dashboard-metric-secondary) 40%, transparent)',
+    };
+  }
+  if (r === 'master') {
+    return {
+      bg: 'var(--color-dashboard-warning-bg)',
+      color: 'var(--color-dashboard-warning)',
+      border: 'color-mix(in srgb, var(--color-dashboard-warning) 40%, transparent)',
+    };
+  }
+  if (r === 'worker') {
+    return {
+      bg: 'var(--color-dashboard-metric-quaternary-bg)',
+      color: 'var(--color-dashboard-metric-quaternary)',
+      border: 'color-mix(in srgb, var(--color-dashboard-metric-quaternary) 40%, transparent)',
+    };
+  }
+  return {
+    bg: 'var(--color-hover)',
+    color: 'var(--color-text-secondary)',
+    border: 'var(--color-border)',
+  };
+}
+
 export const NodesPage = () => {
   const { data: realtimeNodes, isLoading, error } = useRealtimeNodes();
   const { data: apiNodes } = useNodes({ refetchInterval: 30_000 }); // REST: metrics from metrics.k8s.io (like kubectl top nodes), poll every 30s
@@ -187,7 +217,29 @@ export const NodesPage = () => {
     },
     {
       header: 'Roles',
-      accessor: (row: K8sNode) => row.roles.join(', ') || '-',
+      accessor: (row: K8sNode) => {
+        if (!row.roles?.length) return '-';
+        return (
+          <div className="flex flex-wrap gap-1">
+            {row.roles.map((role) => {
+              const style = getRoleBadgeStyle(role);
+              return (
+                <span
+                  key={role}
+                  className="inline-flex px-2 py-0.5 rounded text-xs font-medium border"
+                  style={{
+                    backgroundColor: style.bg,
+                    color: style.color,
+                    borderColor: style.border,
+                  }}
+                >
+                  {role}
+                </span>
+              );
+            })}
+          </div>
+        );
+      },
       width: '14%',
     },
     {

@@ -17,6 +17,7 @@ import { openPanelTab } from '../components/BottomPanel';
 type PodSortKey =
   | 'name'
   | 'namespace'
+  | 'node'
   | 'status'
   | 'ready'
   | 'restarts'
@@ -221,14 +222,14 @@ export const PodsPage = () => {
       accessor: (row: Pod) => (
         <span className="font-medium text-text">{row.name}</span>
       ),
-      width: '24%',
+      width: '16%',
       sortable: true,
       sortKey: 'name',
     },
     {
       header: 'Namespace',
       accessor: 'namespace' as const,
-      width: '18%',
+      width: '11%',
       sortable: true,
       sortKey: 'namespace',
     },
@@ -270,6 +271,13 @@ export const PodsPage = () => {
       width: '11%',
       sortable: true,
       sortKey: 'memory',
+    },
+    {
+      header: 'Node',
+      accessor: (row: Pod) => <span className="whitespace-nowrap">{row.node || '-'}</span>,
+      width: '11%',
+      sortable: true,
+      sortKey: 'node',
     },
     {
       header: 'Controlled By',
@@ -321,6 +329,7 @@ export const PodsPage = () => {
 
       if (sortState.key === 'name') return first.name.localeCompare(second.name) * factor;
       if (sortState.key === 'namespace') return first.namespace.localeCompare(second.namespace) * factor;
+      if (sortState.key === 'node') return (first.node || '').localeCompare(second.node || '') * factor;
       if (sortState.key === 'status') return firstStatus.localeCompare(secondStatus) * factor;
       if (sortState.key === 'ready') return (first.ready || '').localeCompare(second.ready || '') * factor;
       if (sortState.key === 'restarts') return ((first.restarts ?? 0) - (second.restarts ?? 0)) * factor;

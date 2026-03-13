@@ -40,7 +40,10 @@ export function DrawerItem({
           {name}
         </span>
       )}
-      <span className="DrawerItem-value min-w-0 text-sm break-words text-right" style={{ color: 'var(--color-text)' }}>
+      <span
+        className={`DrawerItem-value min-w-0 text-sm break-words ${labelsOnly ? 'text-left' : 'text-right'}`}
+        style={{ color: 'var(--color-text)' }}
+      >
         {children ?? '—'}
       </span>
     </div>

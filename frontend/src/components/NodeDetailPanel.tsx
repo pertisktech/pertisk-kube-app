@@ -8,6 +8,37 @@ import { DrawerItem, DrawerTitle } from './drawer';
 import { formatMemoryUsedAlloc, formatCpuRange, formatCpuCores, parseCpuToCores, formatK8sQuantity } from '../utils';
 import type { K8sNode } from '../types';
 
+function getRoleBadgeStyle(role: string): { bg: string; color: string; border: string } {
+  const r = role.toLowerCase();
+  if (r === 'control-plane') {
+    return {
+      bg: 'var(--color-dashboard-metric-secondary-bg)',
+      color: 'var(--color-dashboard-metric-secondary)',
+      border: 'color-mix(in srgb, var(--color-dashboard-metric-secondary) 40%, transparent)',
+    };
+  }
+  if (r === 'master') {
+    return {
+      bg: 'var(--color-dashboard-warning-bg)',
+      color: 'var(--color-dashboard-warning)',
+      border: 'color-mix(in srgb, var(--color-dashboard-warning) 40%, transparent)',
+    };
+  }
+  if (r === 'worker') {
+    return {
+      bg: 'var(--color-dashboard-metric-quaternary-bg)',
+      color: 'var(--color-dashboard-metric-quaternary)',
+      border: 'color-mix(in srgb, var(--color-dashboard-metric-quaternary) 40%, transparent)',
+    };
+  }
+
+  return {
+    bg: 'var(--color-hover)',
+    color: 'var(--color-text-secondary)',
+    border: 'var(--color-border)',
+  };
+}
+
 interface NodeDetailPanelProps {
   node: K8sNode;
   events?: Array<{
@@ -131,8 +162,29 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
           {/* Key Info Bar */}
           <div className="flex items-center gap-3 text-xs mt-3 pt-3 border-t border-border">
             <div className="flex-1">
-              <p className="mb-1" style={{ color: 'var(--color-text-secondary)' }}>Role</p>
-              <p className="font-medium truncate" style={{ color: 'var(--color-text)' }}>{node.roles.join(', ') || '-'}</p>
+              <p className="mb-1" style={{ color: 'var(--color-text-secondary)' }}>Roles</p>
+              {node.roles?.length ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {node.roles.map((role) => {
+                    const roleStyle = getRoleBadgeStyle(role);
+                    return (
+                      <span
+                        key={role}
+                        className="inline-flex px-2 py-0.5 rounded text-xs font-medium border"
+                        style={{
+                          backgroundColor: roleStyle.bg,
+                          color: roleStyle.color,
+                          borderColor: roleStyle.border,
+                        }}
+                      >
+                        {role}
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="font-medium" style={{ color: 'var(--color-text)' }}>-</p>
+              )}
             </div>
             <div className="flex-1">
               <p className="mb-1" style={{ color: 'var(--color-text-secondary)' }}>Status</p>

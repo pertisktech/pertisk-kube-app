@@ -309,39 +309,47 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
                     return (
                       <div
                         key={normalizedImage}
-                        className="flex items-center gap-2 flex-wrap rounded-md border p-2"
+                        className="rounded-md border p-2"
                         style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-elevated)' }}
                       >
-                        <span
-                          className="inline-flex px-2 py-0.5 rounded text-xs border border-border break-all"
-                          style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}
-                          title={normalizedImage}
-                        >
-                          {normalizedImage}
-                        </span>
-                        <input
-                          type="text"
-                          value={tagValues[normalizedImage] ?? ''}
-                          onChange={(e) => {
-                            const nextTag = e.target.value;
-                            setTagValues((prev) => ({ ...prev, [normalizedImage]: nextTag }));
-                            setTagError('');
-                          }}
-                          onKeyDown={(e) => e.key === 'Enter' && void handleQuickUpdateTag(image)}
-                          placeholder="e.g. 1.29.3"
-                          className="h-7 px-2 rounded border border-border text-xs min-w-32"
-                          style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
-                          aria-label={`Image tag version for ${normalizedImage}`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => void handleQuickUpdateTag(image)}
-                          disabled={isUpdating}
-                          className="px-2 py-1 rounded border text-xs disabled:opacity-60"
-                          style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
-                        >
-                          {isUpdating ? 'Updating...' : 'Update Tag'}
-                        </button>
+                        <div className="space-y-2">
+                          <span
+                            className="inline-flex w-full min-w-0 px-2 py-0.5 rounded text-xs border border-border break-all"
+                            style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}
+                            title={normalizedImage}
+                          >
+                            {normalizedImage}
+                          </span>
+                          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                            <input
+                              type="text"
+                              value={tagValues[normalizedImage] ?? ''}
+                              onChange={(e) => {
+                                const nextTag = e.target.value;
+                                setTagValues((prev) => ({ ...prev, [normalizedImage]: nextTag }));
+                                setTagError('');
+                              }}
+                              onKeyDown={(e) => e.key === 'Enter' && void handleQuickUpdateTag(image)}
+                              placeholder="e.g. 1.29.3"
+                              className="h-8 w-full min-w-0 px-2 rounded border border-border text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+                              style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                              aria-label={`Image tag version for ${normalizedImage}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void handleQuickUpdateTag(image)}
+                              disabled={isUpdating}
+                              className="inline-flex items-center justify-center h-8 px-2.5 rounded-md text-xs font-medium transition-colors border hover:bg-[var(--color-primary)]/10 disabled:opacity-50"
+                              style={{
+                                borderColor: 'var(--color-primary)',
+                                color: 'var(--color-primary)',
+                                backgroundColor: 'transparent',
+                              }}
+                            >
+                              {isUpdating ? 'Updating...' : 'Update Tag'}
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     );
                   })}
@@ -359,12 +367,12 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
           </DrawerItem>
 
           <DrawerItem name="Scale">
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => void handleDecrement()}
                 disabled={isScaling}
-                className="inline-flex items-center justify-center h-7 w-7 rounded border border-border text-xs disabled:opacity-50"
+                className="inline-flex items-center justify-center h-8 w-8 rounded border border-border text-xs disabled:opacity-50"
                 style={{ color: 'var(--color-text)' }}
                 aria-label="Decrease replicas"
               >
@@ -389,7 +397,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
                   }
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && void handleScale()}
-                className="w-12 h-7 px-1 text-center rounded border border-border text-xs"
+                className="w-14 h-8 px-1 text-center rounded border border-border text-xs"
                 style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
                 aria-label="Replicas"
               />
@@ -397,7 +405,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
                 type="button"
                 onClick={() => void handleIncrement()}
                 disabled={isScaling}
-                className="inline-flex items-center justify-center h-7 w-7 rounded border border-border text-xs disabled:opacity-50"
+                className="inline-flex items-center justify-center h-8 w-8 rounded border border-border text-xs disabled:opacity-50"
                 style={{ color: 'var(--color-text)' }}
                 aria-label="Increase replicas"
               >
@@ -407,7 +415,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
                 type="button"
                 onClick={() => void handleScale()}
                 disabled={isScaling}
-                className="px-2 py-1 rounded border text-xs"
+                className="inline-flex items-center justify-center h-8 px-2.5 rounded-md border text-xs font-medium hover:bg-[var(--color-primary)]/10 disabled:opacity-50"
                 style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
               >
                 Apply
