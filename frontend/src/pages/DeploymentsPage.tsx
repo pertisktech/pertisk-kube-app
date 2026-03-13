@@ -14,6 +14,41 @@ import { openPanelTab } from '../components/BottomPanel';
 
 type DeploymentSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'updated' | 'available' | 'images' | 'age';
 
+const imageWithoutDigest = (image: string): string => image.split('@')[0] ?? image;
+
+const preferDigestImages = (images?: string[]): string[] => {
+  if (!images || images.length === 0) return [];
+
+  const selectedByBase = new Map<string, string>();
+  const order: string[] = [];
+
+  for (const image of images) {
+    if (!image) continue;
+    const base = imageWithoutDigest(image);
+    const existing = selectedByBase.get(base);
+
+    if (!existing) {
+      selectedByBase.set(base, image);
+      order.push(base);
+      continue;
+    }
+
+    const existingHasDigest = existing.includes('@sha256:');
+    const nextHasDigest = image.includes('@sha256:');
+    if (!existingHasDigest && nextHasDigest) {
+      selectedByBase.set(base, image);
+    }
+  }
+
+  return order
+    .map((base) => selectedByBase.get(base))
+    .filter((image): image is string => Boolean(image));
+};
+
+const formatImageForTable = (image: string): string => {
+  return image.split('@')[0] ?? image;
+};
+
 const sanitizeDeploymentYamlForEdit = (yamlText: string) => {
   try {
     const parsed = YAML.parse(yamlText) as Record<string, unknown> | null;
@@ -184,14 +219,14 @@ export const DeploymentsPage = () => {
       accessor: (row: Deployment) => (
         <span className="font-medium text-text">{row.name}</span>
       ),
-      width: '25%',
+      width: '16%',
       sortable: true,
       sortKey: 'name',
     },
     {
       header: 'Namespace',
       accessor: 'namespace' as const,
-      width: '15%',
+      width: '10%',
       sortable: true,
       sortKey: 'namespace',
     },
@@ -202,44 +237,57 @@ export const DeploymentsPage = () => {
           {row.status || 'Unknown'}
         </span>
       ),
-      width: '10%',
+      width: '8%',
       sortable: true,
       sortKey: 'status',
     },
     {
       header: 'Ready',
       accessor: 'ready' as const,
-      width: '10%',
+      width: '7%',
       sortable: true,
       sortKey: 'ready',
     },
     {
       header: 'Updated',
       accessor: 'updated' as const,
-      width: '10%',
+      width: '7%',
       sortable: true,
       sortKey: 'updated',
     },
     {
       header: 'Available',
       accessor: 'available' as const,
-      width: '10%',
+      width: '7%',
       sortable: true,
       sortKey: 'available',
     },
     {
       header: 'Images',
-      accessor: (row: Deployment) => (
-        <span className="break-all whitespace-normal">{row.images?.join(', ') || '-'}</span>
-      ),
-      width: '18%',
+      accessor: (row: Deployment) => {
+        const displayImages = preferDigestImages(row.images);
+        return (
+          <div className="whitespace-normal" title={displayImages.join('\n') || '-'}>
+            {displayImages.length > 0 ? (
+              displayImages.map((image) => (
+                <div key={image} className="break-all leading-5">
+                  {formatImageForTable(image)}
+                </div>
+              ))
+            ) : (
+              '-'
+            )}
+          </div>
+        );
+      },
+      width: '37%',
       sortable: true,
       sortKey: 'images',
     },
     {
       header: 'Age',
       accessor: (row: Deployment) => timeAgo(row.age),
-      width: '10%',
+      width: '8%',
       sortable: true,
       sortKey: 'age',
     },
@@ -272,7 +320,7 @@ export const DeploymentsPage = () => {
       if (sortState.key === 'updated') return ((first.updated ?? 0) - (second.updated ?? 0)) * factor;
       if (sortState.key === 'available') return ((first.available ?? 0) - (second.available ?? 0)) * factor;
       if (sortState.key === 'images') {
-        return (first.images?.join(',') || '').localeCompare(second.images?.join(',') || '') * factor;
+        return preferDigestImages(first.images).join(',').localeCompare(preferDigestImages(second.images).join(',')) * factor;
       }
 
       const firstAge = Date.parse(first.age || '');

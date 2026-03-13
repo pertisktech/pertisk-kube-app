@@ -7,6 +7,7 @@ use axum::{
 use chrono::Utc;
 use cron::Schedule;
 use kube::{api::{DeleteParams, ListParams, Patch, PatchParams}, Api};
+use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
 use tracing::{error, info};
@@ -589,108 +590,179 @@ pub async fn list_events(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 pub async fn list_deployments(State(state): State<AppState>) -> impl IntoResponse {
-    use k8s_openapi::api::apps::v1::Deployment;
+    use k8s_openapi::api::{apps::v1::Deployment, core::v1::Pod};
 
-    let api: Api<Deployment> = Api::all(state.client);
-    match api.list(&ListParams::default()).await {
-        Ok(list) => {
-            let items: Vec<DeploymentItem> = list
-                .items
-                .into_iter()
-                .map(|item| {
-                    let name = item.metadata.name.unwrap_or_default();
-                    let namespace = item.metadata.namespace.unwrap_or_else(|| "default".into());
-                    let desired = item
-                        .spec
-                        .as_ref()
-                        .and_then(|spec| spec.replicas)
-                        .unwrap_or(1);
-                    let ready = item
-                        .status
-                        .as_ref()
-                        .and_then(|s| s.ready_replicas)
-                        .unwrap_or(0);
-                    let updated = item
-                        .status
-                        .as_ref()
-                        .and_then(|s| s.updated_replicas)
-                        .unwrap_or(0);
-                    let available = item
-                        .status
-                        .as_ref()
-                        .and_then(|s| s.available_replicas)
-                        .unwrap_or(0);
-                    let images = item
-                        .spec
-                        .as_ref()
-                        .and_then(|spec| spec.template.spec.as_ref())
-                        .map(|pod_spec| {
-                            pod_spec
-                                .containers
-                                .iter()
-                                .map(|container| container.image.clone().unwrap_or_default())
-                                .filter(|image| !image.is_empty())
-                                .collect::<Vec<String>>()
-                        })
-                        .unwrap_or_default();
-                    let age = item
-                        .metadata
-                        .creation_timestamp
-                        .as_ref()
-                        .map(|t| t.0.to_rfc3339())
-                        .unwrap_or_default();
-                    let status = if desired == 0 {
-                        "Stopped".to_string()
-                    } else if updated >= desired && available >= desired {
-                        "Running".to_string()
-                    } else if updated > 0 || available > 0 {
-                        "Progressing".to_string()
-                    } else {
-                        "Pending".to_string()
-                    };
+    let deployment_api: Api<Deployment> = Api::all(state.client.clone());
+    let pod_api: Api<Pod> = Api::all(state.client);
 
-                    let labels = item
-                        .metadata
-                        .labels
-                        .as_ref()
-                        .and_then(|l| serde_json::to_value(l).ok())
-                        .and_then(|v| v.as_object().cloned());
-                    let selector_labels = item
-                        .spec
-                        .as_ref()
-                        .and_then(|spec| spec.selector.match_labels.as_ref())
-                        .and_then(|labels| serde_json::to_value(labels).ok())
-                        .and_then(|v| v.as_object().cloned());
-                    let annotations = item
-                        .metadata
-                        .annotations
-                        .as_ref()
-                        .and_then(|a| serde_json::to_value(a).ok())
-                        .and_then(|v| v.as_object().cloned());
-
-                    DeploymentItem {
-                        name,
-                        namespace,
-                        status,
-                        ready: format!("{}/{}", ready, desired),
-                        updated,
-                        available,
-                        images,
-                        age,
-                        selector_labels,
-                        labels,
-                        annotations,
-                    }
-                })
-                .collect();
-            let total = items.len();
-            (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
-        }
+    let deployment_list = match deployment_api.list(&ListParams::default()).await {
+        Ok(list) => list,
         Err(err) => {
             error!("Error listing deployments: {:?}", err);
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
-    }
+    };
+
+    let pod_list = match pod_api.list(&ListParams::default()).await {
+        Ok(list) => list,
+        Err(err) => {
+            error!("Error listing pods for deployment image digests: {:?}", err);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    let pods = pod_list.items;
+
+    let items: Vec<DeploymentItem> = deployment_list
+        .items
+        .into_iter()
+        .map(|item| {
+            let name = item.metadata.name.unwrap_or_default();
+            let namespace = item.metadata.namespace.unwrap_or_else(|| "default".into());
+            let desired = item
+                .spec
+                .as_ref()
+                .and_then(|spec| spec.replicas)
+                .unwrap_or(1);
+            let ready = item
+                .status
+                .as_ref()
+                .and_then(|s| s.ready_replicas)
+                .unwrap_or(0);
+            let updated = item
+                .status
+                .as_ref()
+                .and_then(|s| s.updated_replicas)
+                .unwrap_or(0);
+            let available = item
+                .status
+                .as_ref()
+                .and_then(|s| s.available_replicas)
+                .unwrap_or(0);
+
+            let selector_for_digest = item
+                .spec
+                .as_ref()
+                .and_then(|spec| spec.selector.match_labels.as_ref());
+
+            let mut deployment_image_digests: HashMap<String, String> = HashMap::new();
+            let mut deployment_repo_digests: HashMap<String, String> = HashMap::new();
+
+            if let Some(selector_labels) = selector_for_digest {
+                for pod in pods
+                    .iter()
+                    .filter(|pod| pod_matches_selector(pod, &namespace, selector_labels))
+                {
+                    let Some(status) = pod.status.as_ref() else {
+                        continue;
+                    };
+
+                    if let Some(container_statuses) = status.container_statuses.as_ref() {
+                        for container_status in container_statuses {
+                            let image = container_status.image.as_str();
+                            let image_id = container_status.image_id.as_str();
+                            if image.is_empty() || image_id.is_empty() {
+                                continue;
+                            }
+
+                            if let Some(digest) = extract_sha256_digest(image_id) {
+                                let normalized_image = image_without_digest(image);
+                                let image_repo = image_repository(normalized_image);
+
+                                deployment_image_digests
+                                    .entry(normalized_image.to_string())
+                                    .or_insert_with(|| digest.clone());
+
+                                deployment_repo_digests
+                                    .entry(image_repo.to_string())
+                                    .or_insert(digest);
+                            }
+                        }
+                    }
+                }
+            }
+
+            let images = item
+                .spec
+                .as_ref()
+                .and_then(|spec| spec.template.spec.as_ref())
+                .map(|pod_spec| {
+                    pod_spec
+                        .containers
+                        .iter()
+                        .map(|container| container.image.clone().unwrap_or_default())
+                        .filter(|image| !image.is_empty())
+                        .map(|image| {
+                            if image.contains("@sha256:") {
+                                return image;
+                            }
+
+                            let normalized = image_without_digest(&image);
+
+                            deployment_image_digests
+                                .get(normalized)
+                                .map(|digest| format!("{}@{}", normalized, digest))
+                                .or_else(|| {
+                                    deployment_repo_digests
+                                        .get(image_repository(normalized))
+                                        .map(|digest| format!("{}@{}", normalized, digest))
+                                })
+                                .unwrap_or(image)
+                        })
+                        .collect::<Vec<String>>()
+                })
+                .unwrap_or_default();
+            let age = item
+                .metadata
+                .creation_timestamp
+                .as_ref()
+                .map(|t| t.0.to_rfc3339())
+                .unwrap_or_default();
+            let status = if desired == 0 {
+                "Stopped".to_string()
+            } else if updated >= desired && available >= desired {
+                "Running".to_string()
+            } else if updated > 0 || available > 0 {
+                "Progressing".to_string()
+            } else {
+                "Pending".to_string()
+            };
+
+            let labels = item
+                .metadata
+                .labels
+                .as_ref()
+                .and_then(|l| serde_json::to_value(l).ok())
+                .and_then(|v| v.as_object().cloned());
+            let selector_labels = item
+                .spec
+                .as_ref()
+                .and_then(|spec| spec.selector.match_labels.as_ref())
+                .and_then(|labels| serde_json::to_value(labels).ok())
+                .and_then(|v| v.as_object().cloned());
+            let annotations = item
+                .metadata
+                .annotations
+                .as_ref()
+                .and_then(|a| serde_json::to_value(a).ok())
+                .and_then(|v| v.as_object().cloned());
+
+            DeploymentItem {
+                name,
+                namespace,
+                status,
+                ready: format!("{}/{}", ready, desired),
+                updated,
+                available,
+                images,
+                age,
+                selector_labels,
+                labels,
+                annotations,
+            }
+        })
+        .collect();
+    let total = items.len();
+    (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
 }
 
 pub async fn scale_deployment(
@@ -783,6 +855,62 @@ fn replace_image_tag(image: &str, new_tag: &str) -> String {
     format!("{}:{}", base, new_tag)
 }
 
+fn image_without_digest(image: &str) -> &str {
+    image.split('@').next().unwrap_or(image)
+}
+
+fn image_repository(image: &str) -> &str {
+    let image_without_digest = image_without_digest(image);
+    let last_slash = image_without_digest.rfind('/');
+    let last_colon = image_without_digest.rfind(':');
+
+    match (last_slash, last_colon) {
+        (Some(slash), Some(colon)) if colon > slash => &image_without_digest[..colon],
+        (None, Some(colon)) => &image_without_digest[..colon],
+        _ => image_without_digest,
+    }
+}
+
+fn pod_matches_selector(
+    pod: &k8s_openapi::api::core::v1::Pod,
+    namespace: &str,
+    selector_labels: &std::collections::BTreeMap<String, String>,
+) -> bool {
+    let pod_namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
+    if pod_namespace != namespace {
+        return false;
+    }
+
+    let Some(labels) = pod.metadata.labels.as_ref() else {
+        return false;
+    };
+
+    selector_labels
+        .iter()
+        .all(|(key, value)| labels.get(key).is_some_and(|pod_value| pod_value == value))
+}
+
+fn extract_sha256_digest(image_id: &str) -> Option<String> {
+    let marker = "sha256:";
+    let digest_start = image_id.find(marker)?;
+    let digest_section = &image_id[digest_start..];
+
+    let mut digest_end = marker.len();
+    for ch in digest_section[marker.len()..].chars() {
+        if ch.is_ascii_hexdigit() {
+            digest_end += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+
+    if digest_end == marker.len() {
+        return None;
+    }
+
+    Some(digest_section[..digest_end].to_string())
+}
+
 pub async fn update_deployment_image_tag(
     Path((namespace, name)): Path<(String, String)>,
     State(state): State<AppState>,
@@ -791,6 +919,8 @@ pub async fn update_deployment_image_tag(
     use k8s_openapi::api::apps::v1::Deployment;
 
     let requested_tag = payload.tag.trim();
+    let target_image = payload.image.as_deref().map(str::trim).filter(|image| !image.is_empty());
+
     if requested_tag.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -819,6 +949,21 @@ pub async fn update_deployment_image_tag(
                 if old_image.is_empty() {
                     continue;
                 }
+
+                if let Some(target) = target_image {
+                    let old_without_digest = image_without_digest(&old_image);
+                    let target_without_digest = image_without_digest(target);
+
+                    // Match by exact image-without-digest first, then by repository.
+                    let should_update = old_without_digest == target_without_digest
+                        || image_repository(old_without_digest)
+                            == image_repository(target_without_digest);
+
+                    if !should_update {
+                        continue;
+                    }
+                }
+
                 container.image = Some(replace_image_tag(&old_image, requested_tag));
                 updated += 1;
             }
@@ -839,8 +984,8 @@ pub async fn update_deployment_image_tag(
     match api.replace(&name, &Default::default(), &deployment).await {
         Ok(_) => {
             info!(
-                "Updated deployment image tags {}/{} to '{}' for {} containers",
-                namespace, name, requested_tag, updated
+                "Updated deployment image tags {}/{} to '{}' for {} containers (target_image={:?})",
+                namespace, name, requested_tag, updated, target_image
             );
             (
                 StatusCode::OK,
@@ -848,6 +993,7 @@ pub async fn update_deployment_image_tag(
                     "success": true,
                     "updated_containers": updated,
                     "tag": requested_tag,
+                    "image": target_image,
                 })),
             )
                 .into_response()

@@ -8,6 +8,8 @@ pub struct ScaleRequest {
 #[derive(Deserialize)]
 pub struct UpdateDeploymentImageTagRequest {
     pub tag: String,
+    #[serde(default)]
+    pub image: Option<String>,
 }
 
 #[derive(Serialize)]

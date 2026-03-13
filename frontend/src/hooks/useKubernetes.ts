@@ -516,7 +516,8 @@ export const restartDeployment = async (namespace: string, name: string): Promis
 export const quickUpdateDeploymentImageTag = async (
   namespace: string,
   name: string,
-  tag: string
+  tag: string,
+  image?: string
 ): Promise<void> => {
   const token = getAuthToken();
   const res = await fetch(`${API_BASE}/deployments/${namespace}/${name}/image-tag`, {
@@ -525,7 +526,7 @@ export const quickUpdateDeploymentImageTag = async (
       'Content-Type': 'application/json',
       ...(token ? { Authorization: token } : {}),
     },
-    body: JSON.stringify({ tag }),
+    body: JSON.stringify({ tag, image }),
   });
 
   if (!res.ok) {
