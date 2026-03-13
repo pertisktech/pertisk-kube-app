@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, Pencil, RotateCcw, Terminal, Trash2 } from './Icons';
+import { Pencil, RotateCcw, Terminal, Trash2 } from './Icons';
 import type { Deployment, Pod, ReplicaSet, KubernetesEvent } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
