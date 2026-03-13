@@ -13,6 +13,18 @@ interface UseRealtimePodsOptions {
   reconnectInterval?: number;
 }
 
+const hasValue = (val: unknown): boolean => val !== undefined && val !== null && val !== '';
+
+const hasMetricValue = (val: unknown): boolean => hasValue(val) && val !== '-';
+
+const keepMetric = (nextVal: unknown, prevVal: unknown): unknown => {
+  if (hasMetricValue(nextVal)) return nextVal;
+  if (hasMetricValue(prevVal)) return prevVal;
+  if (hasValue(nextVal)) return nextVal;
+  if (hasValue(prevVal)) return prevVal;
+  return '-';
+};
+
 // Transform raw Kubernetes pod to frontend Pod type
 const transformPod = (rawPod: any): any => {
   const metadata = rawPod.metadata || {};
@@ -350,8 +362,12 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
 
             return {
               ...item,
-              cpu: apiItem.cpu ?? item.cpu,
-              memory: apiItem.memory ?? item.memory,
+              cpu: keepMetric(apiItem.cpu, item.cpu),
+              memory: keepMetric(apiItem.memory, item.memory),
+              cpu_capacity: keepMetric(apiItem.cpu_capacity, item.cpu_capacity),
+              memory_capacity: keepMetric(apiItem.memory_capacity, item.memory_capacity),
+              cpu_usage_percent: apiItem.cpu_usage_percent ?? item.cpu_usage_percent,
+              memory_usage_percent: apiItem.memory_usage_percent ?? item.memory_usage_percent,
               controlled_by: apiItem.controlled_by ?? item.controlled_by,
               qos: apiItem.qos ?? item.qos,
             };
@@ -433,9 +449,24 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                     // Update existing pod instead of skipping
                     return prevData.map((item: any) => {
                       const itemRaw = item as any;
+                      const existingPod = itemRaw.name === transformedPod.name && 
+                        itemRaw.namespace === transformedPod.namespace
+                        ? itemRaw
+                        : null;
                       return (itemRaw.name === transformedPod.name && 
                              itemRaw.namespace === transformedPod.namespace) 
-                        ? (transformedPod as T) 
+                        ? ({
+                            ...transformedPod,
+                            cpu: keepMetric(transformedPod.cpu, existingPod?.cpu),
+                            memory: keepMetric(transformedPod.memory, existingPod?.memory),
+                            cpu_capacity: keepMetric(transformedPod.cpu_capacity, existingPod?.cpu_capacity),
+                            memory_capacity: keepMetric(transformedPod.memory_capacity, existingPod?.memory_capacity),
+                            cpu_usage_percent: transformedPod.cpu_usage_percent ?? existingPod?.cpu_usage_percent,
+                            memory_usage_percent: transformedPod.memory_usage_percent ?? existingPod?.memory_usage_percent,
+                            controlled_by:
+                              transformedPod.controlled_by !== '-' ? transformedPod.controlled_by : (existingPod?.controlled_by || '-'),
+                            qos: transformedPod.qos !== '-' ? transformedPod.qos : (existingPod?.qos || '-'),
+                          } as T)
                         : item;
                     });
                   }
@@ -462,13 +493,14 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                     const updated = [...prevData];
                     const oldStatus = (updated[foundIndex] as any).status;
                     const existingPod = updated[foundIndex] as any;
-                    // Preserve metrics and metadata from last API sync if websocket update returns '-'
-                    const keepOrFallback = (val: unknown, existing: unknown) =>
-                      val !== '-' && val !== undefined && val !== null && val !== '' ? val : (existing != null && existing !== '' ? existing : '-');
                     const mergedPod = {
                       ...transformedPod,
-                      cpu: keepOrFallback(transformedPod.cpu, existingPod.cpu),
-                      memory: keepOrFallback(transformedPod.memory, existingPod.memory),
+                      cpu: keepMetric(transformedPod.cpu, existingPod.cpu),
+                      memory: keepMetric(transformedPod.memory, existingPod.memory),
+                      cpu_capacity: keepMetric(transformedPod.cpu_capacity, existingPod.cpu_capacity),
+                      memory_capacity: keepMetric(transformedPod.memory_capacity, existingPod.memory_capacity),
+                      cpu_usage_percent: transformedPod.cpu_usage_percent ?? existingPod.cpu_usage_percent,
+                      memory_usage_percent: transformedPod.memory_usage_percent ?? existingPod.memory_usage_percent,
                       controlled_by: transformedPod.controlled_by !== '-' ? transformedPod.controlled_by : (existingPod.controlled_by || '-'),
                       qos: transformedPod.qos !== '-' ? transformedPod.qos : (existingPod.qos || '-'),
                     };

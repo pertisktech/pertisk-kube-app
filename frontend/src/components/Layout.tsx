@@ -66,6 +66,11 @@ const EVENTS_ITEM: NavItem = {
   icon: Bell,
 };
 
+const SIDEBAR_WIDTH_DEFAULT = 256; // 16rem
+const SIDEBAR_WIDTH_MIN = 200;
+const SIDEBAR_WIDTH_MAX = 420;
+const SIDEBAR_WIDTH_STORAGE_KEY = 'pertisk-kube-sidebar-width';
+
 const HELM_ITEMS: NavItem[] = [
   { label: 'Charts', path: '/helm/charts', icon: Archive },
   { label: 'Releases', path: '/helm/releases', icon: Boxes },
@@ -143,6 +148,15 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const [accessControlOpen, setAccessControlOpen] = useState(false);
   const [customResourcesOpen, setCustomResourcesOpen] = useState(false);
   const [expandedCrdGroups, setExpandedCrdGroups] = useState<Set<string>>(new Set());
+  const [sidebarWidthPx, setSidebarWidthPx] = useState(() => {
+    if (typeof window === 'undefined') return SIDEBAR_WIDTH_DEFAULT;
+    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    const n = stored ? parseInt(stored, 10) : NaN;
+    return Number.isFinite(n) ? Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, n)) : SIDEBAR_WIDTH_DEFAULT;
+  });
+  const isResizingRef = useRef(false);
+  const resizeStartXRef = useRef(0);
+  const resizeStartWidthRef = useRef(0);
 
   const location = useLocation();
   const { data: crds, isLoading: crdsLoading, hasFetched: crdsHasFetched, emptyListConfirmed: crdsEmptyListConfirmed } = useRealtimeCrds();
@@ -250,6 +264,35 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
       }
     }
   }, [apiNamespaces, realtimeNamespaces, selectedNamespaces, setNamespaces, setSelectedNamespaces]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidthPx));
+  }, [sidebarWidthPx]);
+
+  const handleSidebarResizeStart = (e: React.MouseEvent) => {
+    if (sidebarCollapsed) return;
+    e.preventDefault();
+    isResizingRef.current = true;
+    resizeStartXRef.current = e.clientX;
+    resizeStartWidthRef.current = sidebarWidthPx;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const onMouseMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - resizeStartXRef.current;
+      const next = Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, resizeStartWidthRef.current + delta));
+      setSidebarWidthPx(next);
+    };
+    const onMouseUp = () => {
+      isResizingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
@@ -374,10 +417,12 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
 
   const initial = username ? username.charAt(0).toUpperCase() : 'U';
 
+  const effectiveSidebarWidth = sidebarCollapsed ? 72 : sidebarWidthPx;
+
   return (
     <div
-      className="flex h-screen bg-bg text-text"
-      style={{ '--layout-sidebar-width': sidebarCollapsed ? '72px' : '16rem' } as CSSProperties}
+      className="flex h-screen bg-bg text-text relative"
+      style={{ '--layout-sidebar-width': `${effectiveSidebarWidth}px` } as CSSProperties}
     >
       {/* Mobile menu overlay */}
       {sidebarOpen && (
@@ -390,10 +435,11 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 bg-sidebar border-r border-border shadow-lg overflow-y-auto transition-all duration-300 md:relative md:translate-x-0 flex flex-col',
-          sidebarCollapsed ? 'w-[72px]' : 'w-64',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          'fixed inset-y-0 left-0 z-50 bg-sidebar border-r border-border shadow-lg overflow-y-auto md:relative md:translate-x-0 flex flex-col shrink-0',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+          !sidebarCollapsed && 'transition-[width] duration-300'
         )}
+        style={{ width: effectiveSidebarWidth }}
       >
         <div className="flex-1 p-4 overflow-y-auto">
           <div className="flex items-center justify-between mb-8">
@@ -924,8 +970,25 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
               </div>
           </nav>
         </div>
-
       </aside>
+
+      {/* Resize handle - between sidebar and main, desktop only when expanded */}
+      {!sidebarCollapsed && (
+        <div
+          role="separator"
+          aria-label="Resize sidebar"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleSidebarResizeStart(e);
+          }}
+          className="absolute top-0 bottom-0 z-[80] w-2 cursor-col-resize hover:bg-primary/25 active:bg-primary/40 hidden md:block"
+          style={{
+            left: effectiveSidebarWidth - 4,
+            touchAction: 'none',
+          }}
+        />
+      )}
 
       {/* Main content */}
       <div className="flex flex-col flex-1 overflow-hidden">

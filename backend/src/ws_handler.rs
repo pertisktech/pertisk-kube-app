@@ -25,6 +25,8 @@ use tracing::{error, info, warn};
 
 use crate::AppState;
 
+const PREFERRED_SHELL_SCRIPT: &str = "if [ -x /bin/zsh ]; then exec /bin/zsh -il; elif command -v zsh >/dev/null 2>&1; then exec zsh -il; elif [ -x /bin/bash ]; then exec /bin/bash -il; elif command -v bash >/dev/null 2>&1; then exec bash -il; else exec /bin/sh -i; fi";
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ClientMessage {
@@ -192,7 +194,9 @@ async fn spawn_exec_shell(
             .arg("--")
             .arg("chroot")
             .arg("/host")
-            .arg("sh");
+            .arg("/bin/sh")
+            .arg("-lc")
+            .arg(PREFERRED_SHELL_SCRIPT);
 
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -258,8 +262,9 @@ async fn spawn_exec_shell(
         }
 
         cmd.arg("--");
-        cmd.arg("zsh");
-        cmd.arg("-il");
+        cmd.arg("/bin/sh");
+        cmd.arg("-lc");
+        cmd.arg(PREFERRED_SHELL_SCRIPT);
         cmd.env("TERM", "xterm-256color");
 
         if let Err(err) = pair.slave.spawn_command(cmd) {
