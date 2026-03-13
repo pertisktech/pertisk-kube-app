@@ -142,9 +142,10 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const [helmOpen, setHelmOpen] = useState(false);
   const [accessControlOpen, setAccessControlOpen] = useState(false);
   const [customResourcesOpen, setCustomResourcesOpen] = useState(false);
+  const [expandedCrdGroups, setExpandedCrdGroups] = useState<Set<string>>(new Set());
 
   const location = useLocation();
-  const { data: crds, isLoading: crdsLoading } = useRealtimeCrds();
+  const { data: crds, isLoading: crdsLoading, hasFetched: crdsHasFetched, emptyListConfirmed: crdsEmptyListConfirmed } = useRealtimeCrds();
 
   const crdGroups = useMemo(() => {
     if (!crds) return [];
@@ -209,7 +210,16 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     if (ACCESS_CONTROL_ITEMS.some((item) => pathname.startsWith(item.path)) || pathname === '/access-control') {
       setAccessControlOpen(true);
     }
-    // Custom Resources: manual expand only (no auto-expand when on /crds)
+    // Custom Resources: when on /crds/:crdName, expand section and the API group so level 3 is visible
+    if (pathname.startsWith('/crds/') && pathname !== '/crds') {
+      const match = pathname.match(/^\/crds\/(.+)$/);
+      if (match) {
+        const crdName = decodeURIComponent(match[1].replace(/\/$/, ''));
+        const group = crdName.includes('.') ? crdName.split('.').slice(1).join('.') : crdName;
+        setCustomResourcesOpen(true);
+        setExpandedCrdGroups((prev) => new Set(prev).add(group));
+      }
+    }
   }, [location.pathname]);
 
   useEffect(() => {
@@ -391,7 +401,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
               {!sidebarCollapsed && (
                 <>
                   <h1 className="text-lg font-bold text-primary">PTKublet</h1>
-                  <span className="text-xs font-medium text-text-secondary">v{APP_VERSION}</span>
+                  <span className="text-[13px] font-medium text-text-secondary">v{APP_VERSION}</span>
                 </>
               )}
             </div>
@@ -422,7 +432,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                   to={item.path}
                   onClick={() => setSidebarOpen(false)}
                   className={cn(
-                    'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                    'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
                     'order-1',
                     sidebarCollapsed && 'justify-center px-2',
                     active
@@ -447,7 +457,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                   setConfigOpen((previous) => !previous);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveConfig
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -478,7 +488,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
+                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
                           active
                             ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
@@ -504,7 +514,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                   setNetworkOpen((previous) => !previous);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveNetwork
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -535,7 +545,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
+                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
                           active
                             ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
@@ -561,7 +571,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                   setStorageOpen((previous) => !previous);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveStorage
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -592,7 +602,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
+                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
                           active
                             ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
@@ -618,7 +628,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                   setWorkloadsOpen((previous) => !previous);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveWorkload
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -649,7 +659,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
+                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
                           active
                             ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
@@ -669,7 +679,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
               to={NAMESPACE_ITEM.path}
               onClick={() => setSidebarOpen(false)}
               className={cn(
-                'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
                 'order-6',
                 sidebarCollapsed && 'justify-center px-2',
                 isActive(NAMESPACE_ITEM.path)
@@ -686,7 +696,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
               to={EVENTS_ITEM.path}
               onClick={() => setSidebarOpen(false)}
               className={cn(
-                'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
                 'order-7',
                 sidebarCollapsed && 'justify-center px-2',
                 isActive(EVENTS_ITEM.path)
@@ -709,7 +719,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                   setHelmOpen((previous) => !previous);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveHelm
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -740,7 +750,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
+                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
                           active
                             ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
@@ -766,7 +776,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                   setAccessControlOpen((previous) => !previous);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveAccessControl
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -797,7 +807,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
+                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
                           active
                             ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
@@ -822,7 +832,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                     setCustomResourcesOpen((p) => !p);
                   }}
                   className={cn(
-                    'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm font-medium',
+                    'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
                     sidebarCollapsed && 'justify-center px-2',
                     hasActiveCustomResources
                       ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -844,42 +854,71 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
 
                 {!sidebarCollapsed && customResourcesOpen && (
                   <div className="space-y-1">
-                    {crdsLoading && (
-                      <div className="px-4 py-2 pl-7 text-xs text-text-secondary">Loading custom resources...</div>
-                    )}
-                    {!crdsLoading && crdGroups.length === 0 && (
-                      <div className="px-4 py-2 pl-7 text-xs text-text-secondary">No custom resources found</div>
-                    )}
-                    {/* Realtime: show all groups and CRDs without level-2/3 click */}
-                    {!crdsLoading && crdGroups.map(({ group, crds: groupCrds }) => (
-                      <div key={group} className="space-y-0.5">
-                        <div className="px-4 py-1.5 pl-7 text-xs font-medium text-text-secondary truncate" title={group}>
-                          {group}
-                        </div>
-                        <div className="space-y-0.5">
-                          {groupCrds.map((crd) => {
-                            const crdPath = `/crds/${encodeURIComponent(crd.name)}`;
-                            const active = location.pathname === crdPath;
-                            return (
-                              <Link
-                                key={crd.name}
-                                to={crdPath}
-                                onClick={() => setSidebarOpen(false)}
-                                className={cn(
-                                  'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-sm font-medium',
-                                  active
-                                    ? 'bg-hover text-[var(--color-primary)] font-semibold'
-                                    : 'text-text-secondary hover:bg-hover hover:text-text'
-                                )}
-                                title={crd.name}
-                              >
-                                <span className="truncate">{crd.kind}</span>
-                              </Link>
-                            );
-                          })}
-                        </div>
+                    {(!crdsHasFetched || crdsLoading || (!crdsEmptyListConfirmed && crdGroups.length === 0)) && (
+                      <div className="flex items-center gap-3 px-4 py-2 pl-7 text-[13px] text-text-secondary">
+                        <Layers size={16} className="flex-shrink-0" />
+                        Loading custom resources...
                       </div>
-                    ))}
+                    )}
+                    {crdsEmptyListConfirmed && crdGroups.length === 0 && (
+                      <div className="flex items-center gap-3 px-4 py-2 pl-7 text-[13px] text-text-secondary">
+                        <Layers size={16} className="flex-shrink-0" />
+                        No custom resources found
+                      </div>
+                    )}
+                    {/* Sidebar font hierarchy: level 1 = 14px, level 2 = 13px, level 3 = 12px */}
+                    {crdGroups.length > 0 && crdGroups.map(({ group, crds: groupCrds }) => {
+                      const isGroupExpanded = expandedCrdGroups.has(group);
+                      return (
+                        <div key={group} className="space-y-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedCrdGroups((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(group)) next.delete(group);
+                                else next.add(group);
+                                return next;
+                              });
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2 pl-7 rounded-lg transition-colors text-[13px] font-medium text-text-secondary hover:bg-hover hover:text-text text-left"
+                            title={group}
+                          >
+                            <Layers size={16} className="flex-shrink-0" />
+                            <span className="flex-1 text-left truncate">{group}</span>
+                            <ChevronDown
+                              size={16}
+                              className={cn('flex-shrink-0 transition-transform', isGroupExpanded && 'rotate-180')}
+                            />
+                          </button>
+                          {isGroupExpanded && (
+                            <div className="space-y-0.5">
+                              {groupCrds.map((crd) => {
+                                const crdPath = `/crds/${encodeURIComponent(crd.name)}`;
+                                const active = location.pathname === crdPath;
+                                return (
+                                  <Link
+                                    key={crd.name}
+                                    to={crdPath}
+                                    onClick={() => setSidebarOpen(false)}
+                                    className={cn(
+                                      'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
+                                      active
+                                        ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                                        : 'text-text-secondary hover:bg-hover hover:text-text'
+                                    )}
+                                    title={crd.name}
+                                  >
+                                    <FileText size={16} className="flex-shrink-0" />
+                                    <span className="truncate">{crd.kind}</span>
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

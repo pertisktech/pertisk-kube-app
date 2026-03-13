@@ -863,14 +863,20 @@ function createRealtimeHook<T>(
     data: T[];
     isLoading: boolean;
     error: string | null;
+    hasFetched: boolean;
+    /** True only when backend signalled empty (e.g. subscribed + timeout), not when first item is still in flight */
+    emptyListConfirmed: boolean;
   } {
     const [data, setData] = useState<T[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [hasFetched, setHasFetched] = useState(false);
+    const [emptyListConfirmed, setEmptyListConfirmed] = useState(false);
 
     useEffect(() => {
       let ws: WebSocket | null = null;
       let reconnectTimeout: ReturnType<typeof setTimeout>;
+      let emptyListTimeout: ReturnType<typeof setTimeout> | null = null;
       let messageQueue: WebSocketMessage[] = [];
 
       const connect = () => {
@@ -901,8 +907,7 @@ function createRealtimeHook<T>(
                 ws!.send(JSON.stringify(msg));
               }
             }
-
-            setIsLoading(false);
+            // Keep loading true until first data or "subscribed" + timeout (avoid "No ... found" on refresh)
           };
 
           ws.onmessage = (event) => {
@@ -910,6 +915,13 @@ function createRealtimeHook<T>(
               const message: WebSocketMessage = JSON.parse(event.data);
 
               if (message.type === 'resource_update' && message.resource === resourceType) {
+                if (emptyListTimeout) {
+                  clearTimeout(emptyListTimeout);
+                  emptyListTimeout = null;
+                }
+                setHasFetched(true);
+                setIsLoading(false);
+
                 const action = message.action?.toUpperCase();
                 const rawItem = message.data;
 
@@ -939,6 +951,13 @@ function createRealtimeHook<T>(
                 }
               } else if (message.type === 'subscribed' && message.resource === resourceType) {
                 if (isRealtimeDebug()) console.log(`Subscribed to ${displayName}`);
+                // If no resource_update arrives within 2s, list is truly empty
+                emptyListTimeout = setTimeout(() => {
+                  emptyListTimeout = null;
+                  setHasFetched(true);
+                  setIsLoading(false);
+                  setEmptyListConfirmed(true);
+                }, 2000);
               } else if (message.type === 'error') {
                 console.error(`WebSocket error for ${displayName}:`, message.message);
                 setError(message.message || 'Unknown error');
@@ -977,13 +996,16 @@ function createRealtimeHook<T>(
         if (reconnectTimeout) {
           clearTimeout(reconnectTimeout);
         }
+        if (emptyListTimeout) {
+          clearTimeout(emptyListTimeout);
+        }
         if (ws) {
           ws.close();
         }
       };
     }, []);
 
-    return { data, isLoading, error };
+    return { data, isLoading, error, hasFetched, emptyListConfirmed };
   };
 }
 
