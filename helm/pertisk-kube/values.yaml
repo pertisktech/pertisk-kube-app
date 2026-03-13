@@ -126,12 +126,12 @@ leaderElection:
       hosts:
         - pertisk-kube.example.com
 
-# RBAC configuration
+# RBAC configuration — aligned with all app features (list/get/watch/update/patch/delete, exec, port-forward, etc.)
 rbac:
   create: true
   serviceAccountName: pertisk-kube-sa
   rules:
-    # Core resources - Read-only for most
+    # Core resources - read
     - apiGroups: [""]
       resources:
         [
@@ -148,63 +148,96 @@ rbac:
           "resourcequotas",
         ]
       verbs: ["get", "list", "watch"]
-    # Pods - Allow editing and deleting
+    # Core resources - write (Config, Services, Endpoints, Nodes, ServiceAccounts)
+    - apiGroups: [""]
+      resources:
+        [
+          "configmaps",
+          "secrets",
+          "limitranges",
+          "resourcequotas",
+          "services",
+          "endpoints",
+          "nodes",
+          "serviceaccounts",
+        ]
+      verbs: ["update", "patch", "delete"]
+    # Pods - full manage + log
     - apiGroups: [""]
       resources: ["pods", "pods/log"]
       verbs: ["get", "list", "watch", "update", "patch", "delete"]
-    # Namespaces - Allow deleting
+    # Pod exec - terminal/shell
+    - apiGroups: [""]
+      resources: ["pods/exec"]
+      verbs: ["create"]
+    # Pod port-forward - port forwarding feature
+    - apiGroups: [""]
+      resources: ["pods/portforward"]
+      verbs: ["create"]
+    # Namespaces
     - apiGroups: [""]
       resources: ["namespaces"]
       verbs: ["get", "list", "watch", "delete"]
-    # Apps resources - Allow editing and deleting
+    # Apps
     - apiGroups: ["apps"]
       resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
       verbs: ["get", "list", "watch", "update", "patch", "delete"]
-    # Batch resources - Allow editing and deleting
+    # Batch
     - apiGroups: ["batch"]
       resources: ["jobs", "cronjobs"]
       verbs: ["get", "list", "watch", "update", "patch", "delete"]
-    # Networking resources
+    # Networking - full manage
     - apiGroups: ["networking.k8s.io"]
       resources: ["ingresses", "networkpolicies", "ingressclasses"]
-      verbs: ["get", "list", "watch"]
-    # Storage resources
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+    # Storage - read
     - apiGroups: ["storage.k8s.io"]
       resources: ["storageclasses", "volumeattachments", "csinodes", "csidrivers", "csistoragecapacities"]
       verbs: ["get", "list", "watch"]
-    # RBAC Access Control resources
+    # Storage - write (PV, PVC, StorageClass)
+    - apiGroups: [""]
+      resources: ["persistentvolumes", "persistentvolumeclaims"]
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+    - apiGroups: ["storage.k8s.io"]
+      resources: ["storageclasses"]
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+    # RBAC - full manage
     - apiGroups: ["rbac.authorization.k8s.io"]
       resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
-      verbs: ["get", "list", "watch"]
-    # Autoscaling resources
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+    # Autoscaling - full manage
     - apiGroups: ["autoscaling"]
       resources: ["horizontalpodautoscalers"]
-      verbs: ["get", "list", "watch"]
-    # Policy resources
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+    # Policy - full manage (PDB)
     - apiGroups: ["policy"]
       resources: ["poddisruptionbudgets", "podsecuritypolicies"]
-      verbs: ["get", "list", "watch"]
-    # Scheduling resources
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+    # Scheduling - full manage
     - apiGroups: ["scheduling.k8s.io"]
       resources: ["priorityclasses"]
-      verbs: ["get", "list", "watch"]
-    # Node resources
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+    # Node (runtime classes) - full manage
     - apiGroups: ["node.k8s.io"]
       resources: ["runtimeclasses"]
-      verbs: ["get", "list", "watch"]
-    # Coordination resources - read cluster-wide leases
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+    # Coordination (leases) - full manage
     - apiGroups: ["coordination.k8s.io"]
       resources: ["leases"]
-      verbs: ["get", "list", "watch"]
-    # Metrics
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+    # Admission registration - MWC / VWC
+    - apiGroups: ["admissionregistration.k8s.io"]
+      resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+    # Metrics (read-only)
     - apiGroups: ["metrics.k8s.io"]
       resources: ["pods", "nodes"]
       verbs: ["get", "list", "watch"]
-    # CRD definitions - needed to list/read CustomResourceDefinitions
+    # CRD definitions
     - apiGroups: ["apiextensions.k8s.io"]
       resources: ["customresourcedefinitions"]
       verbs: ["get", "list", "watch"]
-    # CRD instances - allow reading and managing custom resources across all groups
+    # CRD instances - custom resources
     - apiGroups: ["*"]
       resources: ["*"]
       verbs: ["get", "list", "watch", "update", "patch", "delete"]

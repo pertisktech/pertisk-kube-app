@@ -209,9 +209,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     if (ACCESS_CONTROL_ITEMS.some((item) => pathname.startsWith(item.path)) || pathname === '/access-control') {
       setAccessControlOpen(true);
     }
-    if (pathname.startsWith('/crds')) {
-      setCustomResourcesOpen(true);
-    }
+    // Custom Resources: manual expand only (no auto-expand when on /crds)
   }, [location.pathname]);
 
   useEffect(() => {
