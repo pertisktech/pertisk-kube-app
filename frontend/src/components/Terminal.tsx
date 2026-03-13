@@ -9,10 +9,11 @@ interface TerminalProps {
   podName: string;
   namespace: string;
   containerName?: string;
+  initialCommand?: string;
   onClose?: () => void;
 }
 
-export const Terminal = ({ podName, namespace, containerName }: TerminalProps) => {
+export const Terminal = ({ podName, namespace, containerName, initialCommand }: TerminalProps) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -162,6 +163,22 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
         fitAddon.fit();
         sendResize();
       }, 150);
+
+      if (namespace === 'node') {
+        setTimeout(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send('\n');
+          }
+        }, 180);
+      }
+
+      if (initialCommand && initialCommand.trim().length > 0) {
+        setTimeout(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(`${initialCommand.trim()}\n`);
+          }
+        }, 220);
+      }
     };
 
     ws.onmessage = (event) => {
@@ -229,7 +246,7 @@ export const Terminal = ({ podName, namespace, containerName }: TerminalProps) =
       ws.close();
       xterm.dispose();
     };
-  }, [podName, namespace, containerName, theme?.isDark]);
+  }, [podName, namespace, containerName, initialCommand, theme?.isDark]);
 
   return (
     <div

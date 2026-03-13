@@ -124,6 +124,10 @@ async fn main() -> anyhow::Result<()> {
             post(restart_deployment),
         )
         .route(
+            "/deployments/:namespace/:name/image-tag",
+            post(update_deployment_image_tag),
+        )
+        .route(
             "/deployments/:namespace/:name/yaml",
             get(get_deployment_yaml).put(update_deployment_yaml),
         )

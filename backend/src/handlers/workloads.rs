@@ -655,6 +655,12 @@ pub async fn list_deployments(State(state): State<AppState>) -> impl IntoRespons
                         .as_ref()
                         .and_then(|l| serde_json::to_value(l).ok())
                         .and_then(|v| v.as_object().cloned());
+                    let selector_labels = item
+                        .spec
+                        .as_ref()
+                        .and_then(|spec| spec.selector.match_labels.as_ref())
+                        .and_then(|labels| serde_json::to_value(labels).ok())
+                        .and_then(|v| v.as_object().cloned());
                     let annotations = item
                         .metadata
                         .annotations
@@ -671,6 +677,7 @@ pub async fn list_deployments(State(state): State<AppState>) -> impl IntoRespons
                         available,
                         images,
                         age,
+                        selector_labels,
                         labels,
                         annotations,
                     }
@@ -758,6 +765,103 @@ pub async fn restart_deployment(
         Err(err) => {
             error!("Error restarting deployment {}/{}: {:?}", namespace, name, err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+fn replace_image_tag(image: &str, new_tag: &str) -> String {
+    let image_without_digest = image.split('@').next().unwrap_or(image);
+    let last_slash = image_without_digest.rfind('/');
+    let last_colon = image_without_digest.rfind(':');
+
+    let base = match (last_slash, last_colon) {
+        (Some(slash), Some(colon)) if colon > slash => &image_without_digest[..colon],
+        (None, Some(colon)) => &image_without_digest[..colon],
+        _ => image_without_digest,
+    };
+
+    format!("{}:{}", base, new_tag)
+}
+
+pub async fn update_deployment_image_tag(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+    Json(payload): Json<UpdateDeploymentImageTagRequest>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::Deployment;
+
+    let requested_tag = payload.tag.trim();
+    if requested_tag.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "message": "tag is required",
+            })),
+        )
+            .into_response();
+    }
+
+    let api: Api<Deployment> = Api::namespaced(state.client, &namespace);
+    let mut deployment = match api.get(&name).await {
+        Ok(deployment) => deployment,
+        Err(err) => {
+            error!("Error getting deployment {}/{} for image tag update: {:?}", namespace, name, err);
+            return StatusCode::NOT_FOUND.into_response();
+        }
+    };
+
+    let mut updated = 0usize;
+    if let Some(spec) = deployment.spec.as_mut() {
+        if let Some(template_spec) = spec.template.spec.as_mut() {
+            for container in &mut template_spec.containers {
+                let old_image = container.image.clone().unwrap_or_default();
+                if old_image.is_empty() {
+                    continue;
+                }
+                container.image = Some(replace_image_tag(&old_image, requested_tag));
+                updated += 1;
+            }
+        }
+    }
+
+    if updated == 0 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "message": "Deployment has no containers to update",
+            })),
+        )
+            .into_response();
+    }
+
+    match api.replace(&name, &Default::default(), &deployment).await {
+        Ok(_) => {
+            info!(
+                "Updated deployment image tags {}/{} to '{}' for {} containers",
+                namespace, name, requested_tag, updated
+            );
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "success": true,
+                    "updated_containers": updated,
+                    "tag": requested_tag,
+                })),
+            )
+                .into_response()
+        }
+        Err(err) => {
+            error!("Error updating deployment image tags {}/{}: {:?}", namespace, name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update deployment image tag: {}", err),
+                })),
+            )
+                .into_response()
         }
     }
 }

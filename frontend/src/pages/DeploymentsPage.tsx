@@ -8,7 +8,7 @@ import { DeploymentDetailPanel } from '../components/DeploymentDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { Deployment } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { restartDeployment, scaleDeployment, deleteDeployment } from '../hooks/useKubernetes';
+import { restartDeployment, scaleDeployment, deleteDeployment, quickUpdateDeploymentImageTag } from '../hooks/useKubernetes';
 import { getStatusColor, timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -49,6 +49,35 @@ const sanitizeDeploymentYamlForEdit = (yamlText: string) => {
   } catch {
     return yamlText;
   }
+};
+
+const buildDeploymentTailSelector = (deployment: Deployment): string | null => {
+  const preferredEntries = Object.entries(deployment.selector_labels ?? {}).filter(
+    ([key, value]) => key.trim().length > 0 && String(value).trim().length > 0
+  );
+
+  if (preferredEntries.length > 0) {
+    return preferredEntries
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => `${key}=${String(value)}`)
+      .join(',');
+  }
+
+  const labels = deployment.labels ?? {};
+  const fallbackKeys = ['app.kubernetes.io/name', 'k8s-app', 'app'];
+
+  for (const key of fallbackKeys) {
+    const value = labels[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return `${key}=${value}`;
+    }
+  }
+
+  const firstEntry = Object.entries(labels).find(
+    ([key, value]) => key.trim().length > 0 && String(value).trim().length > 0
+  );
+
+  return firstEntry ? `${firstEntry[0]}=${String(firstEntry[1])}` : null;
 };
 
 export const DeploymentsPage = () => {
@@ -101,6 +130,19 @@ export const DeploymentsPage = () => {
   const handleDeleteSingle = async (namespace: string, name: string) => {
     setConfirmDelete({ keys: [`${namespace}/${name}`], label: name });
     setPanelOpen(false);
+  };
+
+  const handleTailLogs = (deployment: Deployment) => {
+    const selector = buildDeploymentTailSelector(deployment);
+    if (!selector) {
+      return;
+    }
+
+    openPanelTab({
+      type: 'host-shell',
+      title: `ktail ${deployment.name}`,
+      initialCommand: `ktail -n ${deployment.namespace} -l "${selector}"`,
+    });
   };
 
   const handleDeleteSelected = () => {
@@ -280,6 +322,8 @@ export const DeploymentsPage = () => {
             onOpenYamlEditor={handleOpenYamlEditorFromPanel}
             onScale={scaleDeployment}
             onRestart={restartDeployment}
+            onTailLogs={handleTailLogs}
+            onQuickUpdateTag={quickUpdateDeploymentImageTag}
             onDelete={handleDeleteSingle}
           />
         </>

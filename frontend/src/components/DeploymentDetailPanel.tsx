@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, Pencil, RotateCcw, Trash2 } from './Icons';
+import { X, Pencil, RotateCcw, Terminal, Trash2 } from './Icons';
 import type { Deployment, Pod, ReplicaSet, KubernetesEvent } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
-import { PanelActionButton } from './ResourceDetailPanelLayout';
+import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 import { useRealtimeReplicaSets, useRealtimeEvents } from '../hooks/useRealtimeResources';
 import { usePods } from '../hooks/useKubernetes';
@@ -14,10 +14,23 @@ interface DeploymentDetailPanelProps {
   onOpenYamlEditor: (deployment: Deployment) => void;
   onScale?: (namespace: string, name: string, replicas: number) => Promise<void>;
   onRestart?: (namespace: string, name: string) => Promise<void>;
+  onTailLogs?: (deployment: Deployment) => void;
+  onQuickUpdateTag?: (namespace: string, name: string, tag: string) => Promise<void>;
   onDelete?: (namespace: string, name: string) => Promise<void>;
 }
 
-export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, onScale, onRestart, onDelete }: DeploymentDetailPanelProps) => {
+const extractTag = (image?: string): string => {
+  if (!image) return '';
+  const noDigest = image.split('@')[0] ?? image;
+  const slashIdx = noDigest.lastIndexOf('/');
+  const colonIdx = noDigest.lastIndexOf(':');
+  if (colonIdx > slashIdx) {
+    return noDigest.substring(colonIdx + 1);
+  }
+  return '';
+};
+
+export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, onScale, onRestart, onTailLogs, onQuickUpdateTag, onDelete }: DeploymentDetailPanelProps) => {
   const getReadyReplicaCounts = () => {
     const readyText = deployment.ready ?? '0/0';
     const [availableText, desiredText] = readyText.split('/');
@@ -37,9 +50,19 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
   const [scaleSuccess, setScaleSuccess] = useState('');
   const [restartError, setRestartError] = useState('');
   const [restartSuccess, setRestartSuccess] = useState('');
+  const [tagValue, setTagValue] = useState<string>(() => extractTag(deployment.images?.[0]));
+  const [isUpdatingTag, setIsUpdatingTag] = useState(false);
+  const [tagError, setTagError] = useState('');
+  const [tagSuccess, setTagSuccess] = useState('');
   useEffect(() => {
     setScaleReplicas(String(currentDesiredReplicas));
   }, [deployment.name, deployment.namespace, deployment.ready]);
+
+  useEffect(() => {
+    setTagValue(extractTag(deployment.images?.[0]));
+    setTagError('');
+    setTagSuccess('');
+  }, [deployment.name, deployment.namespace, deployment.images]);
 
   const submitScale = async (replicas: number) => {
     setIsScaling(true);
@@ -103,6 +126,30 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
       setRestartError(err instanceof Error ? err.message : 'Failed to restart deployment');
     } finally {
       setIsRestarting(false);
+    }
+  };
+
+  const handleQuickUpdateTag = async () => {
+    const nextTag = tagValue.trim();
+    if (!nextTag) {
+      setTagError('Tag is required');
+      setTagSuccess('');
+      return;
+    }
+
+    setIsUpdatingTag(true);
+    setTagError('');
+    setTagSuccess('');
+    try {
+      if (onQuickUpdateTag) {
+        await onQuickUpdateTag(deployment.namespace, deployment.name, nextTag);
+        setTagSuccess(`Updated image tag to ${nextTag}`);
+        setTimeout(() => setTagSuccess(''), 3000);
+      }
+    } catch (err) {
+      setTagError(err instanceof Error ? err.message : 'Failed to update image tag');
+    } finally {
+      setIsUpdatingTag(false);
     }
   };
 
@@ -172,23 +219,20 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
               </div>
             </div>
             <div
-              className="flex items-center flex-shrink-0 rounded-lg border overflow-hidden"
+              className="flex items-center flex-shrink-0 rounded-lg border"
               style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
             >
               <PanelActionButton icon={RotateCcw} label="Restart" onClick={handleRestart} disabled={isRestarting} />
+              {onTailLogs && <PanelActionButton icon={Terminal} label="Ktail Logs" onClick={() => onTailLogs(deployment)} />}
               <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor(deployment)} />
               {onDelete && (
                 <PanelActionButton icon={Trash2} label="Delete" danger onClick={() => onDelete(deployment.namespace, deployment.name)} />
               )}
-              <button
-                type="button"
+              <PanelCloseButton
                 onClick={onClose}
-                className="p-2 rounded-r-md transition-all duration-150 hover:opacity-80 flex-shrink-0"
-                style={{ color: 'var(--color-muted)', borderLeft: '1px solid var(--color-border)' }}
-                aria-label="Close panel"
-              >
-                <X size={18} />
-              </button>
+                borderLeft="1px solid var(--color-border)"
+                label="Close panel"
+              />
             </div>
           </div>
           <div className="flex items-center gap-3 text-xs mt-3 pt-3 border-t border-border">
@@ -220,21 +264,58 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
           <DrawerItem name="Available">{deployment.available ?? '-'}</DrawerItem>
           <DrawerItem name="Age">{timeAgo(deployment.age)}</DrawerItem>
 
-          {deployment.images?.length > 0 && (
-            <DrawerItem name="Images" labelsOnly>
-              <div className="flex flex-wrap gap-1.5">
-                {deployment.images.map((image) => (
-                  <span
-                    key={image}
-                    className="inline-flex px-2 py-0.5 rounded text-xs border border-border"
-                    style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}
-                  >
-                    {image}
+          <DrawerItem name="Images" labelsOnly>
+            {deployment.images?.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {deployment.images.map((image) => (
+                    <span
+                      key={image}
+                      className="inline-flex px-2 py-0.5 rounded text-xs border border-border"
+                      style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text)' }}
+                    >
+                      {image}
+                    </span>
+                  ))}
+                </div>
+                <div
+                  className="flex items-center gap-2 flex-wrap rounded-md border p-2"
+                  style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-elevated)' }}
+                >
+                  <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                    Quick Update Tag
                   </span>
-                ))}
+                  <input
+                    type="text"
+                    value={tagValue}
+                    onChange={(e) => {
+                      setTagValue(e.target.value);
+                      setTagError('');
+                    }}
+                    onKeyDown={(e) => e.key === 'Enter' && void handleQuickUpdateTag()}
+                    placeholder="e.g. 1.29.3"
+                    className="h-7 px-2 rounded border border-border text-xs min-w-32"
+                    style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                    aria-label="Image tag version"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleQuickUpdateTag()}
+                    disabled={isUpdatingTag}
+                    className="px-2 py-1 rounded border text-xs disabled:opacity-60"
+                    style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
+                  >
+                    {isUpdatingTag ? 'Updating...' : 'Update Tag'}
+                  </button>
+                  <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                    Applies to all container images
+                  </span>
+                </div>
               </div>
-            </DrawerItem>
-          )}
+            ) : (
+              <span style={{ color: 'var(--color-muted)' }}>-</span>
+            )}
+          </DrawerItem>
 
           <DrawerItem name="Replicas">
             {`${currentDesiredReplicas} desired, ${deployment.updated ?? 0} updated, `}
@@ -299,12 +380,14 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
             </div>
           </DrawerItem>
 
-          {(scaleError || scaleSuccess || restartError || restartSuccess) && (
+          {(scaleError || scaleSuccess || restartError || restartSuccess || tagError || tagSuccess) && (
             <div className="space-y-1">
               {scaleError && <p className="text-xs text-[var(--color-icon-danger)]">{scaleError}</p>}
               {scaleSuccess && <p className="text-xs text-[var(--color-icon-success)]">{scaleSuccess}</p>}
               {restartError && <p className="text-xs text-[var(--color-icon-danger)]">{restartError}</p>}
               {restartSuccess && <p className="text-xs text-[var(--color-icon-success)]">{restartSuccess}</p>}
+              {tagError && <p className="text-xs text-[var(--color-icon-danger)]">{tagError}</p>}
+              {tagSuccess && <p className="text-xs text-[var(--color-icon-success)]">{tagSuccess}</p>}
             </div>
           )}
 

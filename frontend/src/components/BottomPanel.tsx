@@ -40,6 +40,7 @@ export interface OpenPanelTabOptions {
   podName?: string;
   namespace?: string;
   containerName?: string;
+  initialCommand?: string;
   yamlContent?: string;
   title?: string;
   yamlActionLabel?: 'Apply' | 'Upgrade';
@@ -65,6 +66,7 @@ interface PanelTab {
   type: PanelTabType;
   label: string;
   target?: TabTarget;
+  initialCommand?: string;
   yamlContent?: string;
   yamlSavedContent?: string;
   yamlDirty?: boolean;
@@ -726,6 +728,7 @@ const TabContent = ({
           podName={tab.target.podName}
           namespace={tab.target.namespace}
           containerName={tab.target.containerName}
+          initialCommand={tab.initialCommand}
         />
       );
 
@@ -737,7 +740,7 @@ const TabContent = ({
           />
         );
       }
-      return <TerminalComponent podName={tab.target.podName} namespace="node" />;
+      return <TerminalComponent podName={tab.target.podName} namespace="node" initialCommand={tab.initialCommand} />;
 
     case 'logs':
       if (!tab.target) {
@@ -751,7 +754,7 @@ const TabContent = ({
       return <LogViewer namespace={tab.target.namespace} podName={tab.target.podName} />;
 
     case 'host-shell':
-      return <TerminalComponent podName="host" namespace="host" />;
+      return <TerminalComponent podName="host" namespace="host" initialCommand={tab.initialCommand} />;
 
     case 'yaml-editor':
       return (
@@ -806,8 +809,10 @@ export const BottomPanel = () => {
   const doAddTab = useCallback((type: PanelTabType, opts?: Partial<OpenPanelTabOptions>) => {
     const id = `${type}-${Date.now()}`;
     const label =
-      type === 'yaml-editor'
-        ? (opts?.title?.trim() || LABEL_MAP[type])
+      opts?.title?.trim()
+        ? opts.title.trim()
+        : type === 'yaml-editor'
+          ? LABEL_MAP[type]
         : type === 'install-chart' && opts?.installChart
           ? `Helm Install: ${opts.installChart.repository}/${opts.installChart.name}`
           : (opts?.podName ?? LABEL_MAP[type]);
@@ -817,6 +822,7 @@ export const BottomPanel = () => {
         id,
         type,
         label,
+        initialCommand: opts?.initialCommand,
         ...(type === 'yaml-editor'
           ? {
               yamlContent: opts?.yamlContent ?? DEFAULT_YAML,

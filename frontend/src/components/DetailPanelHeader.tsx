@@ -1,4 +1,4 @@
-import { X } from './Icons';
+import { PanelCloseButton } from './ResourceDetailPanelLayout';
 import type { ReactNode } from 'react';
 
 interface DetailPanelHeaderProps {
@@ -25,14 +25,7 @@ export const DetailPanelHeader = ({
             </div>
           )}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-1.5 rounded-lg hover:bg-hover text-text-secondary transition-colors flex-shrink-0"
-          aria-label="Close panel"
-        >
-          <X size={18} />
-        </button>
+        <PanelCloseButton onClick={onClose} label="Close panel" />
       </div>
       {children && <div className="mt-3">{children}</div>}
     </div>

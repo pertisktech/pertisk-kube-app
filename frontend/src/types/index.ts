@@ -156,6 +156,7 @@ export interface Deployment {
   available: number;
   age: string;
   images: string[];
+  selector_labels?: Record<string, string>;
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
 }

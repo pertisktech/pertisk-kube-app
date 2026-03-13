@@ -14,6 +14,7 @@ use kube::{
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 use std::io::{Read, Write};
 use std::process::Stdio;
 use tokio::{
@@ -26,6 +27,7 @@ use tracing::{error, info, warn};
 use crate::AppState;
 
 const PREFERRED_SHELL_SCRIPT: &str = "if [ -x /bin/zsh ]; then exec /bin/zsh -il; elif command -v zsh >/dev/null 2>&1; then exec zsh -il; elif [ -x /bin/bash ]; then exec /bin/bash -il; elif command -v bash >/dev/null 2>&1; then exec bash -il; else exec /bin/sh -i; fi";
+const NODE_DEBUG_NAMESPACE: &str = "default";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -188,8 +190,12 @@ async fn spawn_exec_shell(
         info!("Connecting to node shell for node: {}", query.pod);
         let mut cmd = Command::new("kubectl");
         cmd.arg("debug")
+            .arg("-n")
+            .arg(NODE_DEBUG_NAMESPACE)
             .arg(format!("node/{}", query.pod))
-            .arg("-it")
+            .arg("-i")
+            .arg("-q")
+            .arg("--profile=sysadmin")
             .arg("--image=alpine")
             .arg("--")
             .arg("chroot")
@@ -303,12 +309,98 @@ async fn spawn_exec_shell(
     }
 }
 
+fn extract_debug_pod_name(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let trimmed = line.trim();
+        let rest = trimmed.strip_prefix("Creating debugging pod ")?;
+        rest.split_whitespace().next().map(str::to_string)
+    })
+}
+
+async fn cleanup_node_debug_pod(pod_name: Option<String>) {
+    let Some(pod_name) = pod_name else {
+        return;
+    };
+
+    let result = Command::new("kubectl")
+        .arg("delete")
+        .arg("pod")
+        .arg(&pod_name)
+        .arg("-n")
+        .arg(NODE_DEBUG_NAMESPACE)
+        .arg("--ignore-not-found=true")
+        .arg("--wait=false")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await;
+
+    match result {
+        Ok(status) if status.success() => {
+            info!("Deleted node debug pod: {}", pod_name);
+        }
+        Ok(status) => {
+            warn!("Failed deleting node debug pod {}: exit status {}", pod_name, status);
+        }
+        Err(err) => {
+            warn!("Failed deleting node debug pod {}: {}", pod_name, err);
+        }
+    }
+}
+
+fn sanitize_piped_output(
+    output: String,
+    suppress_kubectl_debug_noise: bool,
+    node_debug_pod_name: Option<&Arc<Mutex<Option<String>>>>,
+) -> Option<String> {
+    if let Some(pod_name) = extract_debug_pod_name(&output) {
+        if let Some(shared_name) = node_debug_pod_name {
+            if let Ok(mut slot) = shared_name.lock() {
+                *slot = Some(pod_name);
+            }
+        }
+    }
+
+    if !suppress_kubectl_debug_noise {
+        return if output.is_empty() { None } else { Some(output) };
+    }
+
+    let filtered_lines: Vec<&str> = output
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            !trimmed.starts_with("Creating debugging pod ")
+                && !trimmed.starts_with("If you don't see a command prompt")
+                && !trimmed.starts_with("warning: couldn't attach to pod/")
+                && !trimmed.starts_with("Unable to use a TTY")
+        })
+        .collect();
+
+    if filtered_lines.is_empty() {
+        return None;
+    }
+
+    let mut filtered = filtered_lines.join("\n");
+    if output.ends_with('\n') {
+        filtered.push('\n');
+    }
+
+    if filtered.trim().is_empty() {
+        None
+    } else {
+        Some(filtered)
+    }
+}
+
 fn spawn_output_tasks(
     mut child_stdout: ChildStdout,
     mut child_stderr: ChildStderr,
     tx: tokio::sync::mpsc::Sender<String>,
+    suppress_kubectl_debug_noise: bool,
+    node_debug_pod_name: Option<Arc<Mutex<Option<String>>>>,
 ) -> (JoinHandle<()>, JoinHandle<()>) {
     let tx_stdout = tx.clone();
+    let node_debug_pod_name_stdout = node_debug_pod_name.clone();
     let stdout_task = tokio::spawn(async move {
         let mut buffer = [0_u8; 4096];
         loop {
@@ -316,6 +408,13 @@ fn spawn_output_tasks(
                 Ok(0) => break,
                 Ok(n) => {
                     let output = String::from_utf8_lossy(&buffer[..n]).to_string();
+                    let Some(output) = sanitize_piped_output(
+                        output,
+                        suppress_kubectl_debug_noise,
+                        node_debug_pod_name_stdout.as_ref(),
+                    ) else {
+                        continue;
+                    };
                     if tx_stdout.send(output).await.is_err() {
                         break;
                     }
@@ -331,6 +430,7 @@ fn spawn_output_tasks(
     });
 
     let tx_stderr = tx.clone();
+    let node_debug_pod_name_stderr = node_debug_pod_name;
     let stderr_task = tokio::spawn(async move {
         let mut buffer = [0_u8; 4096];
         loop {
@@ -338,6 +438,13 @@ fn spawn_output_tasks(
                 Ok(0) => break,
                 Ok(n) => {
                     let output = String::from_utf8_lossy(&buffer[..n]).to_string();
+                    let Some(output) = sanitize_piped_output(
+                        output,
+                        suppress_kubectl_debug_noise,
+                        node_debug_pod_name_stderr.as_ref(),
+                    ) else {
+                        continue;
+                    };
                     if tx_stderr.send(output).await.is_err() {
                         break;
                     }
@@ -380,7 +487,22 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
             handle_pty_session(ws_receiver, master, reader, writer, tx.clone()).await;
         }
         ShellSession::Piped { mut child, mut stdin, stdout, stderr } => {
-            let (mut stdout_task, mut stderr_task) = spawn_output_tasks(stdout, stderr, tx.clone());
+            // Keep live shell output byte-faithful to avoid line-break corruption in chunked streams.
+            // kubectl debug banners are suppressed via -q for node sessions.
+            let suppress_kubectl_debug_noise = false;
+            let mut node_debug_pod_name = if query.namespace == "node" {
+                Some(Arc::new(Mutex::new(None)))
+            } else {
+                None
+            };
+            let (mut stdout_task, mut stderr_task) =
+                spawn_output_tasks(
+                    stdout,
+                    stderr,
+                    tx.clone(),
+                    suppress_kubectl_debug_noise,
+                    node_debug_pod_name.clone(),
+                );
 
             while let Some(message) = ws_receiver.next().await {
                 match message {
@@ -389,6 +511,10 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
                             let _ = child.kill().await;
                             stdout_task.abort();
                             stderr_task.abort();
+                            let pod_name = node_debug_pod_name
+                                .as_ref()
+                                .and_then(|shared| shared.lock().ok().and_then(|slot| slot.clone()));
+                            cleanup_node_debug_pod(pod_name).await;
 
                             let _ = tx.send("\r\n^C\r\n".to_string()).await;
 
@@ -396,7 +522,18 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
                                 Some(ShellSession::Piped { child: new_child, stdin: new_stdin, stdout: new_stdout, stderr: new_stderr }) => {
                                     child = new_child;
                                     stdin = new_stdin;
-                                    let tasks = spawn_output_tasks(new_stdout, new_stderr, tx.clone());
+                                    node_debug_pod_name = if suppress_kubectl_debug_noise {
+                                        Some(Arc::new(Mutex::new(None)))
+                                    } else {
+                                        None
+                                    };
+                                    let tasks = spawn_output_tasks(
+                                        new_stdout,
+                                        new_stderr,
+                                        tx.clone(),
+                                        suppress_kubectl_debug_noise,
+                                        node_debug_pod_name.clone(),
+                                    );
                                     stdout_task = tasks.0;
                                     stderr_task = tasks.1;
                                     continue;
@@ -412,8 +549,10 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
                             continue;
                         }
 
-                        // xterm sends Enter as "\r"; kubectl expects "\r".
-                        if stdin.write_all(text.as_bytes()).await.is_err() {
+                        // In piped mode (no PTY), normalize CR to LF so commands execute with
+                        // proper line breaks and output starts on a new line.
+                        let normalized = text.replace('\r', "\n");
+                        if stdin.write_all(normalized.as_bytes()).await.is_err() {
                             error!("Failed to write to stdin");
                             break;
                         }
@@ -441,6 +580,10 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
             let _ = child.kill().await;
             stdout_task.abort();
             stderr_task.abort();
+            let pod_name = node_debug_pod_name
+                .as_ref()
+                .and_then(|shared| shared.lock().ok().and_then(|slot| slot.clone()));
+            cleanup_node_debug_pod(pod_name).await;
         }
     }
 

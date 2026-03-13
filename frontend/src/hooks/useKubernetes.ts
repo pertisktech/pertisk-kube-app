@@ -513,6 +513,35 @@ export const restartDeployment = async (namespace: string, name: string): Promis
   }
 };
 
+export const quickUpdateDeploymentImageTag = async (
+  namespace: string,
+  name: string,
+  tag: string
+): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/deployments/${namespace}/${name}/image-tag`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: token } : {}),
+    },
+    body: JSON.stringify({ tag }),
+  });
+
+  if (!res.ok) {
+    let message = 'Failed to update deployment image tag';
+    try {
+      const payload = await res.json();
+      if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // ignore json parse errors and keep default message
+    }
+    throw new Error(message);
+  }
+};
+
 const apiDelete = async (path: string): Promise<void> => {
   const token = getAuthToken();
   const res = await fetch(`${API_BASE}${path}`, {

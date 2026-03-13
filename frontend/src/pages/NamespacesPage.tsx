@@ -7,6 +7,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { Namespace } from '../types';
 import { timeAgo } from '../utils';
 import { deleteNamespace } from '../hooks/useKubernetes';
+import { openPanelTab } from '../components/BottomPanel';
 
 type NamespaceSortKey = 'name' | 'status' | 'age';
 
@@ -70,6 +71,14 @@ export const NamespacesPage = () => {
     return 'status-gray';
   };
 
+  const handleTailLogs = (namespace: string) => {
+    openPanelTab({
+      type: 'host-shell',
+      title: `ktail ${namespace}`,
+      initialCommand: `ktail -n ${namespace}`,
+    });
+  };
+
   const columns = [
     {
       header: 'Name',
@@ -99,9 +108,26 @@ export const NamespacesPage = () => {
     {
       header: 'Age',
       accessor: (row: Namespace) => timeAgo(row.age),
-      width: '20%',
+      width: '15%',
       sortable: true,
       sortKey: 'age',
+    },
+    {
+      header: 'Tail Logs',
+      accessor: (row: Namespace) => (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            handleTailLogs(row.name);
+          }}
+          className="inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded-md border text-xs font-medium transition-colors hover:opacity-90"
+          style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary)', backgroundColor: 'var(--color-surface-elevated)' }}
+        >
+          Open Terminal
+        </button>
+      ),
+      width: '15%',
     },
   ];
 

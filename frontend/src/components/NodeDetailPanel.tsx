@@ -3,7 +3,7 @@ import { X, Terminal, Trash2, Loader, ChevronDown, FileText, Lock, Unlock, Dropl
 import { StatusBadge } from './StatusBadge';
 import { usePods } from '../hooks/useKubernetes';
 import { ResizablePanel } from './ResizablePanel';
-import { PanelActionButton } from './ResourceDetailPanelLayout';
+import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle } from './drawer';
 import { formatMemoryUsedAlloc, formatCpuRange, formatCpuCores, parseCpuToCores, formatK8sQuantity } from '../utils';
 import type { K8sNode } from '../types';
@@ -90,7 +90,7 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
               </div>
             </div>
             <div
-              className="flex items-center flex-shrink-0 rounded-lg border overflow-hidden"
+              className="flex items-center flex-shrink-0 rounded-lg border"
               style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
             >
               {onEditYaml && <PanelActionButton icon={FileText} label="Edit YAML" onClick={() => onEditYaml(node)} />}
@@ -120,18 +120,11 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
                 />
               )}
               {onDelete && <PanelActionButton icon={Trash2} label="Delete node" danger onClick={() => onDelete(node)} />}
-              <button
-                type="button"
+              <PanelCloseButton
                 onClick={onClose}
-                className="p-2 rounded-r-md transition-all duration-150 hover:opacity-80 flex-shrink-0"
-                style={{
-                  color: 'var(--color-muted)',
-                  borderLeft: onEditYaml || onOpenShell || onCordonToggle || onDrain || onDelete ? '1px solid var(--color-border)' : 'none',
-                }}
-                aria-label="Close node panel"
-              >
-                <X size={18} />
-              </button>
+                borderLeft={onEditYaml || onOpenShell || onCordonToggle || onDrain || onDelete ? '1px solid var(--color-border)' : 'none'}
+                label="Close node panel"
+              />
             </div>
           </div>
 

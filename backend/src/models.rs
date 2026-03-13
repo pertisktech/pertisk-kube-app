@@ -5,6 +5,11 @@ pub struct ScaleRequest {
     pub replicas: i32,
 }
 
+#[derive(Deserialize)]
+pub struct UpdateDeploymentImageTagRequest {
+    pub tag: String,
+}
+
 #[derive(Serialize)]
 pub struct HealthResponse {
     pub status: String,
@@ -100,6 +105,8 @@ pub struct DeploymentItem {
     pub available: i32,
     pub images: Vec<String>,
     pub age: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selector_labels: Option<serde_json::Map<String, serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub labels: Option<serde_json::Map<String, serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]

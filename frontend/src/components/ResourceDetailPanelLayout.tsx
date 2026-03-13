@@ -24,6 +24,7 @@ export const PanelActionButton = ({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      title={label}
       className={`p-2 rounded-md transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed ${
         danger ? 'text-red-400 hover:bg-red-500/20 hover:text-red-300' : colorClass
       }`}
@@ -32,7 +33,43 @@ export const PanelActionButton = ({
       <Icon size={16} />
     </button>
     <div
-      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-sm"
+      className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 text-xs rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-sm"
+      style={{
+        backgroundColor: 'var(--color-surface-elevated)',
+        color: 'var(--color-text)',
+        border: '1px solid var(--color-border)',
+      }}
+    >
+      {label}
+    </div>
+  </div>
+);
+
+export const PanelCloseButton = ({
+  onClick,
+  borderLeft = 'none',
+  label = 'Close panel',
+}: {
+  onClick: () => void;
+  borderLeft?: string;
+  label?: string;
+}) => (
+  <div className="group relative">
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      className="p-2 rounded-r-md transition-all duration-150 hover:opacity-80 flex-shrink-0"
+      style={{
+        color: 'var(--color-muted)',
+        borderLeft,
+      }}
+      aria-label={label}
+    >
+      <X size={18} />
+    </button>
+    <div
+      className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 text-xs rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-sm"
       style={{
         backgroundColor: 'var(--color-surface-elevated)',
         color: 'var(--color-text)',
@@ -134,19 +171,15 @@ export const ResourceDetailPanelLayout = ({
               )}
             </div>
             <div
-              className="flex items-center flex-shrink-0 rounded-lg border overflow-hidden"
+              className="flex items-center flex-shrink-0 rounded-lg border"
               style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
             >
               {actions && <div className="flex items-center">{actions}</div>}
-              <button
-                type="button"
+              <PanelCloseButton
                 onClick={onClose}
-                className="p-2 rounded-r-md transition-all duration-150 hover:opacity-80 flex-shrink-0"
-                style={{ color: 'var(--color-muted)', borderLeft: actions ? '1px solid var(--color-border)' : 'none' }}
-                aria-label="Close panel"
-              >
-                <X size={18} />
-              </button>
+                borderLeft={actions ? '1px solid var(--color-border)' : 'none'}
+                label="Close panel"
+              />
             </div>
           </div>
           {keyInfoItems.length > 0 && (

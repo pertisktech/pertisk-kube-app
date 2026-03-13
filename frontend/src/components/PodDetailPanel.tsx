@@ -5,7 +5,7 @@ import { StatusBadge } from './StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo, formatCpuRange, formatCpuCores, parseCpuToCores } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
-import { PanelActionButton } from './ResourceDetailPanelLayout';
+import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations, DrawerParamToggler } from './drawer';
 import { createPortForward, usePortForwards } from '../hooks/useKubernetes';
 
@@ -110,25 +110,18 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
               </div>
             </div>
             <div
-              className="flex items-center flex-shrink-0 rounded-lg border overflow-hidden"
+              className="flex items-center flex-shrink-0 rounded-lg border"
               style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
             >
               <PanelActionButton icon={ScrollText} label="Logs" onClick={() => onOpenLogs(pod)} />
               <PanelActionButton icon={Terminal} label="Shell" onClick={() => onOpenShell(pod)} />
               <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor(pod)} />
               {onDelete && <PanelActionButton icon={Trash2} label="Delete" danger onClick={() => onDelete(pod.namespace, pod.name)} />}
-              <button
-                type="button"
+              <PanelCloseButton
                 onClick={onClose}
-                className="p-2 rounded-r-md transition-all duration-150 hover:opacity-80 flex-shrink-0"
-                style={{
-                  color: 'var(--color-muted)',
-                  borderLeft: '1px solid var(--color-border)',
-                }}
-                aria-label="Close pod panel"
-              >
-                <X size={18} />
-              </button>
+                borderLeft="1px solid var(--color-border)"
+                label="Close pod panel"
+              />
             </div>
           </div>
 
