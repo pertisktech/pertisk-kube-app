@@ -4,9 +4,10 @@ import { Trash2 } from '../components/Icons';
 import { useRealtimeDaemonSets } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DaemonSetDetailPanel, DataTable, ConfirmDialog } from '../components';
+import { StatusBadge } from '../components/StatusBadge';
 import type { DaemonSet } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { getStatusColor, timeAgo, matchesResourceNameFilter } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { deleteDaemonSet } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -131,14 +132,6 @@ export const DaemonSetsPage = () => {
     }
   };
 
-  const getStatusTextClass = (status: string) => {
-    const color = getStatusColor(status);
-    if (color === 'green') return 'text-[var(--color-icon-success)]';
-    if (color === 'yellow') return 'text-[var(--color-icon-warning)]';
-    if (color === 'red') return 'text-[var(--color-icon-danger)]';
-    return 'text-text-secondary';
-  };
-
   const columns = [
     {
       header: 'Name',
@@ -156,11 +149,7 @@ export const DaemonSetsPage = () => {
     },
     {
       header: 'Status',
-      accessor: (row: DaemonSet) => (
-        <span className={`font-medium ${getStatusTextClass(row.status || 'Unknown')}`}>
-          {row.status || 'Unknown'}
-        </span>
-      ),
+      accessor: (row: DaemonSet) => <StatusBadge status={row.status || 'Unknown'} />,
       width: '10%',
       sortable: true,
       sortKey: 'status',

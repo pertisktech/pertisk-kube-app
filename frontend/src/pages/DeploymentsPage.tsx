@@ -6,10 +6,11 @@ import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
 import { DeploymentDetailPanel } from '../components/DeploymentDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { StatusBadge } from '../components/StatusBadge';
 import type { Deployment } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { restartDeployment, scaleDeployment, deleteDeployment, quickUpdateDeploymentImageTag } from '../hooks/useKubernetes';
-import { getStatusColor, timeAgo, matchesResourceNameFilter } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
 type DeploymentSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'updated' | 'available' | 'images' | 'age';
@@ -205,14 +206,6 @@ export const DeploymentsPage = () => {
     }
   };
 
-  const getStatusTextClass = (status: string) => {
-    const color = getStatusColor(status);
-    if (color === 'green') return 'text-[var(--color-icon-success)]';
-    if (color === 'yellow') return 'text-[var(--color-icon-warning)]';
-    if (color === 'red') return 'text-[var(--color-icon-danger)]';
-    return 'text-text-secondary';
-  };
-
   const columns = [
     {
       header: 'Name',
@@ -232,11 +225,7 @@ export const DeploymentsPage = () => {
     },
     {
       header: 'Status',
-      accessor: (row: Deployment) => (
-        <span className={`font-medium ${getStatusTextClass(row.status || 'Unknown')}`}>
-          {row.status || 'Unknown'}
-        </span>
-      ),
+      accessor: (row: Deployment) => <StatusBadge status={row.status || 'Unknown'} />,
       width: '8%',
       sortable: true,
       sortKey: 'status',

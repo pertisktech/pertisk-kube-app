@@ -4,9 +4,10 @@ import { Trash2 } from '../components/Icons';
 import { useRealtimeStatefulSets } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, StatefulSetDetailPanel, ConfirmDialog } from '../components';
+import { StatusBadge } from '../components/StatusBadge';
 import type { StatefulSet } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { getStatusColor, timeAgo, matchesResourceNameFilter } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { deleteStatefulSet } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -122,14 +123,6 @@ export const StatefulSetsPage = () => {
     }
   };
 
-  const getStatusTextClass = (status: string) => {
-    const color = getStatusColor(status);
-    if (color === 'green') return 'text-[var(--color-icon-success)]';
-    if (color === 'yellow') return 'text-[var(--color-icon-warning)]';
-    if (color === 'red') return 'text-[var(--color-icon-danger)]';
-    return 'text-text-secondary';
-  };
-
   const columns = [
     {
       header: 'Name',
@@ -147,11 +140,7 @@ export const StatefulSetsPage = () => {
     },
     {
       header: 'Status',
-      accessor: (row: StatefulSet) => (
-        <span className={`font-medium ${getStatusTextClass(row.status || 'Unknown')}`}>
-          {row.status || 'Unknown'}
-        </span>
-      ),
+      accessor: (row: StatefulSet) => <StatusBadge status={row.status || 'Unknown'} />,
       width: '10%',
       sortable: true,
       sortKey: 'status',

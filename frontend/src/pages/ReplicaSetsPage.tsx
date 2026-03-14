@@ -4,9 +4,10 @@ import { Trash2 } from '../components/Icons';
 import { useRealtimeReplicaSets } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ReplicaSetDetailPanel, ConfirmDialog } from '../components';
+import { StatusBadge } from '../components/StatusBadge';
 import type { ReplicaSet } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { getStatusColor, timeAgo, matchesResourceNameFilter } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { deleteReplicaSet } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -130,14 +131,6 @@ export const ReplicaSetsPage = () => {
     }
   };
 
-  const getStatusTextClass = (status: string) => {
-    const color = getStatusColor(status);
-    if (color === 'green') return 'text-[var(--color-icon-success)]';
-    if (color === 'yellow') return 'text-[var(--color-icon-warning)]';
-    if (color === 'red') return 'text-[var(--color-icon-danger)]';
-    return 'text-text-secondary';
-  };
-
   const columns = [
     {
       header: 'Name',
@@ -155,11 +148,7 @@ export const ReplicaSetsPage = () => {
     },
     {
       header: 'Status',
-      accessor: (row: ReplicaSet) => (
-        <span className={`font-medium ${getStatusTextClass(row.status || 'Unknown')}`}>
-          {row.status || 'Unknown'}
-        </span>
-      ),
+      accessor: (row: ReplicaSet) => <StatusBadge status={row.status || 'Unknown'} />,
       width: '10%',
       sortable: true,
       sortKey: 'status',

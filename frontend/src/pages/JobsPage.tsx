@@ -4,9 +4,10 @@ import { Trash2 } from '../components/Icons';
 import { useRealtimeJobs } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, JobDetailPanel, ConfirmDialog } from '../components';
+import { StatusBadge } from '../components/StatusBadge';
 import type { Job } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { getStatusColor, timeAgo, matchesResourceNameFilter } from '../utils';
+import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { deleteJob } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -122,14 +123,6 @@ export const JobsPage = () => {
     }
   };
 
-  const getStatusTextClass = (status: string) => {
-    const color = getStatusColor(status);
-    if (color === 'green') return 'text-[var(--color-icon-success)]';
-    if (color === 'yellow') return 'text-[var(--color-icon-warning)]';
-    if (color === 'red') return 'text-[var(--color-icon-danger)]';
-    return 'text-text-secondary';
-  };
-
   const getCompletionTextClass = (completions: string) => {
     const [done, total] = completions.split('/').map((value) => Number(value));
     if (Number.isFinite(done) && Number.isFinite(total) && total > 0 && done >= total) {
@@ -171,11 +164,7 @@ export const JobsPage = () => {
     },
     {
       header: 'Status',
-      accessor: (row: Job) => (
-        <span className={`font-medium ${getStatusTextClass(row.status || 'Pending')}`}>
-          {row.status || 'Pending'}
-        </span>
-      ),
+      accessor: (row: Job) => <StatusBadge status={row.status || 'Pending'} />,
       width: '15%',
       sortable: true,
       sortKey: 'status',
