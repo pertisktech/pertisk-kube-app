@@ -70,6 +70,12 @@ This project is structured as a **single workspace**:
 - **Leases** – List, YAML get/put, delete
 - **Mutating/Validating Webhook Configs (MWC/VWC)** – List, YAML get/put, delete
 
+#### Backup & Restore
+- **Backup Configuration** – Configure backup settings and S3 destination, test connection, and apply configuration
+- **Backup Scheduling** – Create/update/delete backup schedules and run schedules manually
+- **Backup Inventory** – List backups, inspect backup details, and bulk delete backup runs
+- **Restore Operations** – Trigger restore from selected backups and monitor restore list/status
+
 #### Helm
 - **Helm Charts** – Browse repos and charts; **install** from UI with:
   - **Values** – Default values from `helm show values`, editable YAML, then **Apply** (`helm upgrade --install`)
@@ -111,7 +117,7 @@ Resource list pages subscribe over a single WebSocket and receive watch events (
 - **Port forwards** – List polled every **5s**.
 
 #### Not realtime
-- **Pod logs** – Single REST request returns full log output (no streaming or follow).
+- **Pod logs** – Single REST request returns log output (no WebSocket stream/follow from the UI).
 - **Helm charts** – Cached ~10 min; no live updates.
 
 ### Security & Authentication
@@ -258,7 +264,7 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 - `GET /api/events` – List events
 
 ### Protected – Workloads
-- **Deployments:** `GET /api/deployments`, `GET|PUT .../yaml`, `DELETE ...`, `POST .../scale`, `POST .../restart`
+- **Deployments:** `GET /api/deployments`, `GET|PUT .../yaml`, `DELETE ...`, `POST .../scale`, `POST .../restart`, `POST .../image-tag`
 - **StatefulSets / DaemonSets / ReplicaSets / Jobs / CronJobs:** `GET` list, `GET|PUT .../yaml`, `DELETE ...`
 
 ### Protected – Config & Secrets
@@ -286,6 +292,12 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 - **Helm releases:** `GET /api/helm/releases`, `GET /api/helm/releases/:namespace/:name/yaml`, `GET .../history`, `POST .../rollback`, `POST .../upgrade`, `DELETE ...`
 - **Helm charts:** `GET /api/helm/charts`, `GET /api/helm/charts/versions`, `GET /api/helm/charts/values`, `GET /api/helm/charts/readme`, `POST /api/helm/charts/install`
 
+### Protected – Backup & Restore
+- **Backup config:** `GET|PUT /api/backup/config`, `POST /api/backup/config/s3`, `POST /api/backup/config/test-s3`, `POST /api/backup/config/apply`
+- **Backup schedules:** `POST /api/backup/schedules`, `DELETE /api/backup/schedules/:name`, `POST /api/backup/schedules/:name/run`
+- **Backup runs:** `POST /api/backup/manual`, `GET /api/backup/overview`, `DELETE /api/backup/backups/:name`, `POST /api/backup/backups/delete`
+- **Restore:** `POST /api/backup/restore`
+
 ### WebSocket
 - `WS /ws` – Real-time resource streaming (gRPC-Web)
 - `WS /api/exec` – Pod exec terminal
@@ -299,6 +311,8 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 | `/namespaces`, `/nodes`, `/pods` | Namespaces, Nodes, Pods |
 | `/deployments` … `/cronjobs` | Workload resources |
 | `/config/configmaps` … `/config/leases`, `/config/mwc`, `/config/vwc` | Config & advanced |
+| `/config/backup` | Backup quick access (config section) |
+| `/backup/config`, `/backup/backup-schedule`, `/backup/backups`, `/backup/restores` | Backup and restore workflows |
 | `/network`, `/network/services` … `/network/portforwarding` | Networking |
 | `/storage`, `/storage/pvc`, `/storage/pv`, `/storage/storageclasses` | Storage |
 | `/helm/charts`, `/helm/releases` | Helm charts & releases |
