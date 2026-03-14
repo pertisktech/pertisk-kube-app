@@ -141,6 +141,7 @@ export const getStatusColor = (
   
   // Warning states (transient/initializing)
   if (
+    lower === 'paused' ||
     lower === 'pending' ||
     lower === 'unknown' ||
     lower === 'false' ||

@@ -411,6 +411,12 @@ async fn persist_settings(client: kube::Client, settings: &BackupSettings) -> Re
     });
     let payload = serde_json::to_string_pretty(&settings_value).map_err(|e| e.to_string())?;
 
+    let mut data_map = match api.get_opt(SETTINGS_CONFIGMAP_NAME).await {
+        Ok(Some(cm)) => cm.data.unwrap_or_default(),
+        _ => Default::default(),
+    };
+    data_map.insert(SETTINGS_KEY.to_string(), payload);
+
     let cm = json!({
         "apiVersion": "v1",
         "kind": "ConfigMap",
@@ -418,9 +424,7 @@ async fn persist_settings(client: kube::Client, settings: &BackupSettings) -> Re
             "name": SETTINGS_CONFIGMAP_NAME,
             "namespace": SETTINGS_NAMESPACE,
         },
-        "data": {
-            SETTINGS_KEY: payload,
-        }
+        "data": data_map,
     });
 
     api.patch(

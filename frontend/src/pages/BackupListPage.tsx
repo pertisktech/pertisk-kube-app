@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ConfirmDialog, DataTable } from '../components';
+import { StatusBadge } from '../components/StatusBadge';
 import { Trash2 } from '../components/Icons';
-import { deleteBackupRunsBulk, useBackupOverview } from '../hooks/useKubernetes';
+import { deleteBackupRunsBulk, runRestoreBackup, useBackupOverview } from '../hooks/useKubernetes';
 import type { BackupOverview, BackupRecord } from '../types';
 import { timeAgo } from '../utils';
 
@@ -10,12 +11,19 @@ export const BackupListPage = () => {
   const queryClient = useQueryClient();
   const { data, isLoading, error } = useBackupOverview();
   const backups = useMemo(() => data?.backups ?? [], [data]);
+  const [nameFilter, setNameFilter] = useState('');
+  const filteredBackups = useMemo(
+    () => nameFilter.trim() ? backups.filter((b) => b.name.toLowerCase().includes(nameFilter.toLowerCase())) : backups,
+    [backups, nameFilter],
+  );
   const [selectedBackup, setSelectedBackup] = useState<BackupRecord | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [deletingName, setDeletingName] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
+  const [restoringName, setRestoringName] = useState<string | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState<BackupRecord | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -27,8 +35,24 @@ export const BackupListPage = () => {
     });
   };
 
-  const handleConfirmDelete = async () => {
-    if (!confirmDelete) return;
+  const handleConfirmRestore = async () => {
+    if (!confirmRestore) return;
+    setMessage(null);
+    setErrorMessage(null);
+    setRestoringName(confirmRestore.name);
+    setConfirmRestore(null);
+    try {
+      const restoreName = await runRestoreBackup({ backup_name: confirmRestore.name });
+      await queryClient.invalidateQueries({ queryKey: ['backup-overview'] });
+      setMessage(`Restore triggered: ${restoreName}`);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to trigger restore.');
+    } finally {
+      setRestoringName(null);
+    }
+  };
+
+  const handleConfirmDelete = async () => {    if (!confirmDelete) return;
 
     setMessage(null);
     setErrorMessage(null);
@@ -85,26 +109,40 @@ export const BackupListPage = () => {
       accessor: (row: BackupRecord) => <span className="font-medium text-text">{row.name}</span>,
       width: '38%',
     },
-    { header: 'Phase', accessor: (row: BackupRecord) => row.phase, width: '16%' },
+    { header: 'Phase', accessor: (row: BackupRecord) => <StatusBadge status={row.phase} />, width: '16%' },
     { header: 'Storage', accessor: (row: BackupRecord) => row.storage_location, width: '20%' },
     { header: 'Created', accessor: (row: BackupRecord) => timeAgo(row.created_at), width: '18%' },
     {
       header: 'Actions',
       accessor: () => '-',
-      width: '10%',
+      width: '180px',
       render: (row: BackupRecord) => (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            if (deletingName || isDeleting) return;
-            setConfirmDelete({ keys: [row.name], label: row.name });
-          }}
-          disabled={deletingName === row.name || isDeleting}
-          className="px-2 py-1 rounded-md border border-border text-xs text-text-secondary hover:text-text disabled:opacity-50"
-        >
-          {deletingName === row.name || isDeleting ? 'Deleting...' : 'Delete'}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (restoringName) return;
+              setConfirmRestore(row);
+            }}
+            disabled={restoringName === row.name}
+            className="inline-flex items-center whitespace-nowrap px-2 py-1 rounded-md text-xs font-medium border border-border text-text-secondary hover:bg-hover hover:text-text transition-colors disabled:opacity-40"
+          >
+            {restoringName === row.name ? 'Restoring...' : 'Restore'}
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (deletingName || isDeleting) return;
+              setConfirmDelete({ keys: [row.name], label: row.name });
+            }}
+            disabled={deletingName === row.name || isDeleting}
+            className="inline-flex items-center whitespace-nowrap gap-1.5 px-2 py-1 rounded-md text-xs font-medium border border-[var(--color-icon-danger)]/30 text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors disabled:opacity-40"
+          >
+            {deletingName === row.name || isDeleting ? 'Deleting...' : 'Delete'}
+          </button>
+        </div>
       ),
     },
   ];
@@ -112,16 +150,24 @@ export const BackupListPage = () => {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-text">Backup List</h1>
+        <h1 className="text-xl font-semibold text-text">Backups</h1>
         <p className="text-sm text-text-secondary">Recent backup resources and phases.</p>
       </div>
 
       {message && <div className="text-sm text-green-600">{message}</div>}
       {errorMessage && <div className="text-sm text-red-600">{errorMessage}</div>}
 
+      <input
+        type="text"
+        value={nameFilter}
+        onChange={(e) => setNameFilter(e.target.value)}
+        placeholder="Filter by name..."
+        className="w-full max-w-xs rounded-md border border-border bg-surface px-3 py-2 text-sm"
+      />
+
       <DataTable
         columns={columns}
-        data={backups}
+        data={filteredBackups}
         rowKey="name"
         isLoading={isLoading}
         error={error ? String(error) : null}
@@ -232,6 +278,17 @@ export const BackupListPage = () => {
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmRestore !== null}
+        title={`Restore from "${confirmRestore?.name ?? ''}"`}
+        description={`This will create a new Velero Restore from backup "${confirmRestore?.name}". Existing resources may be overwritten. Continue?`}
+        confirmLabel="Restore"
+        destructive={false}
+        isLoading={false}
+        onConfirm={handleConfirmRestore}
+        onCancel={() => setConfirmRestore(null)}
+      />
 
       <ConfirmDialog
         open={confirmDelete !== null}

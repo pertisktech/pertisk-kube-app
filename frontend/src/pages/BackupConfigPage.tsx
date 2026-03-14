@@ -102,7 +102,7 @@ export const BackupConfigPage = () => {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-text">Backup Config</h1>
+        <h1 className="text-xl font-semibold text-text">Config</h1>
         <p className="text-sm text-text-secondary">S3 connection settings only. Supports AWS S3, MinIO, and other S3-compatible endpoints. Apply stores non-secret config in a ConfigMap and credentials in a Secret.</p>
       </div>
 
@@ -175,10 +175,10 @@ export const BackupConfigPage = () => {
         </div>
 
         <div className="flex gap-3">
-          <button type="button" onClick={handleTestS3} disabled={isTestingS3 || isApplying || isLoading} className="px-4 py-2 rounded-lg border border-border bg-surface-elevated text-sm font-medium disabled:opacity-50">
+          <button type="button" onClick={handleTestS3} disabled={isTestingS3 || isApplying || isLoading} className="inline-flex items-center px-4 py-2 rounded-lg border border-border bg-surface-elevated text-sm font-medium hover:bg-hover transition-colors disabled:opacity-50">
             {isTestingS3 ? 'Testing...' : 'Test S3'}
           </button>
-          <button type="button" onClick={handleApply} disabled={isApplying || isLoading} className="px-4 py-2 rounded-lg border border-border bg-surface-elevated text-sm font-medium disabled:opacity-50">
+          <button type="button" onClick={handleApply} disabled={isApplying || isLoading} className="inline-flex items-center px-4 py-2 rounded-lg border border-border bg-surface-elevated text-sm font-medium hover:bg-hover transition-colors disabled:opacity-50">
             {isApplying ? 'Applying...' : 'Apply Config'}
           </button>
         </div>

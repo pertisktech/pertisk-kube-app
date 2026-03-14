@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import CronExpressionParser from 'cron-parser';
 import {
   createBackupSchedule,
   deleteBackupSchedule,
@@ -8,9 +9,31 @@ import {
   useBackupOverview,
 } from '../hooks/useKubernetes';
 import { Checkbox, DataTable } from '../components';
+import { StatusBadge } from '../components/StatusBadge';
 import { ChevronDown } from '../components/Icons';
 import type { ScheduleRecord } from '../types';
 import { timeAgo } from '../utils';
+
+function getNextExecution(cron: string, timezone: string): string {
+  try {
+    const interval = CronExpressionParser.parse(cron, {
+      currentDate: new Date(),
+      tz: timezone || 'Asia/Bangkok',
+    });
+    const next = interval.next().toDate();
+    return next.toLocaleString('en-GB', {
+      timeZone: timezone || 'Asia/Bangkok',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  } catch {
+    return '-';
+  }
+}
 
 const ALL_INCLUDE_OPTION = '__ALL__';
 
@@ -55,6 +78,11 @@ export const BackupQuickPage = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const schedules = useMemo(() => overview?.schedules ?? [], [overview]);
+  const [nameFilter, setNameFilter] = useState('');
+  const filteredSchedules = useMemo(
+    () => nameFilter.trim() ? schedules.filter((s) => s.name.toLowerCase().includes(nameFilter.toLowerCase())) : schedules,
+    [schedules, nameFilter],
+  );
   const namespaceNames = useMemo(
     () => (namespaces ?? []).map((namespace) => namespace.name).sort((a, b) => a.localeCompare(b)),
     [namespaces],
@@ -217,21 +245,20 @@ export const BackupQuickPage = () => {
     {
       header: 'Name',
       accessor: (row: ScheduleRecord) => <span className="font-medium text-text">{row.name}</span>,
-      width: '28%',
     },
-    { header: 'Cron', accessor: (row: ScheduleRecord) => row.cron, width: '20%' },
-    { header: 'Timezone', accessor: (row: ScheduleRecord) => row.timezone || 'Asia/Bangkok', width: '16%' },
-    { header: 'Last Backup', accessor: (row: ScheduleRecord) => timeAgo(row.last_backup), width: '14%' },
+    { header: 'Cron', accessor: (row: ScheduleRecord) => row.cron },
+    { header: 'Timezone', accessor: (row: ScheduleRecord) => row.timezone || 'Asia/Bangkok' },
+    { header: 'Last Backup', accessor: (row: ScheduleRecord) => timeAgo(row.last_backup) },
+    { header: 'Next Execution', accessor: (row: ScheduleRecord) => getNextExecution(row.cron, row.timezone || 'Asia/Bangkok') },
     {
-      header: 'Paused',
-      accessor: (row: ScheduleRecord) => (row.paused ? 'Yes' : 'No'),
-      width: '10%',
+      header: 'Status',
+      accessor: (row: ScheduleRecord) => <StatusBadge status={row.paused ? 'Paused' : 'Active'} />,
     },
     {
       header: 'Actions',
       accessor: () => '-',
       render: (row: ScheduleRecord) => (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={(e) => {
@@ -239,7 +266,7 @@ export const BackupQuickPage = () => {
               handleRunScheduleNow(row.name);
             }}
             disabled={runningScheduleName === row.name}
-            className="px-2 py-1 rounded-md border border-border text-xs text-text-secondary hover:text-text disabled:opacity-50"
+            className="inline-flex items-center whitespace-nowrap px-2 py-1 rounded-md text-xs font-medium border border-border text-text-secondary hover:bg-hover hover:text-text transition-colors disabled:opacity-40"
           >
             {runningScheduleName === row.name ? 'Running...' : 'Run Now'}
           </button>
@@ -249,7 +276,7 @@ export const BackupQuickPage = () => {
               e.stopPropagation();
               openEditPanel(row);
             }}
-            className="px-2 py-1 rounded-md border border-border text-xs text-text-secondary hover:text-text"
+            className="inline-flex items-center whitespace-nowrap px-2 py-1 rounded-md text-xs font-medium border border-border text-text-secondary hover:bg-hover hover:text-text transition-colors"
           >
             Edit
           </button>
@@ -260,20 +287,20 @@ export const BackupQuickPage = () => {
               handleDeleteSchedule(row.name);
             }}
             disabled={deletingScheduleName === row.name}
-            className="px-2 py-1 rounded-md border border-border text-xs text-text-secondary hover:text-text disabled:opacity-50"
+            className="inline-flex items-center whitespace-nowrap px-2 py-1 rounded-md text-xs font-medium border border-[var(--color-icon-danger)]/30 text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors disabled:opacity-40"
           >
             {deletingScheduleName === row.name ? 'Deleting...' : 'Delete'}
           </button>
         </div>
       ),
-      width: '18%',
+      width: '210px',
     },
   ];
 
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-text">Backup Scheduler</h1>
+        <h1 className="text-xl font-semibold text-text">Scheduler</h1>
         <p className="text-sm text-text-secondary">Create multiple backup schedules and trigger manual run per schedule.</p>
       </div>
 
@@ -282,20 +309,29 @@ export const BackupQuickPage = () => {
 
       <div className="bg-surface border border-border rounded-lg p-4 space-y-4">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-text">Backup Scheduler List</h2>
-          <button
-            type="button"
-            onClick={openAddPanel}
-            disabled={isCreatingSchedule || isLoading}
-            className="px-4 py-2 rounded-lg border border-border bg-surface-elevated text-sm font-medium disabled:opacity-50"
-          >
-            Add Scheduler
-          </button>
+          <h2 className="text-base font-semibold text-text">Scheduler List</h2>
+          <div className="flex items-center gap-2 ml-auto">
+            <input
+              type="text"
+              value={nameFilter}
+              onChange={(e) => setNameFilter(e.target.value)}
+              placeholder="Filter by name..."
+              className="rounded-md border border-border bg-surface px-3 py-2 text-sm w-48"
+            />
+            <button
+              type="button"
+              onClick={openAddPanel}
+              disabled={isCreatingSchedule || isLoading}
+              className="px-4 py-2 rounded-lg border border-border bg-surface-elevated text-sm font-medium hover:bg-hover transition-colors disabled:opacity-50"
+            >
+              Add Scheduler
+            </button>
+          </div>
         </div>
 
         <DataTable
           columns={scheduleColumns}
-          data={schedules}
+          data={filteredSchedules}
           rowKey="name"
           isLoading={false}
           onRowClick={openEditPanel}

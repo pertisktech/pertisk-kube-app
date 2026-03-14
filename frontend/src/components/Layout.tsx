@@ -126,9 +126,8 @@ const WORKLOAD_ITEMS: NavItem[] = [
 
 const BACKUP_ITEMS: NavItem[] = [
   { label: 'Config', path: '/backup/config', icon: Settings },
-  { label: 'Backup Scheduler', path: '/backup/backup-schedule', icon: Clock },
-  { label: 'Backup List', path: '/backup/backups', icon: Archive },
-  { label: 'Restore List', path: '/backup/restores', icon: RotateCw },
+  { label: 'Scheduler', path: '/backup/backup-schedule', icon: Clock },
+  { label: 'Backups', path: '/backup/backups', icon: Archive },
 ];
 
 interface LayoutProps {
@@ -191,8 +190,13 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const { data: realtimeNamespaces } = useRealtimeNamespaces();
   const { data: apiNamespaces } = useNamespaces();
 
-  // Hide namespace filter on Dashboard, Nodes, Namespaces, and Helm Charts pages
-  const shouldShowNamespaceFilter = location.pathname !== '/' && location.pathname !== '/nodes' && location.pathname !== '/namespaces' && location.pathname !== '/helm/charts';
+  // Hide namespace filter on Dashboard, Nodes, Namespaces, Helm Charts, and all Backup pages
+  const shouldShowNamespaceFilter = location.pathname !== '/'
+    && location.pathname !== '/nodes'
+    && location.pathname !== '/namespaces'
+    && location.pathname !== '/helm/charts'
+    && !location.pathname.startsWith('/backup/')
+    && location.pathname !== '/config/backup';
 
   // Connect to host machine or Kubernetes pod
   // (handled by BottomPanel via openPanelTab)
@@ -410,14 +414,14 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     );
     if (backupItem) {
       return [
-        { label: 'Backup / Restore', icon: Archive },
+        { label: 'Pertisk Backups', icon: Archive },
         { label: backupItem.label, icon: backupItem.icon },
       ] as BreadcrumbItem[];
     }
     if (pathname === '/config/backup') {
       return [
-        { label: 'Backup / Restore', icon: Archive },
-        { label: 'Backup Scheduler', icon: Clock },
+        { label: 'Pertisk Backups', icon: Archive },
+        { label: 'Scheduler', icon: Clock },
       ] as BreadcrumbItem[];
     }
 
@@ -1011,12 +1015,12 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
                     : 'text-text-secondary hover:bg-hover hover:text-text'
                 )}
-                title="Backup / Restore"
+                title="Pertisk Backups"
               >
                 <Archive size={18} className="flex-shrink-0" />
                 {!sidebarCollapsed && (
                   <>
-                    <span className="flex-1 text-left">Backup / Restore</span>
+                    <span className="flex-1 text-left">Pertisk Backups</span>
                     <ChevronDown
                       size={16}
                       className={cn('transition-transform', backupOpen && 'rotate-180')}
