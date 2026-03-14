@@ -1,7 +1,10 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { IconComponent } from './Icons';
 import { X, ChevronDown, ChevronUp } from './Icons';
 import { ResizablePanel } from './ResizablePanel';
+import { DrawerTitle } from './drawer';
+import { useRealtimeEvents } from '../hooks/useRealtimeResources';
+import { timeAgo } from '../utils';
 
 /** Reusable panel action button with tooltip — used in the right-panel header toolbar */
 export const PanelActionButton = ({
@@ -140,8 +143,32 @@ export const ResourceDetailPanelLayout = ({
 }: ResourceDetailPanelLayoutProps) => {
   const useBaseStyle = kind != null;
   const titleClass = titleFullText ? 'text-lg font-bold break-words' : 'text-lg font-bold truncate';
+  const { data: eventsData = [] } = useRealtimeEvents();
 
   const keyInfoItems = keyInfo.length > 0 ? keyInfo : statusCards.map((c) => ({ label: c.label, value: c.value }));
+
+  const namespace = useMemo(() => {
+    const nsItem = keyInfoItems.find((item) => item.label.trim().toLowerCase() === 'namespace');
+    return typeof nsItem?.value === 'string' ? nsItem.value : undefined;
+  }, [keyInfoItems]);
+
+  const matchedEvents = useMemo(() => {
+    const resourceName = title?.trim();
+    if (!resourceName) return [];
+
+    return eventsData
+      .filter((event) => {
+        const sameNamespace = !namespace || event.namespace === namespace;
+        const sameObjectName = (event.involved_object || '').endsWith(`/${resourceName}`);
+        return sameNamespace && sameObjectName;
+      })
+      .sort((a, b) => {
+        const ta = Date.parse(b.last_timestamp || b.first_timestamp || '');
+        const tb = Date.parse(a.last_timestamp || a.first_timestamp || '');
+        return (Number.isNaN(ta) ? 0 : ta) - (Number.isNaN(tb) ? 0 : tb);
+      })
+      .slice(0, 20);
+  }, [eventsData, namespace, title]);
 
   return (
     <ResizablePanel>
@@ -203,6 +230,37 @@ export const ResourceDetailPanelLayout = ({
           }}
         >
           {children}
+
+          <DrawerTitle>Events ({matchedEvents.length})</DrawerTitle>
+          {matchedEvents.length > 0 ? (
+            <div className="overflow-x-auto -mx-4 px-4 border border-border rounded-md">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border" style={{ backgroundColor: 'var(--color-bg)' }}>
+                    <th className="text-left py-2 px-2 font-medium" style={{ color: 'var(--color-muted)' }}>Summary</th>
+                    <th className="text-left py-2 px-2 font-medium w-16" style={{ color: 'var(--color-muted)' }}>Count</th>
+                    <th className="text-left py-2 px-2 font-medium w-20" style={{ color: 'var(--color-muted)' }}>Age</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {matchedEvents.map((event, idx) => (
+                    <tr key={`${event.name}-${idx}`} className="border-b border-border last:border-b-0 hover:opacity-90">
+                      <td className="py-2 px-2 align-top">
+                        <p className="font-medium" style={{ color: 'var(--color-text)' }}>{event.reason || 'Event'}</p>
+                        {event.message && <p className="mt-1 break-all" style={{ color: 'var(--color-text-secondary)' }}>{event.message}</p>}
+                      </td>
+                      <td className="py-2 px-2 align-top" style={{ color: 'var(--color-text)' }}>{event.count ?? 1}</td>
+                      <td className="py-2 px-2 align-top" style={{ color: 'var(--color-text-secondary)' }}>
+                        {timeAgo(event.last_timestamp || event.first_timestamp)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-xs py-2" style={{ color: 'var(--color-muted)' }}>No recent events</p>
+          )}
         </div>
       </div>
     </ResizablePanel>
