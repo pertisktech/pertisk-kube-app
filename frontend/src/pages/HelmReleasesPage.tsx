@@ -397,6 +397,7 @@ export const HelmReleasesPage = () => {
         data={sortedReleases}
         isLoading={isLoading}
         error={error?.message ?? null}
+        autoFitContent={false}
         rowKey={(row) => `${row.namespace}/${row.name}`}
         onRowClick={(row) => {
           setSelectedRelease(row);

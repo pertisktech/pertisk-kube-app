@@ -207,6 +207,7 @@ export const HelmChartsPage = () => {
         data={filteredAndSortedCharts}
         isLoading={isLoading}
         error={error?.message ?? null}
+        autoFitContent={false}
         rowKey={chartRowKey}
         onRowClick={(row) => {
           setSelectedChart(row);

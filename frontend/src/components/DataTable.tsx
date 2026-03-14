@@ -72,6 +72,7 @@ interface DataTableProps<T> {
   selectedRows?: string[];
   onRowSelectionChange?: (selectedKeys: string[]) => void;
   enableRowSelection?: boolean;
+  autoFitContent?: boolean;
 }
 
 export const DataTable = <T extends Record<string, any>>({
@@ -87,6 +88,7 @@ export const DataTable = <T extends Record<string, any>>({
   selectedRows = [],
   onRowSelectionChange,
   enableRowSelection = false,
+  autoFitContent = true,
 }: DataTableProps<T>) => {
   const getRowKeyValue = (row: T) =>
     typeof rowKey === 'function' ? rowKey(row) : String(row[rowKey]);
@@ -129,14 +131,14 @@ export const DataTable = <T extends Record<string, any>>({
         Total: {data.length} records
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className={cn('text-sm table-auto', autoFitContent ? 'w-max min-w-full' : 'w-full')}>
           <thead>
             <tr className="border-b border-border bg-surface-elevated">
               {columns.map((col, idx) => (
                 <th
                   key={idx}
                   className="px-3 py-2 text-left text-sm font-semibold text-text align-middle"
-                  style={{ width: col.width }}
+                  style={{ width: col.width, whiteSpace: autoFitContent ? 'nowrap' : undefined }}
                 >
                   {enableRowSelection && idx === 0 ? (
                     <div className="flex items-center gap-2">
@@ -210,6 +212,7 @@ export const DataTable = <T extends Record<string, any>>({
                       key={colIdx}
                       className={cn(
                         'px-3 py-2 align-middle text-sm',
+                        autoFitContent && 'whitespace-nowrap',
                         col.header === 'Name' && typeof col.accessor !== 'function'
                           ? 'text-text font-medium'
                           : 'text-text'
