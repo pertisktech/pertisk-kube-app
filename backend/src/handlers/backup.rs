@@ -99,6 +99,7 @@ pub struct BackupRecord {
 pub struct ScheduleRecord {
     pub name: String,
     pub cron: String,
+    pub timezone: String,
     pub last_backup: String,
     pub paused: bool,
     pub include_namespaces: Vec<String>,
@@ -109,6 +110,8 @@ pub struct ScheduleRecord {
 struct StoredSchedule {
     name: String,
     cron: String,
+    #[serde(default = "default_timezone")]
+    timezone: String,
     paused: bool,
     #[serde(default)]
     include_namespaces: Vec<String>,
@@ -168,6 +171,7 @@ pub struct RestoreRequest {
 pub struct CreateScheduleRequest {
     pub name: String,
     pub cron: String,
+    pub timezone: Option<String>,
     pub ttl: Option<String>,
     pub include_namespaces: Option<Vec<String>>,
     pub exclude_namespaces: Option<Vec<String>>,
@@ -213,6 +217,10 @@ fn is_missing_backup_api_error(error_text: &str) -> bool {
     error_text.contains("404 page not found")
         || error_text.contains("the server could not find the requested resource")
         || error_text.contains("404 Not Found")
+}
+
+fn default_timezone() -> String {
+    "Asia/Bangkok".to_string()
 }
 
 fn normalize_cron_expression(input: &str) -> Result<String, String> {
@@ -1191,17 +1199,21 @@ async fn run_due_schedules(client: kube::Client) {
             }
         };
 
-        let fallback_dt = Utc::now() - chrono::Duration::minutes(2);
-        let last_run_dt = schedule
+        let updated_dt = chrono::DateTime::parse_from_rfc3339(&schedule.updated_at)
+            .ok()
+            .map(|v| v.with_timezone(&Utc))
+            .unwrap_or_else(Utc::now);
+
+        let baseline_dt = schedule
             .last_run_at
             .as_ref()
             .and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok())
             .map(|v| v.with_timezone(&Utc))
-            .unwrap_or(fallback_dt);
+            .unwrap_or(updated_dt);
 
         let now = Utc::now();
-        if let Some(next_after_last) = parsed.after(&last_run_dt).next() {
-            if next_after_last <= now {
+        if let Some(next_after_baseline) = parsed.after(&baseline_dt).next() {
+            if next_after_baseline <= now {
                 match trigger_schedule_run(client.clone(), &schedule.name, false).await {
                     Ok(run_name) => info!("Scheduled backup run created: {}", run_name),
                     Err(e) => error!("Failed to execute schedule {}: {}", schedule.name, e),
@@ -1616,9 +1628,11 @@ pub async fn create_backup_schedule(
     let include_namespaces = req.include_namespaces.unwrap_or_default();
     let exclude_namespaces = req.exclude_namespaces.unwrap_or_default();
     let paused = req.paused.unwrap_or(false);
+    let timezone = req.timezone.unwrap_or_else(default_timezone);
 
     if let Some(existing) = schedules.iter_mut().find(|s| s.name == schedule_name) {
         existing.cron = normalized_cron.clone();
+        existing.timezone = timezone;
         existing.paused = paused;
         existing.include_namespaces = include_namespaces;
         existing.exclude_namespaces = exclude_namespaces;
@@ -1627,6 +1641,7 @@ pub async fn create_backup_schedule(
         schedules.push(StoredSchedule {
             name: schedule_name.clone(),
             cron: normalized_cron,
+            timezone,
             paused,
             include_namespaces,
             exclude_namespaces,
@@ -1842,6 +1857,7 @@ pub async fn get_backup_overview(State(state): State<AppState>) -> impl IntoResp
         .map(|s| ScheduleRecord {
             name: s.name,
             cron: s.cron,
+            timezone: if s.timezone.is_empty() { default_timezone() } else { s.timezone },
             last_backup: s.last_run_at.unwrap_or_default(),
             paused: s.paused,
             include_namespaces: s.include_namespaces,

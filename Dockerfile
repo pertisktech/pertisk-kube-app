@@ -43,6 +43,9 @@ COPY backend/build.rs ./backend/build.rs
 # Replace dummy source with real application code
 COPY backend/src ./backend/src
 
+# Static OpenSSL libs required for musl static linking
+RUN apk add --no-cache openssl-libs-static
+
 # touch main.rs so Cargo detects the change and recompiles only app code
 RUN touch backend/src/main.rs && \
     cargo build --release --bin pertisk-kube-backend

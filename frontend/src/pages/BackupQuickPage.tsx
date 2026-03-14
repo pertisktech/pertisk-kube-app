@@ -17,6 +17,7 @@ const ALL_INCLUDE_OPTION = '__ALL__';
 type ScheduleFormState = {
   name: string;
   cron: string;
+  timezone: string;
   includeNamespaces: string[];
   excludeNamespaces: string[];
   paused: boolean;
@@ -25,6 +26,7 @@ type ScheduleFormState = {
 const DEFAULT_SCHEDULE_FORM: ScheduleFormState = {
   name: '',
   cron: '0 2 * * *',
+  timezone: 'Asia/Bangkok',
   includeNamespaces: [ALL_INCLUDE_OPTION],
   excludeNamespaces: [],
   paused: false,
@@ -99,6 +101,7 @@ export const BackupQuickPage = () => {
     setScheduleForm({
       name: schedule.name,
       cron: schedule.cron,
+      timezone: schedule.timezone || 'Asia/Bangkok',
       includeNamespaces,
       excludeNamespaces: schedule.exclude_namespaces,
       paused: schedule.paused,
@@ -165,6 +168,7 @@ export const BackupQuickPage = () => {
       const createdName = await createBackupSchedule({
         name: scheduleForm.name.trim(),
         cron: scheduleForm.cron.trim(),
+        timezone: scheduleForm.timezone.trim() || 'Asia/Bangkok',
         include_namespaces: includeNamespaces,
         exclude_namespaces: scheduleForm.excludeNamespaces,
         paused: scheduleForm.paused,
@@ -215,8 +219,9 @@ export const BackupQuickPage = () => {
       accessor: (row: ScheduleRecord) => <span className="font-medium text-text">{row.name}</span>,
       width: '28%',
     },
-    { header: 'Cron', accessor: (row: ScheduleRecord) => row.cron, width: '24%' },
-    { header: 'Last Backup', accessor: (row: ScheduleRecord) => timeAgo(row.last_backup), width: '18%' },
+    { header: 'Cron', accessor: (row: ScheduleRecord) => row.cron, width: '20%' },
+    { header: 'Timezone', accessor: (row: ScheduleRecord) => row.timezone || 'Asia/Bangkok', width: '16%' },
+    { header: 'Last Backup', accessor: (row: ScheduleRecord) => timeAgo(row.last_backup), width: '14%' },
     {
       header: 'Paused',
       accessor: (row: ScheduleRecord) => (row.paused ? 'Yes' : 'No'),
@@ -325,6 +330,15 @@ export const BackupQuickPage = () => {
                   <input
                     value={scheduleForm.cron}
                     onChange={(e) => setScheduleForm((previous) => ({ ...previous, cron: e.target.value }))}
+                    className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-sm text-text-secondary">Timezone</span>
+                  <input
+                    value={scheduleForm.timezone}
+                    onChange={(e) => setScheduleForm((previous) => ({ ...previous, timezone: e.target.value }))}
+                    placeholder="Asia/Bangkok"
                     className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
                   />
                 </label>

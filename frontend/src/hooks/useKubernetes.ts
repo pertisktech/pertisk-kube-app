@@ -358,6 +358,7 @@ export interface RestoreBackupRequest {
 export interface CreateBackupScheduleRequest {
   name: string;
   cron: string;
+  timezone?: string;
   ttl?: string;
   include_namespaces?: string[];
   exclude_namespaces?: string[];

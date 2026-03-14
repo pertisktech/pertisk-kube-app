@@ -331,6 +331,7 @@ export interface BackupRecord {
 export interface ScheduleRecord {
   name: string;
   cron: string;
+  timezone: string;
   last_backup: string;
   paused: boolean;
   include_namespaces: string[];

@@ -20,7 +20,7 @@ RUN npm install
 FROM rust:alpine AS backend-deps
 WORKDIR /app
 
-RUN apk add --no-cache build-base pkgconfig openssl-dev protobuf-dev
+RUN apk add --no-cache build-base pkgconfig openssl-dev openssl-libs-static protobuf-dev
 
 # Workspace manifest
 COPY Cargo.toml ./Cargo.toml
