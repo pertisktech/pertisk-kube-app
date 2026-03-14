@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from '../components/Icons';
 import { useRealtimePersistentVolumeClaims } from '../hooks/useRealtimeResources';
+import { useRealtimePods } from '../hooks/useRealtimePods';
 import { deletePersistentVolumeClaim } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, PVCDetailPanel, ConfirmDialog } from '../components';
-import type { PersistentVolumeClaim } from '../types';
+import type { PersistentVolumeClaim, Pod } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { StatusBadge } from '../components/StatusBadge';
@@ -31,6 +32,7 @@ const sanitizeYamlForEdit = (yamlText: string) => {
 
 export const PersistentVolumeClaimsPage = () => {
   const { data, isLoading, error } = useRealtimePersistentVolumeClaims();
+  const { data: podsData = [] } = useRealtimePods<Pod>();
   const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedItem, setSelectedItem] = useState<PersistentVolumeClaim | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -57,16 +59,50 @@ export const PersistentVolumeClaimsPage = () => {
     } finally { setIsDeleting(false); }
   };
 
+  const pvcPodMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+
+    for (const pod of podsData) {
+      const podName = pod.name || '-';
+      const podNamespace = pod.namespace || 'default';
+      const volumes = pod.volumes || [];
+
+      for (const vol of volumes) {
+        if (vol?.type !== 'persistentVolumeClaim') continue;
+        const claimName = vol.source;
+        if (!claimName || claimName === '-') continue;
+
+        const key = `${podNamespace}/${claimName}`;
+        const list = map.get(key) || [];
+        if (!list.includes(podName)) {
+          list.push(podName);
+          map.set(key, list);
+        }
+      }
+    }
+
+    return map;
+  }, [podsData]);
+
   const columns = [
     { header: 'Name', accessor: 'name' as const, width: '18%', sortable: true, sortKey: 'name' },
     { header: 'Namespace', accessor: 'namespace' as const, width: '13%', sortable: true, sortKey: 'namespace' },
     {
-      header: 'Status', accessor: 'status' as const, width: '10%',
-      render: (pvc: PersistentVolumeClaim) => <StatusBadge status={pvc.status} />,
+      header: 'Status',
+      accessor: (pvc: PersistentVolumeClaim) => <StatusBadge status={pvc.status} />,
+      width: '10%',
     },
     { header: 'Volume', accessor: 'volume' as const, width: '18%', sortable: true, sortKey: 'volume' },
     { header: 'Capacity', accessor: 'capacity' as const, width: '10%', sortable: true, sortKey: 'capacity' },
-    { header: 'Access Modes', accessor: 'access_modes' as const, width: '12%' },
+    {
+      header: 'Pods',
+      accessor: (pvc: PersistentVolumeClaim) => {
+        const key = `${pvc.namespace}/${pvc.name}`;
+        const podNames = pvcPodMap.get(key) || [];
+        return podNames.length > 0 ? podNames.join(', ') : '-';
+      },
+      width: '12%',
+    },
     { header: 'Storage Class', accessor: 'storage_class' as const, width: '12%' },
     { header: 'Age', accessor: (pvc: PersistentVolumeClaim) => timeAgo(pvc.age), width: '10%', sortable: true, sortKey: 'age' },
   ];

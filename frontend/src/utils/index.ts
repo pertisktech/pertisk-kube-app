@@ -111,6 +111,7 @@ export const getStatusColor = (
     lower === 'true' ||
     lower === 'ready' ||
     lower === 'available' ||
+    lower === 'bound' ||
     lower === 'succeeded' ||
     lower === 'completed'
   )
@@ -127,6 +128,7 @@ export const getStatusColor = (
     lower === 'podinitialized' ||
     lower === 'podinitializing' ||
     lower === 'terminating' ||
+    lower === 'released' ||
     lower === 'notready' ||
     lower.startsWith('init:')
   )
@@ -146,6 +148,7 @@ export const getStatusColor = (
     lower === 'invalidimagelink' ||
     lower === 'unschedulable' ||
     lower === 'evicted' ||
+    lower === 'lost' ||
     lower === 'oomkilled' ||
     lower === 'terminated'
   )

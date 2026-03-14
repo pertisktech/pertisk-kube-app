@@ -10,7 +10,13 @@ import { getAuthToken } from '../utils/auth';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
-type HPASortKey = 'name' | 'namespace' | 'reference' | 'current_replicas' | 'targets' | 'age';
+type HPASortKey = 'name' | 'namespace' | 'reference' | 'current_replicas' | 'targets' | 'desired_replicas' | 'status' | 'age';
+
+const getHpaStatus = (hpa: HPA): 'Scaling Up' | 'Scaling Down' | 'Stable' => {
+  if ((hpa.desired_replicas ?? 0) > (hpa.current_replicas ?? 0)) return 'Scaling Up';
+  if ((hpa.desired_replicas ?? 0) < (hpa.current_replicas ?? 0)) return 'Scaling Down';
+  return 'Stable';
+};
 
 const sanitizeHPAYamlForEdit = (yamlText: string) => {
   try {
@@ -174,6 +180,32 @@ export const HPAPage = () => {
       sortKey: 'targets',
     },
     {
+      header: 'Replicas',
+      accessor: (hpa: HPA) => (
+        <span className="text-text-secondary">
+          {hpa.current_replicas} / {hpa.desired_replicas}
+        </span>
+      ),
+      width: '12%',
+      sortable: true,
+      sortKey: 'desired_replicas',
+    },
+    {
+      header: 'Status',
+      accessor: (hpa: HPA) => {
+        const status = getHpaStatus(hpa);
+        const statusClass = status === 'Stable' ? 'status-green' : 'status-yellow';
+        return (
+          <span className={`inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}`}>
+            {status}
+          </span>
+        );
+      },
+      width: '13%',
+      sortable: true,
+      sortKey: 'status',
+    },
+    {
       header: 'Age',
       accessor: (hpa: HPA) => timeAgo(hpa.age),
       width: '15%',
@@ -205,6 +237,8 @@ export const HPAPage = () => {
       if (sortState.key === 'reference') return (first.reference || '').localeCompare(second.reference || '') * factor;
       if (sortState.key === 'current_replicas') return ((first.current_replicas ?? 0) - (second.current_replicas ?? 0)) * factor;
       if (sortState.key === 'targets') return ((first.targets ?? 0) - (second.targets ?? 0)) * factor;
+      if (sortState.key === 'desired_replicas') return ((first.desired_replicas ?? 0) - (second.desired_replicas ?? 0)) * factor;
+      if (sortState.key === 'status') return getHpaStatus(first).localeCompare(getHpaStatus(second)) * factor;
 
       const firstAge = Date.parse(first.age || '');
       const secondAge = Date.parse(second.age || '');

@@ -1,10 +1,9 @@
-import { useState } from 'react';
-import { Terminal, Trash2, Loader, ChevronDown, FileText, Lock, Unlock, Droplet } from './Icons';
+import { Terminal, Trash2, Loader, FileText, Lock, Unlock, Droplet } from './Icons';
 import { StatusBadge } from './StatusBadge';
 import { usePods } from '../hooks/useKubernetes';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout';
-import { DrawerItem, DrawerTitle } from './drawer';
+import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 import { formatMemoryUsedAlloc, formatCpuRange, formatCpuCores, parseCpuToCores, formatK8sQuantity } from '../utils';
 import type { K8sNode } from '../types';
 
@@ -93,9 +92,6 @@ const NodeDetailsResources = ({
 };
 
 export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpenShell, onCordonToggle, onDrain, onDelete, cordonLoading }: NodeDetailPanelProps) => {
-  const [expandedLabels, setExpandedLabels] = useState(false);
-  const [expandedAnnotations, setExpandedAnnotations] = useState(false);
-
   const { data: allPods } = usePods();
 
   const status = String(node.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady';
@@ -240,53 +236,9 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
           <DrawerTitle>Allocatable</DrawerTitle>
           <NodeDetailsResources type="allocatable" node={node} />
 
-          {/* Labels expandable */}
-          {node.labels && Object.keys(node.labels).length > 0 && (
+          {(labelCount > 0 || annotationCount > 0) && (
             <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => setExpandedLabels(!expandedLabels)}
-                className="w-full flex items-center justify-between py-2 text-left"
-              >
-                <span className="text-xs font-semibold tracking-wide" style={{ color: 'var(--color-muted)' }}>Labels ({labelCount})</span>
-                <span style={{ color: 'var(--color-primary)' }}>
-                  <ChevronDown size={14} color="var(--color-primary)" className={`transition-transform ${expandedLabels ? 'rotate-180' : ''}`} />
-                </span>
-              </button>
-              {expandedLabels && (
-                <div className="space-y-0 border-t border-border pt-2">
-                  {Object.entries(node.labels).map(([key, value]) => (
-                    <DrawerItem key={key} name={key}>
-                      {value}
-                    </DrawerItem>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Annotations expandable */}
-          {node.annotations && Object.keys(node.annotations).length > 0 && (
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => setExpandedAnnotations(!expandedAnnotations)}
-                className="w-full flex items-center justify-between py-2 text-left"
-              >
-                <span className="text-xs font-semibold tracking-wide" style={{ color: 'var(--color-muted)' }}>Annotations ({annotationCount})</span>
-                <span style={{ color: 'var(--color-primary)' }}>
-                  <ChevronDown size={14} color="var(--color-primary)" className={`transition-transform ${expandedAnnotations ? 'rotate-180' : ''}`} />
-                </span>
-              </button>
-              {expandedAnnotations && (
-                <div className="space-y-0 border-t border-border pt-2">
-                  {Object.entries(node.annotations).map(([key, value]) => (
-                    <DrawerItem key={key} name={key}>
-                      {value}
-                    </DrawerItem>
-                  ))}
-                </div>
-              )}
+              <DrawerLabelsAnnotations labels={node.labels} annotations={node.annotations} />
             </div>
           )}
 

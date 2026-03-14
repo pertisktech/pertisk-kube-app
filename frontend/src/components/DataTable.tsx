@@ -54,6 +54,7 @@ export interface SortState {
 interface Column<T> {
   header: string;
   accessor: keyof T | ((row: T) => ReactNode);
+  render?: (row: T) => ReactNode;
   width?: string;
   sortable?: boolean;
   sortKey?: string;
@@ -220,11 +221,13 @@ export const DataTable = <T extends Record<string, any>>({
                     >
                       {(() => {
                         const cellValue =
-                          typeof col.accessor === 'function'
-                            ? col.accessor(row)
-                            : row[col.accessor] != null
-                              ? String(row[col.accessor])
-                              : '-';
+                          typeof col.render === 'function'
+                            ? col.render(row)
+                            : typeof col.accessor === 'function'
+                              ? col.accessor(row)
+                              : row[col.accessor] != null
+                                ? String(row[col.accessor])
+                                : '-';
 
                         const content = col.header === 'Age'
                           ? <span className="whitespace-nowrap">{cellValue}</span>

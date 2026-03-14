@@ -53,8 +53,9 @@ export const PersistentVolumesPage = () => {
     { header: 'Access Modes', accessor: 'access_modes' as const, width: '12%' },
     { header: 'Reclaim Policy', accessor: 'reclaim_policy' as const, width: '12%', sortable: true, sortKey: 'reclaim_policy' },
     {
-      header: 'Status', accessor: 'status' as const, width: '10%',
-      render: (pv: PersistentVolume) => <StatusBadge status={pv.status} />,
+      header: 'Status',
+      accessor: (pv: PersistentVolume) => <StatusBadge status={pv.status} />,
+      width: '10%',
     },
     { header: 'Claim', accessor: 'claim' as const, width: '18%' },
     { header: 'Storage Class', accessor: 'storage_class' as const, width: '12%' },
