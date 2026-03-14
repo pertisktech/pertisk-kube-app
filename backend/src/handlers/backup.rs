@@ -1,22 +1,28 @@
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse, Json};
 use chrono::Utc;
 use cron::Schedule;
+use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
 use k8s_openapi::api::apps::v1::{DaemonSet, Deployment, StatefulSet};
 use k8s_openapi::api::batch::v1::{CronJob, Job};
-use k8s_openapi::api::core::v1::{ConfigMap, Namespace, PersistentVolumeClaim, Pod, Secret, Service};
+use k8s_openapi::api::core::v1::{ConfigMap, Namespace, PersistentVolumeClaim, Pod, Secret, Service, ServiceAccount};
+use k8s_openapi::api::networking::v1::{Ingress, IngressClass, NetworkPolicy};
+use k8s_openapi::api::policy::v1::PodDisruptionBudget;
+use k8s_openapi::api::rbac::v1::{ClusterRole, ClusterRoleBinding, Role, RoleBinding};
+use k8s_openapi::api::scheduling::v1::PriorityClass;
+use k8s_openapi::api::storage::v1::StorageClass;
 use kube::{
-    api::{DeleteParams, Patch, PatchParams},
+    api::{DeleteParams, ListParams, Patch, PatchParams},
     core::{ApiResource, DynamicObject, GroupVersionKind},
     Api,
 };
 use s3::{bucket::Bucket, creds::Credentials, region::Region};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::AppState;
 
@@ -554,6 +560,87 @@ async fn persist_stored_backup_runs(client: kube::Client, runs: &[StoredBackupRu
     Ok(())
 }
 
+async fn load_backup_runs_from_s3(settings: &BackupSettings) -> Vec<BackupRecord> {
+    if settings.s3_bucket.trim().is_empty()
+        || settings.aws_access_key_id.trim().is_empty()
+        || settings.aws_secret_access_key.trim().is_empty()
+    {
+        return vec![];
+    }
+
+    let region = match resolve_s3_region(settings) {
+        Ok(region) => region,
+        Err(e) => {
+            info!("Skipping S3 backup fallback due to region config error: {}", e);
+            return vec![];
+        }
+    };
+
+    let bucket = match create_s3_bucket_client(settings, region) {
+        Ok(bucket) => bucket,
+        Err(e) => {
+            info!("Skipping S3 backup fallback due to bucket client error: {}", e);
+            return vec![];
+        }
+    };
+
+    let prefix = settings.s3_prefix.trim().trim_matches('/');
+    let list_prefix = if prefix.is_empty() {
+        String::new()
+    } else {
+        format!("{}/", prefix)
+    };
+
+    let list_results = match bucket.list(list_prefix.clone(), None).await {
+        Ok(results) => results,
+        Err(e) => {
+            info!("S3 backup fallback list failed: {}", e);
+            return vec![];
+        }
+    };
+
+    let mut out: Vec<BackupRecord> = vec![];
+    for page in list_results {
+        for object in page.contents {
+            let mut key = object.key.trim().trim_start_matches('/').to_string();
+            if key.is_empty() || !key.ends_with(".json") {
+                continue;
+            }
+
+            if !list_prefix.is_empty() {
+                if !key.starts_with(&list_prefix) {
+                    continue;
+                }
+                key = key[list_prefix.len()..].to_string();
+            }
+
+            if key.is_empty() || key.contains('/') {
+                continue;
+            }
+
+            let backup_name = key.trim_end_matches(".json").to_string();
+            if backup_name.is_empty() {
+                continue;
+            }
+
+            let resource_summary = build_resource_summary(&[], &[]);
+
+            out.push(BackupRecord {
+                name: backup_name,
+                phase: "Completed".to_string(),
+                storage_location: settings.storage_location_name.clone(),
+                created_at: object.last_modified,
+                include_namespaces: vec![],
+                exclude_namespaces: vec![],
+                kind_summary: fallback_kind_summary_from_resource_summary(&resource_summary),
+                resource_summary,
+            });
+        }
+    }
+
+    out
+}
+
 fn resolve_s3_region(settings: &BackupSettings) -> Result<Region, String> {
     let region_name = settings.s3_region.trim();
     if !settings.s3_url.trim().is_empty() {
@@ -664,9 +751,68 @@ async fn build_k8s_snapshot_payload(
     let mut total_resources: usize = 0;
     let mut kind_summary: BTreeMap<String, usize> = BTreeMap::new();
 
+    let ingressclasses_api: Api<IngressClass> = Api::all(client.clone());
+    let ingressclasses = match ingressclasses_api.list(&Default::default()).await {
+        Ok(list) => serialize_resource_list(list.items),
+        Err(e) => {
+            warnings.push(format!("cluster: ingressclasses list failed: {}", e));
+            vec![]
+        }
+    };
+
+    let clusterroles_api: Api<ClusterRole> = Api::all(client.clone());
+    let clusterroles = match clusterroles_api.list(&Default::default()).await {
+        Ok(list) => serialize_resource_list(list.items),
+        Err(e) => {
+            warnings.push(format!("cluster: clusterroles list failed: {}", e));
+            vec![]
+        }
+    };
+
+    let clusterrolebindings_api: Api<ClusterRoleBinding> = Api::all(client.clone());
+    let clusterrolebindings = match clusterrolebindings_api.list(&Default::default()).await {
+        Ok(list) => serialize_resource_list(list.items),
+        Err(e) => {
+            warnings.push(format!("cluster: clusterrolebindings list failed: {}", e));
+            vec![]
+        }
+    };
+
+    let storageclasses_api: Api<StorageClass> = Api::all(client.clone());
+    let storageclasses = match storageclasses_api.list(&Default::default()).await {
+        Ok(list) => serialize_resource_list(list.items),
+        Err(e) => {
+            warnings.push(format!("cluster: storageclasses list failed: {}", e));
+            vec![]
+        }
+    };
+
+    let priorityclasses_api: Api<PriorityClass> = Api::all(client.clone());
+    let priorityclasses = match priorityclasses_api.list(&Default::default()).await {
+        Ok(list) => serialize_resource_list(list.items),
+        Err(e) => {
+            warnings.push(format!("cluster: priorityclasses list failed: {}", e));
+            vec![]
+        }
+    };
+
+    total_resources += ingressclasses.len()
+        + clusterroles.len()
+        + clusterrolebindings.len()
+        + storageclasses.len()
+        + priorityclasses.len();
+    *kind_summary.entry("ingressclasses".to_string()).or_insert(0) += ingressclasses.len();
+    *kind_summary.entry("clusterroles".to_string()).or_insert(0) += clusterroles.len();
+    *kind_summary.entry("clusterrolebindings".to_string()).or_insert(0) += clusterrolebindings.len();
+    *kind_summary.entry("storageclasses".to_string()).or_insert(0) += storageclasses.len();
+    *kind_summary.entry("priorityclasses".to_string()).or_insert(0) += priorityclasses.len();
+
     for namespace in namespaces {
         let pods_api: Api<Pod> = Api::namespaced(client.clone(), &namespace);
         let services_api: Api<Service> = Api::namespaced(client.clone(), &namespace);
+        let serviceaccounts_api: Api<ServiceAccount> = Api::namespaced(client.clone(), &namespace);
+        let roles_api: Api<Role> = Api::namespaced(client.clone(), &namespace);
+        let rolebindings_api: Api<RoleBinding> = Api::namespaced(client.clone(), &namespace);
         let configmaps_api: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
         let secrets_api: Api<Secret> = Api::namespaced(client.clone(), &namespace);
         let pvc_api: Api<PersistentVolumeClaim> = Api::namespaced(client.clone(), &namespace);
@@ -675,6 +821,10 @@ async fn build_k8s_snapshot_payload(
         let daemonsets_api: Api<DaemonSet> = Api::namespaced(client.clone(), &namespace);
         let jobs_api: Api<Job> = Api::namespaced(client.clone(), &namespace);
         let cronjobs_api: Api<CronJob> = Api::namespaced(client.clone(), &namespace);
+        let ingresses_api: Api<Ingress> = Api::namespaced(client.clone(), &namespace);
+        let networkpolicies_api: Api<NetworkPolicy> = Api::namespaced(client.clone(), &namespace);
+        let hpas_api: Api<HorizontalPodAutoscaler> = Api::namespaced(client.clone(), &namespace);
+        let pdbs_api: Api<PodDisruptionBudget> = Api::namespaced(client.clone(), &namespace);
 
         let pods = match pods_api.list(&Default::default()).await {
             Ok(list) => serialize_resource_list(list.items),
@@ -688,6 +838,30 @@ async fn build_k8s_snapshot_payload(
             Ok(list) => serialize_resource_list(list.items),
             Err(e) => {
                 warnings.push(format!("namespace {}: services list failed: {}", namespace, e));
+                vec![]
+            }
+        };
+
+        let serviceaccounts = match serviceaccounts_api.list(&Default::default()).await {
+            Ok(list) => serialize_resource_list(list.items),
+            Err(e) => {
+                warnings.push(format!("namespace {}: serviceaccounts list failed: {}", namespace, e));
+                vec![]
+            }
+        };
+
+        let roles = match roles_api.list(&Default::default()).await {
+            Ok(list) => serialize_resource_list(list.items),
+            Err(e) => {
+                warnings.push(format!("namespace {}: roles list failed: {}", namespace, e));
+                vec![]
+            }
+        };
+
+        let rolebindings = match rolebindings_api.list(&Default::default()).await {
+            Ok(list) => serialize_resource_list(list.items),
+            Err(e) => {
+                warnings.push(format!("namespace {}: rolebindings list failed: {}", namespace, e));
                 vec![]
             }
         };
@@ -756,8 +930,43 @@ async fn build_k8s_snapshot_payload(
             }
         };
 
+        let ingresses = match ingresses_api.list(&Default::default()).await {
+            Ok(list) => serialize_resource_list(list.items),
+            Err(e) => {
+                warnings.push(format!("namespace {}: ingresses list failed: {}", namespace, e));
+                vec![]
+            }
+        };
+
+        let networkpolicies = match networkpolicies_api.list(&Default::default()).await {
+            Ok(list) => serialize_resource_list(list.items),
+            Err(e) => {
+                warnings.push(format!("namespace {}: networkpolicies list failed: {}", namespace, e));
+                vec![]
+            }
+        };
+
+        let horizontalpodautoscalers = match hpas_api.list(&Default::default()).await {
+            Ok(list) => serialize_resource_list(list.items),
+            Err(e) => {
+                warnings.push(format!("namespace {}: hpas list failed: {}", namespace, e));
+                vec![]
+            }
+        };
+
+        let poddisruptionbudgets = match pdbs_api.list(&Default::default()).await {
+            Ok(list) => serialize_resource_list(list.items),
+            Err(e) => {
+                warnings.push(format!("namespace {}: pdbs list failed: {}", namespace, e));
+                vec![]
+            }
+        };
+
         let namespace_resource_count = pods.len()
             + services.len()
+            + serviceaccounts.len()
+            + roles.len()
+            + rolebindings.len()
             + configmaps.len()
             + secrets.len()
             + persistent_volume_claims.len()
@@ -765,11 +974,18 @@ async fn build_k8s_snapshot_payload(
             + statefulsets.len()
             + daemonsets.len()
             + jobs.len()
-            + cronjobs.len();
+            + cronjobs.len()
+            + ingresses.len()
+            + networkpolicies.len()
+            + horizontalpodautoscalers.len()
+            + poddisruptionbudgets.len();
         total_resources += namespace_resource_count;
 
         *kind_summary.entry("pods".to_string()).or_insert(0) += pods.len();
         *kind_summary.entry("services".to_string()).or_insert(0) += services.len();
+        *kind_summary.entry("serviceaccounts".to_string()).or_insert(0) += serviceaccounts.len();
+        *kind_summary.entry("roles".to_string()).or_insert(0) += roles.len();
+        *kind_summary.entry("rolebindings".to_string()).or_insert(0) += rolebindings.len();
         *kind_summary.entry("configmaps".to_string()).or_insert(0) += configmaps.len();
         *kind_summary.entry("secrets".to_string()).or_insert(0) += secrets.len();
         *kind_summary
@@ -780,12 +996,19 @@ async fn build_k8s_snapshot_payload(
         *kind_summary.entry("daemonsets".to_string()).or_insert(0) += daemonsets.len();
         *kind_summary.entry("jobs".to_string()).or_insert(0) += jobs.len();
         *kind_summary.entry("cronjobs".to_string()).or_insert(0) += cronjobs.len();
+        *kind_summary.entry("ingresses".to_string()).or_insert(0) += ingresses.len();
+        *kind_summary.entry("networkpolicies".to_string()).or_insert(0) += networkpolicies.len();
+        *kind_summary.entry("horizontalpodautoscalers".to_string()).or_insert(0) += horizontalpodautoscalers.len();
+        *kind_summary.entry("poddisruptionbudgets".to_string()).or_insert(0) += poddisruptionbudgets.len();
 
         snapshot_namespaces.push(json!({
             "name": namespace,
             "summary": {
                 "pods": pods.len(),
                 "services": services.len(),
+                "serviceaccounts": serviceaccounts.len(),
+                "roles": roles.len(),
+                "rolebindings": rolebindings.len(),
                 "configmaps": configmaps.len(),
                 "secrets": secrets.len(),
                 "persistent_volume_claims": persistent_volume_claims.len(),
@@ -793,11 +1016,18 @@ async fn build_k8s_snapshot_payload(
                 "statefulsets": statefulsets.len(),
                 "daemonsets": daemonsets.len(),
                 "jobs": jobs.len(),
-                "cronjobs": cronjobs.len()
+                "cronjobs": cronjobs.len(),
+                "ingresses": ingresses.len(),
+                "networkpolicies": networkpolicies.len(),
+                "horizontalpodautoscalers": horizontalpodautoscalers.len(),
+                "poddisruptionbudgets": poddisruptionbudgets.len()
             },
             "resources": {
                 "pods": pods,
                 "services": services,
+                "serviceaccounts": serviceaccounts,
+                "roles": roles,
+                "rolebindings": rolebindings,
                 "configmaps": configmaps,
                 "secrets": secrets,
                 "persistent_volume_claims": persistent_volume_claims,
@@ -805,7 +1035,11 @@ async fn build_k8s_snapshot_payload(
                 "statefulsets": statefulsets,
                 "daemonsets": daemonsets,
                 "jobs": jobs,
-                "cronjobs": cronjobs
+                "cronjobs": cronjobs,
+                "ingresses": ingresses,
+                "networkpolicies": networkpolicies,
+                "horizontalpodautoscalers": horizontalpodautoscalers,
+                "poddisruptionbudgets": poddisruptionbudgets
             }
         }));
     }
@@ -834,8 +1068,20 @@ async fn build_k8s_snapshot_payload(
             "summary": {
                 "namespace_count": snapshot_namespaces.len(),
                 "total_resources": total_resources,
+                "ingressclasses": ingressclasses.len(),
+                "clusterroles": clusterroles.len(),
+                "clusterrolebindings": clusterrolebindings.len(),
+                "storageclasses": storageclasses.len(),
+                "priorityclasses": priorityclasses.len(),
                 "warnings_count": warnings.len(),
                 "kind_summary": kind_summary,
+            },
+            "cluster_resources": {
+                "ingressclasses": ingressclasses,
+                "clusterroles": clusterroles,
+                "clusterrolebindings": clusterrolebindings,
+                "storageclasses": storageclasses,
+                "priorityclasses": priorityclasses,
             },
             "namespaces": snapshot_namespaces,
             "warnings": warnings,
@@ -957,6 +1203,475 @@ async fn delete_object_with_retries(settings: &BackupSettings, key: &str) -> Res
         key,
         diagnostics.join(" | ")
     ))
+}
+
+async fn get_object_with_retries(settings: &BackupSettings, key: &str) -> Result<Vec<u8>, String> {
+    let primary_region = resolve_s3_region(settings)?;
+
+    let mut attempts: Vec<(Region, String)> = Vec::new();
+    attempts.push((primary_region.clone(), key.to_string()));
+    attempts.push((primary_region.clone(), format!("/{}", key)));
+
+    if let Region::Custom { endpoint, .. } = &primary_region {
+        let region_fallback = Region::Custom {
+            region: "us-east-1".to_string(),
+            endpoint: endpoint.clone(),
+        };
+        attempts.push((region_fallback.clone(), key.to_string()));
+        attempts.push((region_fallback, format!("/{}", key)));
+    }
+
+    let mut diagnostics: Vec<String> = Vec::new();
+    for (region, path) in attempts {
+        let region_name = region_label(&region);
+        let bucket = create_s3_bucket_client(settings, region)?;
+        match bucket.get_object(&path).await {
+            Ok(response) => {
+                if (200..300).contains(&response.status_code()) {
+                    return Ok(response.as_slice().to_vec());
+                }
+
+                let response_text = response
+                    .to_string()
+                    .unwrap_or_else(|_| "<non-utf8-response>".to_string());
+                diagnostics.push(format!(
+                    "[region={}, path={}] HTTP {} body={}",
+                    region_name,
+                    path,
+                    response.status_code(),
+                    response_text
+                ));
+            }
+            Err(e) => {
+                diagnostics.push(format!(
+                    "[region={}, path={}] request error: {}",
+                    region_name,
+                    path,
+                    e
+                ));
+            }
+        }
+    }
+
+    Err(format!(
+        "S3 get failed for key {}. Attempts: {}",
+        key,
+        diagnostics.join(" | ")
+    ))
+}
+
+fn backup_snapshot_key(settings: &BackupSettings, backup_name: &str) -> String {
+    let prefix = settings.s3_prefix.trim().trim_matches('/');
+    if prefix.is_empty() {
+        format!("{}.json", backup_name)
+    } else {
+        format!("{}/{}.json", prefix, backup_name)
+    }
+}
+
+fn api_resource_for_known_kind(kind: &str, api_version: &str) -> Option<ApiResource> {
+    let (group, version) = if let Some((g, v)) = api_version.split_once('/') {
+        (g, v)
+    } else {
+        ("", api_version)
+    };
+
+    let plural = match kind {
+        "Pod" => "pods",
+        "Service" => "services",
+        "ServiceAccount" => "serviceaccounts",
+        "Role" => "roles",
+        "RoleBinding" => "rolebindings",
+        "ConfigMap" => "configmaps",
+        "Secret" => "secrets",
+        "PersistentVolumeClaim" => "persistentvolumeclaims",
+        "Deployment" => "deployments",
+        "StatefulSet" => "statefulsets",
+        "DaemonSet" => "daemonsets",
+        "Job" => "jobs",
+        "CronJob" => "cronjobs",
+        "Ingress" => "ingresses",
+        "IngressClass" => "ingressclasses",
+        "ClusterRole" => "clusterroles",
+        "ClusterRoleBinding" => "clusterrolebindings",
+        "StorageClass" => "storageclasses",
+        "PriorityClass" => "priorityclasses",
+        "NetworkPolicy" => "networkpolicies",
+        "HorizontalPodAutoscaler" => "horizontalpodautoscalers",
+        "PodDisruptionBudget" => "poddisruptionbudgets",
+        _ => return None,
+    };
+
+    let gvk = GroupVersionKind::gvk(group, version, kind);
+    let mut ar = ApiResource::from_gvk(&gvk);
+    ar.plural = plural.to_string();
+    Some(ar)
+}
+
+fn sanitize_snapshot_resource(mut resource: Value) -> Value {
+    if let Some(meta) = resource
+        .get_mut("metadata")
+        .and_then(|v| v.as_object_mut())
+    {
+        meta.remove("managedFields");
+        meta.remove("resourceVersion");
+        meta.remove("uid");
+        meta.remove("selfLink");
+        meta.remove("generation");
+        meta.remove("creationTimestamp");
+    }
+
+    if resource.get("kind").and_then(|v| v.as_str()) == Some("Service") {
+        if let Some(spec) = resource.get_mut("spec").and_then(|v| v.as_object_mut()) {
+            spec.remove("clusterIP");
+            spec.remove("clusterIPs");
+            spec.remove("ipFamilies");
+            spec.remove("ipFamilyPolicy");
+            spec.remove("healthCheckNodePort");
+        }
+    }
+
+    resource
+}
+
+fn extract_service_account_name(kind: &str, item: &Value) -> Option<String> {
+    let raw = match kind {
+        "Deployment" | "StatefulSet" | "DaemonSet" | "Job" => item
+            .get("spec")
+            .and_then(|v| v.get("template"))
+            .and_then(|v| v.get("spec"))
+            .and_then(|v| v.get("serviceAccountName"))
+            .and_then(|v| v.as_str()),
+        "CronJob" => item
+            .get("spec")
+            .and_then(|v| v.get("jobTemplate"))
+            .and_then(|v| v.get("spec"))
+            .and_then(|v| v.get("template"))
+            .and_then(|v| v.get("spec"))
+            .and_then(|v| v.get("serviceAccountName"))
+            .and_then(|v| v.as_str()),
+        _ => None,
+    };
+
+    raw.map(str::trim)
+        .filter(|v| !v.is_empty() && *v != "default")
+        .map(ToString::to_string)
+}
+
+fn is_cluster_scoped_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "IngressClass" | "ClusterRole" | "ClusterRoleBinding" | "StorageClass" | "PriorityClass"
+    )
+}
+
+async fn ensure_service_account_exists(
+    client: kube::Client,
+    namespace: &str,
+    service_account_name: &str,
+) -> Result<(), String> {
+    let sa_api: Api<ServiceAccount> = Api::namespaced(client, namespace);
+    match sa_api.get_opt(service_account_name).await {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => {
+            let payload = json!({
+                "apiVersion": "v1",
+                "kind": "ServiceAccount",
+                "metadata": {
+                    "name": service_account_name,
+                    "namespace": namespace,
+                }
+            });
+
+            sa_api
+                .patch(
+                    service_account_name,
+                    &PatchParams::apply("pertisk-kube-web").force(),
+                    &Patch::Apply(payload),
+                )
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+async fn apply_snapshot_resources(
+    client: kube::Client,
+    snapshot: &Value,
+    include_namespaces: &[String],
+    exclude_namespaces: &[String],
+) -> Result<(usize, usize, Vec<String>), String> {
+    let namespaces = snapshot
+        .get("namespaces")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "Backup snapshot missing namespaces data".to_string())?;
+
+    let mut applied = 0usize;
+    let mut skipped = 0usize;
+    let mut warnings: Vec<String> = vec![];
+
+    // Apply cluster-scoped resources first so namespaced resources can reference them.
+    if let Some(cluster_resources) = snapshot.get("cluster_resources").and_then(|v| v.as_object()) {
+        let cluster_apply_order = [
+            "ingressclasses",
+            "storageclasses",
+            "priorityclasses",
+            "clusterroles",
+            "clusterrolebindings",
+        ];
+
+        let mut ordered_cluster_lists: Vec<&Value> = vec![];
+        for key in cluster_apply_order {
+            if let Some(resource_list) = cluster_resources.get(key) {
+                ordered_cluster_lists.push(resource_list);
+            }
+        }
+        for (key, resource_list) in cluster_resources {
+            if cluster_apply_order.iter().any(|k| *k == key.as_str()) {
+                continue;
+            }
+            ordered_cluster_lists.push(resource_list);
+        }
+
+        for resource_list in ordered_cluster_lists {
+            let Some(items) = resource_list.as_array() else {
+                continue;
+            };
+
+            for raw_item in items {
+                let mut item = sanitize_snapshot_resource(raw_item.clone());
+                let kind = item
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let api_version = item
+                    .get("apiVersion")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let name = item
+                    .get("metadata")
+                    .and_then(|v| v.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+
+                if kind.is_empty() || api_version.is_empty() || name.is_empty() {
+                    skipped += 1;
+                    continue;
+                }
+
+                if !is_cluster_scoped_kind(&kind) {
+                    skipped += 1;
+                    continue;
+                }
+
+                let Some(api_resource) = api_resource_for_known_kind(&kind, &api_version) else {
+                    skipped += 1;
+                    continue;
+                };
+
+                if let Some(meta) = item.get_mut("metadata").and_then(|v| v.as_object_mut()) {
+                    meta.remove("namespace");
+                }
+
+                let obj: DynamicObject = match serde_json::from_value(item) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warnings.push(format!("{} {} parse failed: {}", kind, name, e));
+                        continue;
+                    }
+                };
+
+                let api: Api<DynamicObject> = Api::all_with(client.clone(), &api_resource);
+                match api
+                    .patch(
+                        &name,
+                        &PatchParams::apply("pertisk-kube-web").force(),
+                        &Patch::Apply(obj),
+                    )
+                    .await
+                {
+                    Ok(_) => applied += 1,
+                    Err(e) => warnings.push(format!("{} {} apply failed: {}", kind, name, e)),
+                }
+            }
+        }
+    }
+
+    for ns_entry in namespaces {
+        let namespace = ns_entry
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+
+        if namespace.is_empty() {
+            continue;
+        }
+
+        if !include_namespaces.is_empty() && !include_namespaces.iter().any(|n| n == &namespace) {
+            continue;
+        }
+        if exclude_namespaces.iter().any(|n| n == &namespace) {
+            continue;
+        }
+
+        if let Err(e) = ensure_namespace(client.clone(), &namespace).await {
+            warnings.push(format!("namespace {} ensure failed: {}", namespace, e));
+            continue;
+        }
+
+        let resources_obj = match ns_entry.get("resources").and_then(|v| v.as_object()) {
+            Some(v) => v,
+            None => continue,
+        };
+
+        let apply_order = [
+            "serviceaccounts",
+            "roles",
+            "rolebindings",
+            "configmaps",
+            "secrets",
+            "persistent_volume_claims",
+            "services",
+            "networkpolicies",
+            "ingresses",
+            "deployments",
+            "statefulsets",
+            "daemonsets",
+            "jobs",
+            "cronjobs",
+            "horizontalpodautoscalers",
+            "poddisruptionbudgets",
+            "pods",
+        ];
+
+        let mut ordered_resource_lists: Vec<&Value> = vec![];
+        for key in apply_order {
+            if let Some(resource_list) = resources_obj.get(key) {
+                ordered_resource_lists.push(resource_list);
+            }
+        }
+        for (key, resource_list) in resources_obj {
+            if apply_order.iter().any(|k| *k == key.as_str()) {
+                continue;
+            }
+            ordered_resource_lists.push(resource_list);
+        }
+
+        for resource_list in ordered_resource_lists {
+            let Some(items) = resource_list.as_array() else {
+                continue;
+            };
+
+            for raw_item in items {
+                let mut item = sanitize_snapshot_resource(raw_item.clone());
+                let kind = item
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let api_version = item
+                    .get("apiVersion")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let name = item
+                    .get("metadata")
+                    .and_then(|v| v.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+
+                if kind.is_empty() || api_version.is_empty() || name.is_empty() {
+                    skipped += 1;
+                    continue;
+                }
+
+                // Do not restore raw Pods directly; controllers/workloads should recreate them.
+                if kind == "Pod" {
+                    skipped += 1;
+                    continue;
+                }
+
+                if let Some(sa_name) = extract_service_account_name(&kind, &item) {
+                    if let Err(e) = ensure_service_account_exists(client.clone(), &namespace, &sa_name).await {
+                        warnings.push(format!(
+                            "{} {}/{} serviceaccount {} ensure failed: {}",
+                            kind,
+                            namespace,
+                            name,
+                            sa_name,
+                            e
+                        ));
+                    }
+                }
+
+                let Some(api_resource) = api_resource_for_known_kind(&kind, &api_version) else {
+                    skipped += 1;
+                    continue;
+                };
+
+                if let Some(meta) = item.get_mut("metadata").and_then(|v| v.as_object_mut()) {
+                    meta.insert("namespace".to_string(), Value::String(namespace.clone()));
+                }
+
+                let obj: DynamicObject = match serde_json::from_value(item) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warnings.push(format!(
+                            "{} {}/{} parse failed: {}",
+                            kind,
+                            namespace,
+                            name,
+                            e
+                        ));
+                        continue;
+                    }
+                };
+
+                let api: Api<DynamicObject> =
+                    Api::namespaced_with(client.clone(), &namespace, &api_resource);
+                match api
+                    .patch(
+                        &name,
+                        &PatchParams::apply("pertisk-kube-web").force(),
+                        &Patch::Apply(obj),
+                    )
+                    .await
+                {
+                    Ok(_) => applied += 1,
+                    Err(e) => warnings.push(format!(
+                        "{} {}/{} apply failed: {}",
+                        kind,
+                        namespace,
+                        name,
+                        e
+                    )),
+                }
+            }
+        }
+    }
+
+    Ok((applied, skipped, warnings))
+}
+
+async fn restore_from_s3_snapshot(
+    client: kube::Client,
+    settings: &BackupSettings,
+    backup_name: &str,
+    include_namespaces: &[String],
+    exclude_namespaces: &[String],
+) -> Result<(usize, usize, Vec<String>), String> {
+    let key = backup_snapshot_key(settings, backup_name);
+    let content = get_object_with_retries(settings, &key).await?;
+    let snapshot: Value = serde_json::from_slice(&content)
+        .map_err(|e| format!("Invalid backup snapshot JSON for {}: {}", key, e))?;
+    apply_snapshot_resources(client, &snapshot, include_namespaces, exclude_namespaces).await
 }
 
 async fn delete_backup_runs_by_names(
@@ -1542,6 +2257,9 @@ pub async fn run_restore(
         )
     });
 
+    let include_namespaces = req.include_namespaces.unwrap_or_default();
+    let exclude_namespaces = req.exclude_namespaces.unwrap_or_default();
+
     let restore = json!({
         "apiVersion": "velero.io/v1",
         "kind": "Restore",
@@ -1551,8 +2269,8 @@ pub async fn run_restore(
         },
         "spec": {
             "backupName": req.backup_name,
-            "includedNamespaces": req.include_namespaces.unwrap_or_default(),
-            "excludedNamespaces": req.exclude_namespaces.unwrap_or_default()
+            "includedNamespaces": include_namespaces,
+            "excludedNamespaces": exclude_namespaces
         }
     });
 
@@ -1569,11 +2287,69 @@ pub async fn run_restore(
             Json(json!({"success": true, "name": restore_name})),
         )
             .into_response(),
-        Err(e) => (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"success": false, "message": format!("Failed to create restore: {}", e)})),
-        )
-            .into_response(),
+        Err(e) => {
+            let err_text = e.to_string();
+            if err_text.contains("404") {
+                warn!(
+                    "Restore CR API unavailable, using S3 snapshot fallback for backup {}",
+                    req.backup_name
+                );
+
+                let settings = load_settings(state.client.clone()).await;
+                match restore_from_s3_snapshot(
+                    state.client.clone(),
+                    &settings,
+                    &req.backup_name,
+                    &include_namespaces,
+                    &exclude_namespaces,
+                )
+                .await
+                {
+                    Ok((applied, skipped, warnings)) => {
+                        let message = if warnings.is_empty() {
+                            format!(
+                                "Restore completed from snapshot. Applied {} resource(s), skipped {}.",
+                                applied, skipped
+                            )
+                        } else {
+                            format!(
+                                "Restore completed with warnings. Applied {} resource(s), skipped {}.",
+                                applied, skipped
+                            )
+                        };
+
+                        (
+                            StatusCode::OK,
+                            Json(json!({
+                                "success": true,
+                                "name": restore_name,
+                                "message": message,
+                                "warnings": warnings,
+                                "mode": "snapshot-fallback"
+                            })),
+                        )
+                            .into_response()
+                    }
+                    Err(fallback_err) => (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({
+                            "success": false,
+                            "message": format!(
+                                "Failed to create restore CR and snapshot fallback also failed: {}",
+                                fallback_err
+                            )
+                        })),
+                    )
+                        .into_response(),
+                }
+            } else {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"success": false, "message": format!("Failed to create restore: {}", e)})),
+                )
+                    .into_response()
+            }
+        }
     }
 }
 
@@ -1826,7 +2602,7 @@ pub async fn delete_backup_runs_bulk(
 }
 
 pub async fn get_backup_overview(State(state): State<AppState>) -> impl IntoResponse {
-    let mut backups: Vec<BackupRecord> = load_stored_backup_runs(state.client.clone())
+    let mut merged_backups: HashMap<String, BackupRecord> = load_stored_backup_runs(state.client.clone())
         .await
         .into_iter()
         .map(|r| {
@@ -1851,7 +2627,98 @@ pub async fn get_backup_overview(State(state): State<AppState>) -> impl IntoResp
                 resource_summary,
             }
         })
+        .map(|record| (record.name.clone(), record))
         .collect();
+
+    // Also pull live Velero Backup CRs so list is available when switching clusters.
+    let runtime_namespace = SETTINGS_NAMESPACE;
+    let backups_api: Api<DynamicObject> =
+        Api::namespaced_with(state.client.clone(), runtime_namespace, &backup_crd_resource("Backup"));
+
+    match backups_api.list(&ListParams::default()).await {
+        Ok(list) => {
+            for backup in list.items {
+                let name = backup.metadata.name.unwrap_or_default();
+                if name.is_empty() {
+                    continue;
+                }
+
+                let include_namespaces: Vec<String> = backup
+                    .data
+                    .get("spec")
+                    .and_then(|v| v.get("includedNamespaces"))
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|item| item.as_str().map(ToString::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let exclude_namespaces: Vec<String> = backup
+                    .data
+                    .get("spec")
+                    .and_then(|v| v.get("excludedNamespaces"))
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|item| item.as_str().map(ToString::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let resource_summary = build_resource_summary(&include_namespaces, &exclude_namespaces);
+
+                let live_record = BackupRecord {
+                    name: name.clone(),
+                    phase: backup
+                        .data
+                        .get("status")
+                        .and_then(|v| v.get("phase"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown")
+                        .to_string(),
+                    storage_location: backup
+                        .data
+                        .get("spec")
+                        .and_then(|v| v.get("storageLocation"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    created_at: backup
+                        .metadata
+                        .creation_timestamp
+                        .as_ref()
+                        .map(|ts| ts.0.to_rfc3339())
+                        .unwrap_or_default(),
+                    include_namespaces,
+                    exclude_namespaces,
+                    kind_summary: fallback_kind_summary_from_resource_summary(&resource_summary),
+                    resource_summary,
+                };
+
+                // Prefer live CR data when both stored and live entries exist.
+                merged_backups.insert(name, live_record);
+            }
+        }
+        Err(e) => {
+            let err_text = e.to_string();
+            if err_text.contains("404") {
+                debug!("Backup CR list endpoint not available in this cluster: {}", err_text);
+            } else {
+                info!("Backup CR list not available for overview: {}", err_text);
+            }
+        }
+    }
+
+    if merged_backups.is_empty() {
+        let settings = load_settings(state.client.clone()).await;
+        for record in load_backup_runs_from_s3(&settings).await {
+            merged_backups.insert(record.name.clone(), record);
+        }
+    }
+
+    let mut backups: Vec<BackupRecord> = merged_backups.into_values().collect();
 
     backups.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
