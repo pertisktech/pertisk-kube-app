@@ -15,6 +15,8 @@ export const BackupLifecycleToaster = () => {
   const initializedRef = useRef(false);
 
   useEffect(() => {
+    if (!data) return;
+
     const backups = data?.backups ?? [];
     const currentPhases = new Map<string, string>(
       backups.map((backup) => [backup.name, normalizePhase(backup.phase)]),
@@ -65,7 +67,7 @@ export const BackupLifecycleToaster = () => {
     }
 
     previousPhasesRef.current = currentPhases;
-  }, [data?.backups]);
+  }, [data]);
 
   return null;
 };

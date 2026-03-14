@@ -112,6 +112,9 @@ pdb:
 leaderElection:
   enabled: true
   leaseName: pertisk-kube-leader
+  # Optionally pre-create the Lease object used by leader election.
+  createLease: true
+  leaseDurationSeconds: 30
   className: nginx
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -224,7 +227,7 @@ rbac:
     # Coordination (leases) - full manage
     - apiGroups: ["coordination.k8s.io"]
       resources: ["leases"]
-      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
     # Admission registration - MWC / VWC
     - apiGroups: ["admissionregistration.k8s.io"]
       resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
