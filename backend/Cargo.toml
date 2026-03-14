@@ -32,6 +32,7 @@ uuid = { version = "1", features = ["v4"] }
 futures-util = "0.3"
 portable-pty = "0.8"
 x509-parser = "0.16"
+s3 = { package = "rust-s3", version = "0.34", default-features = false, features = ["tokio-rustls-tls"] }
 
 [build-dependencies]
 tonic-build = "0.11"

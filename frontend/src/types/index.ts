@@ -298,6 +298,58 @@ export interface ApiResponse<T> {
   total: number;
 }
 
+export interface BackupSettings {
+  schedule_name: string;
+  storage_location_name: string;
+  credentials_secret_name: string;
+  s3_bucket: string;
+  s3_region: string;
+  s3_prefix: string;
+  s3_url: string;
+  s3_force_path_style: boolean;
+  s3_insecure_skip_tls_verify: boolean;
+  aws_access_key_id: string;
+  aws_secret_access_key: string;
+  schedule_enabled: boolean;
+  schedule_cron: string;
+  ttl: string;
+  include_namespaces: string[];
+  exclude_namespaces: string[];
+}
+
+export interface BackupRecord {
+  name: string;
+  phase: string;
+  storage_location: string;
+  created_at: string;
+  include_namespaces: string[];
+  exclude_namespaces: string[];
+  resource_summary: string;
+  kind_summary: Record<string, number>;
+}
+
+export interface ScheduleRecord {
+  name: string;
+  cron: string;
+  last_backup: string;
+  paused: boolean;
+  include_namespaces: string[];
+  exclude_namespaces: string[];
+}
+
+export interface RestoreRecord {
+  name: string;
+  backup_name: string;
+  phase: string;
+  created_at: string;
+}
+
+export interface BackupOverview {
+  backups: BackupRecord[];
+  schedules: ScheduleRecord[];
+  restores: RestoreRecord[];
+}
+
 // Config Resources
 export interface ConfigMap {
   name: string;

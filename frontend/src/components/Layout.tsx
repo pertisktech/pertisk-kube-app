@@ -124,6 +124,13 @@ const WORKLOAD_ITEMS: NavItem[] = [
   { label: 'CronJob', path: '/cronjobs', icon: Clock },
 ];
 
+const BACKUP_ITEMS: NavItem[] = [
+  { label: 'Config', path: '/backup/config', icon: Settings },
+  { label: 'Backup Scheduler', path: '/backup/backup-schedule', icon: Clock },
+  { label: 'Backup List', path: '/backup/backups', icon: Archive },
+  { label: 'Restore List', path: '/backup/restores', icon: RotateCw },
+];
+
 interface LayoutProps {
   username?: string;
   onLogout: () => void;
@@ -147,6 +154,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const [helmOpen, setHelmOpen] = useState(false);
   const [accessControlOpen, setAccessControlOpen] = useState(false);
   const [customResourcesOpen, setCustomResourcesOpen] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
   const [expandedCrdGroups, setExpandedCrdGroups] = useState<Set<string>>(new Set());
   const [sidebarWidthPx, setSidebarWidthPx] = useState(() => {
     if (typeof window === 'undefined') return SIDEBAR_WIDTH_DEFAULT;
@@ -223,6 +231,9 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     }
     if (ACCESS_CONTROL_ITEMS.some((item) => pathname.startsWith(item.path)) || pathname === '/access-control') {
       setAccessControlOpen(true);
+    }
+    if (BACKUP_ITEMS.some((item) => pathname.startsWith(item.path)) || pathname === '/config/backup') {
+      setBackupOpen(true);
     }
     // Custom Resources: when on /crds/:crdName, expand section and the API group so level 3 is visible
     if (pathname.startsWith('/crds/') && pathname !== '/crds') {
@@ -307,6 +318,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
   const hasActiveNetwork = NETWORK_ITEMS.some((item) => isActive(item.path));
   const hasActiveHelm = HELM_ITEMS.some((item) => isActive(item.path));
   const hasActiveAccessControl = ACCESS_CONTROL_ITEMS.some((item) => isActive(item.path));
+  const hasActiveBackup = BACKUP_ITEMS.some((item) => isActive(item.path)) || isActive('/config/backup');
   const hasActiveCustomResources = location.pathname.startsWith('/crds');
 
   const breadcrumbs = (() => {
@@ -391,6 +403,22 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     }
     if (pathname === '/access-control') {
       return [{ label: 'Access Control', icon: Shield }] as BreadcrumbItem[];
+    }
+
+    const backupItem = BACKUP_ITEMS.find(
+      (item) => pathname === item.path || pathname.startsWith(`${item.path}/`)
+    );
+    if (backupItem) {
+      return [
+        { label: 'Backup / Restore', icon: Archive },
+        { label: backupItem.label, icon: backupItem.icon },
+      ] as BreadcrumbItem[];
+    }
+    if (pathname === '/config/backup') {
+      return [
+        { label: 'Backup / Restore', icon: Archive },
+        { label: 'Backup Scheduler', icon: Clock },
+      ] as BreadcrumbItem[];
     }
 
     if (pathname.startsWith('/crds/')) {
@@ -968,6 +996,61 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                   </div>
                 )}
               </div>
+
+            <div className="space-y-1 order-11">
+              <button
+                type="button"
+                onClick={() => {
+                  if (sidebarCollapsed) setSidebarCollapsed(false);
+                  setBackupOpen((p) => !p);
+                }}
+                className={cn(
+                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                  sidebarCollapsed && 'justify-center px-2',
+                  hasActiveBackup
+                    ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                    : 'text-text-secondary hover:bg-hover hover:text-text'
+                )}
+                title="Backup / Restore"
+              >
+                <Archive size={18} className="flex-shrink-0" />
+                {!sidebarCollapsed && (
+                  <>
+                    <span className="flex-1 text-left">Backup / Restore</span>
+                    <ChevronDown
+                      size={16}
+                      className={cn('transition-transform', backupOpen && 'rotate-180')}
+                    />
+                  </>
+                )}
+              </button>
+
+              {!sidebarCollapsed && backupOpen && (
+                <div className="space-y-1">
+                  {BACKUP_ITEMS.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.path) || (item.path === '/backup/backup-schedule' && isActive('/config/backup'));
+                    return (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setSidebarOpen(false)}
+                        className={cn(
+                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
+                          active
+                            ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                            : 'text-text-secondary hover:bg-hover hover:text-text'
+                        )}
+                        title={item.label}
+                      >
+                        <Icon size={16} className="flex-shrink-0" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </nav>
         </div>
       </aside>

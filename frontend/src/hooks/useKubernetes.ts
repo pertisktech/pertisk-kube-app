@@ -11,6 +11,8 @@ import type {
   KubernetesEvent,
   K8sNode,
   DashboardSummary,
+  BackupSettings,
+  BackupOverview,
   ApiResponse,
   ConfigMap,
   Secret,
@@ -47,6 +49,7 @@ const API_BASE = '/api';
 const apiFetch = async (path: string) => {
   const token = getAuthToken();
   const res = await fetch(`${API_BASE}${path}`, {
+    cache: 'no-store',
     headers: token
       ? {
           Authorization: token,
@@ -190,6 +193,292 @@ export const useDashboard = () => {
       return data;
     },
   });
+};
+
+export const useBackupSettings = () => {
+  return useQuery({
+    queryKey: ['backup-settings'],
+    queryFn: async () => {
+      const res = await apiFetch('/backup/config');
+      if (!res.ok) throw new Error('Failed to fetch backup settings');
+      return (await res.json()) as BackupSettings;
+    },
+  });
+};
+
+export const useBackupOverview = () => {
+  return useQuery({
+    queryKey: ['backup-overview'],
+    queryFn: async () => {
+      const res = await apiFetch(`/backup/overview?_t=${Date.now()}`);
+      if (!res.ok) throw new Error('Failed to fetch backup overview');
+      return (await res.json()) as BackupOverview;
+    },
+    refetchInterval: 15000,
+  });
+};
+
+export const saveBackupSettings = async (settings: BackupSettings): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/backup/config`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: token } : {}),
+    },
+    body: JSON.stringify(settings),
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message || `Failed to save settings (${res.status})`);
+  }
+};
+
+export interface SaveBackupS3ConfigRequest {
+  storage_location_name: string;
+  credentials_secret_name: string;
+  s3_bucket: string;
+  s3_region: string;
+  s3_prefix: string;
+  s3_url: string;
+  s3_force_path_style: boolean;
+  s3_insecure_skip_tls_verify: boolean;
+  aws_access_key_id: string;
+  aws_secret_access_key: string;
+}
+
+export const saveBackupS3Config = async (settings: SaveBackupS3ConfigRequest): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/backup/config/s3`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: token } : {}),
+    },
+    body: JSON.stringify(settings),
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message || `Failed to save S3 config (${res.status})`);
+  }
+};
+
+export const applyBackupSettings = async (): Promise<string> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/backup/config/apply`, {
+    method: 'POST',
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message || `Failed to apply settings (${res.status})`);
+  }
+  const body = (await res.json().catch(() => ({}))) as { message?: string };
+  return body.message || 'Backup settings applied.';
+};
+
+export interface TestBackupS3Request {
+  s3_bucket: string;
+  s3_region: string;
+  s3_prefix: string;
+  s3_url: string;
+  s3_force_path_style: boolean;
+  s3_insecure_skip_tls_verify: boolean;
+  aws_access_key_id: string;
+  aws_secret_access_key: string;
+}
+
+export const testBackupS3 = async (payload: TestBackupS3Request): Promise<string> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/backup/config/test-s3`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: token } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  const body = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+  if (!res.ok || !body.success) {
+    throw new Error(body.message || `Failed to test S3 (${res.status})`);
+  }
+  return body.message || 'S3 connectivity test passed.';
+};
+
+export interface ManualBackupRequest {
+  name?: string;
+  include_namespaces?: string[];
+  exclude_namespaces?: string[];
+}
+
+export const runManualBackup = async (payload: ManualBackupRequest): Promise<string> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/backup/manual`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: token } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  const body = (await res.json().catch(() => ({}))) as { success?: boolean; name?: string; message?: string };
+  if (!res.ok || !body.success) {
+    throw new Error(body.message || `Failed to run backup (${res.status})`);
+  }
+  return body.name || '';
+};
+
+export interface RestoreBackupRequest {
+  backup_name: string;
+  restore_name?: string;
+  include_namespaces?: string[];
+  exclude_namespaces?: string[];
+}
+
+export interface CreateBackupScheduleRequest {
+  name: string;
+  cron: string;
+  ttl?: string;
+  include_namespaces?: string[];
+  exclude_namespaces?: string[];
+  paused?: boolean;
+}
+
+export const runRestoreBackup = async (payload: RestoreBackupRequest): Promise<string> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/backup/restore`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: token } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  const body = (await res.json().catch(() => ({}))) as { success?: boolean; name?: string; message?: string };
+  if (!res.ok || !body.success) {
+    throw new Error(body.message || `Failed to run restore (${res.status})`);
+  }
+  return body.name || '';
+};
+
+export const createBackupSchedule = async (payload: CreateBackupScheduleRequest): Promise<string> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/backup/schedules`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: token } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  const body = (await res.json().catch(() => ({}))) as { success?: boolean; name?: string; message?: string };
+  if (!res.ok || !body.success) {
+    throw new Error(body.message || `Failed to create schedule (${res.status})`);
+  }
+  return body.name || payload.name;
+};
+
+export const deleteBackupSchedule = async (name: string): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/backup/schedules/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  const body = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+  if (!res.ok || !body.success) {
+    throw new Error(body.message || `Failed to delete schedule (${res.status})`);
+  }
+};
+
+export const runBackupScheduleNow = async (name: string): Promise<string> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/backup/schedules/${encodeURIComponent(name)}/run`, {
+    method: 'POST',
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  const body = (await res.json().catch(() => ({}))) as { success?: boolean; name?: string; message?: string };
+  if (!res.ok || !body.success) {
+    throw new Error(body.message || `Failed to run schedule (${res.status})`);
+  }
+  return body.name || name;
+};
+
+export const deleteBackupRun = async (name: string): Promise<string> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/backup/backups/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  const body = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+  if (!res.ok || !body.success) {
+    throw new Error(body.message || `Failed to delete backup (${res.status})`);
+  }
+  return body.message || `Deleted backup ${name}`;
+};
+
+export const deleteBackupRunsBulk = async (names: string[]): Promise<{ message: string; deleted: number; warnings: string[] }> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/backup/backups/delete`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: token } : {}),
+    },
+    body: JSON.stringify({ names }),
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  const body = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string; deleted?: number; warnings?: string[] };
+  if (!res.ok || !body.success) {
+    throw new Error(body.message || `Failed to delete backups (${res.status})`);
+  }
+  return {
+    message: body.message || `Deleted ${names.length} backups`,
+    deleted: body.deleted ?? 0,
+    warnings: body.warnings ?? [],
+  };
 };
 
 // Config Resources

@@ -1,6 +1,7 @@
 pub mod config;
 pub mod crd;
 pub mod helm;
+pub mod backup;
 pub mod namespaces;
 pub mod network;
 pub mod portforward;

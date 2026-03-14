@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { Layout } from './components';
 import { NamespaceProvider } from './context/NamespaceContext';
@@ -31,6 +31,10 @@ const RuntimeClassesPage = lazy(() => import('./pages/RuntimeClassesPage').then(
 const LeasesPage = lazy(() => import('./pages/LeasesPage').then(m => ({ default: m.LeasesPage })));
 const MWCPage = lazy(() => import('./pages/MWCPage').then(m => ({ default: m.MWCPage })));
 const VWCPage = lazy(() => import('./pages/VWCPage').then(m => ({ default: m.VWCPage })));
+const BackupConfigPage = lazy(() => import('./pages/BackupConfigPage').then(m => ({ default: m.BackupConfigPage })));
+const BackupQuickPage = lazy(() => import('./pages/BackupQuickPage').then(m => ({ default: m.BackupQuickPage })));
+const BackupListPage = lazy(() => import('./pages/BackupListPage').then(m => ({ default: m.BackupListPage })));
+const RestoreListPage = lazy(() => import('./pages/RestoreListPage').then(m => ({ default: m.RestoreListPage })));
 const ServicesPage = lazy(() => import('./pages/ServicesPage').then(m => ({ default: m.ServicesPage })));
 const EndpointsPage = lazy(() => import('./pages/EndpointsPage').then(m => ({ default: m.EndpointsPage })));
 const IngressesPage = lazy(() => import('./pages/IngressesPage').then(m => ({ default: m.IngressesPage })));
@@ -150,6 +154,12 @@ export const App = () => {
           <Route path="/config/leases" element={<LeasesPage />} />
           <Route path="/config/mwc" element={<MWCPage />} />
           <Route path="/config/vwc" element={<VWCPage />} />
+          <Route path="/config/backup" element={<BackupQuickPage />} />
+          <Route path="/backup/config" element={<BackupConfigPage />} />
+          <Route path="/backup/backup-schedule" element={<BackupQuickPage />} />
+          <Route path="/backup/scheduler-manual" element={<Navigate to="/backup/backup-schedule" replace />} />
+          <Route path="/backup/backups" element={<BackupListPage />} />
+          <Route path="/backup/restores" element={<RestoreListPage />} />
           <Route path="/network" element={<NetworkPage />} />
           <Route path="/network/services" element={<ServicesPage />} />
           <Route path="/network/endpoints" element={<EndpointsPage />} />
