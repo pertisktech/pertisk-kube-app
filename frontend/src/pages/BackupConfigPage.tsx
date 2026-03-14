@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { saveBackupS3Config, testBackupS3, useBackupSettings } from '../hooks/useKubernetes';
 import { Eye, EyeOff } from '../components/Icons';
 import type { BackupSettings } from '../types';
@@ -38,8 +39,6 @@ export const BackupConfigPage = () => {
   const [isTestingS3, setIsTestingS3] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [revealSecretKey, setRevealSecretKey] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!data) return;
@@ -62,23 +61,19 @@ export const BackupConfigPage = () => {
   };
 
   const handleApply = async () => {
-    setMessage(null);
-    setErrorMessage(null);
     setIsApplying(true);
     try {
       await saveBackupS3Config(form);
       await queryClient.invalidateQueries({ queryKey: ['backup-settings'] });
-      setMessage('Backup config saved in pertisk-backups.');
+      toast.success('Backup config saved in pertisk-backups.');
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to apply config.');
+      toast.error(err instanceof Error ? err.message : 'Failed to apply config.');
     } finally {
       setIsApplying(false);
     }
   };
 
   const handleTestS3 = async () => {
-    setMessage(null);
-    setErrorMessage(null);
     setIsTestingS3(true);
     try {
       const testMessage = await testBackupS3({
@@ -91,9 +86,9 @@ export const BackupConfigPage = () => {
         aws_access_key_id: form.aws_access_key_id,
         aws_secret_access_key: form.aws_secret_access_key,
       });
-      setMessage(testMessage);
+      toast.success(testMessage);
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to test S3 config.');
+      toast.error(err instanceof Error ? err.message : 'Failed to test S3 config.');
     } finally {
       setIsTestingS3(false);
     }
@@ -107,8 +102,6 @@ export const BackupConfigPage = () => {
       </div>
 
       {error && <div className="text-sm text-red-600">{String(error)}</div>}
-      {message && <div className="text-sm text-green-600">{message}</div>}
-      {errorMessage && <div className="text-sm text-red-600">{errorMessage}</div>}
 
       <div className="bg-surface border border-border rounded-lg p-4 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

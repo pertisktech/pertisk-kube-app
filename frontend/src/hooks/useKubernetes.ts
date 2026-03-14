@@ -206,7 +206,7 @@ export const useBackupSettings = () => {
   });
 };
 
-export const useBackupOverview = () => {
+export const useBackupOverview = (options?: { enabled?: boolean; refetchInterval?: number }) => {
   return useQuery({
     queryKey: ['backup-overview'],
     queryFn: async () => {
@@ -214,7 +214,8 @@ export const useBackupOverview = () => {
       if (!res.ok) throw new Error('Failed to fetch backup overview');
       return (await res.json()) as BackupOverview;
     },
-    refetchInterval: 15000,
+    refetchInterval: options?.refetchInterval ?? 15000,
+    enabled: options?.enabled ?? true,
   });
 };
 

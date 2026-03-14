@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
+import { BackupLifecycleToaster } from './components/BackupLifecycleToaster';
 import { Layout } from './components';
 import { NamespaceProvider } from './context/NamespaceContext';
 import { clearAuth, getAuthUser, getTokenExpiry, isAuthenticated, refreshToken } from './utils/auth';
@@ -128,6 +129,7 @@ export const App = () => {
           },
         }}
       />
+      <BackupLifecycleToaster />
       <Router>
           <Routes>
             <Route element={<Layout username={authUser} onLogout={handleLogout} />}>

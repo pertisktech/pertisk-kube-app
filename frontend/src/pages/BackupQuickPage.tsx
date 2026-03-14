@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import CronExpressionParser from 'cron-parser';
+import { toast } from 'sonner';
 import {
   createBackupSchedule,
   deleteBackupSchedule,
@@ -8,7 +9,7 @@ import {
   useNamespaces,
   useBackupOverview,
 } from '../hooks/useKubernetes';
-import { Checkbox, DataTable } from '../components';
+import { Checkbox, ConfirmDialog, DataTable } from '../components';
 import { StatusBadge } from '../components/StatusBadge';
 import { ChevronDown } from '../components/Icons';
 import type { ScheduleRecord } from '../types';
@@ -55,6 +56,12 @@ const DEFAULT_SCHEDULE_FORM: ScheduleFormState = {
   paused: false,
 };
 
+const STANDARD_PRIMARY_BUTTON = 'inline-flex items-center px-4 py-2 rounded-lg border border-border bg-surface-elevated text-sm font-medium hover:bg-hover transition-colors disabled:opacity-50';
+const STANDARD_SECONDARY_BUTTON = 'inline-flex items-center px-4 py-2 rounded-lg border border-border bg-surface text-sm font-medium hover:bg-hover transition-colors disabled:opacity-50';
+const STANDARD_ACTION_BASE = 'inline-flex items-center whitespace-nowrap px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40';
+const STANDARD_ACTION_NEUTRAL = `${STANDARD_ACTION_BASE} border border-border bg-surface text-text-secondary hover:bg-hover hover:text-text`;
+const STANDARD_ACTION_DANGER = `${STANDARD_ACTION_BASE} border border-[var(--color-icon-danger)]/30 bg-[var(--color-icon-danger)]/5 text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/15`;
+
 export const BackupQuickPage = () => {
   const queryClient = useQueryClient();
   const { data: overview } = useBackupOverview();
@@ -73,9 +80,10 @@ export const BackupQuickPage = () => {
 
   const [isCreatingSchedule, setIsCreatingSchedule] = useState(false);
   const [deletingScheduleName, setDeletingScheduleName] = useState<string | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [runningScheduleName, setRunningScheduleName] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   const schedules = useMemo(() => overview?.schedules ?? [], [overview]);
   const [nameFilter, setNameFilter] = useState('');
@@ -178,15 +186,13 @@ export const BackupQuickPage = () => {
 
   const handleSaveSchedule = async () => {
     if (!scheduleForm.name.trim()) {
-      setErrorMessage('Schedule name is required.');
+      toast.error('Schedule name is required.');
       return;
     }
     if (!scheduleForm.cron.trim()) {
-      setErrorMessage('Schedule cron is required.');
+      toast.error('Schedule cron is required.');
       return;
     }
-    setMessage(null);
-    setErrorMessage(null);
     setIsCreatingSchedule(true);
     try {
       const includeNamespaces = scheduleForm.includeNamespaces.includes(ALL_INCLUDE_OPTION)
@@ -202,40 +208,72 @@ export const BackupQuickPage = () => {
         paused: scheduleForm.paused,
       });
       await queryClient.invalidateQueries({ queryKey: ['backup-overview'] });
-      setMessage(editingName ? `Backup schedule updated: ${createdName}` : `Backup schedule created: ${createdName}`);
+      toast.success(editingName ? `Backup schedule updated: ${createdName}` : `Backup schedule created: ${createdName}`);
       closePanel();
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to create schedule.');
+      toast.error(err instanceof Error ? err.message : 'Failed to create schedule.');
     } finally {
       setIsCreatingSchedule(false);
     }
   };
 
   const handleDeleteSchedule = async (name: string) => {
-    setMessage(null);
-    setErrorMessage(null);
     setDeletingScheduleName(name);
     try {
       await deleteBackupSchedule(name);
       await queryClient.invalidateQueries({ queryKey: ['backup-overview'] });
-      setMessage(`Backup schedule deleted: ${name}`);
+      toast.success(`Backup schedule deleted: ${name}`);
+      setSelectedRows((previous) => previous.filter((selected) => selected !== name));
+      if (editingName === name) {
+        closePanel();
+      }
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to delete schedule.');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete schedule.');
     } finally {
       setDeletingScheduleName(null);
     }
   };
 
+  const handleConfirmDeleteSelected = async () => {
+    if (!selectedRows.length) return;
+    setIsBulkDeleting(true);
+    const deletingTargets = [...selectedRows];
+    try {
+      const results = await Promise.allSettled(
+        deletingTargets.map((name) => deleteBackupSchedule(name)),
+      );
+
+      const successCount = results.filter((result) => result.status === 'fulfilled').length;
+      const failCount = results.length - successCount;
+
+      await queryClient.invalidateQueries({ queryKey: ['backup-overview'] });
+
+      if (successCount > 0) {
+        toast.success(`Deleted ${successCount} scheduler${successCount > 1 ? 's' : ''}.`);
+      }
+      if (failCount > 0) {
+        toast.error(`Failed to delete ${failCount} scheduler${failCount > 1 ? 's' : ''}.`);
+      }
+
+      setSelectedRows((previous) => previous.filter((name) => !deletingTargets.includes(name)));
+
+      if (editingName && deletingTargets.includes(editingName)) {
+        closePanel();
+      }
+    } finally {
+      setIsBulkDeleting(false);
+      setConfirmBulkDelete(false);
+    }
+  };
+
   const handleRunScheduleNow = async (name: string) => {
-    setMessage(null);
-    setErrorMessage(null);
     setRunningScheduleName(name);
     try {
       const scheduleName = await runBackupScheduleNow(name);
       await queryClient.invalidateQueries({ queryKey: ['backup-overview'] });
-      setMessage(`Manual run triggered: ${scheduleName}`);
+      toast.success(`Manual run triggered: ${scheduleName}`);
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to trigger manual run.');
+      toast.error(err instanceof Error ? err.message : 'Failed to trigger manual run.');
     } finally {
       setRunningScheduleName(null);
     }
@@ -265,8 +303,8 @@ export const BackupQuickPage = () => {
               e.stopPropagation();
               handleRunScheduleNow(row.name);
             }}
-            disabled={runningScheduleName === row.name}
-            className="inline-flex items-center whitespace-nowrap px-2 py-1 rounded-md text-xs font-medium border border-border text-text-secondary hover:bg-hover hover:text-text transition-colors disabled:opacity-40"
+            disabled={runningScheduleName === row.name || isBulkDeleting || deletingScheduleName !== null}
+            className={STANDARD_ACTION_NEUTRAL}
           >
             {runningScheduleName === row.name ? 'Running...' : 'Run Now'}
           </button>
@@ -276,7 +314,8 @@ export const BackupQuickPage = () => {
               e.stopPropagation();
               openEditPanel(row);
             }}
-            className="inline-flex items-center whitespace-nowrap px-2 py-1 rounded-md text-xs font-medium border border-border text-text-secondary hover:bg-hover hover:text-text transition-colors"
+            disabled={isBulkDeleting || deletingScheduleName !== null}
+            className={STANDARD_ACTION_NEUTRAL}
           >
             Edit
           </button>
@@ -286,8 +325,8 @@ export const BackupQuickPage = () => {
               e.stopPropagation();
               handleDeleteSchedule(row.name);
             }}
-            disabled={deletingScheduleName === row.name}
-            className="inline-flex items-center whitespace-nowrap px-2 py-1 rounded-md text-xs font-medium border border-[var(--color-icon-danger)]/30 text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/10 transition-colors disabled:opacity-40"
+            disabled={deletingScheduleName === row.name || isBulkDeleting}
+            className={STANDARD_ACTION_DANGER}
           >
             {deletingScheduleName === row.name ? 'Deleting...' : 'Delete'}
           </button>
@@ -304,9 +343,6 @@ export const BackupQuickPage = () => {
         <p className="text-sm text-text-secondary">Create multiple backup schedules and trigger manual run per schedule.</p>
       </div>
 
-      {message && <div className="text-sm text-green-600">{message}</div>}
-      {errorMessage && <div className="text-sm text-red-600">{errorMessage}</div>}
-
       <div className="bg-surface border border-border rounded-lg p-4 space-y-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-semibold text-text">Scheduler List</h2>
@@ -322,7 +358,7 @@ export const BackupQuickPage = () => {
               type="button"
               onClick={openAddPanel}
               disabled={isCreatingSchedule || isLoading}
-              className="px-4 py-2 rounded-lg border border-border bg-surface-elevated text-sm font-medium hover:bg-hover transition-colors disabled:opacity-50"
+              className={STANDARD_PRIMARY_BUTTON}
             >
               Add Scheduler
             </button>
@@ -337,7 +373,33 @@ export const BackupQuickPage = () => {
           onRowClick={openEditPanel}
           selectedRowKey={panelOpen && editingName ? editingName : undefined}
           autoFitContent={false}
+          enableRowSelection={true}
+          selectedRows={selectedRows}
+          onRowSelectionChange={setSelectedRows}
         />
+
+        {selectedRows.length > 0 && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-3 px-4 py-3 bg-surface border-2 border-orange-500 rounded-xl shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
+            <span className="text-sm text-text-secondary font-medium">{selectedRows.length} selected</span>
+            <div className="w-px h-4 bg-border" />
+            <button
+              type="button"
+              onClick={() => setConfirmBulkDelete(true)}
+              disabled={isBulkDeleting}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-[var(--color-icon-danger)]/10 text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/20 font-medium transition-colors disabled:opacity-50"
+            >
+              {isBulkDeleting ? 'Deleting...' : 'Delete Selected'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedRows([])}
+              disabled={isBulkDeleting}
+              className="text-xs text-text-secondary hover:text-text transition-colors disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+        )}
       </div>
 
       {panelOpen && (
@@ -514,14 +576,14 @@ export const BackupQuickPage = () => {
                   type="button"
                   onClick={handleSaveSchedule}
                   disabled={isCreatingSchedule || isLoading}
-                  className="px-4 py-2 rounded-lg border border-border bg-surface-elevated text-sm font-medium disabled:opacity-50"
+                  className={STANDARD_PRIMARY_BUTTON}
                 >
                   {isCreatingSchedule ? 'Saving...' : editingName ? 'Save Changes' : 'Create Scheduler'}
                 </button>
                 <button
                   type="button"
                   onClick={closePanel}
-                  className="px-4 py-2 rounded-lg border border-border bg-surface text-sm font-medium"
+                  className={STANDARD_SECONDARY_BUTTON}
                 >
                   Cancel
                 </button>
@@ -530,6 +592,19 @@ export const BackupQuickPage = () => {
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title={`Delete ${selectedRows.length} scheduler${selectedRows.length > 1 ? 's' : ''}`}
+        description={`Are you sure you want to delete ${selectedRows.length} selected scheduler${selectedRows.length > 1 ? 's' : ''}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        destructive
+        isLoading={isBulkDeleting}
+        onConfirm={handleConfirmDeleteSelected}
+        onCancel={() => {
+          if (!isBulkDeleting) setConfirmBulkDelete(false);
+        }}
+      />
 
     </div>
   );
