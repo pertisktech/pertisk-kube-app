@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import CronExpressionParser from 'cron-parser';
 import {
   Namespace,
   Deployment,
@@ -272,12 +273,19 @@ function transformCronJob(raw: any): CronJob {
   const suspend = spec.suspend || false;
   const active = status.active?.length || 0;
   const lastSchedule = status.lastScheduleTime || '-';
-  
-  // Estimate next execution (simplified)
+  const timeZone = spec.timeZone || 'UTC';
+
   let nextExecution = '-';
-  if (!suspend && lastSchedule !== '-') {
-    // This is a simplified estimation - actual cron parsing would be more complex
-    nextExecution = 'Calculating...';
+  if (!suspend && schedule) {
+    try {
+      const interval = CronExpressionParser.parse(schedule, {
+        currentDate: new Date(),
+        tz: timeZone,
+      });
+      nextExecution = interval.next().toISOString() || '-';
+    } catch {
+      nextExecution = '-';
+    }
   }
   
   return {
@@ -288,7 +296,7 @@ function transformCronJob(raw: any): CronJob {
     active,
     last_schedule: lastSchedule,
     next_execution: nextExecution,
-    time_zone: spec.timeZone || 'UTC',
+    time_zone: timeZone,
     age: metadata.creationTimestamp || '',
     labels: (metadata.labels as Record<string, string> | undefined) ?? undefined,
     annotations: (metadata.annotations as Record<string, string> | undefined) ?? undefined,

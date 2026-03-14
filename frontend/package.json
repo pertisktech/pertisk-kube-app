@@ -19,6 +19,7 @@
       "ace-builds": "^1.43.6",
       "chart.js": "^4.5.1",
       "clsx": "^2.1.1",
+      "cron-parser": "^5.5.0",
       "google-protobuf": "^3.21.4",
       "lucide-react": "^0.460.0",
       "react": "^18.3.1",
