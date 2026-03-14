@@ -51,7 +51,7 @@ export const EndpointsPage = () => {
   };
 
   const columns = [
-    { header: 'Name', accessor: (row: Endpoint) => <span className="font-medium text-text">{row.name}</span>, width: '24%', sortable: true, sortKey: 'name' },
+    { header: 'Name', accessor: (row: Endpoint) => <span className="font-medium text-white">{row.name}</span>, width: '24%', sortable: true, sortKey: 'name' },
     { header: 'Namespace', accessor: 'namespace' as const, width: '18%', sortable: true, sortKey: 'namespace' },
     { header: 'Ready', accessor: 'addresses' as const, width: '10%', sortable: true, sortKey: 'addresses' },
     { header: 'Not Ready', accessor: 'not_ready' as const, width: '12%', sortable: true, sortKey: 'not_ready' },

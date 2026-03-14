@@ -215,8 +215,8 @@ export const DataTable = <T extends Record<string, any>>({
                         'px-3 py-2 align-middle text-sm',
                         autoFitContent && 'whitespace-nowrap',
                         col.header === 'Name' && typeof col.accessor !== 'function'
-                          ? 'text-text font-medium'
-                          : 'text-text'
+                          ? 'text-white font-medium'
+                          : 'text-text-muted'
                       )}
                     >
                       {(() => {

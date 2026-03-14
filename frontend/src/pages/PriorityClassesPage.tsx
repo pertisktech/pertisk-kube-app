@@ -101,7 +101,7 @@ export const PriorityClassesPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (pc: PriorityClass) => <span className="font-medium text-text">{pc.name}</span>,
+      accessor: (pc: PriorityClass) => <span className="font-medium text-white">{pc.name}</span>,
       width: '30%',
       sortable: true,
       sortKey: 'name',

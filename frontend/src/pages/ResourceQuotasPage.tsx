@@ -135,7 +135,7 @@ export const ResourceQuotasPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (rq: ResourceQuota) => <span className="font-medium text-text">{rq.name}</span>,
+      accessor: (rq: ResourceQuota) => <span className="font-medium text-white">{rq.name}</span>,
       width: '30%',
       sortable: true,
       sortKey: 'name',

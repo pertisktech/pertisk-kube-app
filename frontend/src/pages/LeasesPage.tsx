@@ -118,7 +118,7 @@ export const LeasesPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (lease: Lease) => <span className="font-medium text-text">{lease.name}</span>,
+      accessor: (lease: Lease) => <span className="font-medium text-white">{lease.name}</span>,
       width: '20%',
       sortable: true,
       sortKey: 'name',

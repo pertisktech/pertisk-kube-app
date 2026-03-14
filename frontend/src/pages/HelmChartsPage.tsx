@@ -45,7 +45,7 @@ export const HelmChartsPage = () => {
     {
       header: 'Name',
       accessor: (row: HelmChart) => (
-        <span className="font-medium text-text">{row.name}</span>
+        <span className="font-medium text-white">{row.name}</span>
       ),
       width: '14%',
       sortable: true,
@@ -56,7 +56,7 @@ export const HelmChartsPage = () => {
       accessor: (row: HelmChart) => {
         const installed = installedChartNames.has(row.name);
         const count = installedChartCount.get(row.name) ?? 0;
-        if (!installed) return <span className="text-text-secondary">—</span>;
+        if (!installed) return <span className="text-text-muted">—</span>;
         return (
           <span
             className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium status-green"
@@ -73,7 +73,7 @@ export const HelmChartsPage = () => {
     {
       header: 'Description',
       accessor: (row: HelmChart) => (
-        <span className="text-text-secondary leading-relaxed line-clamp-2">
+        <span className="text-text-muted leading-relaxed line-clamp-2">
           {row.description || '-'}
         </span>
       ),
@@ -82,7 +82,7 @@ export const HelmChartsPage = () => {
     {
       header: 'Version',
       accessor: (row: HelmChart) => (
-        <span className="font-mono text-text-secondary">{row.version}</span>
+        <span className="font-mono text-text-muted">{row.version}</span>
       ),
       width: '10%',
       sortable: true,
@@ -91,7 +91,7 @@ export const HelmChartsPage = () => {
     {
       header: 'App Version',
       accessor: (row: HelmChart) => (
-        <span className="font-mono text-text-secondary">{row.app_version || '-'}</span>
+        <span className="font-mono text-text-muted">{row.app_version || '-'}</span>
       ),
       width: '10%',
       sortable: true,
@@ -101,7 +101,7 @@ export const HelmChartsPage = () => {
       header: 'Repository',
       accessor: (row: HelmChart) => (
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-text-secondary truncate">{row.repository}</span>
+          <span className="text-text-muted truncate">{row.repository}</span>
           {row.repository_url && (
             <a
               href={row.repository_url}
@@ -125,7 +125,7 @@ export const HelmChartsPage = () => {
       accessor: (row: HelmChart) => (
         <div className="flex items-center gap-1">
           <Star size={11} className="text-yellow-y1 fill-yellow-y1" />
-          <span className="text-text-secondary">
+          <span className="text-text-muted">
             {row.stars >= 1000 ? `${(row.stars / 1000).toFixed(1)}k` : String(row.stars)}
           </span>
         </div>

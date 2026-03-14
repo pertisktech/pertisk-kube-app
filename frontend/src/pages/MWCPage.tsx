@@ -100,7 +100,7 @@ export const MWCPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (m: Mwc) => <span className="font-medium text-text break-words">{m.name}</span>,
+      accessor: (m: Mwc) => <span className="font-medium text-white break-words">{m.name}</span>,
       width: '50%',
       sortable: true,
       sortKey: 'name' as const,

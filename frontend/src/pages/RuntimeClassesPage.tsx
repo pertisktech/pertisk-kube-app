@@ -101,7 +101,7 @@ export const RuntimeClassesPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (rc: RuntimeClass) => <span className="font-medium text-text">{rc.name}</span>,
+      accessor: (rc: RuntimeClass) => <span className="font-medium text-white">{rc.name}</span>,
       width: '25%',
       sortable: true,
       sortKey: 'name',

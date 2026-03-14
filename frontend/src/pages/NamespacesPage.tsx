@@ -83,7 +83,7 @@ export const NamespacesPage = () => {
     {
       header: 'Name',
       accessor: (row: Namespace) => (
-        <span className="font-medium text-text">{row.name}</span>
+        <span className="font-medium text-white">{row.name}</span>
       ),
       width: '25%',
       sortable: true,

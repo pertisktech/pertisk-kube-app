@@ -135,7 +135,7 @@ export const DaemonSetsPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (row: DaemonSet) => <span className="font-medium text-text">{row.name}</span>,
+      accessor: (row: DaemonSet) => <span className="font-medium text-white">{row.name}</span>,
       width: '20%',
       sortable: true,
       sortKey: 'name',

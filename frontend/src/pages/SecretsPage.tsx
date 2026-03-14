@@ -125,7 +125,7 @@ export const SecretsPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (s: Secret) => <span className="font-medium text-text">{s.name}</span>,
+      accessor: (s: Secret) => <span className="font-medium text-white">{s.name}</span>,
       width: '25%',
       sortable: true,
       sortKey: 'name',

@@ -51,7 +51,7 @@ export const IngressesPage = () => {
   };
 
   const columns = [
-    { header: 'Name', accessor: (row: Ingress) => <span className="font-medium text-text">{row.name}</span>, width: '20%', sortable: true, sortKey: 'name' },
+    { header: 'Name', accessor: (row: Ingress) => <span className="font-medium text-white">{row.name}</span>, width: '20%', sortable: true, sortKey: 'name' },
     { header: 'Namespace', accessor: 'namespace' as const, width: '16%', sortable: true, sortKey: 'namespace' },
     { header: 'Class', accessor: 'ingress_class' as const, width: '14%', sortable: true, sortKey: 'ingress_class' },
     { header: 'Hosts', accessor: 'hosts' as const, width: '20%', sortable: true, sortKey: 'hosts' },

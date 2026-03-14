@@ -125,7 +125,7 @@ export const PDBPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (pdb: PDB) => <span className="font-medium text-text">{pdb.name}</span>,
+      accessor: (pdb: PDB) => <span className="font-medium text-white">{pdb.name}</span>,
       width: '30%',
       sortable: true,
       sortKey: 'name',

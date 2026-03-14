@@ -282,7 +282,7 @@ export const BackupQuickPage = () => {
   const scheduleColumns = [
     {
       header: 'Name',
-      accessor: (row: ScheduleRecord) => <span className="font-medium text-text">{row.name}</span>,
+      accessor: (row: ScheduleRecord) => <span className="font-medium text-white">{row.name}</span>,
     },
     { header: 'Cron', accessor: (row: ScheduleRecord) => row.cron },
     { header: 'Timezone', accessor: (row: ScheduleRecord) => row.timezone || 'Asia/Bangkok' },

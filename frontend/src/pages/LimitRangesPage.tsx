@@ -134,7 +134,7 @@ export const LimitRangesPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (lr: LimitRange) => <span className="font-medium text-text">{lr.name}</span>,
+      accessor: (lr: LimitRange) => <span className="font-medium text-white">{lr.name}</span>,
       width: '30%',
       sortable: true,
       sortKey: 'name',
