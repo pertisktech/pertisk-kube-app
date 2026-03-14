@@ -173,6 +173,27 @@ textarea {
   font: inherit;
 }
 
+button {
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+button:not(:disabled):not([data-no-global-button-hover='true']):hover {
+  background-color: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+}
+
+button:not(:disabled):not([data-no-global-button-hover='true']):focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--color-primary) 70%, var(--color-border));
+  outline-offset: 1px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
 /* Dark mode: subtle gradient overlay */
 html.dark body::before {
   content: '';

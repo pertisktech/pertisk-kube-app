@@ -25,12 +25,14 @@ export function DrawerLabelsAnnotations({ labels = {}, annotations = {} }: Drawe
         entries={labelEntries}
         emptyMessage="No labels"
       />
-      <DrawerExpandableKeyValues
-        name="Annotations"
-        count={annotationEntries.length}
-        entries={annotationEntries}
-        emptyMessage="No annotations"
-      />
+      <div className="border-t" style={{ borderColor: 'var(--color-border)' }}>
+        <DrawerExpandableKeyValues
+          name="Annotations"
+          count={annotationEntries.length}
+          entries={annotationEntries}
+          emptyMessage="No annotations"
+        />
+      </div>
     </>
   );
 }
