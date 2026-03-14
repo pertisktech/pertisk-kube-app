@@ -6,7 +6,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { CronJobDetailPanel, DataTable, ConfirmDialog } from '../components';
 import type { CronJob } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo, matchesResourceNameFilter } from '../utils';
+import { timeAgo, timeFromNow, matchesResourceNameFilter } from '../utils';
 import { deleteCronJob } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -231,7 +231,7 @@ export const CronJobsPage = () => {
     },
     {
       header: 'Next Execution',
-      accessor: (row: CronJob) => (row.next_execution ? timeAgo(row.next_execution) : '-'),
+      accessor: (row: CronJob) => (row.next_execution ? timeFromNow(row.next_execution) : '-'),
       width: '12%',
       sortable: true,
       sortKey: 'next_execution',

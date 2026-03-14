@@ -99,6 +99,28 @@ export const timeAgo = (timestamp?: string | null): string => {
   return formatCompactAge(seconds);
 };
 
+/** Relative time that supports both past and future timestamps (e.g. "5m" or "in 5m"). */
+export const timeFromNow = (timestamp?: string | null): string => {
+  if (!timestamp) return '-';
+
+  const trimmed = timestamp.trim();
+  if (!trimmed) return '-';
+
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  const now = Date.now();
+  const deltaSeconds = Math.floor((date.getTime() - now) / 1000);
+
+  if (!Number.isFinite(deltaSeconds)) return '-';
+
+  if (deltaSeconds >= 0) {
+    return `in ${formatCompactAge(deltaSeconds)}`;
+  }
+
+  return formatCompactAge(Math.abs(deltaSeconds));
+};
+
 export const getStatusColor = (
   status: string
 ): 'green' | 'yellow' | 'red' | 'gray' => {

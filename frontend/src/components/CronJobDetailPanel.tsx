@@ -1,6 +1,6 @@
 import { Pencil, Trash2 } from './Icons';
 import type { CronJob } from '../types';
-import { timeAgo } from '../utils';
+import { timeAgo, timeFromNow } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
@@ -34,7 +34,7 @@ export const CronJobDetailPanel = ({ cronJob, onClose, onOpenYamlEditor, onDelet
     <DrawerItem name="Suspend">{cronJob.suspend ? 'Yes' : 'No'}</DrawerItem>
     <DrawerItem name="Active">{cronJob.active ?? 0}</DrawerItem>
     <DrawerItem name="Last Schedule">{cronJob.last_schedule ? timeAgo(cronJob.last_schedule) : '-'}</DrawerItem>
-    <DrawerItem name="Next Execution">{cronJob.next_execution ? timeAgo(cronJob.next_execution) : '-'}</DrawerItem>
+    <DrawerItem name="Next Execution">{cronJob.next_execution ? timeFromNow(cronJob.next_execution) : '-'}</DrawerItem>
     <DrawerItem name="Time Zone">{cronJob.time_zone ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(cronJob.age)}</DrawerItem>
     <DrawerLabelsAnnotations labels={cronJob.labels} annotations={cronJob.annotations} />
