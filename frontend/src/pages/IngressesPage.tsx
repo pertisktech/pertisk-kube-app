@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from '../components/Icons';
+import { Trash2, ExternalLink } from '../components/Icons';
 import { useRealtimeIngresses } from '../hooks/useRealtimeResources';
 import { deleteIngress } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
@@ -26,6 +26,19 @@ const sanitizeYamlForEdit = (yamlText: string) => {
     delete parsed.status;
     return YAML.stringify(parsed, { lineWidth: 0 });
   } catch { return yamlText; }
+};
+
+const normalizeIngressHosts = (hosts: string): string[] =>
+  hosts
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean);
+
+const toExternalIngressUrl = (host: string): string | null => {
+  const sanitized = host.replace(/^\*\./, '').trim();
+  if (!sanitized) return null;
+  if (/^https?:\/\//i.test(sanitized)) return sanitized;
+  return `https://${sanitized}`;
 };
 
 const getKey = (item: Ingress) => `${item.namespace}/${item.name}`;
@@ -54,7 +67,42 @@ export const IngressesPage = () => {
     { header: 'Name', accessor: (row: Ingress) => <span className="font-medium text-text">{row.name}</span>, width: '20%', sortable: true, sortKey: 'name' },
     { header: 'Namespace', accessor: 'namespace' as const, width: '16%', sortable: true, sortKey: 'namespace' },
     { header: 'Class', accessor: 'ingress_class' as const, width: '14%', sortable: true, sortKey: 'ingress_class' },
-    { header: 'Hosts', accessor: 'hosts' as const, width: '20%', sortable: true, sortKey: 'hosts' },
+    {
+      header: 'Hosts',
+      accessor: (row: Ingress) => {
+        const hosts = normalizeIngressHosts(row.hosts);
+        if (!hosts.length) return <span className="text-text-secondary">-</span>;
+
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            {hosts.map((host) => {
+              const targetUrl = toExternalIngressUrl(host);
+              return (
+                <span key={`${row.namespace}/${row.name}/${host}`} className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-xs text-text-secondary">
+                  <span className="max-w-[180px] truncate" title={host}>{host}</span>
+                  {targetUrl && (
+                    <a
+                      href={targetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[var(--color-icon-info)] hover:opacity-80"
+                      title={`Open ${host} in new tab`}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Open ${host} in new tab`}
+                    >
+                      <ExternalLink size={12} />
+                    </a>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        );
+      },
+      width: '20%',
+      sortable: true,
+      sortKey: 'hosts',
+    },
     { header: 'Address', accessor: 'address' as const, width: '16%', sortable: true, sortKey: 'address' },
     { header: 'Rules', accessor: 'rules' as const, width: '6%', sortable: true, sortKey: 'rules' },
     { header: 'Age', accessor: (row: Ingress) => timeAgo(row.age), width: '8%', sortable: true, sortKey: 'age' },

@@ -4,13 +4,18 @@ import { toast } from 'sonner';
 import { ConfirmDialog, DataTable } from '../components';
 import { StatusBadge } from '../components/StatusBadge';
 import { Trash2 } from '../components/Icons';
-import { deleteBackupRunsBulk, runRestoreBackup, useBackupOverview } from '../hooks/useKubernetes';
+import { deleteBackupRunsBulk, downloadBackupRun, runRestoreBackup, useBackupOverview } from '../hooks/useKubernetes';
 import type { BackupOverview, BackupRecord } from '../types';
-import { timeAgo } from '../utils';
+import { formatBytes, timeAgo } from '../utils';
 
 const STANDARD_ACTION_BASE = 'inline-flex items-center whitespace-nowrap px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40';
 const STANDARD_ACTION_NEUTRAL = `${STANDARD_ACTION_BASE} border border-border bg-surface text-text-secondary hover:bg-hover hover:text-text`;
 const STANDARD_ACTION_DANGER = `${STANDARD_ACTION_BASE} border border-[var(--color-icon-danger)]/30 bg-[var(--color-icon-danger)]/5 text-[var(--color-icon-danger)] hover:bg-[var(--color-icon-danger)]/15`;
+
+const formatBackupSize = (sizeBytes?: number | null): string => {
+  if (sizeBytes == null || sizeBytes <= 0) return '-';
+  return formatBytes(sizeBytes);
+};
 
 export const BackupListPage = () => {
   const queryClient = useQueryClient();
@@ -29,6 +34,7 @@ export const BackupListPage = () => {
   const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
   const [restoringName, setRestoringName] = useState<string | null>(null);
   const [confirmRestore, setConfirmRestore] = useState<BackupRecord | null>(null);
+  const [downloadingName, setDownloadingName] = useState<string | null>(null);
 
   const handleDeleteSelected = () => {
     if (!selectedRows.length || deletingName || isDeleting) return;
@@ -91,6 +97,19 @@ export const BackupListPage = () => {
     }
   };
 
+  const handleDownload = async (backupName: string) => {
+    if (downloadingName) return;
+    setDownloadingName(backupName);
+    try {
+      await downloadBackupRun(backupName);
+      toast.success(`Download started: ${backupName}.json`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to download backup');
+    } finally {
+      setDownloadingName(null);
+    }
+  };
+
   const formatNamespaces = (values: string[], emptyLabel: string) => {
     if (!values || values.length === 0) {
       return emptyLabel;
@@ -107,15 +126,20 @@ export const BackupListPage = () => {
     {
       header: 'Name',
       accessor: (row: BackupRecord) => <span className="font-medium text-text">{row.name}</span>,
-      width: '38%',
+      width: '32%',
     },
     { header: 'Phase', accessor: (row: BackupRecord) => <StatusBadge status={row.phase} />, width: '16%' },
-    { header: 'Storage', accessor: (row: BackupRecord) => row.storage_location, width: '20%' },
-    { header: 'Created', accessor: (row: BackupRecord) => timeAgo(row.created_at), width: '18%' },
+    {
+      header: 'Size',
+      accessor: (row: BackupRecord) => formatBackupSize(row.size_bytes),
+      width: '10%',
+    },
+    { header: 'Storage', accessor: (row: BackupRecord) => row.storage_location, width: '18%' },
+    { header: 'Created', accessor: (row: BackupRecord) => timeAgo(row.created_at), width: '14%' },
     {
       header: 'Actions',
       accessor: () => '-',
-      width: '180px',
+      width: '260px',
       render: (row: BackupRecord) => (
         <div className="flex items-center gap-1.5">
           <button
@@ -129,6 +153,17 @@ export const BackupListPage = () => {
             className={STANDARD_ACTION_NEUTRAL}
           >
             {restoringName === row.name ? 'Restoring...' : 'Restore'}
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleDownload(row.name);
+            }}
+            disabled={downloadingName === row.name}
+            className={STANDARD_ACTION_NEUTRAL}
+          >
+            {downloadingName === row.name ? 'Downloading...' : 'Download'}
           </button>
           <button
             type="button"
@@ -149,18 +184,20 @@ export const BackupListPage = () => {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-text">Backups</h1>
-        <p className="text-sm text-text-secondary">Recent backup resources and phases.</p>
-      </div>
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-text">Backups</h1>
+          <p className="text-sm text-text-secondary">Recent backup resources and phases.</p>
+        </div>
 
-      <input
-        type="text"
-        value={nameFilter}
-        onChange={(e) => setNameFilter(e.target.value)}
-        placeholder="Filter by name..."
-        className="w-full max-w-xs rounded-md border border-border bg-surface px-3 py-2 text-sm"
-      />
+        <input
+          type="text"
+          value={nameFilter}
+          onChange={(e) => setNameFilter(e.target.value)}
+          placeholder="Filter by name..."
+          className="w-full md:w-64 rounded-md border border-border bg-surface px-3 py-2 text-sm"
+        />
+      </div>
 
       <DataTable
         columns={columns}
@@ -225,6 +262,10 @@ export const BackupListPage = () => {
                 <div className="rounded-lg border border-border p-4 bg-surface-elevated">
                   <p className="text-xs uppercase tracking-wide text-text-secondary">Phase</p>
                   <p className="mt-1 text-sm font-medium text-text">{selectedBackup.phase}</p>
+                </div>
+                <div className="rounded-lg border border-border p-4 bg-surface-elevated">
+                  <p className="text-xs uppercase tracking-wide text-text-secondary">Size</p>
+                  <p className="mt-1 text-sm font-medium text-text">{formatBackupSize(selectedBackup.size_bytes)}</p>
                 </div>
                 <div className="rounded-lg border border-border p-4 bg-surface-elevated">
                   <p className="text-xs uppercase tracking-wide text-text-secondary">Created</p>

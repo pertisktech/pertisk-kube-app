@@ -310,7 +310,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/backup/schedules/:name", delete(delete_backup_schedule))
         .route("/backup/schedules/:name/run", post(run_backup_schedule_manual))
         .route("/backup/backups/delete", post(delete_backup_runs_bulk))
-        .route("/backup/backups/:name", delete(delete_backup_run))
+        .route("/backup/backups/:name", get(download_backup_run).delete(delete_backup_run))
         .route("/backup/manual", post(run_manual_backup))
         .route("/backup/restore", post(run_restore))
         .route("/backup/overview", get(get_backup_overview))

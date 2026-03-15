@@ -458,6 +458,39 @@ export const deleteBackupRun = async (name: string): Promise<string> => {
   return body.message || `Deleted backup ${name}`;
 };
 
+export const downloadBackupRun = async (name: string): Promise<void> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/backup/backups/${encodeURIComponent(name)}`, {
+    method: 'GET',
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message || `Failed to download backup (${res.status})`);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get('content-disposition') || '';
+  const filenameMatch = disposition.match(/filename\s*=\s*"?([^";]+)"?/i);
+  const filename = filenameMatch?.[1] || `${name}.json`;
+
+  const url = window.URL.createObjectURL(blob);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } finally {
+    window.URL.revokeObjectURL(url);
+  }
+};
+
 export const deleteBackupRunsBulk = async (names: string[]): Promise<{ message: string; deleted: number; warnings: string[] }> => {
   const token = getAuthToken();
   const res = await fetch(`${API_BASE}/backup/backups/delete`, {

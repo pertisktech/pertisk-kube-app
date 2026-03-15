@@ -1,4 +1,9 @@
-use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse, Json};
+use axum::{
+    extract::{Path, State},
+    http::{header, HeaderValue, StatusCode},
+    response::IntoResponse,
+    Json,
+};
 use chrono::Utc;
 use cron::Schedule;
 use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
@@ -100,6 +105,7 @@ pub struct BackupRecord {
     pub phase: String,
     pub storage_location: String,
     pub created_at: String,
+    pub size_bytes: Option<u64>,
     pub include_namespaces: Vec<String>,
     pub exclude_namespaces: Vec<String>,
     pub resource_summary: String,
@@ -145,6 +151,8 @@ struct StoredBackupRun {
     manual: bool,
     #[serde(default)]
     object_key: String,
+    #[serde(default)]
+    size_bytes: Option<u64>,
     #[serde(default)]
     include_namespaces: Vec<String>,
     #[serde(default)]
@@ -639,6 +647,7 @@ async fn load_backup_runs_from_s3(settings: &BackupSettings) -> Vec<BackupRecord
                 phase: "Completed".to_string(),
                 storage_location: settings.storage_location_name.clone(),
                 created_at: object.last_modified,
+                size_bytes: if object.size > 0 { Some(object.size as u64) } else { None },
                 include_namespaces: vec![],
                 exclude_namespaces: vec![],
                 kind_summary: fallback_kind_summary_from_resource_summary(&resource_summary),
@@ -1768,7 +1777,7 @@ async fn upload_backup_run_to_s3(
     schedule: &StoredSchedule,
     backup_name: &str,
     created_at: &str,
-) -> Result<(String, String, BTreeMap<String, usize>), String> {
+) -> Result<(String, String, BTreeMap<String, usize>, u64), String> {
     if settings.s3_bucket.trim().is_empty() {
         return Err("S3 bucket is required".to_string());
     }
@@ -1792,7 +1801,45 @@ async fn upload_backup_run_to_s3(
     .await;
     let body = serde_json::to_vec_pretty(&payload).map_err(|e| format!("Failed to encode backup payload: {}", e))?;
     put_object_with_retries(settings, &key, &body).await?;
-    Ok((key, resource_summary, kind_summary))
+    Ok((key, resource_summary, kind_summary, body.len() as u64))
+}
+
+fn parse_size_bytes(value: &Value) -> Option<u64> {
+    if let Some(v) = value.as_u64() {
+        return Some(v);
+    }
+    if let Some(v) = value.as_i64() {
+        if v > 0 {
+            return Some(v as u64);
+        }
+    }
+    if let Some(v) = value.as_str() {
+        let trimmed = v.trim();
+        if let Ok(parsed) = trimmed.parse::<u64>() {
+            return Some(parsed);
+        }
+    }
+    None
+}
+
+fn extract_backup_size_bytes(backup: &DynamicObject) -> Option<u64> {
+    let status = backup.data.get("status")?;
+
+    let candidates = [
+        status.pointer("/progress/totalBytes"),
+        status.pointer("/progress/totalBytesDone"),
+        status.pointer("/progress/bytesDone"),
+        status.pointer("/totalBytes"),
+        status.pointer("/totalBytesDone"),
+    ];
+
+    for candidate in candidates.into_iter().flatten() {
+        if let Some(parsed) = parse_size_bytes(candidate) {
+            return Some(parsed);
+        }
+    }
+
+    None
 }
 
 fn build_resource_summary(include_namespaces: &[String], exclude_namespaces: &[String]) -> String {
@@ -1874,23 +1921,23 @@ async fn trigger_schedule_run(client: kube::Client, schedule_name: &str, manual:
     )
     .await;
     let phase = if upload_result.is_ok() { "Completed" } else { "Failed" };
-    let object_key = upload_result
-        .as_ref()
-        .map(|(key, _, _)| key.clone())
+    let upload_meta = upload_result.as_ref().ok();
+    let object_key = upload_meta
+        .map(|(key, _, _, _)| key.clone())
         .unwrap_or_default();
-    let resource_summary = upload_result
-        .as_ref()
-        .map(|(_, summary, _)| summary.clone())
-        .unwrap_or_else(|_| {
+    let resource_summary = upload_meta
+        .map(|(_, summary, _, _)| summary.clone())
+        .unwrap_or_else(|| {
         build_resource_summary(
             &schedule_snapshot.include_namespaces,
             &schedule_snapshot.exclude_namespaces,
         )
     });
-    let kind_summary = upload_result
-        .as_ref()
-        .map(|(_, _, summary)| summary.clone())
+    let kind_summary = upload_meta
+        .map(|(_, _, summary, _)| summary.clone())
         .unwrap_or_default();
+    let size_bytes = upload_meta
+        .map(|(_, _, _, size)| *size);
 
     let mut runs = load_stored_backup_runs(client.clone()).await;
     runs.push(StoredBackupRun {
@@ -1901,6 +1948,7 @@ async fn trigger_schedule_run(client: kube::Client, schedule_name: &str, manual:
         created_at: now,
         manual,
         object_key,
+        size_bytes,
         include_namespaces: schedule_snapshot.include_namespaces.clone(),
         exclude_namespaces: schedule_snapshot.exclude_namespaces.clone(),
         resource_summary,
@@ -2583,6 +2631,55 @@ pub async fn delete_backup_run(
     }
 }
 
+pub async fn download_backup_run(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    let backup_name = name.trim();
+    if backup_name.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"success": false, "message": "Backup name is required"})),
+        )
+            .into_response();
+    }
+
+    let settings = load_settings(state.client.clone()).await;
+    let object_key = load_stored_backup_runs(state.client.clone())
+        .await
+        .into_iter()
+        .find(|run| run.name.trim() == backup_name)
+        .and_then(|run| {
+            let key = run.object_key.trim().to_string();
+            if key.is_empty() { None } else { Some(key) }
+        })
+        .unwrap_or_else(|| backup_snapshot_key(&settings, backup_name));
+
+    match get_object_with_retries(&settings, &object_key).await {
+        Ok(content) => {
+            let filename = format!("{}.json", backup_name.replace('"', "_"));
+            let content_disposition = format!("attachment; filename=\"{}\"", filename);
+            let headers = [
+                (header::CONTENT_TYPE, HeaderValue::from_static("application/json")),
+                (
+                    header::CONTENT_DISPOSITION,
+                    HeaderValue::from_str(&content_disposition)
+                        .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
+                ),
+            ];
+            (StatusCode::OK, headers, content).into_response()
+        }
+        Err(e) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false,
+                "message": format!("Failed to download backup '{}': {}", backup_name, e)
+            })),
+        )
+            .into_response(),
+    }
+}
+
 pub async fn delete_backup_runs_bulk(
     State(state): State<AppState>,
     Json(req): Json<BulkDeleteBackupsRequest>,
@@ -2643,6 +2740,7 @@ pub async fn get_backup_overview(State(state): State<AppState>) -> impl IntoResp
                 phase: r.phase,
                 storage_location: r.storage_location,
                 created_at: r.created_at,
+                size_bytes: r.size_bytes,
                 include_namespaces: r.include_namespaces,
                 exclude_namespaces: r.exclude_namespaces,
                 kind_summary: if r.kind_summary.is_empty() {
@@ -2669,7 +2767,7 @@ pub async fn get_backup_overview(State(state): State<AppState>) -> impl IntoResp
             Ok(list) => {
                 BACKUP_API_RETRY_AT_EPOCH_SECONDS.store(0, Ordering::Relaxed);
                 for backup in list.items {
-                    let name = backup.metadata.name.unwrap_or_default();
+                    let name = backup.metadata.name.clone().unwrap_or_default();
                     if name.is_empty() {
                         continue;
                     }
@@ -2722,6 +2820,8 @@ pub async fn get_backup_overview(State(state): State<AppState>) -> impl IntoResp
                             .as_ref()
                             .map(|ts| ts.0.to_rfc3339())
                             .unwrap_or_default(),
+                        size_bytes: extract_backup_size_bytes(&backup)
+                            .or_else(|| merged_backups.get(&name).and_then(|record| record.size_bytes)),
                         include_namespaces,
                         exclude_namespaces,
                         kind_summary: fallback_kind_summary_from_resource_summary(&resource_summary),
@@ -2748,10 +2848,21 @@ pub async fn get_backup_overview(State(state): State<AppState>) -> impl IntoResp
         }
     }
 
-    if merged_backups.is_empty() {
+    let should_load_s3_metadata = merged_backups.is_empty()
+        || merged_backups
+            .values()
+            .any(|record| record.size_bytes.is_none());
+
+    if should_load_s3_metadata {
         let settings = load_settings(state.client.clone()).await;
         for record in load_backup_runs_from_s3(&settings).await {
-            merged_backups.insert(record.name.clone(), record);
+            if let Some(existing) = merged_backups.get_mut(&record.name) {
+                if existing.size_bytes.is_none() {
+                    existing.size_bytes = record.size_bytes;
+                }
+            } else {
+                merged_backups.insert(record.name.clone(), record);
+            }
         }
     }
 

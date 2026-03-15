@@ -322,6 +322,7 @@ export interface BackupRecord {
   phase: string;
   storage_location: string;
   created_at: string;
+  size_bytes?: number | null;
   include_namespaces: string[];
   exclude_namespaces: string[];
   resource_summary: string;
