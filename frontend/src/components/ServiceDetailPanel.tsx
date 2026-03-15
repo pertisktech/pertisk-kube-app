@@ -3,9 +3,11 @@ import { Pencil, Trash2, Cable, X } from './Icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Service } from '../types';
 import { timeAgo } from '../utils';
+import { StatusBadge } from './StatusBadge';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 import { createPortForward, usePortForwards } from '../hooks/useKubernetes';
+import { getServiceExternalIpDisplay, getServiceStatus, getServiceStatusReason } from '../utils/serviceStatus';
 
 // Parse "80/TCP, 443/TCP" -> [80, 443]
 function parsePortsString(portsStr: string | undefined): number[] {
@@ -44,6 +46,8 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
       pf.namespace === service.namespace &&
       pf.status === 'running'
   );
+  const serviceStatus = getServiceStatus(service);
+  const serviceStatusReason = getServiceStatusReason(service);
 
   const actions = (
     <>
@@ -58,6 +62,7 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
       keyInfo={[
         { label: 'Namespace', value: service.namespace },
         { label: 'Type', value: service.service_type ?? '-' },
+        { label: 'Status', value: serviceStatus },
         { label: 'Age', value: timeAgo(service.age) },
       ]}
       actions={actions}
@@ -68,7 +73,13 @@ export const ServiceDetailPanel = ({ service, onClose, onOpenYamlEditor, onDelet
       <DrawerItem name="Namespace">{service.namespace}</DrawerItem>
       <DrawerItem name="Type">{service.service_type ?? '-'}</DrawerItem>
       <DrawerItem name="Cluster IP">{service.cluster_ip ?? '-'}</DrawerItem>
-      <DrawerItem name="External IP">{service.external_ip ?? '-'}</DrawerItem>
+      <DrawerItem name="Status">
+        <div className="flex items-center gap-2">
+          <StatusBadge status={serviceStatus} />
+          <span className="text-text-secondary">{serviceStatusReason}</span>
+        </div>
+      </DrawerItem>
+      <DrawerItem name="External IP">{getServiceExternalIpDisplay(service)}</DrawerItem>
       <DrawerItem name="Ports">{service.ports ?? '-'}</DrawerItem>
       <DrawerItem name="Age">{timeAgo(service.age)}</DrawerItem>
 

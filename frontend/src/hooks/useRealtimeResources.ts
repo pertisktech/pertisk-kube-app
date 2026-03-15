@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import CronExpressionParser from 'cron-parser';
+import { sortNodeRoles } from '../utils/nodeRoles';
 import {
   Namespace,
   Deployment,
@@ -362,7 +363,7 @@ function transformNode(raw: any): K8sNode {
   return {
     name: metadata.name || '',
     ready,
-    roles: [...new Set(roles)].sort(),
+    roles: sortNodeRoles(roles),
     ip: ipv4 || internalIp || externalIp || ipv6,
     ipv4: ipv4 || undefined,
     ipv6: ipv6 || undefined,

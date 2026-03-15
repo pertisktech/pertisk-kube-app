@@ -135,7 +135,11 @@ export const getStatusColor = (
     lower === 'available' ||
     lower === 'bound' ||
     lower === 'succeeded' ||
-    lower === 'completed'
+    lower === 'completed' ||
+    lower === 'exposed' ||
+    lower === 'internal' ||
+    lower === 'headless' ||
+    lower === 'externalname'
   )
     return 'green';
   
@@ -153,7 +157,8 @@ export const getStatusColor = (
     lower === 'terminating' ||
     lower === 'released' ||
     lower === 'notready' ||
-    lower.startsWith('init:')
+    lower.startsWith('init:') ||
+    lower.includes('pending')
   )
     return 'yellow';
   

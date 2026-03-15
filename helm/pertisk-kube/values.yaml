@@ -87,18 +87,18 @@ app:
 # Ingress configuration
 ingress:
   enabled: false
-  className: nginx
+  className: "pertisk-rproxy"
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
   hosts:
-    - host: pertisk-kube.example.com
+    - host: dashboard.talos-hz.thaidevops.co
       paths:
         - path: /
           pathType: Prefix
   tls:
-    - secretName: pertisk-kube-tls
+    - secretName: admin-talos-hz-tls
       hosts:
-        - pertisk-kube.example.com
+        - dashboard.talos-hz.thaidevops.co
 
 ingressGrpc:
   enabled: false

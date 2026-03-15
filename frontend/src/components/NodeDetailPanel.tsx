@@ -5,6 +5,7 @@ import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 import { formatMemoryUsedAlloc, formatCpuRange, formatCpuCores, parseCpuToCores, formatK8sQuantity } from '../utils';
+import { sortNodeRoles } from '../utils/nodeRoles';
 import type { K8sNode } from '../types';
 
 function getRoleBadgeStyle(role: string): { bg: string; color: string; border: string } {
@@ -103,6 +104,7 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
   const annotationCount = node.annotations ? Object.keys(node.annotations).length : 0;
 
   const hasAddresses = node.internal_ip || node.external_ip || node.ipv4 || node.ipv6 || node.ip;
+  const orderedRoles = sortNodeRoles(node.roles);
 
   return (
     <ResizablePanel>
@@ -159,9 +161,9 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
           <div className="flex items-center gap-3 text-xs mt-3 pt-3 border-t border-border">
             <div className="flex-1">
               <p className="mb-1" style={{ color: 'var(--color-text-secondary)' }}>Roles</p>
-              {node.roles?.length ? (
+              {orderedRoles.length ? (
                 <div className="flex flex-wrap gap-1.5">
-                  {node.roles.map((role) => {
+                  {orderedRoles.map((role) => {
                     const roleStyle = getRoleBadgeStyle(role);
                     return (
                       <span

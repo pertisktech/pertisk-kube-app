@@ -10,10 +10,12 @@ import { StatusBadge } from '../components/StatusBadge';
 import { openPanelTab } from '../components/BottomPanel';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, formatMemoryUsedAlloc, formatCpuRange } from '../utils';
+import { compareNodeRoleSets, sortNodeRoles } from '../utils/nodeRoles';
 import type { K8sNode } from '../types';
 
 type NodeSortKey =
   | 'name'
+  | 'roles'
   | 'status'
   | 'ip'
   | 'ipv6'
@@ -100,7 +102,7 @@ export const NodesPage = () => {
   const [cordonLoading, setCordonLoading] = useState(false);
 
   const [sortState, setSortState] = useState<{ key: NodeSortKey; direction: 'asc' | 'desc' }>({
-    key: 'name',
+    key: 'roles',
     direction: 'asc',
   });
 
@@ -218,10 +220,11 @@ export const NodesPage = () => {
     {
       header: 'Roles',
       accessor: (row: K8sNode) => {
-        if (!row.roles?.length) return '-';
+        const orderedRoles = sortNodeRoles(row.roles);
+        if (!orderedRoles.length) return '-';
         return (
           <div className="flex flex-wrap gap-1">
-            {row.roles.map((role) => {
+            {orderedRoles.map((role) => {
               const style = getRoleBadgeStyle(role);
               return (
                 <span
@@ -241,6 +244,8 @@ export const NodesPage = () => {
         );
       },
       width: '14%',
+      sortable: true,
+      sortKey: 'roles',
     },
     {
       header: 'Taints',
@@ -368,10 +373,15 @@ export const NodesPage = () => {
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
     return source.sort((first, second) => {
+      const compareNames = () => first.name.localeCompare(second.name) * factor;
       const firstStatus = String(first.ready).toLowerCase() === 'true' ? 'ready' : 'notready';
       const secondStatus = String(second.ready).toLowerCase() === 'true' ? 'ready' : 'notready';
 
-      if (sortState.key === 'name') return first.name.localeCompare(second.name) * factor;
+      if (sortState.key === 'name') return compareNames();
+      if (sortState.key === 'roles') {
+        const comparison = compareNodeRoleSets(first.roles, second.roles);
+        return comparison !== 0 ? comparison * factor : compareNames();
+      }
       if (sortState.key === 'status') return firstStatus.localeCompare(secondStatus) * factor;
       if (sortState.key === 'ip') return (first.ip || '').localeCompare(second.ip || '') * factor;
       if (sortState.key === 'ipv6') return (first.ipv6 || '').localeCompare(second.ipv6 || '') * factor;

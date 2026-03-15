@@ -5,12 +5,18 @@ import { useRealtimeServices } from '../hooks/useRealtimeResources';
 import { deleteService } from '../hooks/useKubernetes';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ServiceDetailPanel, ConfirmDialog } from '../components';
+import { StatusBadge } from '../components/StatusBadge';
 import type { Service } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
+import {
+  getServiceExternalIpDisplay,
+  getServiceStatus,
+  getServiceStatusRank,
+} from '../utils/serviceStatus';
 
-type ServiceSortKey = 'name' | 'namespace' | 'service_type' | 'cluster_ip' | 'external_ip' | 'ports' | 'age';
+type ServiceSortKey = 'name' | 'namespace' | 'status' | 'service_type' | 'cluster_ip' | 'external_ip' | 'ports' | 'age';
 
 const sanitizeYamlForEdit = (yamlText: string) => {
   try {
@@ -91,9 +97,31 @@ export const ServicesPage = () => {
   const columns = [
     { header: 'Name', accessor: (row: Service) => <span className="font-medium text-text">{row.name}</span>, width: '18%', sortable: true, sortKey: 'name' },
     { header: 'Namespace', accessor: 'namespace' as const, width: '14%', sortable: true, sortKey: 'namespace' },
+    {
+      header: 'Status',
+      accessor: (row: Service) => (
+        <StatusBadge status={getServiceStatus(row)} />
+      ),
+      width: '16%',
+      sortable: true,
+      sortKey: 'status',
+    },
     { header: 'Type', accessor: 'service_type' as const, width: '10%', sortable: true, sortKey: 'service_type' },
     { header: 'Cluster IP', accessor: 'cluster_ip' as const, width: '14%', sortable: true, sortKey: 'cluster_ip' },
-    { header: 'External IP', accessor: 'external_ip' as const, width: '16%', sortable: true, sortKey: 'external_ip' },
+    {
+      header: 'External IP',
+      accessor: (row: Service) => {
+        const value = getServiceExternalIpDisplay(row);
+        return (
+          <span className={value === 'Pending allocation' ? 'text-dashboard-warning font-medium' : 'text-text'}>
+            {value}
+          </span>
+        );
+      },
+      width: '16%',
+      sortable: true,
+      sortKey: 'external_ip',
+    },
     { header: 'Ports', accessor: 'ports' as const, width: '16%', sortable: true, sortKey: 'ports' },
     { header: 'Age', accessor: (row: Service) => timeAgo(row.age), width: '12%', sortable: true, sortKey: 'age' },
   ];
@@ -107,9 +135,16 @@ export const ServicesPage = () => {
     return withId.sort((a, b) => {
       if (sortState.key === 'name') return a.name.localeCompare(b.name) * f;
       if (sortState.key === 'namespace') return a.namespace.localeCompare(b.namespace) * f;
+      if (sortState.key === 'status') {
+        const rank = (getServiceStatusRank(a) - getServiceStatusRank(b)) * f;
+        if (rank !== 0) return rank;
+        return a.name.localeCompare(b.name) * f;
+      }
       if (sortState.key === 'service_type') return (a.service_type || '').localeCompare(b.service_type || '') * f;
       if (sortState.key === 'cluster_ip') return (a.cluster_ip || '').localeCompare(b.cluster_ip || '') * f;
-      if (sortState.key === 'external_ip') return (a.external_ip || '').localeCompare(b.external_ip || '') * f;
+      if (sortState.key === 'external_ip') {
+        return getServiceExternalIpDisplay(a).localeCompare(getServiceExternalIpDisplay(b)) * f;
+      }
       if (sortState.key === 'ports') return (a.ports || '').localeCompare(b.ports || '') * f;
       const at = Date.parse(a.age || ''); const bt = Date.parse(b.age || '');
       return ((Number.isNaN(at) ? 0 : at) - (Number.isNaN(bt) ? 0 : bt)) * f;

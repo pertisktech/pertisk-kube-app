@@ -1,6 +1,7 @@
 import { useNodes } from '../hooks/useKubernetes';
 import { Card } from './Card';
 import { Loader } from './Icons';
+import { compareNodeRoleSets, sortNodeRoles } from '../utils/nodeRoles';
 import type { K8sNode } from '../types';
 
 interface NodeGroupInfo {
@@ -28,10 +29,11 @@ export const NodeGroups = () => {
   const nodeGroups = new Map<string, { nodes: K8sNode[]; roles: string[] }>();
 
   nodes?.forEach((node) => {
-    const roles = node.roles?.length > 0 ? node.roles.join('-') : 'worker';
+    const orderedRoles = sortNodeRoles(node.roles?.length ? node.roles : ['worker']);
+    const roles = orderedRoles.join('-') || 'worker';
     
     if (!nodeGroups.has(roles)) {
-      nodeGroups.set(roles, { nodes: [], roles: node.roles || ['worker'] });
+      nodeGroups.set(roles, { nodes: [], roles: orderedRoles });
     }
     
     const group = nodeGroups.get(roles)!;
@@ -63,7 +65,10 @@ export const NodeGroups = () => {
         color,
       };
     }
-  );
+  ).sort((first, second) => {
+    const comparison = compareNodeRoleSets(first.roles, second.roles);
+    return comparison !== 0 ? comparison : first.name.localeCompare(second.name);
+  });
 
   if (groups.length === 0) {
     return (

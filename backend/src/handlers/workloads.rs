@@ -304,8 +304,7 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                                 collected.push("worker".to_string());
                             }
 
-                            collected.sort();
-                            collected.dedup();
+                            sort_node_roles(&mut collected);
                             collected
                         })
                         .unwrap_or_else(|| vec!["worker".to_string()]);
@@ -551,6 +550,25 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
+}
+
+fn sort_node_roles(roles: &mut Vec<String>) {
+    fn role_rank(role: &str) -> usize {
+        match role {
+            "control-plane" => 0,
+            "master" => 1,
+            "worker" => 2,
+            "node" => 3,
+            _ => 4,
+        }
+    }
+
+    roles.sort_by(|first, second| {
+        role_rank(first.as_str())
+            .cmp(&role_rank(second.as_str()))
+            .then_with(|| first.to_lowercase().cmp(&second.to_lowercase()))
+    });
+    roles.dedup();
 }
 
 pub async fn list_events(State(state): State<AppState>) -> impl IntoResponse {
