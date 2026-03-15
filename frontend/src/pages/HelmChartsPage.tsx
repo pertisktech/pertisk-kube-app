@@ -45,7 +45,7 @@ export const HelmChartsPage = () => {
     {
       header: 'Name',
       accessor: (row: HelmChart) => (
-        <span className="font-medium text-white">{row.name}</span>
+        <span className="font-medium text-text">{row.name}</span>
       ),
       width: '14%',
       sortable: true,

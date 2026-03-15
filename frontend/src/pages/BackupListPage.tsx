@@ -106,7 +106,7 @@ export const BackupListPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (row: BackupRecord) => <span className="font-medium text-white">{row.name}</span>,
+      accessor: (row: BackupRecord) => <span className="font-medium text-text">{row.name}</span>,
       width: '38%',
     },
     { header: 'Phase', accessor: (row: BackupRecord) => <StatusBadge status={row.phase} />, width: '16%' },

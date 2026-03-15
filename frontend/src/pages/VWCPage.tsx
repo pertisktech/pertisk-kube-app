@@ -100,7 +100,7 @@ export const VWCPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (v: Vwc) => <span className="font-medium text-white break-words">{v.name}</span>,
+      accessor: (v: Vwc) => <span className="font-medium text-text break-words">{v.name}</span>,
       width: '50%',
       sortable: true,
       sortKey: 'name' as const,

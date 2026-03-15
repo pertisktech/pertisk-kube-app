@@ -276,7 +276,7 @@ export const HelmReleasesPage = () => {
     {
       header: 'Name',
       accessor: (row: HelmRelease) => (
-        <span className="font-medium text-white">{row.name}</span>
+        <span className="font-medium text-text">{row.name}</span>
       ),
       width: '16%',
       sortable: true,

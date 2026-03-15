@@ -139,7 +139,7 @@ export const PortForwardingPage = () => {
                 {portForwards.map((pf: PortForward) => (
                   <tr key={pf.id} className="border-b border-border last:border-0">
                     <td className="py-3 pr-4">
-                      <span className="font-medium text-white">
+                      <span className="font-medium text-text">
                         {pf.resource_type}/{pf.resource_name}
                       </span>
                     </td>

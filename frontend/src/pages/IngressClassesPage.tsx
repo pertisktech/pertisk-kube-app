@@ -51,7 +51,7 @@ export const IngressClassesPage = () => {
       header: 'Name',
       accessor: (row: IngressClass) => (
         <div className="flex items-center gap-2">
-          <span className="font-medium text-white">{row.name}</span>
+          <span className="font-medium text-text">{row.name}</span>
           {row.is_default && <span className="inline-block px-2 py-0.5 rounded text-xs bg-green-100 text-green-800">Default</span>}
         </div>
       ),

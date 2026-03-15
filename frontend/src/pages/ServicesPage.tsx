@@ -89,7 +89,7 @@ export const ServicesPage = () => {
   };
 
   const columns = [
-    { header: 'Name', accessor: (row: Service) => <span className="font-medium text-white">{row.name}</span>, width: '18%', sortable: true, sortKey: 'name' },
+    { header: 'Name', accessor: (row: Service) => <span className="font-medium text-text">{row.name}</span>, width: '18%', sortable: true, sortKey: 'name' },
     { header: 'Namespace', accessor: 'namespace' as const, width: '14%', sortable: true, sortKey: 'namespace' },
     { header: 'Type', accessor: 'service_type' as const, width: '10%', sortable: true, sortKey: 'service_type' },
     { header: 'Cluster IP', accessor: 'cluster_ip' as const, width: '14%', sortable: true, sortKey: 'cluster_ip' },

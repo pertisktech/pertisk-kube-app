@@ -140,7 +140,7 @@ export const HPAPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (hpa: HPA) => <span className="font-medium text-white">{hpa.name}</span>,
+      accessor: (hpa: HPA) => <span className="font-medium text-text">{hpa.name}</span>,
       width: '20%',
       sortable: true,
       sortKey: 'name',

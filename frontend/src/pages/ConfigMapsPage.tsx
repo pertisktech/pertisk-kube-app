@@ -125,7 +125,7 @@ export const ConfigMapsPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (cm: ConfigMap) => <span className="font-medium text-white">{cm.name}</span>,
+      accessor: (cm: ConfigMap) => <span className="font-medium text-text">{cm.name}</span>,
       width: '30%',
       sortable: true,
       sortKey: 'name',

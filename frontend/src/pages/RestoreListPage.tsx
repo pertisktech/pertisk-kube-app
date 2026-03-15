@@ -11,7 +11,7 @@ export const RestoreListPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (row: RestoreRecord) => <span className="font-medium text-white">{row.name}</span>,
+      accessor: (row: RestoreRecord) => <span className="font-medium text-text">{row.name}</span>,
       width: '30%',
     },
     { header: 'Backup', accessor: (row: RestoreRecord) => row.backup_name, width: '28%' },
