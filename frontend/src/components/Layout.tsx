@@ -39,7 +39,6 @@ import {
   LayoutGrid,
 } from './Icons';
 import { cn } from '../utils';
-import { APP_VERSION } from '../utils/version';
 import { useTheme } from '../context/ThemeContext';
 
 
@@ -467,39 +466,54 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 bg-sidebar border-r border-border shadow-lg overflow-y-auto md:relative md:translate-x-0 flex flex-col shrink-0',
+          'fixed inset-y-0 left-0 z-50 bg-sidebar border-r border-border shadow-lg overflow-hidden md:relative md:translate-x-0 flex flex-col shrink-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full',
           !sidebarCollapsed && 'transition-[width] duration-300'
         )}
         style={{ width: effectiveSidebarWidth }}
       >
-        <div className="flex-1 p-4 overflow-y-auto">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-2">
-              {!sidebarCollapsed && (
-                <>
-                  <h1 className="text-lg font-bold text-primary">PTKublet</h1>
-                  <span className="text-[13px] font-medium text-text-secondary">v{APP_VERSION}</span>
-                </>
-              )}
-            </div>
-            <div className="flex items-center gap-1 ml-auto">
-              <button
-                onClick={() => setSidebarCollapsed((previous) => !previous)}
-                className="hidden md:inline-flex p-2 hover:bg-hover rounded text-text-secondary"
-                title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              >
-                {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-              </button>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="md:hidden p-1 hover:bg-hover rounded"
-              >
-                <X size={20} />
-              </button>
-            </div>
+        <div
+          className={cn(
+            'flex h-[63px] min-h-[63px] items-center border-b border-border shrink-0',
+            sidebarCollapsed ? 'justify-center px-2' : 'justify-between px-4'
+          )}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            {!sidebarCollapsed && (
+              <>
+                <Link
+                  to="/"
+                  className="flex items-center gap-3 min-w-0 rounded-lg transition-colors hover:bg-hover px-4 py-1"
+                  aria-label="PTKublet home"
+                >
+                  <img
+                    src="/favicon.svg"
+                    alt=""
+                    className="h-8 w-8 shrink-0"
+                  />
+                  <h1 className="truncate text-[1.05rem] font-[650] tracking-[-0.02em] text-text">PTKublet</h1>
+                </Link>
+              </>
+            )}
           </div>
+          <div className={cn('flex items-center gap-1', !sidebarCollapsed && 'ml-auto')}>
+            <button
+              onClick={() => setSidebarCollapsed((previous) => !previous)}
+              className="hidden md:inline-flex p-2 hover:bg-hover rounded text-text-secondary"
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+            </button>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="md:hidden p-1 hover:bg-hover rounded"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
 
+        <div className="flex-1 p-4 overflow-y-auto">
           <nav className="flex flex-col gap-2">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
