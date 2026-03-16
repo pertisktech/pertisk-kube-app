@@ -5,12 +5,15 @@ use axum::{
     Json,
 };
 use k8s_openapi::api::apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet};
-use k8s_openapi::api::batch::v1::Job;
-use k8s_openapi::api::core::v1::{Pod, Service};
+use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
+use k8s_openapi::api::batch::v1::{CronJob, Job};
+use k8s_openapi::api::core::v1::{
+    ConfigMap, PersistentVolume, PersistentVolumeClaim, Pod, Secret, Service, ServiceAccount,
+};
 use k8s_openapi::api::networking::v1::Ingress;
 use kube::{api::ListParams, Api};
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tracing::error;
 
 use crate::{
@@ -34,21 +37,40 @@ pub async fn get_resource_map(
     let rs_api: Api<ReplicaSet> = Api::all(client.clone());
     let ss_api: Api<StatefulSet> = Api::all(client.clone());
     let ds_api: Api<DaemonSet> = Api::all(client.clone());
+    let jobs_api: Api<Job> = Api::all(client.clone());
+    let cronjobs_api: Api<CronJob> = Api::all(client.clone());
     let svc_api: Api<Service> = Api::all(client.clone());
     let ing_api: Api<Ingress> = Api::all(client.clone());
-    let job_api: Api<Job> = Api::all(client.clone());
+    let hpa_api: Api<HorizontalPodAutoscaler> = Api::all(client.clone());
+    let cm_api: Api<ConfigMap> = Api::all(client.clone());
+    let secret_api: Api<Secret> = Api::all(client.clone());
+    let sa_api: Api<ServiceAccount> = Api::all(client.clone());
+    let pvc_api: Api<PersistentVolumeClaim> = Api::all(client.clone());
+    let pv_api: Api<PersistentVolume> = Api::all(client.clone());
 
     let lp = ListParams::default();
 
-    let (pods_r, deps_r, rs_r, ss_r, ds_r, svc_r, ing_r, job_r) = tokio::join!(
+    let (
+        pods_r, deps_r, rs_r, ss_r, ds_r,
+        jobs_r, cronjobs_r,
+        svc_r, ing_r, hpa_r,
+        cm_r, secret_r, sa_r, pvc_r, pv_r,
+    ) = tokio::join!(
         pods_api.list(&lp),
         deployments_api.list(&lp),
         rs_api.list(&lp),
         ss_api.list(&lp),
         ds_api.list(&lp),
+        jobs_api.list(&lp),
+        cronjobs_api.list(&lp),
         svc_api.list(&lp),
         ing_api.list(&lp),
-        job_api.list(&lp),
+        hpa_api.list(&lp),
+        cm_api.list(&lp),
+        secret_api.list(&lp),
+        sa_api.list(&lp),
+        pvc_api.list(&lp),
+        pv_api.list(&lp),
     );
 
     macro_rules! unwrap_list {
@@ -72,11 +94,18 @@ pub async fn get_resource_map(
     let rsets = unwrap_list!(rs_r, "replicasets");
     let ssets = unwrap_list!(ss_r, "statefulsets");
     let dsets = unwrap_list!(ds_r, "daemonsets");
+    let jobs = unwrap_list!(jobs_r, "jobs");
+    let cronjobs = unwrap_list!(cronjobs_r, "cronjobs");
     let services = unwrap_list!(svc_r, "services");
     let ingresses = unwrap_list!(ing_r, "ingresses");
-    let jobs = unwrap_list!(job_r, "jobs");
+    let hpas = unwrap_list!(hpa_r, "hpas");
+    let configmaps = unwrap_list!(cm_r, "configmaps");
+    let secrets = unwrap_list!(secret_r, "secrets");
+    let serviceaccounts = unwrap_list!(sa_r, "serviceaccounts");
+    let pvcs = unwrap_list!(pvc_r, "pvcs");
+    let pvs = unwrap_list!(pv_r, "pvs");
 
-    // Parse namespace filter: comma-separated list
+    // Namespace filter: comma-separated list
     let ns_list: Option<Vec<&str>> = params
         .namespace
         .as_deref()
@@ -92,6 +121,14 @@ pub async fn get_resource_map(
 
     let mut nodes: Vec<ResourceMapNode> = Vec::new();
     let mut edges: Vec<ResourceMapEdge> = Vec::new();
+
+    // Track which config/storage resources are actually referenced by pods
+    // (to avoid cluttering the graph with orphan nodes)
+    let mut referenced_cms: HashSet<String> = HashSet::new();    // "ns/name"
+    let mut referenced_secrets: HashSet<String> = HashSet::new();
+    let mut referenced_sas: HashSet<String> = HashSet::new();
+    let mut referenced_pvcs: HashSet<String> = HashSet::new();
+    let mut referenced_pvs: HashSet<String> = HashSet::new();    // just "name" (cluster-scoped)
 
     // ── Pods ──────────────────────────────────────────────────────────────────
     for pod in &pods {
@@ -116,7 +153,7 @@ pub async fn get_resource_map(
             status: phase,
         });
 
-        // Pod ← ownerReference edges
+        // ownerRef edges → ReplicaSet / StatefulSet / DaemonSet / Job
         if let Some(owners) = pod.metadata.owner_references.as_ref() {
             for owner in owners {
                 let owner_id = match owner.kind.as_str() {
@@ -131,6 +168,87 @@ pub async fn get_resource_map(
                     target: format!("pod/{ns}/{name}"),
                     edge_type: "owns".into(),
                 });
+            }
+        }
+
+        // Config / storage references from pod spec
+        if let Some(spec) = &pod.spec {
+            // ServiceAccount (skip "default" to reduce noise)
+            if let Some(sa_name) = &spec.service_account_name {
+                if sa_name != "default" {
+                    referenced_sas.insert(format!("{ns}/{sa_name}"));
+                    edges.push(ResourceMapEdge {
+                        source: format!("pod/{ns}/{name}"),
+                        target: format!("serviceaccount/{ns}/{sa_name}"),
+                        edge_type: "uses_sa".into(),
+                    });
+                }
+            }
+
+            // Volumes
+            for vol in spec.volumes.as_deref().unwrap_or(&[]) {
+                if let Some(cm_vol) = &vol.config_map {
+                    if let Some(cm_name) = &cm_vol.name {
+                        // Skip kube-internal CA configmap present in every namespace
+                        if cm_name == "kube-root-ca.crt" {
+                            continue;
+                        }
+                        referenced_cms.insert(format!("{ns}/{cm_name}"));
+                        edges.push(ResourceMapEdge {
+                            source: format!("pod/{ns}/{name}"),
+                            target: format!("configmap/{ns}/{cm_name}"),
+                            edge_type: "uses".into(),
+                        });
+                    }
+                }
+                if let Some(secret_vol) = &vol.secret {
+                    if let Some(secret_name) = &secret_vol.secret_name {
+                        referenced_secrets.insert(format!("{ns}/{secret_name}"));
+                        edges.push(ResourceMapEdge {
+                            source: format!("pod/{ns}/{name}"),
+                            target: format!("secret/{ns}/{secret_name}"),
+                            edge_type: "uses".into(),
+                        });
+                    }
+                }
+                if let Some(pvc_vol) = &vol.persistent_volume_claim {
+                    referenced_pvcs.insert(format!("{ns}/{}", pvc_vol.claim_name));
+                    edges.push(ResourceMapEdge {
+                        source: format!("pod/{ns}/{name}"),
+                        target: format!("pvc/{ns}/{}", pvc_vol.claim_name),
+                        edge_type: "mounts".into(),
+                    });
+                }
+            }
+
+            // envFrom (containers + init containers)
+            let all_containers = spec
+                .containers
+                .iter()
+                .chain(spec.init_containers.as_deref().unwrap_or(&[]).iter());
+            for container in all_containers {
+                for env_from in container.env_from.as_deref().unwrap_or(&[]) {
+                    if let Some(cm_ref) = &env_from.config_map_ref {
+                        if let Some(cm_name) = &cm_ref.name {
+                            referenced_cms.insert(format!("{ns}/{cm_name}"));
+                            edges.push(ResourceMapEdge {
+                                source: format!("pod/{ns}/{name}"),
+                                target: format!("configmap/{ns}/{cm_name}"),
+                                edge_type: "uses".into(),
+                            });
+                        }
+                    }
+                    if let Some(secret_ref) = &env_from.secret_ref {
+                        if let Some(secret_name) = &secret_ref.name {
+                            referenced_secrets.insert(format!("{ns}/{secret_name}"));
+                            edges.push(ResourceMapEdge {
+                                source: format!("pod/{ns}/{name}"),
+                                target: format!("secret/{ns}/{secret_name}"),
+                                edge_type: "uses".into(),
+                            });
+                        }
+                    }
+                }
             }
         }
     }
@@ -174,7 +292,7 @@ pub async fn get_resource_map(
             .and_then(|s| s.ready_replicas)
             .unwrap_or(0);
         let desired = rs.spec.as_ref().and_then(|s| s.replicas).unwrap_or(0);
-        // Skip old rollout revisions with 0 desired replicas
+        // Skip old rollout revisions with 0 desired
         if desired == 0 && ready == 0 {
             continue;
         }
@@ -189,7 +307,6 @@ pub async fn get_resource_map(
             status: status.into(),
         });
 
-        // ReplicaSet ← Deployment owner edge
         if let Some(owners) = rs.metadata.owner_references.as_ref() {
             for owner in owners {
                 if owner.kind == "Deployment" {
@@ -253,22 +370,47 @@ pub async fn get_resource_map(
         });
     }
 
-    // ── Jobs ──────────────────────────────────────────────────────────────────
-    for job in &jobs {
-        let name = job.metadata.name.as_deref().unwrap_or_default();
-        let ns = job.metadata.namespace.as_deref().unwrap_or("default");
+    // ── CronJobs ──────────────────────────────────────────────────────────────
+    for cj in &cronjobs {
+        let name = cj.metadata.name.as_deref().unwrap_or_default();
+        let ns = cj.metadata.namespace.as_deref().unwrap_or("default");
         if !in_ns(ns) {
             continue;
         }
 
-        // Skip CronJob-owned jobs to reduce graph clutter
-        if job
-            .metadata
-            .owner_references
+        let suspended = cj
+            .spec
             .as_ref()
-            .map(|owners| owners.iter().any(|o| o.kind == "CronJob"))
-            .unwrap_or(false)
-        {
+            .and_then(|s| s.suspend)
+            .unwrap_or(false);
+        let active = cj
+            .status
+            .as_ref()
+            .map(|s| s.active.as_deref().unwrap_or(&[]).len())
+            .unwrap_or(0);
+
+        let status = if suspended {
+            "suspended"
+        } else if active > 0 {
+            "active"
+        } else {
+            "ready"
+        };
+
+        nodes.push(ResourceMapNode {
+            id: format!("cronjob/{ns}/{name}"),
+            kind: "CronJob".into(),
+            name: name.into(),
+            namespace: Some(ns.into()),
+            status: status.into(),
+        });
+    }
+
+    // ── Jobs (including CronJob-owned) ────────────────────────────────────────
+    for job in &jobs {
+        let name = job.metadata.name.as_deref().unwrap_or_default();
+        let ns = job.metadata.namespace.as_deref().unwrap_or("default");
+        if !in_ns(ns) {
             continue;
         }
 
@@ -297,6 +439,115 @@ pub async fn get_resource_map(
             namespace: Some(ns.into()),
             status: status.into(),
         });
+
+        // CronJob → Job edge via ownerReferences
+        if let Some(owners) = job.metadata.owner_references.as_ref() {
+            for owner in owners {
+                if owner.kind == "CronJob" {
+                    edges.push(ResourceMapEdge {
+                        source: format!("cronjob/{ns}/{}", owner.name),
+                        target: format!("job/{ns}/{name}"),
+                        edge_type: "owns".into(),
+                    });
+                }
+            }
+        }
+    }
+
+    // ── HPAs ──────────────────────────────────────────────────────────────────
+    for hpa in &hpas {
+        let name = hpa.metadata.name.as_deref().unwrap_or_default();
+        let ns = hpa.metadata.namespace.as_deref().unwrap_or("default");
+        if !in_ns(ns) {
+            continue;
+        }
+
+        let current = hpa
+            .status
+            .as_ref()
+            .and_then(|s| s.current_replicas)
+            .unwrap_or(0);
+        let desired = hpa
+            .status
+            .as_ref()
+            .map(|s| s.desired_replicas)
+            .unwrap_or(0);
+        let status = if current == desired { "synced" } else { "scaling" };
+
+        nodes.push(ResourceMapNode {
+            id: format!("hpa/{ns}/{name}"),
+            kind: "HPA".into(),
+            name: name.into(),
+            namespace: Some(ns.into()),
+            status: status.into(),
+        });
+
+        // HPA → target (Deployment / StatefulSet) edge
+        if let Some(spec) = &hpa.spec {
+            let target = &spec.scale_target_ref;
+            let target_id = match target.kind.to_lowercase().as_str() {
+                "deployment" => format!("deployment/{ns}/{}", target.name),
+                "statefulset" => format!("statefulset/{ns}/{}", target.name),
+                "daemonset" => format!("daemonset/{ns}/{}", target.name),
+                _ => continue,
+            };
+            edges.push(ResourceMapEdge {
+                source: format!("hpa/{ns}/{name}"),
+                target: target_id,
+                edge_type: "scales".into(),
+            });
+        }
+    }
+
+    // ── Build pod → top-level-controller lookup for service edges ─────────────
+    // rs_key("ns/rs-name") -> deployment node id
+    let mut rs_to_dep: HashMap<String, String> = HashMap::new();
+    for rs in &rsets {
+        let rs_name = rs.metadata.name.as_deref().unwrap_or_default();
+        let rs_ns = rs.metadata.namespace.as_deref().unwrap_or("default");
+        if let Some(owners) = rs.metadata.owner_references.as_ref() {
+            for owner in owners {
+                if owner.kind == "Deployment" {
+                    rs_to_dep.insert(
+                        format!("{rs_ns}/{rs_name}"),
+                        format!("deployment/{rs_ns}/{}", owner.name),
+                    );
+                }
+            }
+        }
+    }
+
+    // pod_key("ns/pod-name") -> top-level controller node id
+    let mut pod_to_controller: HashMap<String, String> = HashMap::new();
+    for pod in &pods {
+        let pod_name = pod.metadata.name.as_deref().unwrap_or_default();
+        let pod_ns = pod.metadata.namespace.as_deref().unwrap_or("default");
+        let pod_key = format!("{pod_ns}/{pod_name}");
+
+        let controller_id = pod
+            .metadata
+            .owner_references
+            .as_ref()
+            .and_then(|owners| {
+                owners.iter().find_map(|owner| match owner.kind.as_str() {
+                    "ReplicaSet" => {
+                        let rs_key = format!("{pod_ns}/{}", owner.name);
+                        Some(
+                            rs_to_dep
+                                .get(&rs_key)
+                                .cloned()
+                                .unwrap_or_else(|| format!("replicaset/{pod_ns}/{}", owner.name)),
+                        )
+                    }
+                    "StatefulSet" => Some(format!("statefulset/{pod_ns}/{}", owner.name)),
+                    "DaemonSet" => Some(format!("daemonset/{pod_ns}/{}", owner.name)),
+                    "Job" => Some(format!("job/{pod_ns}/{}", owner.name)),
+                    _ => None,
+                })
+            })
+            .unwrap_or_else(|| format!("pod/{pod_ns}/{pod_name}"));
+
+        pod_to_controller.insert(pod_key, controller_id);
     }
 
     // ── Services ──────────────────────────────────────────────────────────────
@@ -306,7 +557,6 @@ pub async fn get_resource_map(
         if !in_ns(ns) {
             continue;
         }
-        // Skip the built-in kubernetes service
         if name == "kubernetes" && ns == "default" {
             continue;
         }
@@ -318,7 +568,6 @@ pub async fn get_resource_map(
             .map(|sel| sel.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
             .unwrap_or_default();
 
-        // Skip headless / externalName services without pod selectors
         if selector.is_empty() {
             continue;
         }
@@ -331,7 +580,9 @@ pub async fn get_resource_map(
             status: "active".into(),
         });
 
-        // Service → Pod selector-based edges
+        // Service → top-level controller (trace pod ownerRefs: pod → RS → Deployment etc.)
+        // This produces one clean edge per controller instead of N edges to individual pods.
+        let mut seen_controllers: HashSet<String> = HashSet::new();
         for pod in &pods {
             let pod_ns = pod.metadata.namespace.as_deref().unwrap_or("default");
             if pod_ns != ns {
@@ -346,11 +597,19 @@ pub async fn get_resource_map(
                 .unwrap_or_default();
 
             if selector.iter().all(|(k, v)| pod_labels.get(k) == Some(v)) {
-                edges.push(ResourceMapEdge {
-                    source: format!("service/{ns}/{name}"),
-                    target: format!("pod/{pod_ns}/{pod_name}"),
-                    edge_type: "selects".into(),
-                });
+                let pod_key = format!("{pod_ns}/{pod_name}");
+                let controller_id = pod_to_controller
+                    .get(&pod_key)
+                    .cloned()
+                    .unwrap_or_else(|| format!("pod/{pod_ns}/{pod_name}"));
+
+                if seen_controllers.insert(controller_id.clone()) {
+                    edges.push(ResourceMapEdge {
+                        source: format!("service/{ns}/{name}"),
+                        target: controller_id,
+                        edge_type: "selects".into(),
+                    });
+                }
             }
         }
     }
@@ -371,7 +630,6 @@ pub async fn get_resource_map(
             status: "active".into(),
         });
 
-        // Ingress → Service edges (via backend service references)
         if let Some(spec) = &ing.spec {
             if let Some(rules) = &spec.rules {
                 for rule in rules {
@@ -391,7 +649,137 @@ pub async fn get_resource_map(
         }
     }
 
-    // Deduplicate edges (same source→target may appear multiple times for Ingress path rules)
+    // ── ConfigMaps (all in namespace, except kube internals) ───────────────────
+    for cm in &configmaps {
+        let name = cm.metadata.name.as_deref().unwrap_or_default();
+        let ns = cm.metadata.namespace.as_deref().unwrap_or("default");
+        if !in_ns(ns) {
+            continue;
+        }
+        // Skip kube-internal CA configmap injected in every namespace
+        if name == "kube-root-ca.crt" {
+            continue;
+        }
+
+        nodes.push(ResourceMapNode {
+            id: format!("configmap/{ns}/{name}"),
+            kind: "ConfigMap".into(),
+            name: name.into(),
+            namespace: Some(ns.into()),
+            status: "active".into(),
+        });
+    }
+
+    // ── Secrets (all in namespace; skip auto-generated SA tokens) ────────────────
+    for secret in &secrets {
+        let name = secret.metadata.name.as_deref().unwrap_or_default();
+        let ns = secret.metadata.namespace.as_deref().unwrap_or("default");
+        if !in_ns(ns) {
+            continue;
+        }
+        // Skip automatically rotated service-account tokens
+        let secret_type = secret.type_.as_deref().unwrap_or("");
+        if secret_type == "kubernetes.io/service-account-token" {
+            continue;
+        }
+        // Skip Helm release secrets (sh.helm.release.v1.*)
+        if name.starts_with("sh.helm.release") {
+            continue;
+        }
+
+        nodes.push(ResourceMapNode {
+            id: format!("secret/{ns}/{name}"),
+            kind: "Secret".into(),
+            name: name.into(),
+            namespace: Some(ns.into()),
+            status: "active".into(),
+        });
+    }
+
+    // ── ServiceAccounts (only referenced, non-default) ─────────────────────────
+    for sa in &serviceaccounts {
+        let name = sa.metadata.name.as_deref().unwrap_or_default();
+        let ns = sa.metadata.namespace.as_deref().unwrap_or("default");
+        if !in_ns(ns) {
+            continue;
+        }
+        if !referenced_sas.contains(&format!("{ns}/{name}")) {
+            continue;
+        }
+
+        nodes.push(ResourceMapNode {
+            id: format!("serviceaccount/{ns}/{name}"),
+            kind: "ServiceAccount".into(),
+            name: name.into(),
+            namespace: Some(ns.into()),
+            status: "active".into(),
+        });
+    }
+
+    // ── PVCs (only referenced ones) + PVC → PV edges ──────────────────────────
+    for pvc in &pvcs {
+        let name = pvc.metadata.name.as_deref().unwrap_or_default();
+        let ns = pvc.metadata.namespace.as_deref().unwrap_or("default");
+        if !in_ns(ns) {
+            continue;
+        }
+        if !referenced_pvcs.contains(&format!("{ns}/{name}")) {
+            continue;
+        }
+
+        let phase = pvc
+            .status
+            .as_ref()
+            .and_then(|s| s.phase.as_deref())
+            .unwrap_or("Unknown");
+
+        nodes.push(ResourceMapNode {
+            id: format!("pvc/{ns}/{name}"),
+            kind: "PVC".into(),
+            name: name.into(),
+            namespace: Some(ns.into()),
+            status: phase.to_lowercase(),
+        });
+
+        // PVC → PV edge (via bound volume name)
+        if let Some(pv_name) = pvc
+            .spec
+            .as_ref()
+            .and_then(|s| s.volume_name.as_ref())
+            .filter(|v| !v.is_empty())
+        {
+            referenced_pvs.insert(pv_name.clone());
+            edges.push(ResourceMapEdge {
+                source: format!("pvc/{ns}/{name}"),
+                target: format!("pv/{pv_name}"),
+                edge_type: "binds".into(),
+            });
+        }
+    }
+
+    // ── PVs (only those bound to included PVCs) ────────────────────────────────
+    for pv in &pvs {
+        let name = pv.metadata.name.as_deref().unwrap_or_default();
+        if !referenced_pvs.contains(name) {
+            continue;
+        }
+
+        let phase = pv
+            .status
+            .as_ref()
+            .and_then(|s| s.phase.as_deref())
+            .unwrap_or("Unknown");
+
+        nodes.push(ResourceMapNode {
+            id: format!("pv/{name}"),
+            kind: "PV".into(),
+            name: name.into(),
+            namespace: None, // cluster-scoped
+            status: phase.to_lowercase(),
+        });
+    }
+
+    // Deduplicate edges
     edges.sort_by(|a, b| a.source.cmp(&b.source).then(a.target.cmp(&b.target)));
     edges.dedup_by(|a, b| a.source == b.source && a.target == b.target);
 

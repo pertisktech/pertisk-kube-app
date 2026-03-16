@@ -21,9 +21,14 @@ import {
   Archive,
   Boxes,
   Briefcase,
+  Clock,
   Cpu,
   Database,
+  FileText,
+  Gauge,
   Globe,
+  HardDrive,
+  KeyRound,
   Maximize2,
   Minimize2,
   Monitor,
@@ -46,62 +51,25 @@ interface KindConfig {
 }
 
 const KIND_CONFIG: Record<string, KindConfig> = {
-  Pod: {
-    color: 'text-blue-400',
-    bg: 'bg-blue-500/10',
-    border: 'border-blue-500/30',
-    icon: Cpu,
-    navPath: '/pods',
-  },
-  Deployment: {
-    color: 'text-purple-400',
-    bg: 'bg-purple-500/10',
-    border: 'border-purple-500/30',
-    icon: Archive,
-    navPath: '/deployments',
-  },
-  ReplicaSet: {
-    color: 'text-indigo-400',
-    bg: 'bg-indigo-500/10',
-    border: 'border-indigo-500/30',
-    icon: Boxes,
-    navPath: '/replicasets',
-  },
-  StatefulSet: {
-    color: 'text-teal-400',
-    bg: 'bg-teal-500/10',
-    border: 'border-teal-500/30',
-    icon: Database,
-    navPath: '/statefulsets',
-  },
-  DaemonSet: {
-    color: 'text-pink-400',
-    bg: 'bg-pink-500/10',
-    border: 'border-pink-500/30',
-    icon: Monitor,
-    navPath: '/daemonsets',
-  },
-  Job: {
-    color: 'text-amber-400',
-    bg: 'bg-amber-500/10',
-    border: 'border-amber-500/30',
-    icon: Briefcase,
-    navPath: '/jobs',
-  },
-  Service: {
-    color: 'text-emerald-400',
-    bg: 'bg-emerald-500/10',
-    border: 'border-emerald-500/30',
-    icon: Network,
-    navPath: '/network/services',
-  },
-  Ingress: {
-    color: 'text-orange-400',
-    bg: 'bg-orange-500/10',
-    border: 'border-orange-500/30',
-    icon: Globe,
-    navPath: '/network/ingresses',
-  },
+  // ── Workloads ──
+  Pod:            { color: 'text-blue-400',    bg: 'bg-blue-500/10',    border: 'border-blue-500/30',    icon: Cpu,       navPath: '/pods' },
+  Deployment:     { color: 'text-purple-400',  bg: 'bg-purple-500/10',  border: 'border-purple-500/30',  icon: Archive,   navPath: '/deployments' },
+  ReplicaSet:     { color: 'text-indigo-400',  bg: 'bg-indigo-500/10',  border: 'border-indigo-500/30',  icon: Boxes,     navPath: '/replicasets' },
+  StatefulSet:    { color: 'text-teal-400',    bg: 'bg-teal-500/10',    border: 'border-teal-500/30',    icon: Database,  navPath: '/statefulsets' },
+  DaemonSet:      { color: 'text-pink-400',    bg: 'bg-pink-500/10',    border: 'border-pink-500/30',    icon: Monitor,   navPath: '/daemonsets' },
+  CronJob:        { color: 'text-yellow-400',  bg: 'bg-yellow-500/10',  border: 'border-yellow-500/30',  icon: Clock,     navPath: '/cronjobs' },
+  Job:            { color: 'text-amber-400',   bg: 'bg-amber-500/10',   border: 'border-amber-500/30',   icon: Briefcase, navPath: '/jobs' },
+  // ── Network ──
+  Ingress:        { color: 'text-orange-400',  bg: 'bg-orange-500/10',  border: 'border-orange-500/30',  icon: Globe,     navPath: '/network/ingresses' },
+  Service:        { color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', icon: Network,   navPath: '/network/services' },
+  HPA:            { color: 'text-lime-400',    bg: 'bg-lime-500/10',    border: 'border-lime-500/30',    icon: Gauge,     navPath: '/config/hpa' },
+  // ── Config ──
+  ConfigMap:      { color: 'text-sky-400',     bg: 'bg-sky-500/10',     border: 'border-sky-500/30',     icon: FileText,  navPath: '/config/configmaps' },
+  Secret:         { color: 'text-red-400',     bg: 'bg-red-500/10',     border: 'border-red-500/30',     icon: KeyRound,  navPath: '/config/secrets' },
+  ServiceAccount: { color: 'text-cyan-400',    bg: 'bg-cyan-500/10',    border: 'border-cyan-500/30',    icon: KeyRound,  navPath: '/access-control/serviceaccounts' },
+  // ── Storage ──
+  PVC:            { color: 'text-violet-400',  bg: 'bg-violet-500/10',  border: 'border-violet-500/30',  icon: HardDrive, navPath: '/storage/pvc' },
+  PV:             { color: 'text-slate-400',   bg: 'bg-slate-500/10',   border: 'border-slate-500/30',   icon: HardDrive, navPath: '/storage/pv' },
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -120,26 +88,47 @@ const STATUS_DOT: Record<string, string> = {
 
 // MiniMap node colors
 const MINIMAP_COLOR: Record<string, string> = {
-  Pod: '#3b82f6',
-  Deployment: '#a855f7',
-  ReplicaSet: '#6366f1',
-  StatefulSet: '#14b8a6',
-  DaemonSet: '#ec4899',
-  Job: '#f59e0b',
-  Service: '#22c55e',
-  Ingress: '#f97316',
+  // workloads
+  Pod:            '#3b82f6',
+  Deployment:     '#a855f7',
+  ReplicaSet:     '#6366f1',
+  StatefulSet:    '#14b8a6',
+  DaemonSet:      '#ec4899',
+  CronJob:        '#eab308',
+  Job:            '#f59e0b',
+  // network
+  Ingress:        '#f97316',
+  Service:        '#22c55e',
+  HPA:            '#84cc16',
+  // config
+  ConfigMap:      '#0ea5e9',
+  Secret:         '#ef4444',
+  ServiceAccount: '#06b6d4',
+  // storage
+  PVC:            '#8b5cf6',
+  PV:             '#64748b',
 };
 
 // ── Column layout ─────────────────────────────────────────────────────────────
+// Every "owns" edge is at most 1 column hop → no edges pass through other nodes.
+// Ingress(0) → Service+HPA(1) → Deployment+SS+DS+CronJob(2) → RS+Job(3)
+//   → Pod(4) → ConfigMap+Secret+SA(5) → PVC(6) → PV(7)
 const KIND_COL: Record<string, number> = {
-  Ingress: 0,
-  Service: 1,
-  Deployment: 2,
-  StatefulSet: 2,
-  DaemonSet: 2,
-  Job: 2,
-  ReplicaSet: 3,
-  Pod: 4,
+  Ingress:        0,
+  HPA:            1,
+  Service:        1,
+  Deployment:     2,
+  StatefulSet:    2,
+  DaemonSet:      2,
+  CronJob:        2,
+  ReplicaSet:     3,
+  Job:            3,
+  Pod:            4,
+  ConfigMap:      5,
+  Secret:         5,
+  ServiceAccount: 5,
+  PVC:            6,
+  PV:             7,
 };
 
 const NODE_WIDTH = 192;
@@ -178,23 +167,46 @@ function computeLayout(apiNodes: ApiNode[], apiEdges: ApiEdge[]) {
     data: n as unknown as Record<string, unknown>,
   }));
 
+  const EDGE_STYLE: Record<string, { stroke: string; dash?: string; animated?: boolean }> = {
+    owns:     { stroke: 'var(--color-border)' },
+    selects:  { stroke: '#22c55e', animated: true },
+    routes:   { stroke: '#f97316', dash: '5 3' },
+    scales:   { stroke: '#84cc16', dash: '6 2' },
+    uses:     { stroke: '#0ea5e9', dash: '4 3' },
+    uses_sa:  { stroke: '#06b6d4', dash: '4 3' },
+    mounts:   { stroke: '#8b5cf6' },
+    binds:    { stroke: '#64748b', dash: '3 3' },
+  };
+
   const rfEdges: Edge[] = apiEdges.map((e) => {
-    const isSelects = e.edge_type === 'selects';
-    const isRoutes = e.edge_type === 'routes';
+    const style = EDGE_STYLE[e.edge_type] ?? EDGE_STYLE['owns'];
+    // Use bezier for edges that skip columns (e.g. SS/DS → Pod) so they arc
+    // above the graph instead of stepping through intermediate nodes.
+    const ID_PREFIX_KIND: Record<string, string> = {
+      pod: 'Pod', deployment: 'Deployment', replicaset: 'ReplicaSet',
+      statefulset: 'StatefulSet', daemonset: 'DaemonSet', cronjob: 'CronJob',
+      job: 'Job', service: 'Service', ingress: 'Ingress', hpa: 'HPA',
+      configmap: 'ConfigMap', secret: 'Secret', serviceaccount: 'ServiceAccount',
+      pvc: 'PVC', pv: 'PV',
+    };
+    const colOf = (id: string) => KIND_COL[ID_PREFIX_KIND[id.split('/')[0]] ?? ''] ?? 0;
+    const sourceCol = colOf(e.source);
+    const targetCol = colOf(e.target);
+    const edgeType = Math.abs(targetCol - sourceCol) > 1 ? 'default' : 'smoothstep';
     return {
       id: `${e.source}--${e.target}`,
       source: e.source,
       target: e.target,
-      type: 'smoothstep',
-      animated: isSelects,
+      type: edgeType,
+      animated: style.animated ?? false,
       style: {
-        stroke: isSelects ? '#22c55e' : isRoutes ? '#f59e0b' : 'var(--color-border)',
-        strokeDasharray: isRoutes ? '5 3' : undefined,
+        stroke: style.stroke,
+        strokeDasharray: style.dash,
         strokeWidth: 1.5,
       },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: isSelects ? '#22c55e' : isRoutes ? '#f59e0b' : 'var(--color-border)',
+        color: style.stroke,
         width: 14,
         height: 14,
       },
@@ -544,28 +556,25 @@ export const ResourceMapPage = () => {
             </div>
 
             {/* Edge legend */}
-            <div className="p-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm space-y-1.5">
-              <div className="flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
-                <svg width="28" height="8">
-                  <line x1="0" y1="4" x2="28" y2="4" stroke="var(--color-border)" strokeWidth="1.5" />
-                  <polygon points="22,1 28,4 22,7" fill="var(--color-border)" />
-                </svg>
-                <span>owns (controller → workload)</span>
-              </div>
-              <div className="flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
-                <svg width="28" height="8">
-                  <line x1="0" y1="4" x2="28" y2="4" stroke="#22c55e" strokeWidth="1.5" strokeDasharray="4 2" />
-                  <polygon points="22,1 28,4 22,7" fill="#22c55e" />
-                </svg>
-                <span>selects (Service → Pod)</span>
-              </div>
-              <div className="flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
-                <svg width="28" height="8">
-                  <line x1="0" y1="4" x2="28" y2="4" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="5 3" />
-                  <polygon points="22,1 28,4 22,7" fill="#f59e0b" />
-                </svg>
-                <span>routes (Ingress → Service)</span>
-              </div>
+            <div className="p-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm space-y-1">
+              {([
+                { color: 'var(--color-border)',              label: 'owns (controller → workload)' },
+                { color: '#22c55e', dash: '4 2',             label: 'selects (Service → Pod)' },
+                { color: '#f97316', dash: '5 3',             label: 'routes (Ingress → Service)' },
+                { color: '#84cc16', dash: '6 2',             label: 'scales (HPA → workload)' },
+                { color: '#0ea5e9', dash: '4 3',             label: 'uses (Pod → ConfigMap/Secret)' },
+                { color: '#06b6d4', dash: '4 3',             label: 'uses_sa (Pod → ServiceAccount)' },
+                { color: '#8b5cf6',                          label: 'mounts (Pod → PVC)' },
+                { color: '#64748b', dash: '3 3',             label: 'binds (PVC → PV)' },
+              ] as Array<{ color: string; dash?: string; label: string }>).map(({ color, dash, label }) => (
+                <div key={label} className="flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
+                  <svg width="28" height="8" className="shrink-0">
+                    <line x1="0" y1="4" x2="28" y2="4" stroke={color} strokeWidth="1.5" strokeDasharray={dash} />
+                    <polygon points="22,1 28,4 22,7" fill={color} />
+                  </svg>
+                  <span>{label}</span>
+                </div>
+              ))}
             </div>
           </div>
         </Panel>
