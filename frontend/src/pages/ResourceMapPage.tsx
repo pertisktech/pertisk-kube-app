@@ -24,17 +24,21 @@ import {
   Clock,
   Cpu,
   Database,
+  ChevronDown,
+  ChevronUp,
   FileText,
   Gauge,
   Globe,
   HardDrive,
   KeyRound,
   Maximize2,
+  Minus,
   Minimize2,
   Monitor,
   Network,
   Pause,
   Play,
+  Plus,
   X,
 } from '../components/Icons';
 import type { IconComponent } from '../components/Icons';
@@ -50,6 +54,12 @@ interface KindConfig {
   border: string;
   icon: IconComponent;
   navPath?: string;
+}
+
+interface ResourceFlowNodeData extends Record<string, unknown>, ApiNode {
+  collapsed: boolean;
+  canToggleCollapse: boolean;
+  onToggleCollapse: (nodeId: string) => void;
 }
 
 const KIND_CONFIG: Record<string, KindConfig> = {
@@ -137,7 +147,61 @@ const NODE_WIDTH = 192;
 const COL_GAP = 272;
 const ROW_GAP = 86;
 
-function computeLayout(apiNodes: ApiNode[], apiEdges: ApiEdge[]) {
+function computeVisibleNodeIds(apiNodes: ApiNode[], apiEdges: ApiEdge[], collapsedNodeIds: Set<string>) {
+  const nodeIds = new Set(apiNodes.map((node) => node.id));
+  const outgoing = new Map<string, string[]>();
+  const incomingCount = new Map<string, number>();
+
+  apiNodes.forEach((node) => {
+    outgoing.set(node.id, []);
+    incomingCount.set(node.id, 0);
+  });
+
+  apiEdges.forEach((edge) => {
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) return;
+    outgoing.get(edge.source)?.push(edge.target);
+    incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
+  });
+
+  const visitFrom = (startId: string, visibleNodeIds: Set<string>) => {
+    const stack = [startId];
+    while (stack.length > 0) {
+      const currentId = stack.pop()!;
+      if (visibleNodeIds.has(currentId)) continue;
+      visibleNodeIds.add(currentId);
+
+      if (collapsedNodeIds.has(currentId)) {
+        continue;
+      }
+
+      const children = outgoing.get(currentId) ?? [];
+      for (let index = children.length - 1; index >= 0; index -= 1) {
+        stack.push(children[index]);
+      }
+    }
+  };
+
+  const visibleNodeIds = new Set<string>();
+  const rootIds = apiNodes
+    .filter((node) => (incomingCount.get(node.id) ?? 0) === 0)
+    .map((node) => node.id);
+
+  (rootIds.length > 0 ? rootIds : apiNodes.map((node) => node.id)).forEach((nodeId) => {
+    visitFrom(nodeId, visibleNodeIds);
+  });
+
+  if (visibleNodeIds.size < apiNodes.length) {
+    apiNodes.forEach((node) => {
+      if (!visibleNodeIds.has(node.id)) {
+        visitFrom(node.id, visibleNodeIds);
+      }
+    });
+  }
+
+  return { visibleNodeIds, outgoing };
+}
+
+function computeLayout(apiNodes: ApiNode[], apiEdges: ApiEdge[], getNodeData: (node: ApiNode) => ResourceFlowNodeData) {
   const colNodes: Record<number, ApiNode[]> = {};
   for (const n of apiNodes) {
     const col = KIND_COL[n.kind] ?? 5;
@@ -162,11 +226,11 @@ function computeLayout(apiNodes: ApiNode[], apiEdges: ApiEdge[]) {
     });
   }
 
-  const rfNodes: Node[] = apiNodes.map((n) => ({
+  const rfNodes: Node<ResourceFlowNodeData>[] = apiNodes.map((n) => ({
     id: n.id,
     type: 'resourceNode',
     position: posMap[n.id] ?? { x: 0, y: 0 },
-    data: n as unknown as Record<string, unknown>,
+    data: getNodeData(n),
   }));
 
   const EDGE_STYLE: Record<string, { stroke: string; dash?: string; animated?: boolean }> = {
@@ -219,8 +283,8 @@ function computeLayout(apiNodes: ApiNode[], apiEdges: ApiEdge[]) {
 }
 
 // ── Custom node component ─────────────────────────────────────────────────────
-const ResourceNode = memo(({ data, selected }: NodeProps) => {
-  const node = data as unknown as ApiNode;
+const ResourceNode = memo(({ data, selected }: NodeProps<Node<ResourceFlowNodeData>>) => {
+  const node = data as ResourceFlowNodeData;
   const config = KIND_CONFIG[node.kind] ?? KIND_CONFIG['Pod'];
   const Icon = config.icon;
   const dotColor = STATUS_DOT[node.status] ?? 'bg-neutral-400';
@@ -263,6 +327,20 @@ const ResourceNode = memo(({ data, selected }: NodeProps) => {
           </div>
         )}
       </div>
+      {node.canToggleCollapse && (
+        <button
+          type="button"
+          className="nodrag nopan shrink-0 flex h-5 w-5 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
+          onClick={(event) => {
+            event.stopPropagation();
+            node.onToggleCollapse(node.id);
+          }}
+          aria-label={node.collapsed ? `Expand ${node.kind} ${node.name}` : `Collapse ${node.kind} ${node.name}`}
+          title={node.collapsed ? 'Expand descendants' : 'Collapse descendants'}
+        >
+          {node.collapsed ? <Plus size={11} strokeWidth={2.5} /> : <Minus size={11} strokeWidth={2.5} />}
+        </button>
+      )}
       <Handle
         type="source"
         position={Position.Right}
@@ -356,19 +434,87 @@ export const ResourceMapPage = () => {
     refetchInterval: isLive ? REFRESH_INTERVAL : false,
   });
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node<ResourceFlowNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNode, setSelectedNode] = useState<ApiNode | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(new Set());
+  const [isSummaryPanelCollapsed, setIsSummaryPanelCollapsed] = useState(false);
 
-  const { rfNodes, rfEdges } = useMemo(() => {
-    if (!data) return { rfNodes: [], rfEdges: [] };
-    return computeLayout(data.nodes, data.edges);
+  const toggleNodeCollapse = useCallback((nodeId: string) => {
+    setCollapsedNodeIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
+  }, []);
+
+  const { rfNodes, rfEdges, visibleNodeIds } = useMemo(() => {
+    if (!data) return { rfNodes: [], rfEdges: [], visibleNodeIds: new Set<string>() };
+    const { visibleNodeIds: nextVisibleNodeIds, outgoing } = computeVisibleNodeIds(
+      data.nodes,
+      data.edges,
+      collapsedNodeIds,
+    );
+    const visibleApiNodes = data.nodes.filter((node) => nextVisibleNodeIds.has(node.id));
+    const visibleApiEdges = data.edges.filter(
+      (edge) => nextVisibleNodeIds.has(edge.source) && nextVisibleNodeIds.has(edge.target),
+    );
+
+    const { rfNodes: nextRfNodes, rfEdges: nextRfEdges } = computeLayout(
+      visibleApiNodes,
+      visibleApiEdges,
+      (node) => ({
+        ...node,
+        collapsed: collapsedNodeIds.has(node.id),
+        canToggleCollapse: (outgoing.get(node.id)?.length ?? 0) > 0,
+        onToggleCollapse: toggleNodeCollapse,
+      }),
+    );
+
+    return {
+      rfNodes: nextRfNodes,
+      rfEdges: nextRfEdges,
+      visibleNodeIds: nextVisibleNodeIds,
+    };
+  }, [collapsedNodeIds, data, toggleNodeCollapse]);
+
+  useEffect(() => {
+    if (!data) {
+      setCollapsedNodeIds(new Set());
+      return;
+    }
+
+    const validIds = new Set(data.nodes.map((node) => node.id));
+    setCollapsedNodeIds((previous) => {
+      let changed = false;
+      const next = new Set<string>();
+
+      previous.forEach((nodeId) => {
+        if (validIds.has(nodeId)) {
+          next.add(nodeId);
+        } else {
+          changed = true;
+        }
+      });
+
+      return changed ? next : previous;
+    });
   }, [data]);
 
   useEffect(() => {
     if (data) setLastUpdated(new Date());
   }, [data]);
+
+  useEffect(() => {
+    if (selectedNode && !visibleNodeIds.has(selectedNode.id)) {
+      setSelectedNode(null);
+    }
+  }, [selectedNode, visibleNodeIds]);
 
   useEffect(() => {
     setNodes(rfNodes);
@@ -540,54 +686,69 @@ export const ResourceMapPage = () => {
 
         {/* Stats & legend panel */}
         <Panel position="top-left">
-          <div className="flex flex-col gap-2">
-            {/* Kind counts */}
-            <div
-              className="flex flex-wrap gap-1.5 p-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm"
-              style={{ maxWidth: 480 }}
-            >
-              {stats.map(([kind, count]) => {
-                const cfg = KIND_CONFIG[kind];
-                if (!cfg) return null;
-                const Icon = cfg.icon;
-                return (
-                  <div
-                    key={kind}
-                    className={cn(
-                      'flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold',
-                      cfg.bg,
-                      cfg.color,
-                    )}
-                  >
-                    <Icon size={10} />
-                    <span>
-                      {kind}: {count}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+          <div className="flex flex-col gap-2" style={{ maxWidth: 480 }}>
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+              <button
+                type="button"
+                onClick={() => setIsSummaryPanelCollapsed((value) => !value)}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)]"
+                aria-expanded={!isSummaryPanelCollapsed}
+                aria-label={isSummaryPanelCollapsed ? 'Expand resource map summary panel' : 'Collapse resource map summary panel'}
+                title={isSummaryPanelCollapsed ? 'Expand panel' : 'Collapse panel'}
+              >
+                <span>Map summary</span>
+                {isSummaryPanelCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+              </button>
 
-            {/* Edge legend */}
-            <div className="p-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm space-y-1">
-              {([
-                { color: 'var(--color-border)',              label: 'owns (controller → workload)' },
-                { color: '#22c55e', dash: '4 2',             label: 'selects (Service → Pod)' },
-                { color: '#f97316', dash: '5 3',             label: 'routes (Ingress → Service)' },
-                { color: '#84cc16', dash: '6 2',             label: 'scales (HPA → workload)' },
-                { color: '#0ea5e9', dash: '4 3',             label: 'uses (Pod → ConfigMap/Secret)' },
-                { color: '#06b6d4', dash: '4 3',             label: 'uses_sa (Pod → ServiceAccount)' },
-                { color: '#8b5cf6',                          label: 'mounts (Pod → PVC)' },
-                { color: '#64748b', dash: '3 3',             label: 'binds (PVC → PV)' },
-              ] as Array<{ color: string; dash?: string; label: string }>).map(({ color, dash, label }) => (
-                <div key={label} className="flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
-                  <svg width="28" height="8" className="shrink-0">
-                    <line x1="0" y1="4" x2="28" y2="4" stroke={color} strokeWidth="1.5" strokeDasharray={dash} />
-                    <polygon points="22,1 28,4 22,7" fill={color} />
-                  </svg>
-                  <span>{label}</span>
+              {!isSummaryPanelCollapsed && (
+                <div className="flex flex-col gap-2 border-t border-[var(--color-border)] p-2">
+                  {/* Kind counts */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {stats.map(([kind, count]) => {
+                      const cfg = KIND_CONFIG[kind];
+                      if (!cfg) return null;
+                      const Icon = cfg.icon;
+                      return (
+                        <div
+                          key={kind}
+                          className={cn(
+                            'flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold',
+                            cfg.bg,
+                            cfg.color,
+                          )}
+                        >
+                          <Icon size={10} />
+                          <span>
+                            {kind}: {count}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Edge legend */}
+                  <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-sm space-y-1">
+                    {([
+                      { color: 'var(--color-border)',              label: 'owns (controller → workload)' },
+                      { color: '#22c55e', dash: '4 2',             label: 'selects (Service → Pod)' },
+                      { color: '#f97316', dash: '5 3',             label: 'routes (Ingress → Service)' },
+                      { color: '#84cc16', dash: '6 2',             label: 'scales (HPA → workload)' },
+                      { color: '#0ea5e9', dash: '4 3',             label: 'uses (Pod → ConfigMap/Secret)' },
+                      { color: '#06b6d4', dash: '4 3',             label: 'uses_sa (Pod → ServiceAccount)' },
+                      { color: '#8b5cf6',                          label: 'mounts (Pod → PVC)' },
+                      { color: '#64748b', dash: '3 3',             label: 'binds (PVC → PV)' },
+                    ] as Array<{ color: string; dash?: string; label: string }>).map(({ color, dash, label }) => (
+                      <div key={label} className="flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
+                        <svg width="28" height="8" className="shrink-0">
+                          <line x1="0" y1="4" x2="28" y2="4" stroke={color} strokeWidth="1.5" strokeDasharray={dash} />
+                          <polygon points="22,1 28,4 22,7" fill={color} />
+                        </svg>
+                        <span>{label}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </Panel>
