@@ -11,14 +11,20 @@ import {
   type ChartOptions,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { ResourceMetricsPanel } from './ResourceMetricsPanel';
+import { ResourceMetricsPanel, type MetricTab } from './ResourceMetricsPanel';
+import { Cpu, Database, HardDrive, Boxes } from './Icons';
 import type { K8sNode, Pod } from '../types';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
 type NodeMetricTab = 'CPU' | 'Memory' | 'Disk' | 'Pods';
 
-const NODE_METRIC_TABS: readonly NodeMetricTab[] = ['CPU', 'Memory', 'Disk', 'Pods'];
+const NODE_METRIC_TABS: readonly MetricTab<NodeMetricTab>[] = [
+  { id: 'CPU',    label: 'CPU Usage',     icon: Cpu,       color: '#00a7a0' },
+  { id: 'Memory', label: 'Memory Usage',  icon: Database,  color: '#c93dce' },
+  { id: 'Disk',   label: 'Disk Usage',    icon: HardDrive, color: '#f59e0b' },
+  { id: 'Pods',   label: 'Pod Capacity',  icon: Boxes,     color: '#30b24d' },
+];
 
 interface NodeMetricGraphsProps {
   nodes: K8sNode[];
@@ -206,19 +212,18 @@ export const NodeMetricGraphs = ({ nodes, pods }: NodeMetricGraphsProps) => {
     },
   };
 
-  const noData = nodes.length === 0 || chartPayload.data.length === 0;
+  const noData = nodes.length === 0;
 
   return (
     <ResourceMetricsPanel
-      title="Node Metrics"
       tabs={NODE_METRIC_TABS}
       activeTab={activeTab}
       onTabChange={setActiveTab}
     >
       {noData ? (
-        <div className="h-64 flex items-center justify-center text-sm text-text-secondary">Waiting for node metric samples...</div>
+        <div className="h-52 flex items-center justify-center text-sm text-text-secondary">Waiting for node metric samples...</div>
       ) : (
-        <div className="h-64">
+        <div className="h-52">
           <Line data={data} options={options} />
         </div>
       )}

@@ -11,15 +11,21 @@ import {
   type ChartOptions,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { ResourceMetricsPanel } from './ResourceMetricsPanel';
+import { ResourceMetricsPanel, type MetricTab } from './ResourceMetricsPanel';
 import { useWorkloadMetricSeries } from '../hooks/useKubernetes';
+import { Cpu, Database, Network, Archive } from './Icons';
 import type { MetricSeriesPoint } from '../types';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
 type WorkloadMetricTab = 'CPU' | 'Memory' | 'Network' | 'Filesystem';
 
-const WORKLOAD_METRIC_TABS: readonly WorkloadMetricTab[] = ['CPU', 'Memory', 'Network', 'Filesystem'];
+const WORKLOAD_METRIC_TABS: readonly MetricTab<WorkloadMetricTab>[] = [
+  { id: 'CPU',        label: 'CPU Usage',       icon: Cpu,      color: '#00a7a0' },
+  { id: 'Memory',     label: 'Memory Usage',    icon: Database, color: '#c93dce' },
+  { id: 'Network',    label: 'Network I/O',     icon: Network,  color: '#64c5d6' },
+  { id: 'Filesystem', label: 'Filesystem I/O',  icon: Archive,  color: '#f59e0b' },
+];
 
 const formatTimestampLabel = (unixSeconds: number) => {
   const dt = new Date(unixSeconds * 1000);
@@ -127,7 +133,6 @@ export const WorkloadMetricGraphs = () => {
 
   return (
     <ResourceMetricsPanel
-      title="Workload Metrics"
       tabs={WORKLOAD_METRIC_TABS}
       activeTab={activeTab}
       onTabChange={setActiveTab}
@@ -135,9 +140,9 @@ export const WorkloadMetricGraphs = () => {
       error={error instanceof Error ? error.message : null}
     >
       {noSeries ? (
-        <div className="h-64 flex items-center justify-center text-sm text-text-secondary">Waiting for workload metric samples...</div>
+        <div className="h-52 flex items-center justify-center text-sm text-text-secondary">Waiting for workload metric samples...</div>
       ) : (
-        <div className="h-64">
+        <div className="h-52">
           <Line data={lineData} options={options} />
         </div>
       )}

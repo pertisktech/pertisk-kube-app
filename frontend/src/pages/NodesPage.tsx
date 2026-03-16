@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X } from '../components/Icons';
 import { useRealtimeNodes, useRealtimeEvents } from '../hooks/useRealtimeResources';
-import { useNodes, usePods } from '../hooks/useKubernetes';
+import { useNodes } from '../hooks/useKubernetes';
 import { deleteNode, cordonNode, uncordonNode, drainNode } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
@@ -73,7 +73,6 @@ function getRoleBadgeStyle(role: string): { bg: string; color: string; border: s
 export const NodesPage = () => {
   const { data: realtimeNodes, isLoading, error } = useRealtimeNodes();
   const { data: apiNodes } = useNodes({ refetchInterval: 30_000 }); // REST: metrics from metrics.k8s.io (like kubectl top nodes), poll every 30s
-  const { data: pods = [] } = usePods();
   const { data: eventsData } = useRealtimeEvents();
   const [selectedNode, setSelectedNode] = useState<K8sNode | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);

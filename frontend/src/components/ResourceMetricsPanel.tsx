@@ -1,8 +1,15 @@
 import { type ReactNode } from 'react';
+import type { IconComponent } from './Icons';
+
+export interface MetricTab<TId extends string> {
+  id: TId;
+  label: string;
+  icon: IconComponent;
+  color: string;
+}
 
 interface ResourceMetricsPanelProps<TTab extends string> {
-  title: string;
-  tabs: readonly TTab[];
+  tabs: readonly MetricTab<TTab>[];
   activeTab: TTab;
   onTabChange: (tab: TTab) => void;
   children: ReactNode;
@@ -11,7 +18,6 @@ interface ResourceMetricsPanelProps<TTab extends string> {
 }
 
 export const ResourceMetricsPanel = <TTab extends string>({
-  title,
   tabs,
   activeTab,
   onTabChange,
@@ -19,36 +25,55 @@ export const ResourceMetricsPanel = <TTab extends string>({
   isLoading = false,
   error,
 }: ResourceMetricsPanelProps<TTab>) => {
-  return (
-    <div className="bg-surface border border-border rounded-lg p-5 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-text">{title}</h2>
+  const active = tabs.find((t) => t.id === activeTab);
 
-        <div className="inline-flex items-center gap-1 rounded-lg bg-bg border border-border p-1">
-          {tabs.map((tab) => (
+  return (
+    <div className="bg-surface border border-border rounded-lg overflow-hidden">
+      {/* Tab bar */}
+      <div className="flex items-center gap-0 border-b border-border">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
             <button
-              key={tab}
+              key={tab.id}
               type="button"
-              onClick={() => onTabChange(tab)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                activeTab === tab
-                  ? 'bg-primary text-white'
-                  : 'text-text-secondary hover:text-text hover:bg-hover'
+              onClick={() => onTabChange(tab.id)}
+              title={tab.label}
+              style={isActive ? { borderBottomColor: tab.color } : undefined}
+              className={`group relative flex flex-col items-center gap-1 px-3 pt-2.5 pb-2 border-b-2 transition-colors ${
+                isActive
+                  ? 'border-b-2 text-white'
+                  : 'border-transparent text-text-secondary hover:text-text hover:bg-hover'
               }`}
             >
-              {tab}
+              <Icon size={15} color={isActive ? tab.color : undefined} />
+              <span
+                className="text-[9px] font-medium leading-none"
+                style={isActive ? { color: tab.color } : undefined}
+              >
+                {tab.label.split(' ')[0]}
+              </span>
             </button>
-          ))}
-        </div>
+          );
+        })}
+        {active && (
+          <span className="ml-auto mr-3 text-xs text-text-secondary truncate hidden sm:block">
+            {active.label}
+          </span>
+        )}
       </div>
 
-      {isLoading ? (
-        <div className="h-64 flex items-center justify-center text-sm text-text-secondary">Loading...</div>
-      ) : error ? (
-        <div className="h-64 flex items-center justify-center text-sm text-red-400">{error}</div>
-      ) : (
-        children
-      )}
+      {/* Content */}
+      <div className="p-3">
+        {isLoading ? (
+          <div className="h-52 flex items-center justify-center text-sm text-text-secondary">Loading…</div>
+        ) : error ? (
+          <div className="h-52 flex items-center justify-center text-sm text-red-400">{error}</div>
+        ) : (
+          children
+        )}
+      </div>
     </div>
   );
 };
