@@ -6,5 +6,6 @@ pub mod namespaces;
 pub mod network;
 pub mod portforward;
 pub mod rbac;
+pub mod resource_map;
 pub mod storage;
 pub mod workloads;

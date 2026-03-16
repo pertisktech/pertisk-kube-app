@@ -54,6 +54,7 @@ const RoleBindingsPage = lazy(() => import('./pages/RoleBindingsPage').then(m =>
 const ClusterRolesPage = lazy(() => import('./pages/ClusterRolesPage').then(m => ({ default: m.ClusterRolesPage })));
 const ClusterRoleBindingsPage = lazy(() => import('./pages/ClusterRoleBindingsPage').then(m => ({ default: m.ClusterRoleBindingsPage })));
 const CustomResourcesPage = lazy(() => import('./pages/CustomResourcesPage').then(m => ({ default: m.CustomResourcesPage })));
+const ResourceMapPage = lazy(() => import('./pages/ResourceMapPage').then(m => ({ default: m.ResourceMapPage })));
 
 
 export const App = () => {
@@ -183,6 +184,7 @@ export const App = () => {
           <Route path="/access-control/rolebindings" element={<RoleBindingsPage />} />
           <Route path="/events" element={<EventsPage />} />
           <Route path="/crds/:crdName" element={<CustomResourcesPage />} />
+          <Route path="/resource-map" element={<ResourceMapPage />} />
         </Route>
       </Routes>
       </Router>

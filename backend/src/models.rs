@@ -583,3 +583,27 @@ pub struct DashboardSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kube_version: Option<String>,
 }
+
+// ── Resource Map ──────────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct ResourceMapNode {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+    pub namespace: Option<String>,
+    pub status: String,
+}
+
+#[derive(Serialize)]
+pub struct ResourceMapEdge {
+    pub source: String,
+    pub target: String,
+    pub edge_type: String,
+}
+
+#[derive(Serialize)]
+pub struct ResourceMapData {
+    pub nodes: Vec<ResourceMapNode>,
+    pub edges: Vec<ResourceMapEdge>,
+}

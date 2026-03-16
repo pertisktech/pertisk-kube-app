@@ -37,6 +37,7 @@ import {
   Terminal,
   Layers,
   LayoutGrid,
+  Share2,
 } from './Icons';
 import { cn } from '../utils';
 import { useTheme } from '../context/ThemeContext';
@@ -51,6 +52,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
   { label: 'Nodes', path: '/nodes', icon: Network },
+  { label: 'Resource Map', path: '/resource-map', icon: Share2 },
 ];
 
 const NAMESPACE_ITEM: NavItem = {

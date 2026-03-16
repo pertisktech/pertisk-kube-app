@@ -106,3 +106,4 @@ export const Briefcase = Lucide.Briefcase;
 export const FileCode = Lucide.FileCode;
 export const Square = Lucide.Square;
 export const Dot = Lucide.Dot;
+export const Share2 = Lucide.Share2;

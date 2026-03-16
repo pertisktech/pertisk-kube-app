@@ -51,3 +51,4 @@ export { RolesPage } from './RolesPage';
 export { RoleBindingsPage } from './RoleBindingsPage';
 export { ClusterRolesPage } from './ClusterRolesPage';
 export { ClusterRoleBindingsPage } from './ClusterRoleBindingsPage';
+export { ResourceMapPage } from './ResourceMapPage';

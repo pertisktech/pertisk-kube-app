@@ -35,6 +35,7 @@ use handlers::{
     network::*,
     portforward::*,
     rbac::*,
+    resource_map::*,
     storage::*,
     workloads::*,
 };
@@ -99,6 +100,7 @@ async fn main() -> anyhow::Result<()> {
 
     let protected_api = Router::new()
         .route("/dashboard", get(get_dashboard_summary))
+        .route("/resource-map", get(get_resource_map))
         .route("/nodes", get(list_nodes))
         .route(
             "/nodes/:name/yaml",

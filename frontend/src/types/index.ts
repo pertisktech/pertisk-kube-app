@@ -603,3 +603,24 @@ export interface ClusterRoleBinding {
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
 }
+
+// ── Resource Map ────────────────────────────────────────────────────────
+
+export interface ResourceMapNode {
+  id: string;
+  kind: string;
+  name: string;
+  namespace?: string;
+  status: string;
+}
+
+export interface ResourceMapEdge {
+  source: string;
+  target: string;
+  edge_type: string;
+}
+
+export interface ResourceMapData {
+  nodes: ResourceMapNode[];
+  edges: ResourceMapEdge[];
+}

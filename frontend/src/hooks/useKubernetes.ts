@@ -41,6 +41,7 @@ import type {
   HelmRelease,
   HelmChart,
   HelmRevision,
+  ResourceMapData,
 } from '../types';
 import { getAuthToken } from '../utils/auth';
 
@@ -1364,4 +1365,17 @@ export const stopPortForward = async (id: number): Promise<void> => {
 
 export const deletePortForward = async (id: number): Promise<void> => {
   await apiDelete(`/port-forwards/${id}`);
+};
+
+export const useResourceMap = (namespace: string) => {
+  return useQuery({
+    queryKey: ['resource-map', namespace],
+    queryFn: async () => {
+      const params = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+      const res = await apiFetch(`/resource-map${params}`);
+      if (!res.ok) throw new Error(`Failed to fetch resource map (${res.status})`);
+      return res.json() as Promise<ResourceMapData>;
+    },
+    staleTime: 30_000,
+  });
 };
