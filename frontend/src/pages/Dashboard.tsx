@@ -19,7 +19,7 @@ import {
   ExternalLink,
   Loader,
 } from '../components/Icons';
-import { formatCpuRange, formatMemoryUsedAlloc } from '../utils';
+import { formatCpuRange, formatK8sQuantityUsedAlloc, formatMemoryUsedAlloc } from '../utils';
 import { K8sNode } from '../types';
 
 const CHART_USED = 'var(--color-dashboard-metric-primary)';
@@ -446,6 +446,7 @@ export const Dashboard = () => {
             {sortedNodes.map((node) => {
               const cpuPct = toPercent(node.cpu_usage_percent);
               const memPct = toPercent(node.memory_usage_percent);
+              const diskPct = toPercent(node.ephemeral_storage_usage_percent);
               const isReady = String(node.ready).toLowerCase() === 'true';
               return (
                 <Link
@@ -529,6 +530,27 @@ export const Dashboard = () => {
                           style={{
                             width: `${usageBarWidth(memPct)}%`,
                             backgroundColor: 'var(--color-dashboard-metric-quaternary)',
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span style={{ color: 'var(--color-muted)' }}>Disk</span>
+                        <span className="font-medium text-text truncate ml-1" title={node.ephemeral_storage != null || node.ephemeral_storage_used != null ? formatK8sQuantityUsedAlloc(node.ephemeral_storage_used, node.ephemeral_storage) : undefined}>
+                          {node.ephemeral_storage != null || node.ephemeral_storage_used != null
+                            ? formatK8sQuantityUsedAlloc(node.ephemeral_storage_used, node.ephemeral_storage)
+                            : node.ephemeral_storage_usage_percent != null
+                              ? `${Math.round(diskPct)}%`
+                              : '—'}
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-hover)' }}>
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${usageBarWidth(diskPct)}%`,
+                            backgroundColor: 'var(--color-dashboard-metric-tertiary)',
                           }}
                         />
                       </div>

@@ -101,7 +101,11 @@ rbac:
     # Core resources
     - apiGroups: [""]
       resources: ["pods", "pods/log", "services", "endpoints", "nodes", "namespaces", "events", "persistentvolumeclaims", "persistentvolumes", "configmaps", "secrets", "serviceaccounts", "limitranges", "resourcequotas"]
-      verbs: ["get", "list", "watch"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    # Pod attach/exec/port-forward for terminal and debug features
+    - apiGroups: [""]
+      resources: ["pods/attach", "pods/exec", "pods/portforward"]
+      verbs: ["create"]
     # Apps resources
     - apiGroups: ["apps"]
       resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]

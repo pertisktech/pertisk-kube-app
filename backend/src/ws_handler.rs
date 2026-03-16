@@ -14,6 +14,7 @@ use kube::{
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::sync::{Arc, Mutex};
 use std::io::{Read, Write};
 use std::process::Stdio;
@@ -27,7 +28,18 @@ use tracing::{error, info, warn};
 use crate::AppState;
 
 const PREFERRED_SHELL_SCRIPT: &str = "if [ -x /bin/zsh ]; then exec /bin/zsh -il; elif command -v zsh >/dev/null 2>&1; then exec zsh -il; elif [ -x /bin/bash ]; then exec /bin/bash -il; elif command -v bash >/dev/null 2>&1; then exec bash -il; else exec /bin/sh -i; fi";
-const NODE_DEBUG_NAMESPACE: &str = "default";
+
+fn node_debug_namespace() -> String {
+    env::var("NODE_DEBUG_NAMESPACE")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            env::var("POD_NAMESPACE")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .unwrap_or_else(|| "default".to_string())
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -188,10 +200,11 @@ async fn spawn_exec_shell(
     } else if query.namespace == "node" {
         // Node shell: kubectl debug node/<nodename> with a privileged alpine pod
         info!("Connecting to node shell for node: {}", query.pod);
+        let debug_namespace = node_debug_namespace();
         let mut cmd = Command::new("kubectl");
         cmd.arg("debug")
             .arg("-n")
-            .arg(NODE_DEBUG_NAMESPACE)
+            .arg(&debug_namespace)
             .arg(format!("node/{}", query.pod))
             .arg("-i")
             .arg("-q")
@@ -321,13 +334,14 @@ async fn cleanup_node_debug_pod(pod_name: Option<String>) {
     let Some(pod_name) = pod_name else {
         return;
     };
+    let debug_namespace = node_debug_namespace();
 
     let result = Command::new("kubectl")
         .arg("delete")
         .arg("pod")
         .arg(&pod_name)
         .arg("-n")
-        .arg(NODE_DEBUG_NAMESPACE)
+        .arg(&debug_namespace)
         .arg("--ignore-not-found=true")
         .arg("--wait=false")
         .stdout(Stdio::null())

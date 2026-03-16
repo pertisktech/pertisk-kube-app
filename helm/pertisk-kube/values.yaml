@@ -168,7 +168,11 @@ rbac:
     # Pods - full manage + log
     - apiGroups: [""]
       resources: ["pods", "pods/log"]
-      verbs: ["get", "list", "watch", "update", "patch", "delete"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    # Pod attach - required by kubectl debug/node shell attach flow
+    - apiGroups: [""]
+      resources: ["pods/attach"]
+      verbs: ["create"]
     # Pod exec - terminal/shell
     - apiGroups: [""]
       resources: ["pods/exec"]
