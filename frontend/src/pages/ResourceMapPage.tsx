@@ -39,6 +39,7 @@ import {
   Pause,
   Play,
   Plus,
+  Loader,
   X,
 } from '../components/Icons';
 import type { IconComponent } from '../components/Icons';
@@ -579,8 +580,11 @@ export const ResourceMapPage = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64 text-[var(--color-text-secondary)]">
-        <span className="text-sm">Loading resource map…</span>
+      <div className="flex items-center justify-center h-64">
+        <div className="flex flex-col items-center gap-2">
+          <Loader size={24} className="text-primary animate-spin" />
+          <p className="text-text-secondary text-sm">Loading...</p>
+        </div>
       </div>
     );
   }
