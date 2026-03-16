@@ -107,3 +107,5 @@ export const FileCode = Lucide.FileCode;
 export const Square = Lucide.Square;
 export const Dot = Lucide.Dot;
 export const Share2 = Lucide.Share2;
+export const Pause = Lucide.Pause;
+export const Play = Lucide.Play;

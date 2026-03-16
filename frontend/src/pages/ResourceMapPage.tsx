@@ -33,6 +33,8 @@ import {
   Minimize2,
   Monitor,
   Network,
+  Pause,
+  Play,
   X,
 } from '../components/Icons';
 import type { IconComponent } from '../components/Icons';
@@ -345,7 +347,14 @@ export const ResourceMapPage = () => {
   const nsParam = selectedNamespaces.join(',');
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const { data, isLoading, error, refetch } = useResourceMap(nsParam);
+  const [isLive, setIsLive] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const REFRESH_INTERVAL = 15_000;
+
+  const { data, isLoading, error, refetch } = useResourceMap(nsParam, {
+    refetchInterval: isLive ? REFRESH_INTERVAL : false,
+  });
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -355,6 +364,10 @@ export const ResourceMapPage = () => {
   const { rfNodes, rfEdges } = useMemo(() => {
     if (!data) return { rfNodes: [], rfEdges: [] };
     return computeLayout(data.nodes, data.edges);
+  }, [data]);
+
+  useEffect(() => {
+    if (data) setLastUpdated(new Date());
   }, [data]);
 
   useEffect(() => {
@@ -580,14 +593,39 @@ export const ResourceMapPage = () => {
         </Panel>
 
         <Panel position="top-right">
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] text-[11px] font-medium transition-colors shadow-sm"
-          >
-            {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-            <span>{isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Live / pause toggle */}
+            <div className="flex flex-col items-end gap-0.5">
+              <button
+                type="button"
+                onClick={() => setIsLive((v) => !v)}
+                className={cn(
+                  'inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[11px] font-medium transition-colors shadow-sm',
+                  isLive
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                    : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]',
+                )}
+              >
+                {isLive ? <Pause size={12} /> : <Play size={12} />}
+                <span>{isLive ? 'Live' : 'Paused'}</span>
+              </button>
+              {lastUpdated && (
+                <span className="text-[9px] text-[var(--color-text-secondary)] pr-0.5">
+                  updated {lastUpdated.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+
+            {/* Fullscreen toggle */}
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] text-[11px] font-medium transition-colors shadow-sm"
+            >
+              {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+              <span>{isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}</span>
+            </button>
+          </div>
         </Panel>
       </ReactFlow>
 

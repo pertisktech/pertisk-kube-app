@@ -1367,7 +1367,7 @@ export const deletePortForward = async (id: number): Promise<void> => {
   await apiDelete(`/port-forwards/${id}`);
 };
 
-export const useResourceMap = (namespace: string) => {
+export const useResourceMap = (namespace: string, options?: { refetchInterval?: number | false }) => {
   return useQuery({
     queryKey: ['resource-map', namespace],
     queryFn: async () => {
@@ -1377,5 +1377,6 @@ export const useResourceMap = (namespace: string) => {
       return res.json() as Promise<ResourceMapData>;
     },
     staleTime: 30_000,
+    refetchInterval: options?.refetchInterval,
   });
 };
