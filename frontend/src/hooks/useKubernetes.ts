@@ -42,6 +42,7 @@ import type {
   HelmChart,
   HelmRevision,
   ResourceMapData,
+  WorkloadMetricSeriesResponse,
 } from '../types';
 import { getAuthToken } from '../utils/auth';
 
@@ -84,6 +85,18 @@ export const usePods = () => {
       const data = (await res.json()) as ApiResponse<Pod>;
       return data.data;
     },
+  });
+};
+
+export const useWorkloadMetricSeries = () => {
+  return useQuery({
+    queryKey: ['workload-metric-series'],
+    queryFn: async () => {
+      const res = await apiFetch('/metrics/workloads/series');
+      if (!res.ok) throw new Error('Failed to fetch workload metric series');
+      return (await res.json()) as WorkloadMetricSeriesResponse;
+    },
+    refetchInterval: 15_000,
   });
 };
 

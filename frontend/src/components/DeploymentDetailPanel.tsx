@@ -5,6 +5,7 @@ import { getStatusColor, timeAgo } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
+import { WorkloadMetricGraphs } from './WorkloadMetricGraphs';
 import { useRealtimeReplicaSets, useRealtimeEvents } from '../hooks/useRealtimeResources';
 import { usePods } from '../hooks/useKubernetes';
 
@@ -298,6 +299,11 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
           <DrawerItem name="Updated">{deployment.updated ?? '-'}</DrawerItem>
           <DrawerItem name="Available">{deployment.available ?? '-'}</DrawerItem>
           <DrawerItem name="Age">{timeAgo(deployment.age)}</DrawerItem>
+
+          <DrawerTitle>Metrics</DrawerTitle>
+          <div className="mb-4">
+            <WorkloadMetricGraphs />
+          </div>
 
           <DrawerItem name="Images" labelsOnly>
             {deployment.images?.length > 0 ? (

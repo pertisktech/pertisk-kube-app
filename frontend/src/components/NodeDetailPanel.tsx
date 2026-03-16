@@ -4,6 +4,7 @@ import { usePods } from '../hooks/useKubernetes';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
+import { NodeMetricGraphs } from './NodeMetricGraphs';
 import { formatMemoryUsedAlloc, formatCpuRange, formatCpuCores, parseCpuToCores, formatK8sQuantity, formatK8sQuantityUsedAlloc } from '../utils';
 import { sortNodeRoles } from '../utils/nodeRoles';
 import type { K8sNode } from '../types';
@@ -240,6 +241,11 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
 
           <DrawerTitle>Allocatable</DrawerTitle>
           <NodeDetailsResources type="allocatable" node={node} />
+
+          <DrawerTitle>Metrics</DrawerTitle>
+          <div className="mb-4">
+            <NodeMetricGraphs nodes={[node]} pods={nodePods} />
+          </div>
 
           {(labelCount > 0 || annotationCount > 0) && (
             <div className="mt-4">

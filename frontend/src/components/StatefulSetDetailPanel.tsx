@@ -3,6 +3,7 @@ import type { StatefulSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
+import { WorkloadMetricGraphs } from './WorkloadMetricGraphs';
 
 interface StatefulSetDetailPanelProps {
   statefulSet: StatefulSet;
@@ -55,6 +56,10 @@ export const StatefulSetDetailPanel = ({ statefulSet, onClose, onOpenYamlEditor,
         </div>
       </DrawerItem>
     ) : null}
+    <DrawerTitle>Metrics</DrawerTitle>
+    <div className="mb-4">
+      <WorkloadMetricGraphs />
+    </div>
     <DrawerLabelsAnnotations labels={statefulSet.labels} annotations={statefulSet.annotations} />
   </ResourceDetailPanelLayout>
 );

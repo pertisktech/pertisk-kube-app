@@ -6,7 +6,11 @@ use axum::{
 };
 use chrono::Utc;
 use cron::Schedule;
-use kube::{api::{DeleteParams, ListParams, Patch, PatchParams}, Api};
+use kube::{
+    api::{DeleteParams, ListParams, Patch, PatchParams},
+    core::{ApiResource, DynamicObject, GroupVersionKind},
+    Api,
+};
 use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
@@ -15,6 +19,193 @@ use tracing::{error, info};
 use crate::models::*;
 use crate::utils::*;
 use crate::AppState;
+
+const WORKLOAD_METRIC_HISTORY_LIMIT: usize = 120;
+const WORKLOAD_METRIC_SAMPLE_INTERVAL_SECS: i64 = 15;
+
+#[derive(Default)]
+struct WorkloadMetricTotals {
+    cpu_millicores: f64,
+    memory_bytes: f64,
+    network_bytes: f64,
+    filesystem_bytes: f64,
+    network_available: bool,
+    filesystem_available: bool,
+}
+
+fn parse_optional_quantity(value: &serde_json::Value) -> Option<f64> {
+    value
+        .as_str()
+        .and_then(parse_memory_bytes)
+        .or_else(|| value.as_f64())
+        .or_else(|| value.as_u64().map(|v| v as f64))
+}
+
+async fn collect_workload_metric_totals(state: &AppState) -> WorkloadMetricTotals {
+    let pod_metrics_resource =
+        ApiResource::from_gvk(&GroupVersionKind::gvk("metrics.k8s.io", "v1beta1", "PodMetrics"));
+    let metrics_api: Api<DynamicObject> = Api::all_with(state.client.clone(), &pod_metrics_resource);
+
+    let metrics_list = match metrics_api.list(&ListParams::default()).await {
+        Ok(list) => list,
+        Err(_) => return WorkloadMetricTotals::default(),
+    };
+
+    let mut totals = WorkloadMetricTotals::default();
+
+    for metric in metrics_list.items {
+        let metric_value = match serde_json::to_value(&metric) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+
+        let containers = match metric_value.get("containers").and_then(|value| value.as_array()) {
+            Some(containers) => containers,
+            None => continue,
+        };
+
+        for container in containers {
+            let usage = match container.get("usage") {
+                Some(usage) => usage,
+                None => continue,
+            };
+
+            if let Some(cpu) = usage
+                .get("cpu")
+                .and_then(|value| value.as_str())
+                .and_then(parse_cpu_millicores)
+            {
+                totals.cpu_millicores += cpu;
+            }
+
+            if let Some(memory) = usage
+                .get("memory")
+                .and_then(|value| value.as_str())
+                .and_then(parse_memory_bytes)
+            {
+                totals.memory_bytes += memory;
+            }
+
+            if let Some(filesystem) = usage
+                .get("ephemeral-storage")
+                .and_then(|value| value.as_str())
+                .and_then(parse_memory_bytes)
+            {
+                totals.filesystem_bytes += filesystem;
+                totals.filesystem_available = true;
+            }
+
+            let direct_network = usage
+                .get("network-rx")
+                .and_then(parse_optional_quantity)
+                .unwrap_or(0.0)
+                + usage
+                    .get("network-tx")
+                    .and_then(parse_optional_quantity)
+                    .unwrap_or(0.0)
+                + usage
+                    .get("network_receive_bytes")
+                    .and_then(parse_optional_quantity)
+                    .unwrap_or(0.0)
+                + usage
+                    .get("network_transmit_bytes")
+                    .and_then(parse_optional_quantity)
+                    .unwrap_or(0.0);
+
+            if direct_network > 0.0 {
+                totals.network_bytes += direct_network;
+                totals.network_available = true;
+            }
+
+            if let Some(network) = usage.get("network") {
+                let nested = network
+                    .get("rxBytes")
+                    .and_then(parse_optional_quantity)
+                    .unwrap_or(0.0)
+                    + network
+                        .get("txBytes")
+                        .and_then(parse_optional_quantity)
+                        .unwrap_or(0.0);
+
+                if nested > 0.0 {
+                    totals.network_bytes += nested;
+                    totals.network_available = true;
+                }
+            }
+        }
+    }
+
+    totals
+}
+
+pub async fn get_workload_metric_series(State(state): State<AppState>) -> impl IntoResponse {
+    let now = Utc::now().timestamp();
+
+    let should_sample = {
+        let history = state.workload_metric_history.read().await;
+        match history.last() {
+            Some(last) => now.saturating_sub(last.timestamp) >= WORKLOAD_METRIC_SAMPLE_INTERVAL_SECS,
+            None => true,
+        }
+    };
+
+    if should_sample {
+        let totals = collect_workload_metric_totals(&state).await;
+        let snapshot = WorkloadMetricSnapshot {
+            timestamp: now,
+            cpu: totals.cpu_millicores,
+            memory: totals.memory_bytes,
+            network: totals.network_bytes,
+            filesystem: totals.filesystem_bytes,
+            network_available: totals.network_available,
+            filesystem_available: totals.filesystem_available,
+        };
+
+        let mut history = state.workload_metric_history.write().await;
+        history.push(snapshot);
+        if history.len() > WORKLOAD_METRIC_HISTORY_LIMIT {
+            let overflow = history.len() - WORKLOAD_METRIC_HISTORY_LIMIT;
+            history.drain(0..overflow);
+        }
+    }
+
+    let history = state.workload_metric_history.read().await;
+
+    let response = WorkloadMetricSeriesResponse {
+        cpu: history
+            .iter()
+            .map(|sample| MetricSeriesPoint {
+                timestamp: sample.timestamp,
+                value: sample.cpu,
+            })
+            .collect(),
+        memory: history
+            .iter()
+            .map(|sample| MetricSeriesPoint {
+                timestamp: sample.timestamp,
+                value: sample.memory,
+            })
+            .collect(),
+        network: history
+            .iter()
+            .map(|sample| MetricSeriesPoint {
+                timestamp: sample.timestamp,
+                value: sample.network,
+            })
+            .collect(),
+        filesystem: history
+            .iter()
+            .map(|sample| MetricSeriesPoint {
+                timestamp: sample.timestamp,
+                value: sample.filesystem,
+            })
+            .collect(),
+        network_available: history.iter().any(|sample| sample.network_available),
+        filesystem_available: history.iter().any(|sample| sample.filesystem_available),
+    };
+
+    (StatusCode::OK, Json(response)).into_response()
+}
 
 pub async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Pod;

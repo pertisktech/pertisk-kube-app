@@ -624,3 +624,17 @@ export interface ResourceMapData {
   nodes: ResourceMapNode[];
   edges: ResourceMapEdge[];
 }
+
+export interface MetricSeriesPoint {
+  timestamp: number;
+  value: number;
+}
+
+export interface WorkloadMetricSeriesResponse {
+  cpu: MetricSeriesPoint[];
+  memory: MetricSeriesPoint[];
+  network: MetricSeriesPoint[];
+  filesystem: MetricSeriesPoint[];
+  network_available: boolean;
+  filesystem_available: boolean;
+}

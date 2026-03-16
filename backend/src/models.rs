@@ -23,6 +23,33 @@ pub struct ApiResponse<T> {
     pub total: usize,
 }
 
+#[derive(Serialize, Clone)]
+pub struct MetricSeriesPoint {
+    pub timestamp: i64,
+    pub value: f64,
+}
+
+#[derive(Serialize)]
+pub struct WorkloadMetricSeriesResponse {
+    pub cpu: Vec<MetricSeriesPoint>,
+    pub memory: Vec<MetricSeriesPoint>,
+    pub network: Vec<MetricSeriesPoint>,
+    pub filesystem: Vec<MetricSeriesPoint>,
+    pub network_available: bool,
+    pub filesystem_available: bool,
+}
+
+#[derive(Clone)]
+pub struct WorkloadMetricSnapshot {
+    pub timestamp: i64,
+    pub cpu: f64,
+    pub memory: f64,
+    pub network: f64,
+    pub filesystem: f64,
+    pub network_available: bool,
+    pub filesystem_available: bool,
+}
+
 #[derive(Serialize)]
 pub struct NamespaceItem {
     pub name: String,

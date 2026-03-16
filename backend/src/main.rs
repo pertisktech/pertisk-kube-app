@@ -8,6 +8,7 @@ use axum::{
 };
 use kube::Client;
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
+use tokio::sync::RwLock;
 use tower_http::{
     cors::{Any, CorsLayer},
     services::{ServeDir, ServeFile},
@@ -48,6 +49,7 @@ pub struct AppState {
     pub password: String,
     pub jwt_secret: String,
     pub port_forward_state: Option<Arc<handlers::portforward::PortForwardState>>,
+    pub workload_metric_history: Arc<RwLock<Vec<WorkloadMetricSnapshot>>>,
 }
 
 #[tokio::main]
@@ -74,6 +76,7 @@ async fn main() -> anyhow::Result<()> {
         password,
         jwt_secret,
         port_forward_state,
+        workload_metric_history: Arc::new(RwLock::new(Vec::new())),
     };
 
     start_backup_scheduler_worker(state.clone());
@@ -112,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/nodes/:name/drain", post(drain_node))
         .route("/namespaces", get(list_namespaces))
         .route("/pods", get(list_pods))
+        .route("/metrics/workloads/series", get(get_workload_metric_series))
         .route(
             "/pods/:namespace/:name/yaml",
             get(get_pod_yaml).put(update_pod_yaml),

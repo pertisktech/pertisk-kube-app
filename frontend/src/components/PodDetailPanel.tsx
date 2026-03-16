@@ -7,6 +7,7 @@ import { timeAgo, formatCpuRange, formatCpuCores, parseCpuToCores } from '../uti
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations, DrawerParamToggler } from './drawer';
+import { WorkloadMetricGraphs } from './WorkloadMetricGraphs';
 import { createPortForward, usePortForwards } from '../hooks/useKubernetes';
 
 interface PodDetailPanelProps {
@@ -265,6 +266,11 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
               <div className="h-full rounded-full" style={{ width: `${usageBarWidth(memoryPercent)}%`, backgroundColor: usageBarColor(memoryPercent) }} />
             </div>
           )}
+
+          <DrawerTitle>Metrics</DrawerTitle>
+          <div className="mb-4">
+            <WorkloadMetricGraphs />
+          </div>
 
           <DrawerTitle>Containers</DrawerTitle>
           {containers.length > 0 ? (

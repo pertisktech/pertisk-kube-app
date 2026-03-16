@@ -3,6 +3,7 @@ import type { DaemonSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
+import { WorkloadMetricGraphs } from './WorkloadMetricGraphs';
 
 interface DaemonSetDetailPanelProps {
   daemonSet: DaemonSet;
@@ -66,6 +67,10 @@ export const DaemonSetDetailPanel = ({ daemonSet, onClose, onOpenYamlEditor, onD
           </div>
         </DrawerItem>
       ) : null}
+      <DrawerTitle>Metrics</DrawerTitle>
+      <div className="mb-4">
+        <WorkloadMetricGraphs />
+      </div>
       <DrawerLabelsAnnotations labels={daemonSet.labels} annotations={daemonSet.annotations} />
     </ResourceDetailPanelLayout>
   );
