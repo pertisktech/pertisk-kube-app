@@ -1,9 +1,17 @@
+use axum::http::Request;
+use futures_util::future::join_all;
 use kube::{
     api::ListParams,
     core::{ApiResource, DynamicObject, GroupVersionKind},
     Api, Client,
 };
 use std::collections::HashMap;
+
+#[derive(Clone, Copy, Debug)]
+pub struct NodeDiskMetrics {
+    pub used_bytes: f64,
+    pub capacity_bytes: f64,
+}
 
 pub fn format_compact_duration(seconds: i64) -> String {
     if seconds < 60 {
@@ -225,4 +233,46 @@ pub async fn fetch_node_metrics(client: Client) -> HashMap<String, (String, Stri
     }
 
     metrics_map
+}
+
+pub async fn fetch_node_disk_metrics(
+    client: Client,
+    node_names: &[String],
+) -> HashMap<String, NodeDiskMetrics> {
+    let responses = join_all(node_names.iter().cloned().map(|name| {
+        let client = client.clone();
+        async move {
+            let request = match Request::get(format!("/api/v1/nodes/{name}/proxy/stats/summary"))
+                .body(Vec::new())
+            {
+                Ok(request) => request,
+                Err(_) => return None,
+            };
+
+            let summary = match client.request::<serde_json::Value>(request).await {
+                Ok(summary) => summary,
+                Err(_) => return None,
+            };
+
+            let fs = summary.get("node").and_then(|node| node.get("fs"))?;
+            let used_bytes = fs
+                .get("usedBytes")
+                .and_then(|value| value.as_f64().or_else(|| value.as_u64().map(|value| value as f64)))?;
+            let capacity_bytes = fs
+                .get("capacityBytes")
+                .and_then(|value| value.as_f64().or_else(|| value.as_u64().map(|value| value as f64)))
+                .unwrap_or(0.0);
+
+            Some((
+                name,
+                NodeDiskMetrics {
+                    used_bytes,
+                    capacity_bytes,
+                },
+            ))
+        }
+    }))
+    .await;
+
+    responses.into_iter().flatten().collect()
 }

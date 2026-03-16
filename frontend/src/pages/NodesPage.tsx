@@ -9,7 +9,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { StatusBadge } from '../components/StatusBadge';
 import { openPanelTab } from '../components/BottomPanel';
 import { getAuthToken } from '../utils/auth';
-import { timeAgo, formatMemoryUsedAlloc, formatCpuRange } from '../utils';
+import { timeAgo, formatMemoryUsedAlloc, formatCpuRange, formatK8sQuantityUsedAlloc } from '../utils';
 import { compareNodeRoleSets, sortNodeRoles } from '../utils/nodeRoles';
 import type { K8sNode } from '../types';
 
@@ -27,7 +27,8 @@ type NodeSortKey =
   | 'cpu_used'
   | 'cpu_pct'
   | 'memory_used'
-  | 'memory_pct';
+  | 'memory_pct'
+  | 'disk_pct';
 
 const usageBarWidth = (percent: number) => {
   if (percent <= 0) return 0;
@@ -87,10 +88,14 @@ export const NodesPage = () => {
         ...node,
         cpu: fromApi.cpu ?? node.cpu,
         memory: fromApi.memory ?? node.memory,
+        ephemeral_storage: fromApi.ephemeral_storage ?? node.ephemeral_storage,
         cpu_used: fromApi.cpu_used ?? node.cpu_used,
         memory_used: fromApi.memory_used ?? node.memory_used,
+        ephemeral_storage_used: fromApi.ephemeral_storage_used ?? node.ephemeral_storage_used,
         cpu_usage_percent: fromApi.cpu_usage_percent ?? node.cpu_usage_percent,
         memory_usage_percent: fromApi.memory_usage_percent ?? node.memory_usage_percent,
+        ephemeral_storage_usage_percent:
+          fromApi.ephemeral_storage_usage_percent ?? node.ephemeral_storage_usage_percent,
       };
     });
   }, [realtimeNodes, apiNodes]);
@@ -360,6 +365,36 @@ export const NodesPage = () => {
       sortKey: 'memory_pct',
     },
     {
+      header: 'Disk',
+      accessor: (row: K8sNode) => {
+        const label = formatK8sQuantityUsedAlloc(row.ephemeral_storage_used, row.ephemeral_storage);
+        const percent = toPercent(row.ephemeral_storage_usage_percent);
+        const hasMetrics = row.ephemeral_storage_usage_percent != null;
+
+        return (
+          <div className="flex items-center gap-2 w-full">
+            <span className="text-xs text-text-secondary min-w-[11rem] flex-shrink-0 whitespace-nowrap" title={label}>{label}</span>
+            {hasMetrics ? (
+              <>
+                <div className="h-1.5 w-16 flex-shrink-0 rounded-full bg-hover overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-emerald-500"
+                    style={{ width: `${usageBarWidth(percent)}%` }}
+                  />
+                </div>
+                <span className="text-xs font-medium text-text w-9 text-right flex-shrink-0">{Math.round(percent)}%</span>
+              </>
+            ) : (
+              <span className="text-xs text-text-secondary">-</span>
+            )}
+          </div>
+        );
+      },
+      width: '18%',
+      sortable: true,
+      sortKey: 'disk_pct',
+    },
+    {
       header: 'Age',
       accessor: (row: K8sNode) => timeAgo(row.age),
       width: '10%',
@@ -402,6 +437,9 @@ export const NodesPage = () => {
       }
       if (sortState.key === 'memory_pct') {
         return (toPercent(first.memory_usage_percent) - toPercent(second.memory_usage_percent)) * factor;
+      }
+      if (sortState.key === 'disk_pct') {
+        return (toPercent(first.ephemeral_storage_usage_percent) - toPercent(second.ephemeral_storage_usage_percent)) * factor;
       }
       if (sortState.key === 'taints') {
         return ((first.taints?.length ?? 0) - (second.taints?.length ?? 0)) * factor;

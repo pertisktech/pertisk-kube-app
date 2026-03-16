@@ -82,8 +82,10 @@ pub struct NodeItem {
     pub pods: Option<String>,
     pub cpu_used: Option<String>,
     pub memory_used: Option<String>,
+    pub ephemeral_storage_used: Option<String>,
     pub cpu_usage_percent: Option<f64>,
     pub memory_usage_percent: Option<f64>,
+    pub ephemeral_storage_usage_percent: Option<f64>,
     pub unschedulable: bool,
 }
 

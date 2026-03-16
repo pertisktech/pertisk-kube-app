@@ -4,7 +4,7 @@ import { usePods } from '../hooks/useKubernetes';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
-import { formatMemoryUsedAlloc, formatCpuRange, formatCpuCores, parseCpuToCores, formatK8sQuantity } from '../utils';
+import { formatMemoryUsedAlloc, formatCpuRange, formatCpuCores, parseCpuToCores, formatK8sQuantity, formatK8sQuantityUsedAlloc } from '../utils';
 import { sortNodeRoles } from '../utils/nodeRoles';
 import type { K8sNode } from '../types';
 
@@ -75,9 +75,12 @@ const NodeDetailsResources = ({
       ? (node.cpu_used != null ? formatCpuRange(node.cpu_used, node.cpu) : `${formatCpuCores(parseCpuToCores(node.cpu))} cores`)
       : undefined;
     const memVal = node.memory != null ? formatMemoryUsedAlloc(node.memory_used, node.memory) : undefined;
+    const diskVal = node.ephemeral_storage != null
+      ? formatK8sQuantityUsedAlloc(node.ephemeral_storage_used, node.ephemeral_storage)
+      : undefined;
     if (cpuVal) items.push({ key: 'cpu', label: 'CPU', value: cpuVal });
     if (memVal) items.push({ key: 'memory', label: 'Memory', value: memVal });
-    if (node.ephemeral_storage) items.push({ key: 'ephemeral-storage', label: 'Ephemeral Storage', value: formatK8sQuantity(node.ephemeral_storage) });
+    if (diskVal) items.push({ key: 'ephemeral-storage', label: 'Ephemeral Storage', value: diskVal });
     if (node.pods) items.push({ key: 'pods', label: 'Pods', value: node.pods });
   }
   if (items.length === 0) return null;

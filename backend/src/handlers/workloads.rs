@@ -266,9 +266,17 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
 
     let client = state.client.clone();
     let api: Api<Node> = Api::all(client.clone());
-    let node_metrics_map = fetch_node_metrics(client).await;
     match api.list(&ListParams::default()).await {
         Ok(list) => {
+            let node_names: Vec<String> = list
+                .items
+                .iter()
+                .filter_map(|node| node.metadata.name.clone())
+                .collect();
+            let (node_metrics_map, node_disk_metrics_map) = tokio::join!(
+                fetch_node_metrics(client.clone()),
+                fetch_node_disk_metrics(client, &node_names),
+            );
             let items: Vec<NodeItem> = list
                 .items
                 .into_iter()
@@ -491,6 +499,25 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         Some(memory_used_raw)
                     };
 
+                    let node_disk_metrics = node_disk_metrics_map.get(&name).copied();
+
+                    let ephemeral_storage_used =
+                        node_disk_metrics.map(|metrics| format_binary_bytes(metrics.used_bytes));
+
+                    let ephemeral_storage_usage_percent = node_disk_metrics.and_then(|metrics| {
+                        let capacity_bytes = ephemeral_storage
+                            .as_deref()
+                            .and_then(parse_memory_bytes)
+                            .or_else(|| (metrics.capacity_bytes > 0.0).then_some(metrics.capacity_bytes));
+
+                        match capacity_bytes {
+                            Some(capacity) if capacity > 0.0 => {
+                                Some((metrics.used_bytes / capacity * 100.0).min(100.0))
+                            }
+                            _ => None,
+                        }
+                    });
+
                     let unschedulable = node
                         .spec
                         .as_ref()
@@ -536,8 +563,10 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                         pods,
                         cpu_used,
                         memory_used,
+                        ephemeral_storage_used,
                         cpu_usage_percent,
                         memory_usage_percent,
+                        ephemeral_storage_usage_percent,
                         unschedulable,
                     }
                 })

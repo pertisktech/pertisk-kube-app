@@ -266,8 +266,10 @@ export interface K8sNode {
   pods?: string;
   cpu_used?: string;
   memory_used?: string;
+  ephemeral_storage_used?: string;
   cpu_usage_percent?: number;
   memory_usage_percent?: number;
+  ephemeral_storage_usage_percent?: number;
   unschedulable?: boolean;
 }
 

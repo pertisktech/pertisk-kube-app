@@ -261,6 +261,20 @@ export function formatMemoryUsedAlloc(used: string | undefined | null, alloc: st
   return `${fmt(usedGB)} / ${fmt(allocGB)}`;
 }
 
+export function formatK8sQuantityUsedAlloc(used: string | undefined | null, alloc: string | undefined | null): string {
+  const usedBytes = parseK8sQuantityToBytes(used);
+  const allocBytes = parseK8sQuantityToBytes(alloc);
+
+  if (allocBytes === 0 && usedBytes === 0) return '-';
+
+  const fmt = (bytes: number, showDashForZero = false) => {
+    if (bytes === 0) return showDashForZero ? '-' : '0 B';
+    return formatBytes(bytes);
+  };
+
+  return `${fmt(usedBytes)} / ${fmt(allocBytes, true)}`;
+}
+
 export const cn = (...classes: (string | false | undefined)[]): string => {
   return classes.filter(Boolean).join(' ');
 };
