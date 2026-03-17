@@ -38,14 +38,6 @@ export const JobDetailPanel = ({ job, podForMetrics, onClose, onOpenYamlEditor, 
     }
     onClose={onClose}
   >
-    <DrawerTitle>Property</DrawerTitle>
-    <DrawerItem name="Name">{job.name}</DrawerItem>
-    <DrawerItem name="Namespace">{job.namespace}</DrawerItem>
-    <DrawerItem name="Status"><span className={getStatusTextClass(job.status || 'Pending')}>{job.status || 'Pending'}</span></DrawerItem>
-    <DrawerItem name="Completions">{job.completions ?? '-'}</DrawerItem>
-    <DrawerItem name="Duration">{job.duration ?? '-'}</DrawerItem>
-    <DrawerItem name="Age">{timeAgo(job.age)}</DrawerItem>
-
     <DrawerTitle>Metrics</DrawerTitle>
     <div className="mb-4">
       {podForMetrics ? (
@@ -54,6 +46,14 @@ export const JobDetailPanel = ({ job, podForMetrics, onClose, onOpenYamlEditor, 
         <div className="text-sm text-text-secondary">No pod metrics available for this Job yet.</div>
       )}
     </div>
+
+    <DrawerTitle>Property</DrawerTitle>
+    <DrawerItem name="Name">{job.name}</DrawerItem>
+    <DrawerItem name="Namespace">{job.namespace}</DrawerItem>
+    <DrawerItem name="Status"><span className={getStatusTextClass(job.status || 'Pending')}>{job.status || 'Pending'}</span></DrawerItem>
+    <DrawerItem name="Completions">{job.completions ?? '-'}</DrawerItem>
+    <DrawerItem name="Duration">{job.duration ?? '-'}</DrawerItem>
+    <DrawerItem name="Age">{timeAgo(job.age)}</DrawerItem>
 
     <DrawerLabelsAnnotations labels={job.labels} annotations={job.annotations} />
   </ResourceDetailPanelLayout>

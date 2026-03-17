@@ -37,6 +37,11 @@ export const StatefulSetDetailPanel = ({ statefulSet, onClose, onOpenYamlEditor,
     }
     onClose={onClose}
   >
+    <DrawerTitle>Metrics</DrawerTitle>
+    <div className="mb-4">
+      <WorkloadMetricGraphs />
+    </div>
+
     <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{statefulSet.name}</DrawerItem>
     <DrawerItem name="Namespace">{statefulSet.namespace}</DrawerItem>
@@ -56,10 +61,6 @@ export const StatefulSetDetailPanel = ({ statefulSet, onClose, onOpenYamlEditor,
         </div>
       </DrawerItem>
     ) : null}
-    <DrawerTitle>Metrics</DrawerTitle>
-    <div className="mb-4">
-      <WorkloadMetricGraphs />
-    </div>
     <DrawerLabelsAnnotations labels={statefulSet.labels} annotations={statefulSet.annotations} />
   </ResourceDetailPanelLayout>
 );

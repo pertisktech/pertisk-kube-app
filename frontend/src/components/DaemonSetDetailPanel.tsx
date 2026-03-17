@@ -39,6 +39,11 @@ export const DaemonSetDetailPanel = ({ daemonSet, onClose, onOpenYamlEditor, onD
       }
       onClose={onClose}
     >
+        <DrawerTitle>Metrics</DrawerTitle>
+        <div className="mb-4">
+          <WorkloadMetricGraphs />
+        </div>
+
       <DrawerTitle>Property</DrawerTitle>
       <DrawerItem name="Name">{daemonSet.name}</DrawerItem>
       <DrawerItem name="Namespace">{daemonSet.namespace}</DrawerItem>
@@ -67,10 +72,6 @@ export const DaemonSetDetailPanel = ({ daemonSet, onClose, onOpenYamlEditor, onD
           </div>
         </DrawerItem>
       ) : null}
-      <DrawerTitle>Metrics</DrawerTitle>
-      <div className="mb-4">
-        <WorkloadMetricGraphs />
-      </div>
       <DrawerLabelsAnnotations labels={daemonSet.labels} annotations={daemonSet.annotations} />
     </ResourceDetailPanelLayout>
   );

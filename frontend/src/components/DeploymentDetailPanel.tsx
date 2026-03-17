@@ -291,6 +291,11 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
           className="flex-1 overflow-auto overflow-x-hidden text-sm drawer-content DeploymentDetails"
           style={{ padding: 'var(--drawer-content-spacing, 1.5rem)' }}
         >
+          <DrawerTitle>Metrics</DrawerTitle>
+          <div className="mb-4">
+            <WorkloadMetricGraphs />
+          </div>
+
           <DrawerTitle>Property</DrawerTitle>
           <DrawerItem name="Name">{deployment.name}</DrawerItem>
           <DrawerItem name="Namespace">{deployment.namespace}</DrawerItem>
@@ -299,11 +304,6 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
           <DrawerItem name="Updated">{deployment.updated ?? '-'}</DrawerItem>
           <DrawerItem name="Available">{deployment.available ?? '-'}</DrawerItem>
           <DrawerItem name="Age">{timeAgo(deployment.age)}</DrawerItem>
-
-          <DrawerTitle>Metrics</DrawerTitle>
-          <div className="mb-4">
-            <WorkloadMetricGraphs />
-          </div>
 
           <DrawerItem name="Images" labelsOnly>
             {deployment.images?.length > 0 ? (

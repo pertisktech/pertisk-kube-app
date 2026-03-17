@@ -199,6 +199,11 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
 
         {/* Scrollable content: DrawerItem / DrawerTitle layout like freelens */}
         <div className="flex-1 overflow-auto overflow-x-hidden text-xs drawer-content" style={{ padding: 'var(--drawer-content-spacing, 1.5rem)' }}>
+          <DrawerTitle>Metrics</DrawerTitle>
+          <div className="mb-4">
+            <NodeMetricGraphs nodes={[node]} pods={nodePods} />
+          </div>
+
           <DrawerTitle>Property</DrawerTitle>
           {hasAddresses && (
             <DrawerItem name="Addresses">
@@ -241,11 +246,6 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
 
           <DrawerTitle>Allocatable</DrawerTitle>
           <NodeDetailsResources type="allocatable" node={node} />
-
-          <DrawerTitle>Metrics</DrawerTitle>
-          <div className="mb-4">
-            <NodeMetricGraphs nodes={[node]} pods={nodePods} />
-          </div>
 
           {(labelCount > 0 || annotationCount > 0) && (
             <div className="mt-4">

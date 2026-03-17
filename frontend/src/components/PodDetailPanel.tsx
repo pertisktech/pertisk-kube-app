@@ -143,6 +143,11 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden px-5 py-5 text-xs drawer-content PodDetails" style={{ padding: 'var(--drawer-content-spacing, 1.5rem)' }}>
+          <DrawerTitle>Metrics</DrawerTitle>
+          <div className="mb-4">
+            <PodMetricGraphs pod={pod} />
+          </div>
+
           <DrawerTitle>Property</DrawerTitle>
           <DrawerItem name="Status">{status}</DrawerItem>
           {pod.node && <DrawerItem name="Node">{pod.node}</DrawerItem>}
@@ -266,11 +271,6 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
               <div className="h-full rounded-full" style={{ width: `${usageBarWidth(memoryPercent)}%`, backgroundColor: usageBarColor(memoryPercent) }} />
             </div>
           )}
-
-          <DrawerTitle>Metrics</DrawerTitle>
-          <div className="mb-4">
-            <PodMetricGraphs pod={pod} />
-          </div>
 
           <DrawerTitle>Containers</DrawerTitle>
           {containers.length > 0 ? (
