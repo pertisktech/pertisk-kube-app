@@ -1,26 +1,69 @@
-import { useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card } from '../components/Card';
 import {
   useDashboard,
-  useEndpoints,
-  useIngressClasses,
-  useIngresses,
-  useNetworkPolicies,
   useNodes,
-  useServices,
+  usePods,
 } from '../hooks/useKubernetes';
+import { useRealtimePods } from '../hooks/useRealtimePods';
+import { NodeMetricGraphs } from '../components/NodeMetricGraphs';
 import {
   AlertCircle,
+  Box,
   CheckCircle,
-  ExternalLink,
+  Cpu,
   HardDrive,
-  Layers,
   Loader,
-  Network,
-  Server,
-  Shield,
 } from '../components/Icons';
+import { formatCpuRange, parseCpuToCores, parseK8sMemoryToGB } from '../utils';
+import type { Pod } from '../types';
+
+const PIE_DEFAULT = 'var(--color-muted)';
+const PIE_USAGE = '#c93dce';
+const PIE_REQUESTS = '#4caf50';
+const PIE_LIMITS = '#00a7a0';
+
+const parsePods = (podsStr?: string): number => {
+  if (!podsStr) return 0;
+  const n = parseInt(podsStr, 10);
+  return Number.isNaN(n) ? 0 : n;
+};
+
+const formatCpu = (cores: number): string => {
+  if (cores === 0) return '0';
+  return cores % 1 === 0 ? cores.toString() : cores.toFixed(2);
+};
+
+const formatMemoryGb = (gb: number): string => {
+  if (gb === 0) return '0 GB';
+  return gb % 1 === 0 ? `${gb} GB` : `${gb.toFixed(2)} GB`;
+};
+
+const formatMemoryGiB = (gb: number): string => `${gb.toFixed(1)}GiB`;
+
+const toPercent = (value?: number) => {
+  if (value == null || Number.isNaN(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+};
+
+const resolveNodeMemoryUsedGb = (node: { memory_used?: string; memory?: string; memory_usage_percent?: number }) => {
+  const directUsedGb = parseK8sMemoryToGB(node.memory_used);
+  if (directUsedGb > 0) return directUsedGb;
+
+  const totalGb = parseK8sMemoryToGB(node.memory);
+  const usagePercent = toPercent(node.memory_usage_percent);
+  if (totalGb > 0 && usagePercent > 0) return (totalGb * usagePercent) / 100;
+
+  return 0;
+};
+
+const readResourceValue = (resourceText: string | undefined, key: 'cpu' | 'memory') => {
+  if (!resourceText || resourceText === '-') return undefined;
+  const pattern = new RegExp(`${key}\\s*:\\s*([^,\\s]+)`, 'i');
+  const match = resourceText.match(pattern);
+  return match?.[1];
+};
 
 const summarizeCounts = (items: string[]) => {
   const counts = new Map<string, number>();
@@ -37,25 +80,14 @@ const formatRuntime = (runtime?: string) => {
   return normalized || 'Unknown';
 };
 
-const clusterLinks = [
-  { title: 'Nodes', path: '/nodes', description: 'Node capacity, kubelet versions, runtime, and readiness.', icon: Server },
-  { title: 'Network', path: '/network', description: 'Services, endpoints, ingresses, and policies.', icon: Network },
-  { title: 'Storage', path: '/storage', description: 'Persistent volumes, claims, and storage classes.', icon: HardDrive },
-  { title: 'Access Control', path: '/access-control', description: 'Cluster-wide roles, bindings, and service accounts.', icon: Shield },
-  { title: 'Resource Map', path: '/resource-map', description: 'Topology view across cluster resources and relations.', icon: Layers },
-  { title: 'Events', path: '/events', description: 'Recent cluster events and failure signals.', icon: AlertCircle },
-];
-
 export const ClusterPage = () => {
+  const [activeNodeRoleTab, setActiveNodeRoleTab] = useState<'master' | 'worker'>('master');
   const { data: dashboard, isLoading: dashboardLoading, error: dashboardError } = useDashboard();
   const { data: nodes, isLoading: nodesLoading, error: nodesError } = useNodes({ refetchInterval: 30_000 });
-  const { data: services, isLoading: servicesLoading } = useServices();
-  const { data: endpoints, isLoading: endpointsLoading } = useEndpoints();
-  const { data: ingresses, isLoading: ingressesLoading } = useIngresses();
-  const { data: ingressClasses, isLoading: ingressClassesLoading } = useIngressClasses();
-  const { data: networkPolicies, isLoading: networkPoliciesLoading } = useNetworkPolicies();
+  const { data: pods, isLoading: podsLoading } = usePods();
+  const { data: realtimePods = [] } = useRealtimePods<Pod>();
 
-  const isLoading = dashboardLoading || nodesLoading || servicesLoading || endpointsLoading || ingressesLoading || ingressClassesLoading || networkPoliciesLoading;
+  const isLoading = dashboardLoading || nodesLoading || podsLoading;
   const errorMessage = (dashboardError as Error | undefined)?.message || (nodesError as Error | undefined)?.message || null;
 
   const readyNodeCount = useMemo(() => {
@@ -68,6 +100,138 @@ export const ClusterPage = () => {
   const kubeletVersions = useMemo(() => summarizeCounts((nodes || []).map((node) => node.kubelet_version || 'Unknown')), [nodes]);
   const containerRuntimes = useMemo(() => summarizeCounts((nodes || []).map((node) => formatRuntime(node.runtime))), [nodes]);
   const roleSummary = useMemo(() => summarizeCounts((nodes || []).flatMap((node) => node.roles?.length ? node.roles : ['Unassigned'])), [nodes]);
+
+  const roleTabCounts = useMemo(() => {
+    const source = nodes || [];
+    const hasRole = (nodeRoles: string[] | undefined, role: 'master' | 'worker') => {
+      return (nodeRoles || []).some((item) => {
+        const normalized = item.toLowerCase();
+        if (role === 'master') return normalized === 'master' || normalized === 'control-plane';
+        return normalized === 'worker';
+      });
+    };
+
+    return {
+      master: source.filter((node) => hasRole(node.roles, 'master')).length,
+      worker: source.filter((node) => hasRole(node.roles, 'worker')).length,
+    };
+  }, [nodes]);
+
+  useEffect(() => {
+    if (activeNodeRoleTab === 'master' && roleTabCounts.master === 0 && roleTabCounts.worker > 0) {
+      setActiveNodeRoleTab('worker');
+    }
+    if (activeNodeRoleTab === 'worker' && roleTabCounts.worker === 0 && roleTabCounts.master > 0) {
+      setActiveNodeRoleTab('master');
+    }
+  }, [activeNodeRoleTab, roleTabCounts]);
+
+  const roleTabNodes = useMemo(() => {
+    const filtered = (nodes || []).filter((node) => {
+      return (node.roles || []).some((role) => {
+        const normalized = role.toLowerCase();
+        if (activeNodeRoleTab === 'master') return normalized === 'master' || normalized === 'control-plane';
+        return normalized === 'worker';
+      });
+    });
+
+    return filtered.sort((a, b) => a.name.localeCompare(b.name));
+  }, [nodes, activeNodeRoleTab]);
+
+  const roleTabMetrics = useMemo(() => {
+    const totals = roleTabNodes.reduce(
+      (acc, node) => {
+        const nodeReady = typeof node.ready === 'boolean' ? node.ready : String(node.ready).toLowerCase() === 'true';
+        const cpuAlloc = parseCpuToCores(node.cpu);
+        const cpuUsed = parseCpuToCores(node.cpu_used);
+        const memoryAlloc = parseK8sMemoryToGB(node.memory);
+        const memoryUsed = resolveNodeMemoryUsedGb(node);
+
+        return {
+          count: acc.count + 1,
+          readyCount: acc.readyCount + (nodeReady ? 1 : 0),
+          cpuAlloc: acc.cpuAlloc + cpuAlloc,
+          cpuUsed: acc.cpuUsed + cpuUsed,
+          memoryAlloc: acc.memoryAlloc + memoryAlloc,
+          memoryUsed: acc.memoryUsed + memoryUsed,
+        };
+      },
+      {
+        count: 0,
+        readyCount: 0,
+        cpuAlloc: 0,
+        cpuUsed: 0,
+        memoryAlloc: 0,
+        memoryUsed: 0,
+      }
+    );
+
+    return {
+      ...totals,
+      cpuLabel: formatCpuRange(String(totals.cpuUsed), String(totals.cpuAlloc)),
+      memoryLabel: `${totals.memoryUsed.toFixed(2)} GB / ${totals.memoryAlloc.toFixed(2)} GB`,
+    };
+  }, [roleTabNodes]);
+
+  const roleTabPods = useMemo(() => {
+    const nodeNames = new Set(roleTabNodes.map((node) => node.name));
+    return (pods || []).filter((pod) => pod.node && nodeNames.has(pod.node));
+  }, [pods, roleTabNodes]);
+
+  const roleTabRealtimePods = useMemo(() => {
+    const nodeNames = new Set(roleTabNodes.map((node) => node.name));
+    return realtimePods.filter((pod) => pod.node && nodeNames.has(pod.node));
+  }, [realtimePods, roleTabNodes]);
+
+  const roleTabCapacitySummary = useMemo(() => {
+    let totalCPU = 0;
+    let totalMemory = 0;
+    let totalPodsAllocatable = 0;
+    let usedCPU = 0;
+    let usedMemory = 0;
+
+    roleTabNodes.forEach((node) => {
+      totalCPU += parseCpuToCores(node.cpu);
+      totalMemory += parseK8sMemoryToGB(node.memory);
+      totalPodsAllocatable += parsePods(node.pods);
+      usedCPU += parseCpuToCores(node.cpu_used);
+      usedMemory += resolveNodeMemoryUsedGb(node);
+    });
+
+    let cpuRequests = 0;
+    let cpuLimits = 0;
+    let memoryRequests = 0;
+    let memoryLimits = 0;
+
+    roleTabRealtimePods.forEach((pod) => {
+      (pod.containers || []).forEach((container) => {
+        const cpuRequestRaw = readResourceValue(container.requests, 'cpu');
+        const cpuLimitRaw = readResourceValue(container.limits, 'cpu');
+        const memoryRequestRaw = readResourceValue(container.requests, 'memory');
+        const memoryLimitRaw = readResourceValue(container.limits, 'memory');
+
+        cpuRequests += parseCpuToCores(cpuRequestRaw);
+        cpuLimits += parseCpuToCores(cpuLimitRaw);
+        memoryRequests += parseK8sMemoryToGB(memoryRequestRaw);
+        memoryLimits += parseK8sMemoryToGB(memoryLimitRaw);
+      });
+    });
+
+    const podCount = roleTabPods.length;
+
+    return {
+      totalCPU,
+      totalMemory,
+      totalPodsAllocatable,
+      usedCPU,
+      usedMemory,
+      cpuRequests,
+      cpuLimits,
+      memoryRequests,
+      memoryLimits,
+      podCount,
+    };
+  }, [roleTabNodes, roleTabRealtimePods, roleTabPods]);
 
   if (isLoading) {
     return (
@@ -135,6 +299,7 @@ export const ClusterPage = () => {
                 <p className="text-lg font-semibold text-text">{dashboard?.events ?? 0}</p>
               </div>
             </div>
+
           </div>
         </Card>
 
@@ -190,74 +355,298 @@ export const ClusterPage = () => {
                 </div>
               </div>
             </div>
-          </div>
-        </Card>
 
-        <Card title="Network Surface">
-          <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
-              <div className="rounded-lg border border-border bg-bg px-3 py-3">
-                <p className="text-xs text-text-secondary">Services</p>
-                <p className="text-lg font-semibold text-text">{services?.length ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-border bg-bg px-3 py-3">
-                <p className="text-xs text-text-secondary">Endpoints</p>
-                <p className="text-lg font-semibold text-text">{endpoints?.length ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-border bg-bg px-3 py-3">
-                <p className="text-xs text-text-secondary">Ingresses</p>
-                <p className="text-lg font-semibold text-text">{ingresses?.length ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-border bg-bg px-3 py-3">
-                <p className="text-xs text-text-secondary">Ingress Classes</p>
-                <p className="text-lg font-semibold text-text">{ingressClasses?.length ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-border bg-bg px-3 py-3">
-                <p className="text-xs text-text-secondary">Policies</p>
-                <p className="text-lg font-semibold text-text">{networkPolicies?.length ?? 0}</p>
-              </div>
-            </div>
-            <div className="rounded-lg border border-border bg-bg px-4 py-3 flex items-center justify-between gap-4">
-              <div>
-                <p className="font-semibold text-text">Open network resources</p>
-                <p className="text-xs text-text-secondary">Inspect cluster networking, ingress, policy coverage, and port-forward access.</p>
-              </div>
-              <Link to="/network" className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline shrink-0">
-                Open Network
-                <ExternalLink size={16} />
-              </Link>
-            </div>
-          </div>
-        </Card>
-
-        <Card title="Cluster Areas">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {clusterLinks.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className="rounded-xl border border-border bg-bg px-4 py-4 transition-colors hover:bg-hover"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-lg p-2 bg-surface-elevated border border-border">
-                      <Icon size={18} className="text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-text">{item.title}</p>
-                        <ExternalLink size={14} className="text-text-secondary" />
-                      </div>
-                      <p className="mt-1 text-sm text-text-secondary">{item.description}</p>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
           </div>
         </Card>
       </div>
+
+      <Card title="Metrics">
+        <div className="space-y-4 text-sm">
+          <div className="border-b border-border pb-2">
+            <div className="inline-flex rounded-lg border border-border bg-bg p-0.5" role="tablist" aria-label="Node role tabs">
+              {(['master', 'worker'] as const).map((role) => {
+                const isActive = activeNodeRoleTab === role;
+                const count = roleTabCounts[role];
+                return (
+                  <button
+                    key={role}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setActiveNodeRoleTab(role)}
+                    className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                      isActive
+                        ? 'bg-primary text-white'
+                        : 'text-text-secondary hover:text-text hover:bg-hover'
+                    }`}
+                  >
+                    {role === 'master' ? 'Master' : 'Worker'} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="rounded-lg border border-border bg-bg p-4">
+              <p className="text-xs text-text-secondary mb-3">Master / Worker Metrics</p>
+              {roleTabMetrics.count === 0 ? (
+                <div className="rounded-lg border border-border bg-bg px-3 py-3 text-xs text-text-secondary">
+                  No {activeNodeRoleTab} nodes found.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="text-xs text-text-secondary">
+                    {roleTabMetrics.readyCount}/{roleTabMetrics.count} ready
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-border bg-bg px-3 py-3">
+                      <p className="text-xs text-text-secondary mb-1">CPU (group total)</p>
+                      <p className="text-sm font-medium text-text">{roleTabMetrics.cpuLabel}</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-bg px-3 py-3">
+                      <p className="text-xs text-text-secondary mb-1">Memory (group total)</p>
+                      <p className="text-sm font-medium text-text">{roleTabMetrics.memoryLabel}</p>
+                    </div>
+                  </div>
+
+                  <div className="pt-1 border-t border-border">
+                    <NodeMetricGraphs nodes={roleTabNodes} pods={roleTabPods} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-border bg-bg p-4">
+              <p className="text-xs text-text-secondary mb-3">Resource Summary (CPU / Memory / Pods)</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="rounded-xl border border-border bg-bg p-3 flex flex-col items-center chart-theme-text">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Cpu size={16} className="text-dashboard-metric-primary" />
+                    <span className="font-semibold text-text text-sm">CPU</span>
+                  </div>
+                  <div className="w-full h-36 min-h-[144px]">
+                    <ResponsiveContainer width="100%" height={144} minHeight={144}>
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Usage', value: Math.max(0, roleTabCapacitySummary.usedCPU) || 0.01, color: PIE_USAGE },
+                            {
+                              name: 'Available',
+                              value: Math.max(0, roleTabCapacitySummary.totalCPU - roleTabCapacitySummary.usedCPU) || (roleTabCapacitySummary.totalCPU || 0.01),
+                              color: PIE_DEFAULT,
+                            },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={38}
+                          outerRadius={52}
+                          dataKey="value"
+                        >
+                          {[{ color: PIE_USAGE }, { color: PIE_DEFAULT }].map((entry, index) => (
+                            <Cell key={index} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Pie
+                          data={[
+                            { name: 'Requests', value: Math.max(0, roleTabCapacitySummary.cpuRequests) || 0.01, color: PIE_REQUESTS },
+                            {
+                              name: 'Available',
+                              value: Math.max(0, roleTabCapacitySummary.totalCPU - roleTabCapacitySummary.cpuRequests) || (roleTabCapacitySummary.totalCPU || 0.01),
+                              color: PIE_DEFAULT,
+                            },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={25}
+                          outerRadius={37}
+                          dataKey="value"
+                        >
+                          {[{ color: PIE_REQUESTS }, { color: PIE_DEFAULT }].map((entry, index) => (
+                            <Cell key={`req-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Pie
+                          data={[
+                            { name: 'Limits', value: Math.max(0, roleTabCapacitySummary.cpuLimits) || 0.01, color: PIE_LIMITS },
+                            {
+                              name: 'Available',
+                              value: Math.max(0, roleTabCapacitySummary.totalCPU - roleTabCapacitySummary.cpuLimits) || (roleTabCapacitySummary.totalCPU || 0.01),
+                              color: PIE_DEFAULT,
+                            },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={12}
+                          outerRadius={24}
+                          dataKey="value"
+                        >
+                          {[{ color: PIE_LIMITS }, { color: PIE_DEFAULT }].map((entry, index) => (
+                            <Cell key={`lim-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: 'var(--color-surface)',
+                            color: 'var(--color-text)',
+                            borderRadius: '8px',
+                            padding: '10px 12px',
+                            border: '1px solid var(--color-border)',
+                          }}
+                          formatter={(value: number | undefined, name: string | undefined) => [`${formatCpu(Number(value ?? 0))} cores`, name ?? '']}
+                          labelFormatter={() => 'CPU'}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="w-full mt-1 space-y-0.5 text-[11px] text-text-secondary">
+                    <p>Usage: {roleTabCapacitySummary.usedCPU.toFixed(2)}</p>
+                    <p>Requests: {roleTabCapacitySummary.cpuRequests.toFixed(2)}</p>
+                    <p>Limits: {roleTabCapacitySummary.cpuLimits.toFixed(2)}</p>
+                    <p>Allocatable Capacity: {roleTabCapacitySummary.totalCPU.toFixed(2)}</p>
+                    <p>Capacity: {roleTabCapacitySummary.totalCPU.toFixed(2)}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-bg p-3 flex flex-col items-center chart-theme-text">
+                  <div className="flex items-center gap-2 mb-2">
+                    <HardDrive size={16} className="text-dashboard-metric-secondary" />
+                    <span className="font-semibold text-text text-sm">Memory</span>
+                  </div>
+                  <div className="w-full h-36 min-h-[144px]">
+                    <ResponsiveContainer width="100%" height={144} minHeight={144}>
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Usage', value: Math.max(0, roleTabCapacitySummary.usedMemory) || 0.01, color: PIE_USAGE },
+                            {
+                              name: 'Available',
+                              value: Math.max(0, roleTabCapacitySummary.totalMemory - roleTabCapacitySummary.usedMemory) || (roleTabCapacitySummary.totalMemory || 0.01),
+                              color: PIE_DEFAULT,
+                            },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={38}
+                          outerRadius={52}
+                          dataKey="value"
+                        >
+                          {[{ color: PIE_USAGE }, { color: PIE_DEFAULT }].map((entry, index) => (
+                            <Cell key={index} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Pie
+                          data={[
+                            { name: 'Requests', value: Math.max(0, roleTabCapacitySummary.memoryRequests) || 0.01, color: PIE_REQUESTS },
+                            {
+                              name: 'Available',
+                              value: Math.max(0, roleTabCapacitySummary.totalMemory - roleTabCapacitySummary.memoryRequests) || (roleTabCapacitySummary.totalMemory || 0.01),
+                              color: PIE_DEFAULT,
+                            },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={25}
+                          outerRadius={37}
+                          dataKey="value"
+                        >
+                          {[{ color: PIE_REQUESTS }, { color: PIE_DEFAULT }].map((entry, index) => (
+                            <Cell key={`mem-req-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Pie
+                          data={[
+                            { name: 'Limits', value: Math.max(0, roleTabCapacitySummary.memoryLimits) || 0.01, color: PIE_LIMITS },
+                            {
+                              name: 'Available',
+                              value: Math.max(0, roleTabCapacitySummary.totalMemory - roleTabCapacitySummary.memoryLimits) || (roleTabCapacitySummary.totalMemory || 0.01),
+                              color: PIE_DEFAULT,
+                            },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={12}
+                          outerRadius={24}
+                          dataKey="value"
+                        >
+                          {[{ color: PIE_LIMITS }, { color: PIE_DEFAULT }].map((entry, index) => (
+                            <Cell key={`mem-lim-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: 'var(--color-surface)',
+                            color: 'var(--color-text)',
+                            borderRadius: '8px',
+                            padding: '10px 12px',
+                            border: '1px solid var(--color-border)',
+                          }}
+                          formatter={(value: number | undefined, name: string | undefined) => [formatMemoryGb(Number(value ?? 0)), name ?? '']}
+                          labelFormatter={() => 'Memory'}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="w-full mt-1 space-y-0.5 text-[11px] text-text-secondary">
+                    <p>Usage: {formatMemoryGiB(roleTabCapacitySummary.usedMemory)}</p>
+                    <p>Requests: {formatMemoryGiB(roleTabCapacitySummary.memoryRequests)}</p>
+                    <p>Limits: {formatMemoryGiB(roleTabCapacitySummary.memoryLimits)}</p>
+                    <p>Allocatable Capacity: {formatMemoryGiB(roleTabCapacitySummary.totalMemory)}</p>
+                    <p>Capacity: {formatMemoryGiB(roleTabCapacitySummary.totalMemory)}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-bg p-3 flex flex-col items-center chart-theme-text">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Box size={16} className="text-dashboard-metric-tertiary" />
+                    <span className="font-semibold text-text text-sm">Pods</span>
+                  </div>
+                  <div className="w-full h-36 min-h-[144px]">
+                    <ResponsiveContainer width="100%" height={144} minHeight={144}>
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Usage', value: roleTabCapacitySummary.podCount || 0.01, color: PIE_REQUESTS },
+                            {
+                              name: 'Available',
+                              value: Math.max(0, (roleTabCapacitySummary.totalPodsAllocatable || 1) - roleTabCapacitySummary.podCount) || 0.01,
+                              color: PIE_DEFAULT,
+                            },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={34}
+                          outerRadius={52}
+                          dataKey="value"
+                        >
+                          {[{ color: PIE_REQUESTS }, { color: PIE_DEFAULT }].map((entry, index) => (
+                            <Cell key={index} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: 'var(--color-surface)',
+                            color: 'var(--color-text)',
+                            borderRadius: '8px',
+                            padding: '10px 12px',
+                            border: '1px solid var(--color-border)',
+                          }}
+                          formatter={(value: number | undefined, name: string | undefined) => [`${Math.round(Number(value ?? 0))} pods`, name ?? '']}
+                          labelFormatter={() => `Capacity: ${roleTabCapacitySummary.totalPodsAllocatable} pods`}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="w-full mt-1 space-y-0.5 text-[11px] text-text-secondary">
+                    <p>Usage: {roleTabCapacitySummary.podCount}</p>
+                    <p>Capacity: {roleTabCapacitySummary.totalPodsAllocatable || 0}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 };
