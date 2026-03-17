@@ -9,7 +9,14 @@ import { PodDetailPanel } from '../components/PodDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { StatusBadge } from '../components/StatusBadge';
 import type { Pod } from '../types';
-import { timeAgo, matchesResourceNameFilter, formatCpuCores, parseCpuToCores } from '../utils';
+import {
+  timeAgo,
+  matchesResourceNameFilter,
+  formatCpuCores,
+  parseCpuToCores,
+  parseK8sMemoryToGB,
+  parseK8sQuantityToBytes,
+} from '../utils';
 import { getAuthToken } from '../utils/auth';
 import { deletePod, fetchSecretData } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
@@ -54,6 +61,13 @@ const sanitizePodYamlForEdit = (yamlText: string) => {
   } catch {
     return yamlText;
   }
+};
+
+const formatPodMemoryGb = (value?: string | null): string => {
+  if (!value || value === '-') return '-';
+  const gb = parseK8sMemoryToGB(value);
+  if (!Number.isFinite(gb) || gb <= 0) return '-';
+  return `${gb >= 10 ? gb.toFixed(1) : gb.toFixed(2)} GB`;
 };
 
 export const PodsPage = () => {
@@ -266,8 +280,8 @@ export const PodsPage = () => {
       sortKey: 'cpu',
     },
     {
-      header: 'MEMORY(bytes)',
-      accessor: (row: Pod) => row.memory || '-',
+      header: 'MEMORY(GB)',
+      accessor: (row: Pod) => formatPodMemoryGb(row.memory),
       width: '11%',
       sortable: true,
       sortKey: 'memory',
@@ -337,7 +351,7 @@ export const PodsPage = () => {
         return (first.cpu || '').localeCompare(second.cpu || '', undefined, { numeric: true, sensitivity: 'base' }) * factor;
       }
       if (sortState.key === 'memory') {
-        return (first.memory || '').localeCompare(second.memory || '', undefined, { numeric: true, sensitivity: 'base' }) * factor;
+        return (parseK8sQuantityToBytes(first.memory) - parseK8sQuantityToBytes(second.memory)) * factor;
       }
       if (sortState.key === 'controlled_by') return (first.controlled_by || '').localeCompare(second.controlled_by || '') * factor;
       if (sortState.key === 'qos') return (first.qos || '').localeCompare(second.qos || '') * factor;

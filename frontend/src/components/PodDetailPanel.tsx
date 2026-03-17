@@ -7,7 +7,7 @@ import { timeAgo, formatCpuRange, formatCpuCores, parseCpuToCores } from '../uti
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations, DrawerParamToggler } from './drawer';
-import { WorkloadMetricGraphs } from './WorkloadMetricGraphs';
+import { PodMetricGraphs } from './PodMetricGraphs';
 import { createPortForward, usePortForwards } from '../hooks/useKubernetes';
 
 interface PodDetailPanelProps {
@@ -269,7 +269,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
 
           <DrawerTitle>Metrics</DrawerTitle>
           <div className="mb-4">
-            <WorkloadMetricGraphs />
+            <PodMetricGraphs pod={pod} />
           </div>
 
           <DrawerTitle>Containers</DrawerTitle>

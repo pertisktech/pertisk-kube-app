@@ -88,15 +88,19 @@ export const usePods = () => {
   });
 };
 
-export const useWorkloadMetricSeries = () => {
+export const useWorkloadMetricSeries = (durationHours: number = 1) => {
+  const allowedDurations = new Set([1, 2, 4, 24, 48, 168, 720]);
+  const normalizedDuration = allowedDurations.has(durationHours) ? durationHours : 1;
+
   return useQuery({
-    queryKey: ['workload-metric-series'],
+    queryKey: ['workload-metric-series', normalizedDuration],
     queryFn: async () => {
-      const res = await apiFetch('/metrics/workloads/series');
+      const res = await apiFetch(`/metrics/workloads/series?duration_hours=${normalizedDuration}`);
       if (!res.ok) throw new Error('Failed to fetch workload metric series');
       return (await res.json()) as WorkloadMetricSeriesResponse;
     },
     refetchInterval: 15_000,
+    refetchIntervalInBackground: true,
   });
 };
 

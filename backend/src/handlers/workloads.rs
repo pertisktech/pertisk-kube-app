@@ -1,9 +1,10 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, StatusCode},
     response::IntoResponse,
     Json,
 };
+use serde::Deserialize;
 use chrono::Utc;
 use cron::Schedule;
 use kube::{
@@ -20,8 +21,16 @@ use crate::models::*;
 use crate::utils::*;
 use crate::AppState;
 
-const WORKLOAD_METRIC_HISTORY_LIMIT: usize = 120;
+// 1 month at 15s intervals = 172,800 samples (~8.8 MB)
+const WORKLOAD_METRIC_HISTORY_LIMIT: usize = 172_800;
 const WORKLOAD_METRIC_SAMPLE_INTERVAL_SECS: i64 = 15;
+const WORKLOAD_METRIC_DEFAULT_DURATION_SECS: i64 = 3600; // 1 hour
+
+#[derive(Deserialize)]
+pub struct MetricSeriesQuery {
+    /// Duration window in hours. Defaults to 1h.
+    pub duration_hours: Option<f64>,
+}
 
 #[derive(Default)]
 struct WorkloadMetricTotals {
@@ -138,7 +147,10 @@ async fn collect_workload_metric_totals(state: &AppState) -> WorkloadMetricTotal
     totals
 }
 
-pub async fn get_workload_metric_series(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn get_workload_metric_series(
+    State(state): State<AppState>,
+    Query(params): Query<MetricSeriesQuery>,
+) -> impl IntoResponse {
     let now = Utc::now().timestamp();
 
     let should_sample = {
@@ -171,37 +183,45 @@ pub async fn get_workload_metric_series(State(state): State<AppState>) -> impl I
 
     let history = state.workload_metric_history.read().await;
 
+    let duration_secs = params
+        .duration_hours
+        .map(|h| (h * 3600.0) as i64)
+        .unwrap_or(WORKLOAD_METRIC_DEFAULT_DURATION_SECS);
+    let cutoff = now.saturating_sub(duration_secs);
+
+    let windowed: Vec<_> = history.iter().filter(|s| s.timestamp >= cutoff).collect();
+
     let response = WorkloadMetricSeriesResponse {
-        cpu: history
+        cpu: windowed
             .iter()
             .map(|sample| MetricSeriesPoint {
                 timestamp: sample.timestamp,
                 value: sample.cpu,
             })
             .collect(),
-        memory: history
+        memory: windowed
             .iter()
             .map(|sample| MetricSeriesPoint {
                 timestamp: sample.timestamp,
                 value: sample.memory,
             })
             .collect(),
-        network: history
+        network: windowed
             .iter()
             .map(|sample| MetricSeriesPoint {
                 timestamp: sample.timestamp,
                 value: sample.network,
             })
             .collect(),
-        filesystem: history
+        filesystem: windowed
             .iter()
             .map(|sample| MetricSeriesPoint {
                 timestamp: sample.timestamp,
                 value: sample.filesystem,
             })
             .collect(),
-        network_available: history.iter().any(|sample| sample.network_available),
-        filesystem_available: history.iter().any(|sample| sample.filesystem_available),
+        network_available: windowed.iter().any(|sample| sample.network_available),
+        filesystem_available: windowed.iter().any(|sample| sample.filesystem_available),
     };
 
     (StatusCode::OK, Json(response)).into_response()
