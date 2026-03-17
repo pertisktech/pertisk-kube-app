@@ -1,11 +1,13 @@
 import { Pencil, Trash2 } from './Icons';
-import type { Job } from '../types';
+import type { Job, Pod } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
+import { PodMetricGraphs } from './PodMetricGraphs';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 
 interface JobDetailPanelProps {
   job: Job;
+  podForMetrics?: Pod | null;
   onClose: () => void;
   onOpenYamlEditor?: (job: Job) => void;
   onDelete?: (namespace: string, name: string) => Promise<void>;
@@ -19,7 +21,7 @@ const getStatusTextClass = (status: string) => {
   return 'text-text-secondary';
 };
 
-export const JobDetailPanel = ({ job, onClose, onOpenYamlEditor, onDelete }: JobDetailPanelProps) => (
+export const JobDetailPanel = ({ job, podForMetrics, onClose, onOpenYamlEditor, onDelete }: JobDetailPanelProps) => (
   <ResourceDetailPanelLayout
     title={job.name}
     status={job.status ?? undefined}
@@ -43,6 +45,16 @@ export const JobDetailPanel = ({ job, onClose, onOpenYamlEditor, onDelete }: Job
     <DrawerItem name="Completions">{job.completions ?? '-'}</DrawerItem>
     <DrawerItem name="Duration">{job.duration ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(job.age)}</DrawerItem>
+
+    <DrawerTitle>Metrics</DrawerTitle>
+    <div className="mb-4">
+      {podForMetrics ? (
+        <PodMetricGraphs pod={podForMetrics} />
+      ) : (
+        <div className="text-sm text-text-secondary">No pod metrics available for this Job yet.</div>
+      )}
+    </div>
+
     <DrawerLabelsAnnotations labels={job.labels} annotations={job.annotations} />
   </ResourceDetailPanelLayout>
 );

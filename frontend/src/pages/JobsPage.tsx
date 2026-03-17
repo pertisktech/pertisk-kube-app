@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { Trash2 } from '../components/Icons';
 import { useRealtimeJobs } from '../hooks/useRealtimeResources';
+import { useRealtimePods } from '../hooks/useRealtimePods';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, JobDetailPanel, ConfirmDialog } from '../components';
 import { StatusBadge } from '../components/StatusBadge';
-import type { Job } from '../types';
+import type { Job, Pod } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { deleteJob } from '../hooks/useKubernetes';
@@ -48,6 +49,7 @@ const sanitizeJobYamlForEdit = (yamlText: string) => {
 
 export const JobsPage = () => {
   const { data, isLoading, error } = useRealtimeJobs();
+  const { data: pods } = useRealtimePods<Pod>({ enabled: true });
   const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -237,6 +239,27 @@ export const JobsPage = () => {
     }) as (Job & { id: string })[];
   }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
+  const selectedJobPod = useMemo(() => {
+    if (!selectedJob) return null;
+    const owner = `Job/${selectedJob.name}`;
+
+    const relatedPods = (pods || []).filter(
+      (pod) => pod.namespace === selectedJob.namespace && pod.controlled_by === owner
+    );
+
+    if (relatedPods.length === 0) return null;
+
+    return [...relatedPods].sort((first, second) => {
+      const firstHasMetrics = Number(first.cpu_usage_percent != null) + Number(first.memory_usage_percent != null);
+      const secondHasMetrics = Number(second.cpu_usage_percent != null) + Number(second.memory_usage_percent != null);
+      if (firstHasMetrics !== secondHasMetrics) return secondHasMetrics - firstHasMetrics;
+
+      const firstTime = Date.parse(first.created || first.age || '');
+      const secondTime = Date.parse(second.created || second.age || '');
+      return (Number.isFinite(secondTime) ? secondTime : 0) - (Number.isFinite(firstTime) ? firstTime : 0);
+    })[0];
+  }, [pods, selectedJob]);
+
   return (
     <div className="space-y-4">
       <div>
@@ -274,6 +297,7 @@ export const JobsPage = () => {
           />
           <JobDetailPanel
             job={selectedJob}
+            podForMetrics={selectedJobPod}
             onClose={() => setPanelOpen(false)}
             onOpenYamlEditor={handleOpenYamlEditorFromPanel}
             onDelete={handleDeleteSingle}
