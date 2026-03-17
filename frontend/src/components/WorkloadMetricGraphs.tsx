@@ -84,6 +84,10 @@ export const WorkloadMetricGraphs = () => {
   const { data, isLoading, error } = useWorkloadMetricSeries(durationHours);
   const selectedRangeLabel = useMemo(() => getDurationLabel(durationHours), [durationHours]);
 
+  const tabUnavailable =
+    (activeTab === 'Network' && data && !data.network_available) ||
+    (activeTab === 'Filesystem' && data && !data.filesystem_available);
+
   const chartPayload = useMemo(() => {
     if (activeTab === 'CPU') {
       const series = toSeriesData(data?.cpu ?? [], durationHours);
@@ -217,8 +221,12 @@ export const WorkloadMetricGraphs = () => {
       <div className="mb-2 text-[11px] text-text-secondary">
         Showing: now-{selectedRangeLabel} to now (realtime)
       </div>
-      {noSeries ? (
-        <div className="h-52 flex items-center justify-center text-sm text-text-secondary">Waiting for workload metric samples...</div>
+      {noSeries || tabUnavailable ? (
+        <div className="h-52 flex items-center justify-center text-sm text-text-secondary">
+          {tabUnavailable
+            ? `${activeTab} metrics are not available from this cluster's metrics provider.`
+            : 'Waiting for workload metric samples...'}
+        </div>
       ) : (
         <div className="h-52">
           <Line data={lineData} options={options} />
