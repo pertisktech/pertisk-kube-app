@@ -1,111 +1,155 @@
-/**
- * Central icon exports using react-iconsax-vite (Iconsax).
- * Wraps VsxIcon with a Lucide-compatible API (size, className, color).
- * Icons without an Iconsax mapping are re-exported from lucide-react.
- * @see https://react-iconsax-vite-preview.vercel.app/
- */
-
 import React from 'react';
-import { VsxIcon } from 'react-iconsax-vite';
+import {
+  AdjustmentsHorizontalIcon,
+  ArchiveBoxIcon,
+  ArrowLongDownIcon,
+  ArrowLongUpIcon,
+  ArrowPathIcon,
+  ArrowTopRightOnSquareIcon,
+  ArrowTrendingUpIcon,
+  ArrowUpTrayIcon,
+  ArrowUturnLeftIcon,
+  ArrowsPointingInIcon,
+  ArrowsPointingOutIcon,
+  ArrowsRightLeftIcon,
+  ArrowsUpDownIcon,
+  Bars3Icon,
+  BellIcon,
+  BriefcaseIcon,
+  ChartBarSquareIcon,
+  CheckCircleIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronUpIcon,
+  CircleStackIcon,
+  ClockIcon,
+  Cog6ToothIcon,
+  CommandLineIcon,
+  ComputerDesktopIcon,
+  CodeBracketSquareIcon,
+  CpuChipIcon,
+  CubeIcon,
+  CubeTransparentIcon,
+  DocumentDuplicateIcon,
+  DocumentTextIcon,
+  ExclamationCircleIcon,
+  ExclamationTriangleIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  FlagIcon,
+  GlobeAltIcon,
+  KeyIcon,
+  LinkIcon,
+  LockClosedIcon,
+  LockOpenIcon,
+  MinusIcon,
+  MoonIcon,
+  PauseIcon,
+  PencilSquareIcon,
+  PlayIcon,
+  PlusIcon,
+  ServerStackIcon,
+  ShareIcon,
+  ShieldCheckIcon,
+  Squares2X2Icon,
+  StarIcon,
+  SunIcon,
+  TrashIcon,
+  XCircleIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline';
 import * as Lucide from 'lucide-react';
 
-/** Accepts any icon-like component (Iconsax wrappers or Lucide re-exports). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type IconComponent = React.ComponentType<any>;
 
-type VsxProps = {
+type IconProps = React.SVGProps<SVGSVGElement> & {
   size?: number;
-  className?: string;
-  color?: string;
-  type?: 'linear' | 'outline' | 'bold' | 'bulk' | 'broken' | 'twotone';
-  strokeWidth?: number;
-  [key: string]: unknown;
 };
 
-function icon(iconName: string) {
-  return function VsxIconWrapper({ size = 24, className, color = 'currentColor', type = 'linear', strokeWidth: _ }: VsxProps) {
+function icon(Component: React.ComponentType<React.SVGProps<SVGSVGElement>>) {
+  return function HeroIconWrapper({ size = 24, className, color = 'currentColor', style, ...props }: IconProps) {
     return (
-      <VsxIcon
-        iconName={iconName}
-        size={size}
-        color={color}
-        type={type}
+      <Component
+        width={size}
+        height={size}
         className={className}
+        style={{ color, ...style }}
+        {...props}
       />
     );
   };
 }
 
-// ——— Iconsax (react-iconsax-vite) ———
-export const Trash2 = icon('Trash');
-export const Pencil = icon('Edit2');
-export const X = icon('CloseCircle');
-export const Loader = icon('Refresh');
-export const ChevronDown = icon('ArrowDown2');
-export const ChevronUp = icon('ArrowUp2');
-export const ChevronRight = icon('ArrowRight3');
-export const ChevronLeft = icon('ArrowLeft3');
-export const ArrowUp = icon('ArrowUp');
-export const ArrowDown = icon('ArrowDown');
-export const ArrowUpDown = icon('Sort');
-export const CheckCircle = icon('TickCircle');
-export const XCircle = icon('Danger');
-export const AlertCircle = icon('Warning2');
-export const AlertTriangle = icon('Warning2');
-export const Layers = icon('Layer');
-export const Clock = icon('Clock');
-export const RotateCcw = icon('RotateLeft');
-export const Eye = icon('Eye');
-export const EyeOff = icon('EyeSlash');
-export const Upload = icon('Import');
-export const Moon = icon('Moon');
-export const Sun = icon('Sun');
-export const Shield = icon('Shield');
-export const Star = icon('Star');
-export const ExternalLink = icon('Export');
-export const FileText = icon('DocumentText');
-export const Lock = icon('Lock');
-export const Unlock = icon('Unlock');
-export const Terminal = icon('Code');
-export const ScrollText = icon('DocumentText');
-export const Cable = icon('Link');
-export const LayoutGrid = icon('Grid3');
-export const Menu = icon('HambergerMenu');
-export const Maximize2 = icon('Maximize2');
-export const Minimize2 = icon('Minimize2');
-export const RefreshCw = icon('Refresh');
-export const Box = icon('Box');
-export const Database = icon('Box');
-export const HardDrive = icon('Data');
-export const Monitor = icon('Monitor');
-export const Cpu = icon('Cpu');
-export const Archive = icon('Archive');
-export const Copy = icon('Copy');
-export const RotateCw = icon('RotateRight');
-export const Boxes = icon('Box1');
-export const Settings = icon('Setting');
-export const Globe = icon('Global');
-export const KeyRound = icon('Key');
-export const Gauge = icon('Activity');
-export const Flag = icon('Flag');
-export const Timer = icon('Timer');
-export const SlidersHorizontal = icon('SliderHorizontal');
-export const Bell = icon('Notification');
-export const LayoutDashboard = icon('Monitor');
-export const Network = icon('Routing2');
-export const Server = icon('Monitor');
-export const Plus = icon('Add');
-export const TrendingUp = icon('TrendUp');
-export const Check = icon('Check');
-export const Minus = icon('Minus');
+export const Trash2 = icon(TrashIcon);
+export const Pencil = icon(PencilSquareIcon);
+export const X = icon(XMarkIcon);
+export const Loader = icon(ArrowPathIcon);
+export const ChevronDown = icon(ChevronDownIcon);
+export const ChevronUp = icon(ChevronUpIcon);
+export const ChevronRight = icon(ChevronRightIcon);
+export const ChevronLeft = icon(ChevronLeftIcon);
+export const ArrowUp = icon(ArrowLongUpIcon);
+export const ArrowDown = icon(ArrowLongDownIcon);
+export const ArrowUpDown = icon(ArrowsUpDownIcon);
+export const CheckCircle = icon(CheckCircleIcon);
+export const XCircle = icon(XCircleIcon);
+export const AlertCircle = icon(ExclamationCircleIcon);
+export const AlertTriangle = icon(ExclamationTriangleIcon);
+export const Layers = icon(Squares2X2Icon);
+export const Clock = icon(ClockIcon);
+export const RotateCcw = icon(ArrowUturnLeftIcon);
+export const Eye = icon(EyeIcon);
+export const EyeOff = icon(EyeSlashIcon);
+export const Upload = icon(ArrowUpTrayIcon);
+export const Moon = icon(MoonIcon);
+export const Sun = icon(SunIcon);
+export const Shield = icon(ShieldCheckIcon);
+export const Star = icon(StarIcon);
+export const ExternalLink = icon(ArrowTopRightOnSquareIcon);
+export const FileText = icon(DocumentTextIcon);
+export const Lock = icon(LockClosedIcon);
+export const Unlock = icon(LockOpenIcon);
+export const Terminal = icon(CommandLineIcon);
+export const ScrollText = icon(DocumentTextIcon);
+export const Cable = icon(LinkIcon);
+export const LayoutGrid = icon(Squares2X2Icon);
+export const Menu = icon(Bars3Icon);
+export const Maximize2 = icon(ArrowsPointingOutIcon);
+export const Minimize2 = icon(ArrowsPointingInIcon);
+export const RefreshCw = icon(ArrowPathIcon);
+export const Box = icon(CubeIcon);
+export const Database = icon(CircleStackIcon);
+export const HardDrive = icon(ServerStackIcon);
+export const Monitor = icon(ComputerDesktopIcon);
+export const Cpu = icon(CpuChipIcon);
+export const Archive = icon(ArchiveBoxIcon);
+export const Copy = icon(DocumentDuplicateIcon);
+export const RotateCw = icon(ArrowPathIcon);
+export const Boxes = icon(CubeTransparentIcon);
+export const Settings = icon(Cog6ToothIcon);
+export const Globe = icon(GlobeAltIcon);
+export const KeyRound = icon(KeyIcon);
+export const Gauge = icon(ChartBarSquareIcon);
+export const Flag = icon(FlagIcon);
+export const Timer = Lucide.Timer;
+export const SlidersHorizontal = icon(AdjustmentsHorizontalIcon);
+export const Bell = icon(BellIcon);
+export const LayoutDashboard = icon(Squares2X2Icon);
+export const Network = icon(ArrowsRightLeftIcon);
+export const Server = icon(ServerStackIcon);
+export const Plus = icon(PlusIcon);
+export const TrendingUp = icon(ArrowTrendingUpIcon);
+export const Check = icon(CheckIcon);
+export const Minus = icon(MinusIcon);
 
-// ——— Lucide re-exports (no Iconsax equivalent or keep for compatibility) ———
 export const Droplet = Lucide.Droplet;
 export const Circle = Lucide.Circle;
-export const Briefcase = Lucide.Briefcase;
-export const FileCode = Lucide.FileCode;
+export const Briefcase = icon(BriefcaseIcon);
+export const FileCode = icon(CodeBracketSquareIcon);
 export const Square = Lucide.Square;
 export const Dot = Lucide.Dot;
-export const Share2 = Lucide.Share2;
-export const Pause = Lucide.Pause;
-export const Play = Lucide.Play;
+export const Share2 = icon(ShareIcon);
+export const Pause = icon(PauseIcon);
+export const Play = icon(PlayIcon);

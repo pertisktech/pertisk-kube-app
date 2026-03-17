@@ -11,6 +11,7 @@
    },
    "dependencies": {
       "@astronautlabs/jsonpath": "^1.1.2",
+      "@heroicons/react": "^2.2.0",
       "@improbable-eng/grpc-web": "^0.15.0",
       "@tanstack/react-query": "^5.60.0",
       "@xterm/addon-fit": "^0.11.0",
@@ -27,7 +28,6 @@
       "react-ace": "^14.0.1",
       "react-chartjs-2": "^5.3.1",
       "react-dom": "^18.3.1",
-      "react-iconsax-vite": "^1.8.0",
       "react-markdown": "^10.1.0",
       "react-router-dom": "^6.28.0",
       "recharts": "^3.7.0",
