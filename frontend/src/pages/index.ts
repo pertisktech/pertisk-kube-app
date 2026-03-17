@@ -1,4 +1,5 @@
 export { Dashboard } from './Dashboard';
+export { ClusterPage } from './ClusterPage';
 export { NamespacesPage } from './NamespacesPage';
 export { NodesPage } from './NodesPage';
 export { PodsPage } from './PodsPage';

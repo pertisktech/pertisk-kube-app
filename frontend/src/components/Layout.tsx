@@ -16,6 +16,7 @@ import {
   X,
   Sun,
   LayoutDashboard,
+  Server,
   Network,
   Database,
   Archive,
@@ -51,6 +52,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
+  { label: 'Cluster', path: '/cluster', icon: Server },
   { label: 'Nodes', path: '/nodes', icon: Network },
   { label: 'Resource Map', path: '/resource-map', icon: Share2 },
 ];
@@ -193,6 +195,7 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
 
   // Hide namespace filter on Dashboard, Nodes, Namespaces, Helm Charts, and all Backup pages
   const shouldShowNamespaceFilter = location.pathname !== '/'
+    && location.pathname !== '/cluster'
     && location.pathname !== '/nodes'
     && location.pathname !== '/namespaces'
     && location.pathname !== '/helm/charts'

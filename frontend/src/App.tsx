@@ -7,6 +7,7 @@ import { NamespaceProvider } from './context/NamespaceContext';
 import { clearAuth, getAuthUser, getTokenExpiry, isAuthenticated, refreshToken } from './utils/auth';
 
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const ClusterPage = lazy(() => import('./pages/ClusterPage').then(m => ({ default: m.ClusterPage })));
 const NamespacesPage = lazy(() => import('./pages/NamespacesPage').then(m => ({ default: m.NamespacesPage })));
 const NodesPage = lazy(() => import('./pages/NodesPage').then(m => ({ default: m.NodesPage })));
 const PodsPage = lazy(() => import('./pages/PodsPage').then(m => ({ default: m.PodsPage })));
@@ -135,6 +136,7 @@ export const App = () => {
           <Routes>
             <Route element={<Layout username={authUser} onLogout={handleLogout} />}>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/cluster" element={<ClusterPage />} />
           <Route path="/terminal" element={null} />
           <Route path="/workloads" element={<WorkloadsOverviewPage />} />
           <Route path="/namespaces" element={<NamespacesPage />} />
