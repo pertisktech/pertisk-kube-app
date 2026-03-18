@@ -10,11 +10,16 @@ import { useRealtimePods } from '../hooks/useRealtimePods';
 import { NodeMetricGraphs } from '../components/NodeMetricGraphs';
 import {
   AlertCircle,
+  AlertTriangle,
   Box,
   CheckCircle,
   Cpu,
   HardDrive,
+  Layers,
   Loader,
+  Monitor,
+  Network,
+  Server,
 } from '../components/Icons';
 import { formatCpuRange, parseCpuToCores, parseK8sMemoryToGB } from '../utils';
 import type { Pod } from '../types';
@@ -264,95 +269,157 @@ export const ClusterPage = () => {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {/* ── Cluster Info ── */}
         <Card title="Cluster Info">
-          <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <p className="text-text-secondary mb-1">Cluster Name</p>
-                <p className="font-semibold text-text">{dashboard?.cluster_name || 'kubernetes-cluster'}</p>
+          <div className="flex flex-col gap-4 text-sm">
+
+            {/* Identity block */}
+            <div className="flex items-start gap-3 rounded-xl border border-border bg-bg px-4 py-3">
+              <div className="flex-shrink-0 rounded-lg bg-primary/10 p-2">
+                <Server size={20} className="text-primary" />
               </div>
-              <div>
-                <p className="text-text-secondary mb-1">Kubernetes</p>
-                <p className="font-semibold text-text">{dashboard?.kube_version || 'Unknown'}</p>
-              </div>
-              <div className="sm:col-span-2">
-                <p className="text-text-secondary mb-1">API Endpoint</p>
-                <p className="font-mono text-xs text-text break-all">{dashboard?.api_endpoint || 'Unknown'}</p>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-text text-base leading-tight truncate">
+                  {dashboard?.cluster_name || 'kubernetes-cluster'}
+                </p>
+                <span className="inline-flex items-center gap-1 mt-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-mono text-text-secondary">
+                  <Layers size={10} className="text-primary" />
+                  {dashboard?.kube_version || 'Unknown'}
+                </span>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-border">
-              <div className="rounded-lg border border-border bg-bg px-3 py-3">
-                <p className="text-xs text-text-secondary">Nodes</p>
-                <p className="text-lg font-semibold text-text">{nodes?.length ?? 0}</p>
+            {/* API Endpoint */}
+            <div className="rounded-xl border border-border bg-bg px-4 py-3">
+              <p className="text-[11px] text-text-secondary uppercase tracking-wide mb-1.5">API Endpoint</p>
+              <p className="font-mono text-xs text-text break-all leading-relaxed">
+                {dashboard?.api_endpoint || 'Unknown'}
+              </p>
+            </div>
+
+            {/* Stat tiles */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="flex flex-col items-center rounded-xl border border-border bg-bg px-3 py-3 gap-1">
+                <Monitor size={16} className="text-primary mb-0.5" />
+                <p className="text-xl font-bold text-text leading-none">{nodes?.length ?? 0}</p>
+                <p className="text-[11px] text-text-secondary">Nodes</p>
               </div>
-              <div className="rounded-lg border border-border bg-bg px-3 py-3">
-                <p className="text-xs text-text-secondary">Namespaces</p>
-                <p className="text-lg font-semibold text-text">{dashboard?.namespaces ?? 0}</p>
+              <div className="flex flex-col items-center rounded-xl border border-border bg-bg px-3 py-3 gap-1">
+                <Layers size={16} className="text-[var(--color-dashboard-metric-secondary)] mb-0.5" />
+                <p className="text-xl font-bold text-text leading-none">{dashboard?.namespaces ?? 0}</p>
+                <p className="text-[11px] text-text-secondary">Namespaces</p>
               </div>
-              <div className="rounded-lg border border-border bg-bg px-3 py-3">
-                <p className="text-xs text-text-secondary">Pods</p>
-                <p className="text-lg font-semibold text-text">{dashboard?.pods ?? 0}</p>
+              <div className="flex flex-col items-center rounded-xl border border-border bg-bg px-3 py-3 gap-1">
+                <Box size={16} className="text-[var(--color-dashboard-metric-tertiary)] mb-0.5" />
+                <p className="text-xl font-bold text-text leading-none">{dashboard?.pods ?? 0}</p>
+                <p className="text-[11px] text-text-secondary">Pods</p>
               </div>
-              <div className="rounded-lg border border-border bg-bg px-3 py-3">
-                <p className="text-xs text-text-secondary">Events</p>
-                <p className="text-lg font-semibold text-text">{dashboard?.events ?? 0}</p>
+              <div className="flex flex-col items-center rounded-xl border border-border bg-bg px-3 py-3 gap-1">
+                <AlertTriangle size={16} className="text-[var(--color-icon-warning)] mb-0.5" />
+                <p className="text-xl font-bold text-text leading-none">{dashboard?.events ?? 0}</p>
+                <p className="text-[11px] text-text-secondary">Events</p>
               </div>
             </div>
 
           </div>
         </Card>
 
+        {/* ── Kubelet & Runtime ── */}
         <Card title="Kubelet & Runtime">
-          <div className="space-y-4 text-sm">
-            <div className="flex items-center justify-between rounded-lg border border-border bg-bg px-4 py-3">
-              <div>
-                <p className="text-text-secondary text-xs">Node Readiness</p>
-                <p className="font-semibold text-text">{readyNodeCount} / {nodes?.length ?? 0} Ready</p>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                {readyNodeCount === (nodes?.length ?? 0) ? (
-                  <CheckCircle size={18} className="text-[var(--color-icon-success)]" />
-                ) : (
-                  <AlertCircle size={18} className="text-[var(--color-icon-warning)]" />
-                )}
-              </div>
-            </div>
+          <div className="flex flex-col gap-4 text-sm">
 
-            <div>
-              <p className="text-text-secondary text-xs mb-2">Kubelet Versions</p>
-              <div className="space-y-2">
-                {kubeletVersions.slice(0, 4).map(([version, count]) => (
-                  <div key={version} className="flex items-center justify-between rounded-lg border border-border bg-bg px-3 py-2">
-                    <span className="font-mono text-xs text-text">{version}</span>
-                    <span className="text-text-secondary">{count} node{count === 1 ? '' : 's'}</span>
+            {/* Node readiness — progress bar */}
+            {(() => {
+              const total = nodes?.length ?? 0;
+              const pct = total > 0 ? Math.round((readyNodeCount / total) * 100) : 0;
+              const allReady = readyNodeCount === total && total > 0;
+              return (
+                <div className="rounded-xl border border-border bg-bg px-4 py-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      {allReady
+                        ? <CheckCircle size={15} className="text-[var(--color-icon-success)]" />
+                        : <AlertCircle size={15} className="text-[var(--color-icon-warning)]" />
+                      }
+                      <span className="text-[11px] text-text-secondary uppercase tracking-wide">Node Readiness</span>
+                    </div>
+                    <span className="font-semibold text-text text-xs">
+                      {readyNodeCount} / {total} ready
+                    </span>
                   </div>
-                ))}
+                  <div className="h-2 rounded-full bg-border overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${pct}%`,
+                        background: allReady ? 'var(--color-icon-success)' : 'var(--color-icon-warning)',
+                      }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-right text-[11px] text-text-secondary">{pct}%</p>
+                </div>
+              );
+            })()}
+
+            {/* Kubelet versions + Container runtime side by side */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Cpu size={13} className="text-primary" />
+                  <p className="text-[11px] text-text-secondary uppercase tracking-wide">Kubelet</p>
+                </div>
+                <div className="space-y-1.5">
+                  {kubeletVersions.slice(0, 4).map(([version, count]) => (
+                    <div key={version} className="flex items-center justify-between rounded-lg border border-border bg-bg px-3 py-2">
+                      <span className="font-mono text-[11px] text-text truncate pr-2">{version}</span>
+                      <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-1.5 py-0.5 leading-none">
+                        {count}n
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Network size={13} className="text-[var(--color-dashboard-metric-secondary)]" />
+                  <p className="text-[11px] text-text-secondary uppercase tracking-wide">Runtime</p>
+                </div>
+                <div className="space-y-1.5">
+                  {containerRuntimes.slice(0, 4).map(([runtime, count]) => (
+                    <div key={runtime} className="flex items-center justify-between rounded-lg border border-border bg-bg px-3 py-2">
+                      <span className="font-mono text-[11px] text-text truncate pr-2">{runtime}</span>
+                      <span className="shrink-0 rounded-full bg-[var(--color-dashboard-metric-secondary)]/10 text-[var(--color-dashboard-metric-secondary)] text-[10px] font-semibold px-1.5 py-0.5 leading-none">
+                        {count}n
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="text-text-secondary text-xs mb-2">Container Runtime</p>
-                <div className="space-y-2">
-                  {containerRuntimes.slice(0, 3).map(([runtime, count]) => (
-                    <div key={runtime} className="flex items-center justify-between rounded-lg border border-border bg-bg px-3 py-2">
-                      <span className="font-mono text-xs text-text truncate pr-3">{runtime}</span>
-                      <span className="text-text-secondary shrink-0">{count}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="text-text-secondary text-xs mb-2">Roles</p>
-                <div className="space-y-2">
-                  {roleSummary.slice(0, 3).map(([role, count]) => (
-                    <div key={role} className="flex items-center justify-between rounded-lg border border-border bg-bg px-3 py-2">
-                      <span className="text-text">{role}</span>
-                      <span className="text-text-secondary">{count}</span>
-                    </div>
-                  ))}
-                </div>
+            {/* Role badges */}
+            <div>
+              <p className="text-[11px] text-text-secondary uppercase tracking-wide mb-2">Node Roles</p>
+              <div className="flex flex-wrap gap-2">
+                {roleSummary.map(([role, count]) => (
+                  <span
+                    key={role}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-bg px-3 py-1 text-xs text-text"
+                  >
+                    <span
+                      className="inline-block w-1.5 h-1.5 rounded-full"
+                      style={{
+                        background: role === 'control-plane' || role === 'master'
+                          ? 'var(--color-primary)'
+                          : role === 'worker'
+                            ? 'var(--color-dashboard-metric-secondary)'
+                            : 'var(--color-text-secondary)',
+                      }}
+                    />
+                    {role}
+                    <span className="text-text-secondary ml-0.5">×{count}</span>
+                  </span>
+                ))}
               </div>
             </div>
 
