@@ -55,6 +55,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Cluster', path: '/cluster', icon: Server },
   { label: 'Nodes', path: '/nodes', icon: Network },
   { label: 'Resource Map', path: '/resource-map', icon: Share2 },
+  { label: 'Desktop', path: '/desktop/settings', icon: Settings },
 ];
 
 const NAMESPACE_ITEM: NavItem = {

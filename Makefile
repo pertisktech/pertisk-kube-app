@@ -19,7 +19,7 @@ HELM_NAMESPACE ?= pertisk-rproxy
 APP_PORT ?= 8091
 GRPC_PORT ?= 50051
 
-.PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run-monolith run-ingress-k8s
+.PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run run-desktop build-desktop run-monolith run-ingress-k8s
 .PHONY: docker-build docker-build-amd64 docker-build-arm64 docker-build-multi docker-push docker-push-multi
 .PHONY: docker-base-build docker-base-push docker-base-push-multi
 .PHONY: helm-install helm-upgrade helm-uninstall helm-template helm-deploy port-forward ingress-hosts lb-url
@@ -53,6 +53,15 @@ fmt:
 
 build-backend:
 	cargo build -p pertisk-kube-backend
+
+# Desktop run target (Tauri + backend sidecar)
+run: run-desktop
+
+build-desktop: build-backend
+	cd frontend && npm install && npm run tauri:build
+
+run-desktop: build-backend frontend-install
+	cd frontend && PERTISK_BACKEND_BIN="$(CURDIR)/target/debug/pertisk-kube-backend" npm run tauri:dev
 
 # Build frontend and run backend serving the built SPA on a single port.
 run-monolith: frontend-build

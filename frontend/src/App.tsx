@@ -56,6 +56,7 @@ const ClusterRolesPage = lazy(() => import('./pages/ClusterRolesPage').then(m =>
 const ClusterRoleBindingsPage = lazy(() => import('./pages/ClusterRoleBindingsPage').then(m => ({ default: m.ClusterRoleBindingsPage })));
 const CustomResourcesPage = lazy(() => import('./pages/CustomResourcesPage').then(m => ({ default: m.CustomResourcesPage })));
 const ResourceMapPage = lazy(() => import('./pages/ResourceMapPage').then(m => ({ default: m.ResourceMapPage })));
+const DesktopSettingsPage = lazy(() => import('./pages/DesktopSettingsPage').then(m => ({ default: m.DesktopSettingsPage })));
 
 
 export const App = () => {
@@ -187,6 +188,7 @@ export const App = () => {
           <Route path="/events" element={<EventsPage />} />
           <Route path="/crds/:crdName" element={<CustomResourcesPage />} />
           <Route path="/resource-map" element={<ResourceMapPage />} />
+          <Route path="/desktop/settings" element={<DesktopSettingsPage />} />
         </Route>
       </Routes>
       </Router>

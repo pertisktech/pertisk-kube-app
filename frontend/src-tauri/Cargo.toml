@@ -1,0 +1,19 @@
+[package]
+name = "ptkublet-desktop"
+version = "0.1.0"
+description = "PTKublet desktop shell"
+authors = ["Pertisk Tech"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+
+[workspace]

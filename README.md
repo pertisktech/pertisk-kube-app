@@ -173,6 +173,25 @@ make dev
 - Backend hot reload uses `cargo watch` (install with `make tools` if needed)
 - Frontend hot reload uses Vite dev server on `http://localhost:3000`
 
+### Desktop (Tauri + Rust Backend Sidecar)
+
+Tauri shell files live in `frontend/src-tauri`.
+
+```bash
+# from workspace root
+make run-desktop
+# alias
+make run
+```
+
+Notes:
+- The desktop shell starts the existing Rust backend binary as a local sidecar on `http://127.0.0.1:8091`.
+- By default it looks for `../target/debug/pertisk-kube-backend` and then `../target/release/pertisk-kube-backend` relative to `frontend/src-tauri`.
+- You can override the backend path with `PERTISK_BACKEND_BIN=/absolute/path/to/pertisk-kube-backend`.
+- Desktop sidecar config is persisted locally and editable from the UI at `/desktop/settings`.
+- Sidecar lifecycle hardening is enabled: startup `/api/health` probe, auto-restart on crash, and timed shutdown with forced kill fallback.
+- Set `PORT` before launching Tauri if you need a non-default backend port.
+
 ### Local run with Kubernetes (k8s kubeconfig)
 
 ```bash
