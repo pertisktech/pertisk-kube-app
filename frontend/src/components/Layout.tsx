@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useNamespace } from '../context/NamespaceContext';
 import { useRealtimeNamespaces, useRealtimeCrds } from '../hooks/useRealtimeResources';
 import { useNamespaces } from '../hooks/useKubernetes';
@@ -42,6 +43,14 @@ import {
 } from './Icons';
 import { cn } from '../utils';
 import { useTheme } from '../context/ThemeContext';
+import {
+  type DesktopKubeconfigCluster,
+  getDesktopSidecarConfig,
+  listDesktopKubeconfigClusters,
+  listDesktopKubeconfigCandidates,
+  saveDesktopSidecarConfig,
+} from '../utils/tauriDesktop';
+import { isDesktopRuntime } from '../utils/desktopBridge';
 
 
 interface NavItem {
@@ -134,22 +143,36 @@ const BACKUP_ITEMS: NavItem[] = [
   { label: 'Backups', path: '/backup/backups', icon: Archive },
 ];
 
-interface LayoutProps {
-  username?: string;
-  onLogout: () => void;
-}
-
 interface BreadcrumbItem {
   label: string;
   path?: string;
   icon?: IconComponent;
 }
 
-export const Layout = ({ username, onLogout }: LayoutProps) => {
+function kubeconfigDisplayName(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return 'Default kubeconfig';
+  const segments = trimmed.split('/').filter(Boolean);
+  return segments.length ? segments[segments.length - 1] : trimmed;
+}
+
+export const Layout = () => {
+  const desktopMode = isDesktopRuntime();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNamespaceMenu, setShowNamespaceMenu] = useState(false);
+  const [showKubeconfigModal, setShowKubeconfigModal] = useState(false);
+  const [kubeconfigPath, setKubeconfigPath] = useState('');
+  const [kubeContext, setKubeContext] = useState('');
+  const [kubeconfigCandidates, setKubeconfigCandidates] = useState<string[]>([]);
+  const [kubeconfigInput, setKubeconfigInput] = useState('');
+  const [clusterSearch, setClusterSearch] = useState('');
+  const [kubeClusters, setKubeClusters] = useState<DesktopKubeconfigCluster[]>([]);
+  const [selectedClusterContext, setSelectedClusterContext] = useState('');
+  const [kubeconfigLoading, setKubeconfigLoading] = useState(false);
+  const [kubeconfigSwitching, setKubeconfigSwitching] = useState(false);
+  const [kubeconfigInitialized, setKubeconfigInitialized] = useState(false);
+  const [startupClusterSelectionDone, setStartupClusterSelectionDone] = useState(false);
   const [workloadsOpen, setWorkloadsOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [storageOpen, setStorageOpen] = useState(false);
@@ -187,7 +210,6 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
       .sort((a, b) => a.group.localeCompare(b.group));
   }, [crds]);
 
-  const userMenuRef = useRef<HTMLDivElement>(null);
   const namespaceMenuRef = useRef<HTMLDivElement>(null);
   const theme = useTheme();
   const { selectedNamespaces, setSelectedNamespaces, toggleNamespace, clearNamespaces, namespaces, setNamespaces, resourceNameFilter, setResourceNameFilter } = useNamespace();
@@ -208,9 +230,6 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setShowUserMenu(false);
-      }
       if (namespaceMenuRef.current && !namespaceMenuRef.current.contains(event.target as Node)) {
         setShowNamespaceMenu(false);
       }
@@ -219,6 +238,127 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!desktopMode) return;
+
+    let cancelled = false;
+    const loadKubeconfigInfo = async () => {
+      setKubeconfigLoading(true);
+      try {
+        const [config, candidates] = await Promise.all([
+          getDesktopSidecarConfig(),
+          listDesktopKubeconfigCandidates(),
+        ]);
+        if (cancelled) return;
+        const currentPath = config.kubeconfigPath ?? '';
+        const currentContext = config.kubeContext ?? '';
+        setKubeconfigPath(currentPath);
+        setKubeContext(currentContext);
+        setKubeconfigInput(currentPath);
+        setSelectedClusterContext(currentContext);
+
+        const merged = new Set(candidates);
+        if (currentPath) merged.add(currentPath);
+        const sortedCandidates = Array.from(merged).sort((a, b) => a.localeCompare(b));
+        setKubeconfigCandidates(sortedCandidates);
+
+        const clusters = await listDesktopKubeconfigClusters(currentPath || null);
+        if (cancelled) return;
+        setKubeClusters(clusters);
+        if (!currentContext) {
+          const currentCluster = clusters.find((item) => item.isCurrent)?.context ?? '';
+          setSelectedClusterContext(currentCluster);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        toast.error(err instanceof Error ? err.message : 'Failed to load kubeconfig options.');
+      } finally {
+        if (!cancelled) {
+          setKubeconfigLoading(false);
+          setKubeconfigInitialized(true);
+        }
+      }
+    };
+
+    void loadKubeconfigInfo();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [desktopMode]);
+
+  const refreshClustersForKubeconfig = async (path: string) => {
+    if (!desktopMode) return;
+    setKubeconfigLoading(true);
+    try {
+      const clusters = await listDesktopKubeconfigClusters(path || null);
+      setKubeClusters(clusters);
+      if (clusters.length === 0) {
+        setSelectedClusterContext('');
+      } else {
+        const currentCluster = clusters.find((item) => item.isCurrent)?.context ?? '';
+        setSelectedClusterContext((prev) => prev || currentCluster);
+      }
+    } catch (err) {
+      setKubeClusters([]);
+      toast.error(err instanceof Error ? err.message : 'Failed to load clusters for kubeconfig.');
+    } finally {
+      setKubeconfigLoading(false);
+    }
+  };
+
+  const applyClusterSelection = async (path: string, context: string) => {
+    if (!desktopMode) return;
+
+    setKubeconfigSwitching(true);
+    try {
+      const current = await getDesktopSidecarConfig();
+      const nextPath = path.trim();
+      const nextContext = context.trim();
+      await saveDesktopSidecarConfig({
+        ...current,
+        kubeconfigPath: nextPath || null,
+        kubeContext: nextContext || null,
+      });
+
+      const candidates = await listDesktopKubeconfigCandidates();
+      const merged = new Set(candidates);
+      if (nextPath) merged.add(nextPath);
+
+      setKubeconfigPath(nextPath);
+      setKubeContext(nextContext);
+      setKubeconfigInput(nextPath);
+      setSelectedClusterContext(nextContext);
+      setKubeconfigCandidates(Array.from(merged).sort((a, b) => a.localeCompare(b)));
+      await refreshClustersForKubeconfig(nextPath);
+      setShowKubeconfigModal(false);
+      setStartupClusterSelectionDone(true);
+      toast.success('Cluster selection applied and sidecar restarted.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to apply cluster selection.');
+    } finally {
+      setKubeconfigSwitching(false);
+    }
+  };
+
+  const filteredClusters = useMemo(() => {
+    const q = clusterSearch.trim().toLowerCase();
+    if (!q) return kubeClusters;
+    return kubeClusters.filter((item) => {
+      const hay = `${item.context} ${item.cluster ?? ''} ${item.namespace ?? ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [clusterSearch, kubeClusters]);
+
+  const mustSelectCluster = desktopMode && kubeconfigInitialized && !startupClusterSelectionDone;
+
+  useEffect(() => {
+    if (mustSelectCluster) {
+      setClusterSearch('');
+      setShowKubeconfigModal(true);
+    }
+  }, [mustSelectCluster]);
 
   useEffect(() => {
     const pathname = location.pathname;
@@ -452,9 +592,141 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
     return [{ label: 'Dashboard', path: '/', icon: LayoutDashboard }] as BreadcrumbItem[];
   })();
 
-  const initial = username ? username.charAt(0).toUpperCase() : 'U';
-
   const effectiveSidebarWidth = sidebarCollapsed ? 72 : sidebarWidthPx;
+
+  const clusterSelectionDialog = (
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 px-4"
+      onClick={() => {
+        if (!mustSelectCluster) {
+          setShowKubeconfigModal(false);
+        }
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Select cluster"
+        className="w-full max-w-3xl rounded-xl border border-border bg-surface shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h3 className="text-base font-semibold text-text">Select Cluster</h3>
+          <button
+            type="button"
+            onClick={() => {
+              if (!mustSelectCluster) {
+                setShowKubeconfigModal(false);
+              }
+            }}
+            className="rounded-md p-1 text-text-secondary hover:bg-hover"
+            disabled={mustSelectCluster}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-4">
+          {mustSelectCluster && (
+            <div className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-text">
+              Select a cluster context to continue to the dashboard.
+            </div>
+          )}
+          <div className="space-y-2">
+            <label htmlFor="modal-kubeconfig-path" className="block text-sm font-medium text-text-secondary">
+              Kubeconfig source
+            </label>
+            <select
+              id="modal-kubeconfig-path"
+              value={kubeconfigInput}
+              onChange={(e) => {
+                const selected = e.target.value;
+                setKubeconfigInput(selected);
+                setSelectedClusterContext('');
+                void refreshClustersForKubeconfig(selected);
+              }}
+              className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+            >
+              <option value="">Default kubeconfig</option>
+              {kubeconfigCandidates.map((candidate) => (
+                <option key={candidate} value={candidate}>{candidate}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="modal-cluster-search" className="block text-sm font-medium text-text-secondary">
+              Search cluster context
+            </label>
+            <input
+              id="modal-cluster-search"
+              value={clusterSearch}
+              onChange={(e) => setClusterSearch(e.target.value)}
+              placeholder="Type context, cluster, namespace..."
+              className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div className="rounded-lg border border-border">
+            <div className="px-3 py-2 text-xs text-text-secondary border-b border-border">
+              Available cluster contexts
+            </div>
+            <div className="max-h-56 overflow-y-auto">
+              {kubeconfigLoading && (
+                <div className="px-3 py-2 text-sm text-text-secondary">Loading contexts...</div>
+              )}
+              {!kubeconfigLoading && filteredClusters.length === 0 && (
+                <div className="px-3 py-2 text-sm text-text-secondary">No cluster contexts found for this kubeconfig.</div>
+              )}
+              {filteredClusters.map((item) => (
+                <button
+                  key={`${item.kubeconfigPath}:${item.context}`}
+                  type="button"
+                  onClick={() => setSelectedClusterContext(item.context)}
+                  className={cn(
+                    'w-full px-3 py-2 text-left text-sm border-t border-border first:border-t-0 hover:bg-hover',
+                    selectedClusterContext === item.context ? 'bg-hover text-primary font-medium' : 'text-text-secondary'
+                  )}
+                  title={item.context}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate">{item.context}</span>
+                    {item.isCurrent && <span className="text-xs text-primary">current</span>}
+                  </div>
+                  <div className="text-xs text-text-secondary truncate">
+                    cluster: {item.cluster ?? '-'}{item.namespace ? ` • ns: ${item.namespace}` : ''}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+          <button
+            type="button"
+            onClick={() => setShowKubeconfigModal(false)}
+            className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-hover"
+            disabled={mustSelectCluster}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={kubeconfigSwitching || !selectedClusterContext}
+            onClick={() => void applyClusterSelection(kubeconfigInput, selectedClusterContext)}
+            className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {kubeconfigSwitching ? 'Switching...' : 'Apply'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (mustSelectCluster) {
+    return <div className="h-screen bg-bg">{clusterSelectionDialog}</div>;
+  }
 
   return (
     <div
@@ -1214,6 +1486,31 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
                 )}
               </div>
             )}
+            {desktopMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  setKubeconfigInput(kubeconfigPath);
+                  setSelectedClusterContext(kubeContext);
+                  setClusterSearch('');
+                  void refreshClustersForKubeconfig(kubeconfigPath);
+                  setShowKubeconfigModal(true);
+                }}
+                disabled={kubeconfigSwitching}
+                className={cn(
+                  'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-sm hover:bg-hover',
+                  showKubeconfigModal ? 'bg-hover' : 'bg-surface',
+                  kubeconfigSwitching && 'opacity-60 cursor-not-allowed'
+                )}
+                title={kubeContext || kubeconfigPath || 'Select cluster'}
+              >
+                <Database size={14} className="flex-shrink-0" />
+                <span className="max-w-52 truncate">
+                  {kubeContext || `Cluster (${kubeconfigDisplayName(kubeconfigPath)})`}
+                </span>
+                <ChevronDown size={14} className="text-text-secondary" />
+              </button>
+            )}
             {theme && (
               <button
                 type="button"
@@ -1226,40 +1523,6 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
               </button>
             )}
 
-            <div ref={userMenuRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setShowUserMenu((previous) => !previous)}
-                className={cn(
-                  'inline-flex items-center gap-2 px-2 py-1.5 rounded-lg border border-border text-sm hover:bg-hover',
-                  showUserMenu ? 'bg-hover' : 'bg-surface'
-                )}
-              >
-                <span className="w-7 h-7 rounded-full bg-primary text-bg font-semibold text-xs inline-flex items-center justify-center">
-                  {initial}
-                </span>
-                <span className="text-text-secondary max-w-28 truncate">{username || 'User'}</span>
-                <ChevronDown
-                  size={14}
-                  className={cn('text-text-secondary transition-transform', showUserMenu && 'rotate-180')}
-                />
-              </button>
-
-              {showUserMenu && (
-                <div className="absolute right-0 mt-1 w-40 bg-surface border border-border rounded-lg p-1 shadow-md z-50">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      onLogout();
-                    }}
-                    className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-hover text-text-secondary"
-                  >
-                    Logout
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
         </header>
 
@@ -1272,6 +1535,8 @@ export const Layout = ({ username, onLogout }: LayoutProps) => {
         {/* Bottom panel — VS Code style tabs for shells, logs, YAML */}
         <BottomPanel />
       </div>
+
+      {desktopMode && showKubeconfigModal && clusterSelectionDialog}
     </div>
   );
 };

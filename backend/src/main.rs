@@ -1,12 +1,11 @@
 use axum::{
     extract::State,
     http::StatusCode,
-    middleware,
     response::IntoResponse,
     routing::{delete, get, post},
     Json, Router,
 };
-use kube::Client;
+use kube::{config::KubeConfigOptions, Client, Config};
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tower_http::{
@@ -26,7 +25,7 @@ pub mod handlers;
 pub mod models;
 pub mod utils;
 
-use auth::{login, refresh_token, require_basic_auth};
+use auth::{login, refresh_token};
 use handlers::{
     backup::*,
     config::*,
@@ -63,7 +62,21 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     // In-cluster config (works in Kubernetes) or falls back to local kubeconfig.
-    let client = Client::try_default().await?;
+    // When KUBE_CONTEXT is set, prefer that context from kubeconfig.
+    let client = if let Ok(context) = env::var("KUBE_CONTEXT") {
+        if context.trim().is_empty() {
+            Client::try_default().await?
+        } else {
+            let options = KubeConfigOptions {
+                context: Some(context),
+                ..Default::default()
+            };
+            let cfg = Config::from_kubeconfig(&options).await?;
+            Client::try_from(cfg)?
+        }
+    } else {
+        Client::try_default().await?
+    };
 
     let username = env::var("USERNAME").unwrap_or_else(|_| "admin".to_string());
     let password = env::var("PASSWORD").unwrap_or_else(|_| "admin".to_string());
@@ -94,12 +107,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/readiness", get(readiness))
         .route("/login", post(login));
 
-    let refresh_api = Router::new()
-        .route("/refresh", post(refresh_token))
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            require_basic_auth,
-        ));
+    let refresh_api = Router::new().route("/refresh", post(refresh_token));
 
     let protected_api = Router::new()
         .route("/dashboard", get(get_dashboard_summary))
@@ -344,11 +352,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/roles", get(list_roles))
         .route("/rolebindings", get(list_role_bindings))
         .route("/clusterroles", get(list_cluster_roles))
-        .route("/clusterrolebindings", get(list_cluster_role_bindings))
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            require_basic_auth,
-        ));
+        .route("/clusterrolebindings", get(list_cluster_role_bindings));
 
     let api = public_api.merge(refresh_api).merge(protected_api);
 

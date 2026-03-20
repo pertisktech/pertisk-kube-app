@@ -3,12 +3,16 @@ import { Card } from '../components/Card';
 import { isDesktopRuntime, setDesktopBackendPort } from '../utils/desktopBridge';
 import {
   getDesktopSidecarConfig,
+  listDesktopKubeconfigCandidates,
   restartDesktopSidecar,
   saveDesktopSidecarConfig,
 } from '../utils/tauriDesktop';
 
 export const DesktopSettingsPage = () => {
   const [backendBin, setBackendBin] = useState('');
+  const [kubeconfigPath, setKubeconfigPath] = useState('');
+  const [kubeContext, setKubeContext] = useState('');
+  const [kubeconfigCandidates, setKubeconfigCandidates] = useState<string[]>([]);
   const [port, setPort] = useState(8091);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -26,7 +30,13 @@ export const DesktopSettingsPage = () => {
         const config = await getDesktopSidecarConfig();
         if (cancelled) return;
         setBackendBin(config.backendBin ?? '');
+        setKubeconfigPath(config.kubeconfigPath ?? '');
+        setKubeContext(config.kubeContext ?? '');
         setPort(config.port || 8091);
+
+        const candidates = await listDesktopKubeconfigCandidates();
+        if (cancelled) return;
+        setKubeconfigCandidates(candidates);
       } catch (err) {
         if (cancelled) return;
         setStatus(err instanceof Error ? err.message : 'Failed to load desktop settings.');
@@ -49,6 +59,8 @@ export const DesktopSettingsPage = () => {
       const normalizedPort = Number.isFinite(port) && port > 0 ? Math.floor(port) : 8091;
       await saveDesktopSidecarConfig({
         backendBin: backendBin.trim() ? backendBin.trim() : null,
+        kubeconfigPath: kubeconfigPath.trim() ? kubeconfigPath.trim() : null,
+        kubeContext: kubeContext.trim() ? kubeContext.trim() : null,
         port: normalizedPort,
       });
       setDesktopBackendPort(normalizedPort);
@@ -112,6 +124,51 @@ export const DesktopSettingsPage = () => {
                   value={port}
                   onChange={(e) => setPort(Number.parseInt(e.target.value || '8091', 10))}
                   disabled={!desktopMode}
+                  className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="desktop-kubeconfig-path" className="block text-sm font-medium text-text-secondary">
+                  Kubeconfig Path
+                </label>
+                <input
+                  id="desktop-kubeconfig-path"
+                  value={kubeconfigPath}
+                  onChange={(e) => setKubeconfigPath(e.target.value)}
+                  disabled={!desktopMode}
+                  placeholder="/Users/you/.kube/config"
+                  className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                />
+                {kubeconfigCandidates.length > 0 && (
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setKubeconfigPath(e.target.value);
+                      }
+                    }}
+                    disabled={!desktopMode}
+                    className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                  >
+                    <option value="">Select discovered kubeconfig...</option>
+                    {kubeconfigCandidates.map((candidate) => (
+                      <option key={candidate} value={candidate}>{candidate}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="desktop-kubecontext" className="block text-sm font-medium text-text-secondary">
+                  Cluster Context (optional)
+                </label>
+                <input
+                  id="desktop-kubecontext"
+                  value={kubeContext}
+                  onChange={(e) => setKubeContext(e.target.value)}
+                  disabled={!desktopMode}
+                  placeholder="dev-cluster-context"
                   className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
                 />
               </div>

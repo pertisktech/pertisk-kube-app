@@ -188,7 +188,8 @@ Notes:
 - The desktop shell starts the existing Rust backend binary as a local sidecar on `http://127.0.0.1:8091`.
 - By default it looks for `../target/debug/pertisk-kube-backend` and then `../target/release/pertisk-kube-backend` relative to `frontend/src-tauri`.
 - You can override the backend path with `PERTISK_BACKEND_BIN=/absolute/path/to/pertisk-kube-backend`.
-- Desktop sidecar config is persisted locally and editable from the UI at `/desktop/settings`.
+- Desktop sidecar config is persisted locally and editable from the UI at `/desktop/settings` (backend binary path, kubeconfig path, and port).
+- Login screen and top-right admin/user panel are removed in this desktop flow.
 - Sidecar lifecycle hardening is enabled: startup `/api/health` probe, auto-restart on crash, and timed shutdown with forced kill fallback.
 - Set `PORT` before launching Tauri if you need a non-default backend port.
 

@@ -28,6 +28,8 @@ const SIDECAR_CONFIG_FILE: &str = "desktop-sidecar.json";
 #[serde(rename_all = "camelCase")]
 struct SidecarConfig {
     backend_bin: Option<String>,
+    kubeconfig_path: Option<String>,
+    kube_context: Option<String>,
     port: u16,
 }
 
@@ -35,9 +37,21 @@ impl Default for SidecarConfig {
     fn default() -> Self {
         Self {
             backend_bin: None,
+            kubeconfig_path: None,
+            kube_context: None,
             port: DEFAULT_PORT,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct KubeconfigCluster {
+    context: String,
+    cluster: Option<String>,
+    namespace: Option<String>,
+    is_current: bool,
+    kubeconfig_path: String,
 }
 
 fn validated_config(mut cfg: SidecarConfig) -> SidecarConfig {
@@ -56,6 +70,18 @@ fn validated_config(mut cfg: SidecarConfig) -> SidecarConfig {
             if parsed > 0 {
                 cfg.port = parsed;
             }
+        }
+    }
+
+    if let Ok(env_kubeconfig) = std::env::var("KUBECONFIG") {
+        if !env_kubeconfig.trim().is_empty() {
+            cfg.kubeconfig_path = Some(env_kubeconfig);
+        }
+    }
+
+    if let Ok(env_context) = std::env::var("KUBE_CONTEXT") {
+        if !env_context.trim().is_empty() {
+            cfg.kube_context = Some(env_context);
         }
     }
 
@@ -196,13 +222,27 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
 
-    let child = Command::new(&backend_bin)
+    let mut command = Command::new(&backend_bin);
+    command
         .current_dir(backend_dir)
         .env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
         .env("PORT", cfg.port.to_string())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()?;
+        .stderr(Stdio::inherit());
+
+    if let Some(kubeconfig_path) = cfg.kubeconfig_path.as_deref() {
+        if !kubeconfig_path.trim().is_empty() {
+            command.env("KUBECONFIG", kubeconfig_path);
+        }
+    }
+
+    if let Some(kube_context) = cfg.kube_context.as_deref() {
+        if !kube_context.trim().is_empty() {
+            command.env("KUBE_CONTEXT", kube_context);
+        }
+    }
+
+    let child = command.spawn()?;
 
     info!(
         "spawned backend sidecar from {} on {}",
@@ -211,6 +251,116 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
     );
 
     Ok(child)
+}
+
+fn discover_kubeconfig_candidates() -> Vec<String> {
+    let mut candidates = Vec::<String>::new();
+
+    if let Ok(from_env) = std::env::var("KUBECONFIG") {
+        for item in from_env.split(':') {
+            let path = item.trim();
+            if !path.is_empty() {
+                candidates.push(path.to_string());
+            }
+        }
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        let kube_dir = PathBuf::from(home).join(".kube");
+        let default_config = kube_dir.join("config");
+        candidates.push(default_config.to_string_lossy().to_string());
+
+        if let Ok(entries) = fs::read_dir(kube_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    if ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml") {
+                        candidates.push(path.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn parse_kubeconfig_clusters(path: &Path) -> anyhow::Result<Vec<KubeconfigCluster>> {
+    let raw = fs::read_to_string(path)?;
+    let yaml: serde_yaml::Value = serde_yaml::from_str(&raw)?;
+
+    let root = yaml
+        .as_mapping()
+        .ok_or_else(|| anyhow::anyhow!("invalid kubeconfig format"))?;
+
+    let current_context = root
+        .get(serde_yaml::Value::String("current-context".to_string()))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let contexts = root
+        .get(serde_yaml::Value::String("contexts".to_string()))
+        .and_then(|v| v.as_sequence())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut out = Vec::<KubeconfigCluster>::new();
+    for item in contexts {
+        let Some(item_map) = item.as_mapping() else {
+            continue;
+        };
+
+        let context_name = item_map
+            .get(serde_yaml::Value::String("name".to_string()))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+
+        if context_name.is_empty() {
+            continue;
+        }
+
+        let inner = item_map
+            .get(serde_yaml::Value::String("context".to_string()))
+            .and_then(|v| v.as_mapping());
+
+        let cluster = inner
+            .and_then(|m| m.get(serde_yaml::Value::String("cluster".to_string())))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let namespace = inner
+            .and_then(|m| m.get(serde_yaml::Value::String("namespace".to_string())))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        out.push(KubeconfigCluster {
+            context: context_name.clone(),
+            cluster,
+            namespace,
+            is_current: !current_context.is_empty() && context_name == current_context,
+            kubeconfig_path: path.to_string_lossy().to_string(),
+        });
+    }
+
+    Ok(out)
+}
+
+fn resolve_kubeconfig_path(path: Option<String>) -> Option<PathBuf> {
+    if let Some(explicit) = path {
+        let trimmed = explicit.trim();
+        if !trimmed.is_empty() {
+            return Some(PathBuf::from(trimmed));
+        }
+    }
+
+    discover_kubeconfig_candidates()
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|p| p.exists())
 }
 
 fn graceful_stop_child(child: &mut Child) {
@@ -392,6 +542,19 @@ fn restart_sidecar(app: AppHandle, state: State<'_, BackendState>) -> Result<(),
     restart_backend_sidecar(&app, &state).map_err(|e| format!("failed to restart sidecar: {e}"))
 }
 
+#[tauri::command]
+fn list_kubeconfig_candidates() -> Vec<String> {
+    discover_kubeconfig_candidates()
+}
+
+#[tauri::command]
+fn list_kubeconfig_clusters(kubeconfig_path: Option<String>) -> Result<Vec<KubeconfigCluster>, String> {
+    let path = resolve_kubeconfig_path(kubeconfig_path)
+        .ok_or_else(|| "No kubeconfig file found.".to_string())?;
+
+    parse_kubeconfig_clusters(&path).map_err(|e| format!("failed to parse kubeconfig clusters: {e}"))
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -401,7 +564,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_sidecar_config,
             set_sidecar_config,
-            restart_sidecar
+            restart_sidecar,
+            list_kubeconfig_candidates,
+            list_kubeconfig_clusters
         ])
         .setup(|app| {
             let initial_config = load_sidecar_config(app.handle());

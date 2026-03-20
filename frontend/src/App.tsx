@@ -1,10 +1,9 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { BackupLifecycleToaster } from './components/BackupLifecycleToaster';
 import { Layout } from './components';
 import { NamespaceProvider } from './context/NamespaceContext';
-import { clearAuth, getAuthUser, getTokenExpiry, isAuthenticated, refreshToken } from './utils/auth';
 
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
 const ClusterPage = lazy(() => import('./pages/ClusterPage').then(m => ({ default: m.ClusterPage })));
@@ -21,7 +20,6 @@ const WorkloadsOverviewPage = lazy(() => import('./pages/WorkloadsOverviewPage')
 const EventsPage = lazy(() => import('./pages/EventsPage').then(m => ({ default: m.EventsPage })));
 const HelmChartsPage = lazy(() => import('./pages/HelmChartsPage').then(m => ({ default: m.HelmChartsPage })));
 const HelmReleasesPage = lazy(() => import('./pages/HelmReleasesPage').then(m => ({ default: m.HelmReleasesPage })));
-const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
 const ConfigMapsPage = lazy(() => import('./pages/ConfigMapsPage').then(m => ({ default: m.ConfigMapsPage })));
 const SecretsPage = lazy(() => import('./pages/SecretsPage').then(m => ({ default: m.SecretsPage })));
 const ResourceQuotasPage = lazy(() => import('./pages/ResourceQuotasPage').then(m => ({ default: m.ResourceQuotasPage })));
@@ -60,61 +58,6 @@ const DesktopSettingsPage = lazy(() => import('./pages/DesktopSettingsPage').the
 
 
 export const App = () => {
-  const [authenticated, setAuthenticated] = useState(() => isAuthenticated());
-  const [authUser, setAuthUser] = useState(() => getAuthUser() ?? '');
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleLogout = useCallback(() => {
-    clearAuth();
-    setAuthenticated(false);
-    setAuthUser('');
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-  }, []);
-
-  const scheduleRefresh = useCallback((expiryMs: number) => {
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    // Refresh 5 minutes before expiry, minimum 10 seconds from now
-    const msUntilExpiry = expiryMs - Date.now();
-    const delay = Math.max(10_000, msUntilExpiry - 5 * 60 * 1000);
-    refreshTimerRef.current = setTimeout(async () => {
-      const newExpiry = await refreshToken();
-      if (newExpiry) {
-        scheduleRefresh(newExpiry);
-      } else {
-        handleLogout();
-      }
-    }, delay);
-  }, [handleLogout]);
-
-  const handleLogin = useCallback(() => {
-    setAuthenticated(true);
-    setAuthUser(getAuthUser() ?? '');
-    const expiry = getTokenExpiry();
-    if (expiry) scheduleRefresh(expiry);
-  }, [scheduleRefresh]);
-
-  // On mount: schedule refresh if already authenticated, listen for 401 events
-  useEffect(() => {
-    if (authenticated) {
-      const expiry = getTokenExpiry();
-      if (expiry) scheduleRefresh(expiry);
-    }
-    const onExpired = () => handleLogout();
-    window.addEventListener('auth:expired', onExpired);
-    return () => {
-      window.removeEventListener('auth:expired', onExpired);
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    };
-  }, []);
-
-  if (!authenticated) {
-    return (
-      <Suspense fallback={null}>
-        <LoginPage onLogin={handleLogin} />
-      </Suspense>
-    );
-  }
-
   return (
     <NamespaceProvider>
       <Toaster
@@ -135,7 +78,7 @@ export const App = () => {
       <BackupLifecycleToaster />
       <Router>
           <Routes>
-            <Route element={<Layout username={authUser} onLogout={handleLogout} />}>
+            <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/cluster" element={<ClusterPage />} />
           <Route path="/terminal" element={null} />
