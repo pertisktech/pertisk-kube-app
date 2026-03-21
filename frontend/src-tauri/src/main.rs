@@ -19,6 +19,7 @@ struct BackendState {
 
 const DEFAULT_PORT: u16 = 8091;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
+const CLUSTER_VERIFY_TIMEOUT: Duration = Duration::from_secs(20);
 const RESTART_BACKOFF: Duration = Duration::from_secs(2);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
@@ -156,6 +157,18 @@ fn candidate_backend_paths(app: &AppHandle, cfg: &SidecarConfig) -> Vec<PathBuf>
 
     if let Ok(resource_dir) = app.path().resource_dir() {
         paths.push(resource_dir.join("pertisk-kube-backend"));
+        paths.push(resource_dir.join("bundle-resources/pertisk-kube-backend"));
+    }
+
+    // Check workspace backend binary from user's home
+    if let Ok(home) = std::env::var("HOME") {
+        let workspace_candidates = vec![
+            "projects/pertisktech/pertisk-kube-app/backend/target/release/pertisk-kube-backend",
+            ".pertisk-kube-app-backend/pertisk-kube-backend",
+        ];
+        for candidate in workspace_candidates {
+            paths.push(PathBuf::from(&home).join(candidate));
+        }
     }
 
     paths
@@ -190,6 +203,29 @@ fn probe_backend_health(port: u16) -> bool {
     response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200")
 }
 
+fn probe_backend_status(port: u16, path: &str) -> Option<u16> {
+    let addr = backend_socket_addr(port);
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(600)).ok()?;
+
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(900)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(900)));
+
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes()).ok()?;
+
+    let mut response = String::new();
+    stream.read_to_string(&mut response).ok()?;
+    let status = response
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok());
+
+    status
+}
+
 fn wait_for_backend_ready(port: u16, timeout: Duration) -> bool {
     let start = Instant::now();
 
@@ -203,18 +239,72 @@ fn wait_for_backend_ready(port: u16, timeout: Duration) -> bool {
     false
 }
 
+fn wait_for_cluster_verification(port: u16, timeout: Duration) -> bool {
+    let start = Instant::now();
+
+    while start.elapsed() < timeout {
+        if let Some(status) = probe_backend_status(port, "/api/namespaces") {
+            // Consider any non-5xx response as "cluster reachable enough".
+            // This avoids rejecting valid contexts that have restricted RBAC (e.g., 403).
+            if status < 500 {
+                return true;
+            }
+        }
+        thread::sleep(Duration::from_millis(300));
+    }
+
+    false
+}
+
+fn terminate_processes_on_port(port: u16) {
+    let output = Command::new("lsof")
+        .arg("-ti")
+        .arg(format!(":{port}"))
+        .output();
+
+    let Ok(output) = output else {
+        return;
+    };
+
+    if !output.status.success() {
+        return;
+    }
+
+    let pid_list = String::from_utf8_lossy(&output.stdout);
+    for pid in pid_list.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        let _ = Command::new("kill").arg("-TERM").arg(pid).status();
+    }
+
+    thread::sleep(Duration::from_millis(250));
+
+    for pid in pid_list.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        let _ = Command::new("kill").arg("-KILL").arg(pid).status();
+    }
+}
+
 fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> {
+    if probe_backend_health(cfg.port) {
+        warn!(
+            "detected an existing process on {}; terminating stale listener before sidecar spawn",
+            backend_socket_addr(cfg.port)
+        );
+        terminate_processes_on_port(cfg.port);
+    }
+
     let candidates = candidate_backend_paths(app, cfg);
 
     let backend_bin = first_existing_path(&candidates).ok_or_else(|| {
-        anyhow::anyhow!(
+        let error_msg = format!(
             "Could not locate backend binary. Looked in: {}",
             candidates
                 .iter()
                 .map(|p| p.display().to_string())
                 .collect::<Vec<_>>()
                 .join(", ")
-        )
+        );
+        eprintln!("{}", error_msg);
+        warn!("{}", error_msg);
+        anyhow::anyhow!(error_msg)
     })?;
 
     let backend_dir = backend_bin
@@ -224,7 +314,7 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
 
     let mut command = Command::new(&backend_bin);
     command
-        .current_dir(backend_dir)
+        .current_dir(backend_dir.clone())
         .env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
         .env("PORT", cfg.port.to_string())
         .stdout(Stdio::inherit())
@@ -242,12 +332,22 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
         }
     }
 
-    let child = command.spawn()?;
+    let mut child = command.spawn()?;
+
+    // If the process exits immediately (common when port is already occupied), fail fast.
+    thread::sleep(Duration::from_millis(250));
+    if let Some(status) = child.try_wait()? {
+        return Err(anyhow::anyhow!(
+            "backend sidecar exited immediately with status {status}; check port {} and backend binary path",
+            cfg.port
+        ));
+    }
 
     info!(
-        "spawned backend sidecar from {} on {}",
+        "spawned backend sidecar from {} on {} (cwd: {})",
         backend_bin.display(),
-        backend_socket_addr(cfg.port)
+        backend_socket_addr(cfg.port),
+        backend_dir.display()
     );
 
     Ok(child)
@@ -403,13 +503,26 @@ fn restart_backend_sidecar(app: &AppHandle, state: &BackendState) -> anyhow::Res
 
     let child = spawn_backend(app, &cfg)?;
     if !wait_for_backend_ready(cfg.port, STARTUP_TIMEOUT) {
-        warn!(
-            "backend sidecar restarted but readiness probe timed out on {}",
+        let mut child_to_stop = child;
+        graceful_stop_child(&mut child_to_stop);
+        return Err(anyhow::anyhow!(
+            "sidecar failed to start for selected cluster/context on {}",
             backend_socket_addr(cfg.port)
-        );
-    } else {
-        info!("backend sidecar restarted and is healthy on {}", backend_socket_addr(cfg.port));
+        ));
     }
+
+    if !wait_for_cluster_verification(cfg.port, CLUSTER_VERIFY_TIMEOUT) {
+        let mut child_to_stop = child;
+        graceful_stop_child(&mut child_to_stop);
+        return Err(anyhow::anyhow!(
+            "cluster verification failed for selected context: backend is up but Kubernetes API check failed"
+        ));
+    }
+
+    info!(
+        "backend sidecar restarted and cluster verification passed on {}",
+        backend_socket_addr(cfg.port)
+    );
 
     let mut guard = state
         .child
@@ -520,21 +633,40 @@ fn set_sidecar_config(
     state: State<'_, BackendState>,
     config: SidecarConfig,
 ) -> Result<(), String> {
-    let config = validated_config(config);
+    let next_config = validated_config(config);
+
+    let previous_config = state
+        .config
+        .lock()
+        .map_err(|e| format!("failed to lock sidecar config: {e}"))?
+        .clone();
 
     {
         let mut current = state
             .config
             .lock()
             .map_err(|e| format!("failed to lock sidecar config: {e}"))?;
-        *current = config.clone();
+        *current = next_config.clone();
     }
 
-    save_sidecar_config(&app, &config)
+    save_sidecar_config(&app, &next_config)
         .map_err(|e| format!("failed to persist sidecar config: {e}"))?;
 
-    restart_backend_sidecar(&app, &state)
-        .map_err(|e| format!("failed to restart sidecar with new config: {e}"))
+    if let Err(e) = restart_backend_sidecar(&app, &state) {
+        // Roll back to the last known-good configuration on failure.
+        if let Ok(mut current) = state.config.lock() {
+            *current = previous_config.clone();
+        }
+
+        let _ = save_sidecar_config(&app, &previous_config);
+        let _ = restart_backend_sidecar(&app, &state);
+
+        return Err(format!(
+            "failed to switch cluster: {e}. restored previous cluster configuration"
+        ));
+    }
+
+    Ok(())
 }
 
 #[tauri::command]

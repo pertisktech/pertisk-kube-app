@@ -64,7 +64,6 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Cluster', path: '/cluster', icon: Server },
   { label: 'Nodes', path: '/nodes', icon: Network },
   { label: 'Resource Map', path: '/resource-map', icon: Share2 },
-  { label: 'Desktop', path: '/desktop/settings', icon: Settings },
 ];
 
 const NAMESPACE_ITEM: NavItem = {
@@ -172,6 +171,7 @@ export const Layout = () => {
   const [kubeconfigLoading, setKubeconfigLoading] = useState(false);
   const [kubeconfigSwitching, setKubeconfigSwitching] = useState(false);
   const [kubeconfigInitialized, setKubeconfigInitialized] = useState(false);
+  const [kubeconfigError, setKubeconfigError] = useState<string | null>(null);
   const [startupClusterSelectionDone, setStartupClusterSelectionDone] = useState(false);
   const [workloadsOpen, setWorkloadsOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
@@ -251,10 +251,22 @@ export const Layout = () => {
           listDesktopKubeconfigCandidates(),
         ]);
         if (cancelled) return;
+
+        // Check if no kubeconfig files were found
+        if (!candidates || candidates.length === 0) {
+          const errorMsg = 'No kubeconfig files found. Please check your KUBECONFIG environment variable or ensure ~/.kube/config exists.';
+          setKubeconfigError(errorMsg);
+          toast.error(errorMsg);
+          setKubeconfigLoading(false);
+          setKubeconfigInitialized(true);
+          return;
+        }
+
         const currentPath = config.kubeconfigPath ?? '';
         const currentContext = config.kubeContext ?? '';
         setKubeconfigPath(currentPath);
         setKubeContext(currentContext);
+        setStartupClusterSelectionDone(Boolean(currentContext.trim()));
         setKubeconfigInput(currentPath);
         setSelectedClusterContext(currentContext);
 
@@ -266,13 +278,21 @@ export const Layout = () => {
         const clusters = await listDesktopKubeconfigClusters(currentPath || null);
         if (cancelled) return;
         setKubeClusters(clusters);
+
+        // If no clusters found and no context set, force user to select
+        if (clusters.length === 0 && !currentContext) {
+          toast.error('No cluster contexts found in kubeconfig. Please add a context or select a different kubeconfig.');
+        }
+
         if (!currentContext) {
           const currentCluster = clusters.find((item) => item.isCurrent)?.context ?? '';
           setSelectedClusterContext(currentCluster);
         }
       } catch (err) {
         if (cancelled) return;
-        toast.error(err instanceof Error ? err.message : 'Failed to load kubeconfig options.');
+        const errorMsg = err instanceof Error ? err.message : 'Failed to load kubeconfig options. Check backend configuration.';
+        setKubeconfigError(errorMsg);
+        toast.error(errorMsg);
       } finally {
         if (!cancelled) {
           setKubeconfigLoading(false);
@@ -335,6 +355,10 @@ export const Layout = () => {
       setShowKubeconfigModal(false);
       setStartupClusterSelectionDone(true);
       toast.success('Cluster selection applied and sidecar restarted.');
+      // Reset all in-memory query/websocket state so UI reflects the new cluster immediately.
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 150);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to apply cluster selection.');
     } finally {
@@ -351,7 +375,11 @@ export const Layout = () => {
     });
   }, [clusterSearch, kubeClusters]);
 
-  const mustSelectCluster = desktopMode && kubeconfigInitialized && !startupClusterSelectionDone;
+  const mustSelectCluster =
+    desktopMode &&
+    kubeconfigInitialized &&
+    (!kubeContext.trim() || kubeClusters.length === 0) &&
+    !startupClusterSelectionDone;
 
   useEffect(() => {
     if (mustSelectCluster) {
@@ -628,7 +656,7 @@ export const Layout = () => {
 
         <div className="space-y-4 px-5 py-4">
           {mustSelectCluster && (
-            <div className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-text">
+            <div className="rounded-md border border-border bg-surface-elevated px-3 py-2 text-sm text-text-secondary">
               Select a cluster context to continue to the dashboard.
             </div>
           )}
@@ -726,6 +754,20 @@ export const Layout = () => {
 
   if (mustSelectCluster) {
     return <div className="h-screen bg-bg">{clusterSelectionDialog}</div>;
+  }
+
+  // Show loading screen on desktop during initialization
+  if (desktopMode && !kubeconfigInitialized && kubeconfigLoading) {
+    return (
+      <div className="h-screen bg-bg flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-sm text-text-secondary mb-4">Initializing desktop app...</div>
+          <div className="h-1 w-32 bg-border rounded-full overflow-hidden mx-auto">
+            <div className="h-full bg-primary animate-pulse"></div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -1493,6 +1535,7 @@ export const Layout = () => {
                   setKubeconfigInput(kubeconfigPath);
                   setSelectedClusterContext(kubeContext);
                   setClusterSearch('');
+                  setKubeconfigError(null);
                   void refreshClustersForKubeconfig(kubeconfigPath);
                   setShowKubeconfigModal(true);
                 }}
@@ -1525,6 +1568,25 @@ export const Layout = () => {
 
           </div>
         </header>
+
+        {/* Error banner for desktop startup issues */}
+        {desktopMode && kubeconfigError && (
+          <div className="bg-red-900/20 border-b border-red-700/50 px-4 py-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="text-red-600 font-semibold">⚠</div>
+              <div className="flex flex-col gap-1">
+                <div className="text-sm font-medium text-red-700">Backend configuration error</div>
+                <div className="text-xs text-red-600">{kubeconfigError}</div>
+              </div>
+            </div>
+            <Link 
+              to="/config/desktop-settings"
+              className="flex-shrink-0 rounded-md bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-600 transition-colors"
+            >
+              Configure
+            </Link>
+          </div>
+        )}
 
         {/* Content */}
         <main className="flex-1 overflow-auto bg-bg p-4 min-h-0">

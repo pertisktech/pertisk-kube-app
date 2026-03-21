@@ -354,6 +354,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/clusterroles", get(list_cluster_roles))
         .route("/clusterrolebindings", get(list_cluster_role_bindings));
 
+    // For desktop mode (localhost sidecar), all routes are public since login was removed
     let api = public_api.merge(refresh_api).merge(protected_api);
 
     let index_html = static_dir.join("index.html");

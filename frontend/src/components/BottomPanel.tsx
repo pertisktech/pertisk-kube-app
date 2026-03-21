@@ -64,6 +64,7 @@ interface TabTarget {
 interface PanelTab {
   id: string;
   type: PanelTabType;
+  identity?: string;
   label: string;
   target?: TabTarget;
   initialCommand?: string;
@@ -112,6 +113,37 @@ const LABEL_MAP: Record<PanelTabType, string> = {
   logs: 'Logs',
   'yaml-editor': 'YAML',
   'install-chart': 'Helm Install',
+};
+
+const makeTabIdentity = (type: PanelTabType, opts?: Partial<OpenPanelTabOptions>): string | null => {
+  if (type === 'yaml-editor') {
+    // YAML editor tabs are intentionally always new workspaces.
+    return null;
+  }
+
+  if (type === 'pod-exec' || type === 'logs') {
+    const ns = opts?.namespace ?? 'default';
+    const pod = opts?.podName ?? '';
+    if (!pod) return null;
+    return `${type}:${ns}:${pod}:${opts?.containerName ?? ''}`;
+  }
+
+  if (type === 'node-exec') {
+    const node = opts?.podName ?? '';
+    if (!node) return null;
+    return `${type}:${node}`;
+  }
+
+  if (type === 'install-chart' && opts?.installChart) {
+    const c = opts.installChart;
+    return `${type}:${c.repository_url}:${c.name}:${c.version}`;
+  }
+
+  if (type === 'host-shell') {
+    return type;
+  }
+
+  return null;
 };
 
 const ADD_OPTIONS: {
@@ -807,6 +839,19 @@ export const BottomPanel = () => {
 
   // ── External open events (e.g. sidebar Terminal button) ───────────────────
   const doAddTab = useCallback((type: PanelTabType, opts?: Partial<OpenPanelTabOptions>) => {
+    const identity = makeTabIdentity(type, opts);
+
+    if (identity) {
+      const existing = tabs.find((t) => t.identity === identity);
+      if (existing) {
+        setActiveTabId(existing.id);
+        setCollapsed(false);
+        setPanelHeight((h) => (h <= MIN_PANEL_HEIGHT ? DEFAULT_PANEL_HEIGHT() : h));
+        setShowAddMenu(false);
+        return;
+      }
+    }
+
     const id = `${type}-${Date.now()}`;
     const label =
       opts?.title?.trim()
@@ -821,6 +866,7 @@ export const BottomPanel = () => {
       {
         id,
         type,
+        identity: identity ?? undefined,
         label,
         initialCommand: opts?.initialCommand,
         ...(type === 'yaml-editor'
@@ -846,7 +892,7 @@ export const BottomPanel = () => {
     setCollapsed(false);
     setPanelHeight((h) => (h <= MIN_PANEL_HEIGHT ? DEFAULT_PANEL_HEIGHT() : h));
     setShowAddMenu(false);
-  }, []);
+  }, [tabs]);
 
   useEffect(() => {
     const handler = (e: Event) => {
