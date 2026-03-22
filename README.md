@@ -241,59 +241,7 @@ make run-ingress-k8s
 - Builds frontend, runs backend with static files and cargo watch; frontend build watcher runs in parallel
 - Override: `make run-ingress-k8s K8S_KUBECONFIG=/path/to/kubeconfig.yaml`
 
-## 🚀 Deployment
-
-### Makefile (recommended)
-
-| Target | Description |
-|--------|-------------|
-| `make docker-base-build` | Build base images (frontend-deps, backend-deps, runtime) from `Dockerfile.base` |
-| `make docker-base-push` | Build and push base images (single-arch) |
-| `make docker-base-push-multi` | Build and push multi-arch base images |
-| `make docker-build` | Build app image (uses base; single-arch) |
-| `make docker-build-multi` | Build and push multi-arch app image |
-| `make helm-template` | Render Helm templates (no install) |
-| `make helm-install` | Helm install with image tag from `DOCKER_TAG` |
-| `make helm-upgrade` | Helm upgrade with `DOCKER_TAG` |
-| `make helm-deploy` | Build multi-arch image and `helm upgrade --install` |
-| `make release` | Same as helm-deploy (full release) |
-| `make port-forward` | Forward app service to localhost (APP_PORT / GRPC_PORT) |
-| `make ingress-hosts` | Print ingress host(s) for the release |
-| `make lb-url` | Print LoadBalancer URL if service type is LoadBalancer |
-| `make run-ingress-k8s` | Dev: frontend build watch + backend with `K8S_KUBECONFIG` |
-
-Override defaults: `DOCKER_TAG`, `HELM_NAMESPACE`, `HELM_RELEASE`, `K8S_KUBECONFIG`, etc. See top of `Makefile`.
-
-**Skaffold:** `make skaffold-run`, `make skaffold-run-prod`, `make skaffold-dev`, `make skaffold-delete` (use `K8S_KUBECONFIG` for kubeconfig).
-
-### Kubernetes Deployment via Helm
-
-```bash
-# Using Make
-make helm-install
-# or deploy after building image
-make helm-deploy
-
-# Or manually
-helm install pertisk-kube ./helm/pertisk-kube \
-  -n pertisk-rproxy \
-  --create-namespace \
-  --set app.image.tag=latest
-```
-
-### Docker
-
-- **Base images** (Dockerfile.base): frontend-deps, backend-deps, runtime (includes kubectl, helm). Build once when deps change.
-- **App image** (Dockerfile): copies built frontend and backend binary from base stages.
-
-```bash
-make docker-base-build
-make docker-build
-# Or multi-arch and push
-make docker-build-multi
-```
-
-## 🔧 API Endpoints
+##  API Endpoints
 
 All API routes are under `/api`. Protected routes require `Authorization: Bearer <JWT>` (or Basic auth).
 
@@ -401,11 +349,6 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 - **Chart.js** - Data visualization
 - **react-markdown** / **remark-gfm** - Markdown rendering (e.g. Helm chart README)
 - **Lucide React** - Icon library
-
-### Deployment
-- **Docker** - Container images
-- **Helm** - Kubernetes package manager
-- **Kubernetes** - Container orchestration
 
 ## 📝 Configuration
 
