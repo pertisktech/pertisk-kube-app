@@ -1080,7 +1080,7 @@ export const BottomPanel = () => {
       )}
 
       {/* Tab bar */}
-      <div className="flex items-center h-8 flex-shrink-0 border-b border-border bg-sidebar">
+      <div className="flex items-center h-8 flex-shrink-0 bg-sidebar">
         {/* Scrollable tabs */}
         <div className="flex-1 flex items-center overflow-x-auto gap-0.5 px-1 min-w-0">
           {tabs.map((tab) => {
@@ -1120,7 +1120,7 @@ export const BottomPanel = () => {
         </div>
 
         {/* Fixed right controls */}
-        <div className="flex-shrink-0 flex items-center gap-1 px-2 border-l border-border">
+        <div className="flex-shrink-0 flex items-center gap-1 px-2">
           {isActiveYamlTab && (
             <>
               {yamlActionResult?.tabId === activeTab.id && (
@@ -1164,7 +1164,7 @@ export const BottomPanel = () => {
             onClick={handleAddClick}
             className={cn(
               'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
-              'bg-surface-elevated hover:bg-hover text-text-secondary border border-border',
+              'bg-surface-elevated hover:bg-hover text-primary border border-border',
               showAddMenu && 'bg-hover border-border'
             )}
             title="Add tab"
