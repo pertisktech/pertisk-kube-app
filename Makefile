@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-K8S_KUBECONFIG ?= /Users/dotnetnat/.kube/hetznet-kubeadm-cluster.yaml
+K8S_KUBECONFIG ?=
 #K8S_KUBECONFIG ?= /Users/dotnetnat/.kube/talos-omni-proxmox-cluster-kubeconfig.yaml
 VERSION ?= $(shell V=$$(git describe --tags --always --abbrev=7 2>/dev/null || echo ""); \
 	if echo "$$V" | grep -qE '^v?[0-9]+\.'; then \
@@ -26,6 +26,8 @@ GRPC_PORT ?= 50051
 .PHONY: skaffold-run skaffold-run-prod skaffold-dev skaffold-delete skaffold-build
 .PHONY: release version
 
+KUBE_ENV = $(if $(strip $(K8S_KUBECONFIG)),KUBECONFIG="$(K8S_KUBECONFIG)",)
+
 # Development targets
 dev:
 	$(MAKE) -j2 dev-backend dev-frontend
@@ -34,7 +36,7 @@ tools:
 	@command -v cargo-watch >/dev/null 2>&1 || cargo install cargo-watch
 
 dev-backend:
-	@command -v cargo-watch >/dev/null 2>&1 && cargo watch -x "run -p pertisk-kube-backend" || cargo run -p pertisk-kube-backend
+	@command -v cargo-watch >/dev/null 2>&1 && $(KUBE_ENV) cargo watch -x "run -p pertisk-kube-backend" || $(KUBE_ENV) cargo run -p pertisk-kube-backend
 
 frontend-install:
 	cd frontend && npm install
@@ -67,10 +69,9 @@ build-macos-dmg: build-backend frontend-install
 	fi
 	cd frontend && npm run tauri:build -- --bundles dmg
 
-run-desktop: frontend-install
+run-desktop: frontend-install build-backend
 	@lsof -ti:8091 | xargs kill -9 2>/dev/null || true
-	@test -x "$(CURDIR)/target/debug/pertisk-kube-backend" || $(MAKE) build-backend
-	cd frontend && PERTISK_BACKEND_BIN="$(CURDIR)/target/debug/pertisk-kube-backend" npm run tauri:dev
+	cd frontend && $(KUBE_ENV) PERTISK_BACKEND_BIN="$(CURDIR)/target/debug/pertisk-kube-backend" npm run tauri:dev
 
 run-desktop-dev: run-desktop
 	@echo "Desktop dev uses debug backend at target/debug/pertisk-kube-backend"
@@ -80,7 +81,7 @@ run-desktop-dev: run-desktop
 
 # Build frontend and run backend serving the built SPA on a single port.
 run-monolith: frontend-build
-	STATIC_DIR=frontend/dist cargo run -p pertisk-kube-backend
+	$(KUBE_ENV) STATIC_DIR=frontend/dist cargo run -p pertisk-kube-backend
 
 # Simulate running as an ingress-style controller talking to k8s via kubeconfig.
 run-ingress-k8s: tools frontend-build

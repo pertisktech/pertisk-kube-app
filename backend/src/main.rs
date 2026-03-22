@@ -313,6 +313,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/clusterrolebindings/:name", delete(delete_clusterrolebinding))
         .route("/port-forwards", get(list_port_forwards).post(create_port_forward))
         .route("/port-forwards/:id/stop", post(stop_port_forward))
+        .route("/port-forwards/:id/restart", post(restart_port_forward))
         .route("/port-forwards/:id", delete(delete_port_forward))
         .route("/apply", post(apply_yaml))
         .route("/crds", get(list_crds))

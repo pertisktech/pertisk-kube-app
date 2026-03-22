@@ -1380,6 +1380,23 @@ export const stopPortForward = async (id: number): Promise<void> => {
   if (!res.ok) throw new Error(`Failed to stop port forward (${res.status})`);
 };
 
+export const restartPortForward = async (id: number): Promise<PortForward> => {
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE}/port-forwards/${id}/restart`, {
+    method: 'POST',
+    headers: token ? { Authorization: token } : undefined,
+  });
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(err.error || `Failed to restart port forward (${res.status})`);
+  }
+  return res.json();
+};
+
 export const deletePortForward = async (id: number): Promise<void> => {
   await apiDelete(`/port-forwards/${id}`);
 };

@@ -1066,17 +1066,14 @@ export const BottomPanel = () => {
   return (
     <div
       className={cn(
-        'flex flex-col rounded-xl overflow-hidden bg-sidebar',
+        'flex flex-col rounded-xl overflow-hidden bg-sidebar border border-border',
         fullScreen ? 'fixed inset-0 z-[100] rounded-none' : 'relative flex-shrink-0 mx-2 mb-2'
       )}
       style={{
-        boxShadow: fullScreen ? '0 0 0 1px var(--color-border)' : '0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent), 0 -4px 24px rgba(0,0,0,0.25)',
+        boxShadow: '0 -4px 24px rgba(0,0,0,0.25)',
         ...(effectiveHeight !== undefined ? { height: effectiveHeight } : {}),
       } as CSSProperties}
     >
-      {/* Accent top strip */}
-      <div className="h-0.5 flex-shrink-0 bg-gradient-to-r from-primary/40 via-primary to-primary/40" />
-
       {/* Drag handle */}
       {!collapsed && tabs.length > 0 && (
         <div onMouseDown={handleDragStart} className="h-1 flex-shrink-0 cursor-ns-resize hover:bg-primary/20 transition-colors" />
@@ -1095,7 +1092,7 @@ export const BottomPanel = () => {
                 onClick={() => { setActiveTabId(tab.id); setCollapsed(false); }}
                 className={cn(
                   'group flex items-center gap-1.5 px-2.5 h-7 rounded-t text-xs font-medium flex-shrink-0 border-b-2 transition-colors',
-                  isActive ? 'bg-bg border-primary text-text' : 'border-transparent text-text-secondary hover:bg-hover'
+                  isActive ? 'bg-bg border-border text-text' : 'border-transparent text-text-secondary hover:bg-hover'
                 )}
               >
                 <TabIcon type={tab.type} size={12} />
@@ -1112,7 +1109,7 @@ export const BottomPanel = () => {
                   role="button" tabIndex={0}
                   onClick={(e) => closeTab(tab.id, e)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') closeTab(tab.id, e as unknown as React.MouseEvent); }}
-                  className="ml-0.5 p-0.5 hover:bg-hover rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 cursor-pointer"
+                  className="ml-0.5 p-0.5 hover:bg-hover rounded opacity-70 hover:opacity-100 cursor-pointer"
                   title="Close"
                 >
                   <X size={10} />
@@ -1167,8 +1164,8 @@ export const BottomPanel = () => {
             onClick={handleAddClick}
             className={cn(
               'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
-              'bg-accent/15 hover:bg-accent/30 text-accent border border-accent/30 hover:border-accent/60',
-              showAddMenu && 'bg-accent/30 border-accent/60'
+              'bg-surface-elevated hover:bg-hover text-text-secondary border border-border',
+              showAddMenu && 'bg-hover border-border'
             )}
             title="Add tab"
           >

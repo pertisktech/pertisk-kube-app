@@ -11,8 +11,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::fs;
+use tokio::io::AsyncReadExt;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::process::Child;
 use tokio::sync::RwLock;
+use tokio::time::{sleep, Duration};
 use tracing::{error, info, warn};
 
 use crate::AppState;
@@ -67,17 +70,101 @@ impl PortForwardState {
 
 fn build_port_forward_command(request: &CreatePortForwardRequest) -> tokio::process::Command {
     let resource = format!("{}/{}", request.resource_type, request.resource_name);
-    let port_mapping = format!("127.0.0.1:{}:{}", request.local_port, request.remote_port);
+    let port_mapping = format!("{}:{}", request.local_port, request.remote_port);
 
     let mut cmd = tokio::process::Command::new("kubectl");
     cmd.arg("-n")
         .arg(&request.namespace)
+        .arg("--address")
+        .arg("127.0.0.1")
         .arg("port-forward")
         .arg(&resource)
         .arg(&port_mapping);
     cmd.stdout(std::process::Stdio::null());
     cmd.stderr(std::process::Stdio::piped());
     cmd
+}
+
+async fn collect_child_stderr(child: &mut Child) -> String {
+    let mut stderr_text = String::new();
+    if let Some(mut stderr) = child.stderr.take() {
+        let mut buf = Vec::new();
+        let _ = stderr.read_to_end(&mut buf).await;
+        stderr_text = String::from_utf8_lossy(&buf).trim().to_string();
+    }
+    stderr_text
+}
+
+async fn ensure_local_port_available(local_port: u16) -> Result<(), String> {
+    match TcpListener::bind(("127.0.0.1", local_port)).await {
+        Ok(listener) => {
+            drop(listener);
+            Ok(())
+        }
+        Err(e) => Err(format!(
+            "Local port 127.0.0.1:{} is not available: {}",
+            local_port, e
+        )),
+    }
+}
+
+async fn spawn_validated_port_forward(request: &CreatePortForwardRequest) -> Result<Child, String> {
+    ensure_local_port_available(request.local_port).await?;
+
+    let mut cmd = build_port_forward_command(request);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to start port-forward process: {}", e))?;
+
+    // Give kubectl a short window to fail fast (invalid resource, auth, local port in use, etc.).
+    for _ in 0..10u8 {
+        sleep(Duration::from_millis(150)).await;
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stderr_text = collect_child_stderr(&mut child).await;
+                let msg = if stderr_text.is_empty() {
+                    format!("port-forward exited immediately with status {}", status)
+                } else {
+                    format!("port-forward failed: {}", stderr_text)
+                };
+                return Err(msg);
+            }
+            Ok(None) => {
+                // Still running.
+            }
+            Err(e) => {
+                return Err(format!("Failed to check port-forward process status: {}", e));
+            }
+        }
+    }
+
+    // Ensure local listener is actually available before reporting success.
+    for _ in 0..20u8 {
+        if TcpStream::connect(("127.0.0.1", request.local_port)).await.is_ok() {
+            return Ok(child);
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stderr_text = collect_child_stderr(&mut child).await;
+                let msg = if stderr_text.is_empty() {
+                    format!("port-forward stopped before opening local port (status {})", status)
+                } else {
+                    format!("port-forward stopped: {}", stderr_text)
+                };
+                return Err(msg);
+            }
+            Ok(None) => sleep(Duration::from_millis(150)).await,
+            Err(e) => return Err(format!("Failed to check port-forward process status: {}", e)),
+        }
+    }
+
+    let _ = child.kill().await;
+    Err(format!(
+        "Timed out waiting for local listener on 127.0.0.1:{}",
+        request.local_port
+    ))
 }
 
 async fn save_port_forward_state(pf_state: &PortForwardState) {
@@ -118,6 +205,52 @@ async fn save_port_forward_state(pf_state: &PortForwardState) {
     }
 }
 
+async fn reconcile_port_forward_processes(pf_state: &PortForwardState) {
+    let mut exited_ids: Vec<u64> = Vec::new();
+
+    {
+        let mut processes = pf_state.processes.write().await;
+        let ids: Vec<u64> = processes.keys().copied().collect();
+        for id in ids {
+            if let Some(child) = processes.get_mut(&id) {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        info!("Port-forward process {} exited with status {}", id, status);
+                        exited_ids.push(id);
+                    }
+                    Ok(None) => {
+                        // Still running.
+                    }
+                    Err(e) => {
+                        warn!("Failed to check port-forward process {}: {}", id, e);
+                    }
+                }
+            }
+        }
+
+        for id in &exited_ids {
+            processes.remove(id);
+        }
+    }
+
+    if exited_ids.is_empty() {
+        return;
+    }
+
+    {
+        let mut forwards = pf_state.forwards.write().await;
+        for id in &exited_ids {
+            if let Some(forward) = forwards.get_mut(id) {
+                if forward.status == "running" {
+                    forward.status = "paused".to_string();
+                }
+            }
+        }
+    }
+
+    save_port_forward_state(pf_state).await;
+}
+
 pub async fn restore_port_forwards_from_storage(pf_state: &PortForwardState) {
     let raw = match fs::read_to_string(&pf_state.storage_path).await {
         Ok(data) => data,
@@ -156,8 +289,7 @@ pub async fn restore_port_forwards_from_storage(pf_state: &PortForwardState) {
             remote_port: item.remote_port,
         };
 
-        let mut cmd = build_port_forward_command(&request);
-        match cmd.spawn() {
+        match spawn_validated_port_forward(&request).await {
             Ok(child) => {
                 {
                     let mut forwards = pf_state.forwards.write().await;
@@ -252,6 +384,9 @@ pub async fn list_port_forwards(
                 .into_response()
         }
     };
+
+    reconcile_port_forward_processes(pf_state).await;
+
     let forwards = pf_state.forwards.read().await;
     let list: Vec<PortForward> = forwards.values().cloned().collect();
     (StatusCode::OK, Json(list)).into_response()
@@ -281,9 +416,8 @@ pub async fn create_port_forward(
     }
 
     let resource = format!("{}/{}", request.resource_type, request.resource_name);
-    let mut cmd = build_port_forward_command(&request);
 
-    let child = match cmd.spawn() {
+    let child = match spawn_validated_port_forward(&request).await {
         Ok(c) => c,
         Err(e) => {
             error!("Failed to start port-forward: {}", e);
@@ -358,7 +492,7 @@ pub async fn stop_port_forward(
     {
         let mut forwards = pf_state.forwards.write().await;
         if let Some(forward) = forwards.get_mut(&id) {
-            forward.status = "stopped".to_string();
+            forward.status = "paused".to_string();
         }
     }
 
@@ -396,4 +530,87 @@ pub async fn delete_port_forward(
     save_port_forward_state(pf_state).await;
 
     (StatusCode::OK, Json(serde_json::json!({"success": true}))).into_response()
+}
+
+pub async fn restart_port_forward(
+    State(state): State<AppState>,
+    Path(IdPath { id }): Path<IdPath>,
+) -> impl IntoResponse {
+    let pf_state = match state.port_forward_state.as_ref() {
+        Some(s) => s,
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Port forward state not initialized"})),
+            )
+                .into_response()
+        }
+    };
+
+    let target = {
+        let forwards = pf_state.forwards.read().await;
+        forwards.get(&id).cloned()
+    };
+
+    let Some(existing) = target else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Port forward not found"})),
+        )
+            .into_response();
+    };
+
+    if existing.status == "running" {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Port forward is already running"})),
+        )
+            .into_response();
+    }
+
+    {
+        let mut processes = pf_state.processes.write().await;
+        if let Some(mut child) = processes.remove(&id) {
+            let _ = child.kill().await;
+        }
+    }
+
+    let request = CreatePortForwardRequest {
+        namespace: existing.namespace.clone(),
+        resource_type: existing.resource_type.clone(),
+        resource_name: existing.resource_name.clone(),
+        local_port: existing.local_port,
+        remote_port: existing.remote_port,
+    };
+
+    let child = match spawn_validated_port_forward(&request).await {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to restart port-forward: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("Failed to restart port-forward: {}", e)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let restarted = PortForward {
+        status: "running".to_string(),
+        ..existing
+    };
+
+    {
+        let mut forwards = pf_state.forwards.write().await;
+        forwards.insert(id, restarted.clone());
+    }
+    {
+        let mut processes = pf_state.processes.write().await;
+        processes.insert(id, child);
+    }
+
+    save_port_forward_state(pf_state).await;
+    (StatusCode::OK, Json(restarted)).into_response()
 }

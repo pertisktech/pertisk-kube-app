@@ -687,6 +687,28 @@ fn list_kubeconfig_clusters(kubeconfig_path: Option<String>) -> Result<Vec<Kubec
     parse_kubeconfig_clusters(&path).map_err(|e| format!("failed to parse kubeconfig clusters: {e}"))
 }
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    if url.trim().is_empty() {
+        return Err("url is empty".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open").arg(&url).status();
+
+    #[cfg(target_os = "linux")]
+    let status = Command::new("xdg-open").arg(&url).status();
+
+    #[cfg(target_os = "windows")]
+    let status = Command::new("cmd").args(["/C", "start", "", &url]).status();
+
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => Err(format!("failed to open url, exit status: {}", s)),
+        Err(e) => Err(format!("failed to open url: {}", e)),
+    }
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -698,7 +720,8 @@ fn main() {
             set_sidecar_config,
             restart_sidecar,
             list_kubeconfig_candidates,
-            list_kubeconfig_clusters
+            list_kubeconfig_clusters,
+            open_external_url
         ])
         .setup(|app| {
             let initial_config = load_sidecar_config(app.handle());

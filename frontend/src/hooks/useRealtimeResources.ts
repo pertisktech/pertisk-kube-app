@@ -884,9 +884,12 @@ function createRealtimeHook<T>(
 
     useEffect(() => {
       let ws: WebSocket | null = null;
-      let reconnectTimeout: ReturnType<typeof setTimeout>;
+      let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+      let connectTimeout: ReturnType<typeof setTimeout> | null = null;
       let emptyListTimeout: ReturnType<typeof setTimeout> | null = null;
       let messageQueue: WebSocketMessage[] = [];
+      let closingIntentional = false;
+      let disposed = false;
 
       const connect = () => {
         try {
@@ -977,20 +980,32 @@ function createRealtimeHook<T>(
           };
 
           ws.onerror = (event) => {
+            if (disposed || closingIntentional || !ws || ws.readyState !== WebSocket.OPEN) {
+              return;
+            }
             console.error(`WebSocket error for ${displayName}:`, event);
             setError(`Connection error for ${displayName}`);
           };
 
           ws.onclose = () => {
+            if (disposed || closingIntentional) {
+              return;
+            }
             if (isRealtimeDebug()) console.log(`WebSocket disconnected for ${displayName}`);
 
             // Attempt to reconnect after 3 seconds
             reconnectTimeout = setTimeout(() => {
+              if (disposed || closingIntentional) {
+                return;
+              }
               if (isRealtimeDebug()) console.log(`Attempting to reconnect to ${displayName}...`);
               connect();
             }, 3000);
           };
         } catch (err) {
+          if (disposed || closingIntentional) {
+            return;
+          }
           console.error(`Failed to connect WebSocket for ${displayName}:`, err);
           setError(`Failed to connect to ${displayName} stream`);
 
@@ -999,9 +1014,16 @@ function createRealtimeHook<T>(
         }
       };
 
-      connect();
+      // Defer initial connect slightly so React StrictMode DEV unmount/remount
+      // can cancel the first attempt before a socket is created.
+      connectTimeout = setTimeout(connect, 50);
 
       return () => {
+        disposed = true;
+        closingIntentional = true;
+        if (connectTimeout) {
+          clearTimeout(connectTimeout);
+        }
         if (reconnectTimeout) {
           clearTimeout(reconnectTimeout);
         }
@@ -1246,7 +1268,10 @@ export function useRealtimeCustomResources(crdName: string | null): {
       return;
     }
     let ws: WebSocket | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout>;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let connectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let closingIntentional = false;
+    let disposed = false;
     const connect = () => {
       try {
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -1285,18 +1310,33 @@ export function useRealtimeCustomResources(crdName: string | null): {
             console.error('Custom resource message parse error:', e);
           }
         };
-        ws.onerror = () => setError('Connection error');
+        ws.onerror = () => {
+          if (disposed || closingIntentional || !ws || ws.readyState !== WebSocket.OPEN) {
+            return;
+          }
+          setError('Connection error');
+        };
         ws.onclose = () => {
+          if (disposed || closingIntentional) {
+            return;
+          }
           reconnectTimeout = setTimeout(connect, 3000);
         };
       } catch (err) {
+        if (disposed || closingIntentional) {
+          return;
+        }
         setError('Failed to connect');
         reconnectTimeout = setTimeout(connect, 3000);
       }
     };
-    connect();
+    // Same StrictMode-safe connect deferral as the generic realtime hook.
+    connectTimeout = setTimeout(connect, 50);
     return () => {
-      clearTimeout(reconnectTimeout);
+      disposed = true;
+      closingIntentional = true;
+      if (connectTimeout) clearTimeout(connectTimeout);
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
       ws?.close();
     };
   }, [crdName, resourceType]);

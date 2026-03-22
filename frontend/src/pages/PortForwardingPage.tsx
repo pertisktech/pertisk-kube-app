@@ -5,6 +5,7 @@ import {
   Plus,
   Trash2,
   Square,
+  Play,
   ExternalLink,
   X,
   RefreshCw,
@@ -13,6 +14,7 @@ import {
   usePortForwards,
   createPortForward,
   stopPortForward,
+  restartPortForward,
   deletePortForward,
   useNamespaces,
   usePods,
@@ -53,6 +55,10 @@ const getPortForwardUrl = (localPort: number): string => {
   return `http://${host}:${localPort}`;
 };
 
+const isTauriRuntime = (): boolean => {
+  return typeof window !== 'undefined' && typeof (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== 'undefined';
+};
+
 export const PortForwardingPage = () => {
   const queryClient = useQueryClient();
   const { data: portForwards = [], isLoading, error, refetch } = usePortForwards();
@@ -72,20 +78,33 @@ export const PortForwardingPage = () => {
   });
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const openPortForward = (localPort: number) => {
+  const openPortForward = async (localPort: number) => {
     const url = getPortForwardUrl(localPort);
-    const opened = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      window.location.assign(url);
-    }
-  };
 
-  const copyPortForwardUrl = async (localPort: number) => {
-    const url = getPortForwardUrl(localPort);
+    if (isTauriRuntime()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('open_external_url', { url });
+        return;
+      } catch {
+        // Fall back to browser strategies when Tauri invoke is unavailable.
+      }
+    }
+
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (opened) return;
+
     try {
-      await navigator.clipboard.writeText(url);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
     } catch {
-      // Ignore clipboard errors to avoid breaking row actions.
+      window.location.assign(url);
     }
   };
 
@@ -123,10 +142,36 @@ export const PortForwardingPage = () => {
     },
   });
 
+  const restartWithFallback = async (pf: PortForward): Promise<void> => {
+    try {
+      await restartPortForward(pf.id);
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const isMethodNotAllowed = message.includes('(405)') || /method not allowed/i.test(message);
+      if (!isMethodNotAllowed) {
+        throw err;
+      }
+    }
+
+    await createPortForward({
+      namespace: pf.namespace,
+      resource_type: pf.resource_type,
+      resource_name: pf.resource_name,
+      local_port: pf.local_port,
+      remote_port: pf.remote_port,
+    });
+    await deletePortForward(pf.id);
+  };
+
+  const restartMutation = useMutation({
+    mutationFn: restartWithFallback,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['port-forwards'] });
+    },
+  });
+
   const resourceList = form.resource_type === 'pod' ? pods : services;
-  const resourceOptions = resourceList
-    .filter((r) => r.namespace === form.namespace)
-    .map((r) => ({ value: r.name, label: r.name }));
 
   const resourceListWithPorts = resourceList
     .filter((r) => r.namespace === form.namespace)
@@ -179,99 +224,99 @@ export const PortForwardingPage = () => {
         </div>
       </div>
 
-      <Card title="Active port forwards">
-        {isLoading ? (
-          <p className="text-text-secondary text-sm py-4">Loading...</p>
-        ) : error ? (
-          <p className="text-red-400 text-sm py-4">Failed to load port forwards.</p>
-        ) : portForwards.length === 0 ? (
-          <p className="text-text-secondary text-sm py-4">
-            No port forwards. Click &quot;New Port Forward&quot; to create one. Ports are forwarded on the
-            server (backend); use SSH or a tunnel to access them from your machine if needed.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-text-secondary">
-                  <th className="py-2 pr-4 font-medium">Resource</th>
-                  <th className="py-2 pr-4 font-medium">Namespace</th>
-                  <th className="py-2 pr-4 font-medium">Port mapping</th>
-                  <th className="py-2 pr-4 font-medium">Status</th>
-                  <th className="py-2 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {portForwards.map((pf: PortForward) => (
-                  <tr key={pf.id} className="border-b border-border last:border-0">
-                    <td className="py-3 pr-4">
-                      <span className="font-medium text-text">
-                        {pf.resource_type}/{pf.resource_name}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4 text-text-secondary">{pf.namespace}</td>
-                    <td className="py-3 pr-4 font-mono text-text">
-                      localhost:{pf.local_port} → {pf.resource_name}:{pf.remote_port}
-                    </td>
-                    <td className="py-3 pr-4">
-                      <span
-                        className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          pf.status === 'running'
-                            ? 'bg-green-500/20 text-green-400'
-                            : pf.status === 'stopped'
-                              ? 'bg-gray-500/20 text-gray-400'
-                              : 'bg-red-500/20 text-red-400'
-                        }`}
-                      >
-                        {pf.status}
-                      </span>
-                    </td>
-                    <td className="py-3 flex items-center gap-2">
-                      {pf.status === 'running' && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => openPortForward(pf.local_port)}
-                            className="p-1.5 rounded border border-[var(--color-icon-info)] text-[var(--color-icon-info)] hover:bg-[var(--color-icon-info)]/10 transition-colors"
-                            title="Open in browser"
-                          >
-                            <ExternalLink size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => copyPortForwardUrl(pf.local_port)}
-                            className="px-2 py-1 rounded border border-border text-xs text-text-secondary hover:bg-hover transition-colors"
-                            title="Copy URL"
-                          >
-                            Copy URL
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => stopMutation.mutate(pf.id)}
-                            disabled={stopMutation.isPending}
-                            className="p-1.5 rounded border border-amber-500/50 text-amber-400 hover:bg-amber-500/10 disabled:opacity-50"
-                            title="Stop"
-                          >
-                            <Square size={14} />
-                          </button>
-                        </>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setDeleteId(pf.id)}
-                        className="p-1.5 rounded border border-red-500/50 text-red-400 hover:bg-red-500/10"
-                        title="Delete"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </td>
+      {(isLoading || error || portForwards.length > 0) && (
+        <Card title="Port forwards">
+          {isLoading ? (
+            <p className="text-text-secondary text-sm py-4">Loading...</p>
+          ) : error ? (
+            <p className="text-red-400 text-sm py-4">Failed to load port forwards.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-text-secondary">
+                    <th className="py-2 pr-4 font-medium">Resource</th>
+                    <th className="py-2 pr-4 font-medium">Namespace</th>
+                    <th className="py-2 pr-4 font-medium">Port mapping</th>
+                    <th className="py-2 pr-4 font-medium">Status</th>
+                    <th className="py-2 font-medium">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+                </thead>
+                <tbody>
+                  {portForwards.map((pf: PortForward) => (
+                    <tr key={pf.id} className="border-b border-border last:border-0">
+                      <td className="py-3 pr-4">
+                        <span className="font-medium text-text">
+                          {pf.resource_type}/{pf.resource_name}
+                        </span>
+                      </td>
+                      <td className="py-3 pr-4 text-text-secondary">{pf.namespace}</td>
+                      <td className="py-3 pr-4 font-mono text-text">
+                        localhost:{pf.local_port} → {pf.resource_name}:{pf.remote_port}
+                      </td>
+                      <td className="py-3 pr-4">
+                        <span
+                          className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            pf.status === 'running'
+                              ? 'bg-green-500/20 text-green-400'
+                              : pf.status === 'paused' || pf.status === 'stopped'
+                                ? 'bg-gray-500/20 text-gray-400'
+                                : 'bg-red-500/20 text-red-400'
+                          }`}
+                        >
+                          {pf.status === 'stopped' ? 'paused' : pf.status}
+                        </span>
+                      </td>
+                      <td className="py-3 flex items-center gap-2">
+                        {pf.status === 'running' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => openPortForward(pf.local_port)}
+                              className="p-1.5 rounded border border-[var(--color-icon-info)] text-[var(--color-icon-info)] hover:bg-[var(--color-icon-info)]/10 transition-colors"
+                              title="Open in browser"
+                            >
+                              <ExternalLink size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => stopMutation.mutate(pf.id)}
+                              disabled={stopMutation.isPending}
+                              className="p-1.5 rounded border border-amber-500/50 text-amber-400 hover:bg-amber-500/10 disabled:opacity-50"
+                              title="Pause"
+                            >
+                              <Square size={14} />
+                            </button>
+                          </>
+                        )}
+                        {(pf.status === 'paused' || pf.status === 'stopped') && (
+                          <button
+                            type="button"
+                            onClick={() => restartMutation.mutate(pf)}
+                            disabled={restartMutation.isPending}
+                            className="p-1.5 rounded border border-green-500/50 text-green-400 hover:bg-green-500/10 disabled:opacity-50"
+                            title="Restart"
+                          >
+                            <Play size={14} />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setDeleteId(pf.id)}
+                          className="p-1.5 rounded border border-red-500/50 text-red-400 hover:bg-red-500/10"
+                          title="Delete"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
 
       {showCreateModal && (
         <div
@@ -359,12 +404,21 @@ export const PortForwardingPage = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                <p className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
                   Resource name
-                </label>
+                </p>
                 <select
                   value={form.resource_name}
-                  onChange={(e) => setForm({ ...form, resource_name: e.target.value })}
+                  onChange={(e) => {
+                    const selected = resourceListWithPorts.find((resource) => resource.name === e.target.value);
+                    const nextRemotePort = selected?.ports[0] ?? form.remote_port;
+                    setForm((prev) => ({
+                      ...prev,
+                      resource_name: e.target.value,
+                      remote_port: nextRemotePort,
+                      local_port: pickDefaultLocalPort(nextRemotePort),
+                    }));
+                  }}
                   className="w-full px-3 py-2 rounded-lg border text-sm"
                   style={{
                     backgroundColor: 'var(--color-bg)',
@@ -374,61 +428,20 @@ export const PortForwardingPage = () => {
                   required
                 >
                   <option value="">Select {form.resource_type}</option>
-                  {resourceOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
+                  {resourceListWithPorts.map((resource) => {
+                    const portText = resource.ports.length > 0 ? ` (ports: ${resource.ports.join(', ')})` : '';
+                    return (
+                      <option key={resource.name} value={resource.name}>
+                        {resource.name}{portText}
+                      </option>
+                    );
+                  })}
                 </select>
-              </div>
-
-              <div>
-                <p className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
-                  {form.resource_type === 'service' ? 'Service list' : 'Pod list'}
-                </p>
-                <div
-                  className="max-h-40 overflow-y-auto rounded-lg border"
-                  style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
-                >
-                  {resourceListWithPorts.length === 0 ? (
-                    <p className="px-3 py-2 text-xs text-text-secondary">
-                      No {form.resource_type}s found in namespace {form.namespace}.
-                    </p>
-                  ) : (
-                    <div className="divide-y divide-border">
-                      {resourceListWithPorts.map((resource) => {
-                        const isSelected = form.resource_name === resource.name;
-                        return (
-                          <button
-                            key={resource.name}
-                            type="button"
-                            onClick={() => {
-                              const nextRemotePort = resource.ports[0] ?? form.remote_port;
-                              setForm((prev) => ({
-                                ...prev,
-                                resource_name: resource.name,
-                                remote_port: nextRemotePort,
-                                local_port: pickDefaultLocalPort(nextRemotePort),
-                              }));
-                            }}
-                            className={`w-full text-left px-3 py-2 transition-colors ${
-                              isSelected ? 'bg-[var(--color-primary)]/10' : 'hover:bg-hover'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-medium text-sm text-text">{resource.name}</span>
-                              <span className="text-xs text-text-secondary">
-                                {resource.ports.length > 0
-                                  ? `ports: ${resource.ports.join(', ')}`
-                                  : 'ports: n/a'}
-                              </span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                {form.resource_name && (
+                  <p className="mt-2 text-xs text-text-secondary">
+                    Selected: <span className="font-medium text-text">{form.resource_name}</span>
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
