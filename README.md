@@ -1,13 +1,14 @@
-# Pertisk Kubernetes Web Dashboard
+# PTKublet – Kubernetes Desktop App
 
-A comprehensive, real-time Kubernetes management dashboard built with Rust (Axum) backend and modern React frontend. This project provides a unified interface for monitoring and managing Kubernetes clusters with a focus on performance, security, and user experience.
+A comprehensive, real-time Kubernetes management desktop application built with Tauri 2 (Rust shell), a Rust (Axum) backend sidecar, and a modern React frontend. PTKublet provides a unified native desktop interface for monitoring and managing Kubernetes clusters with a focus on performance and user experience.
 
 This project is structured as a **single workspace**:
 
-- `backend` – Rust service (Axum + kube-rs client) exposing a secure Kubernetes management API
+- `backend` – Rust service (Axum + kube-rs client) exposing a Kubernetes management API
 - `frontend` – React SPA with real-time updates via WebSocket
+- `frontend/src-tauri` – Tauri 2 desktop shell: spawns and manages the backend sidecar
 - `proto` – gRPC protocol definitions for real-time resource streaming
-- `helm` – Kubernetes Helm chart for production deployment
+- `helm` – Kubernetes Helm chart for server/web deployment mode
 
 ## 🎯 Core Features
 
@@ -121,9 +122,10 @@ Resource list pages subscribe over a single WebSocket and receive watch events (
 - **Helm charts** – Cached ~10 min; no live updates.
 
 ### Security & Authentication
-- **JWT Authentication** – Login with username/password; JWT with 1-hour expiration
-- **Token Refresh** – `POST /api/refresh` to extend session; frontend auto-refresh before expiry
-- **Bearer Token** – Protected APIs require `Authorization: Bearer <token>`
+- **Desktop mode** – No login screen; authentication is handled by the selected kubeconfig/context
+- **Server/web mode** – JWT-based login with username/password; 1-hour token expiration
+- **Token Refresh** – `POST /api/refresh` to extend session (server mode only)
+- **Bearer Token** – Protected APIs require `Authorization: Bearer <token>` (server mode only)
 - **RBAC** – Backend uses Kubernetes RBAC (service account / kubeconfig)
 - **Secure YAML** – Edit and apply with validation
 
@@ -162,7 +164,7 @@ cargo run -p pertisk-kube-backend
 make run-monolith
 ```
 
-Builds the React frontend and serves it from the Rust backend on a single port (default: http://localhost:8091).
+Builds the React frontend and serves it from the Rust backend on a single port (default: http://localhost:15222).
 
 ### Hot Reload Development
 
@@ -203,7 +205,7 @@ make build-macos-dmg
   1. Click the **Configure** button in the banner (or navigate to **Config** → **Desktop Settings**)
   2. Set the **Backend Binary Path** to the full path of your compiled backend, e.g.:
      ```
-      /Users/your-username/projects/pertisk-tech/pertisk-kube-web/target/debug/pertisk-kube-backend
+      /Users/your-username/projects/pertisk-tech/pertisk-kube-app/target/debug/pertisk-kube-backend
      ```
       For production/distribution builds, use the release binary path instead.
   3. The app will automatically restart the backend with the new path
@@ -378,6 +380,9 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 
 ## 📊 Technology Stack
 
+### Desktop Shell
+- **Tauri 2** - Native desktop framework (Rust core + WebView frontend)
+
 ### Backend
 - **Rust 1.70+** - Systems programming language
 - **Axum** - Ergonomic and modular web framework
@@ -406,16 +411,14 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 
 ### Environment Variables (Backend)
 - `KUBECONFIG` - Path to kubeconfig file (optional, uses in-cluster config if not set)
-- `PORT` - Server port (default: 8091)
-- `RUST_LOG` - Log level (default: info)
-- `USERNAME` - Dashboard login username (default: admin)
-- `PASSWORD` - Dashboard login password (default: admin)
-- `JWT_SECRET` - Secret key for JWT token signing (default: your-secret-key-change-in-production) ⚠️ **Change in production!**
+- `PORT` or `APP_PORT` - HTTP server port (default: `15222`)
+- `GRPC_PORT` - gRPC server port (default: `50051`)
+- `RUST_LOG` - Log level (default: `info`)
 
-### Token Expiration
-- **JWT Tokens expire after 1 hour** from login
-- Expired tokens automatically redirect to login page
-- Re-login required after expiration
+> **Server/web mode only** (not needed for desktop):
+> - `USERNAME` - Login username (default: `admin`)
+> - `PASSWORD` - Login password (default: `admin`)
+> - `JWT_SECRET` - JWT signing secret ⚠️ **Change in production!**
 
 ### Helm Values
 - `image.tag` - Container image tag
@@ -426,12 +429,11 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 
 ## 🔐 Security
 
-- **HTTPS Ready** - Deploy behind reverse proxy for TLS
-- **JWT Authentication** - Secure login with JWT tokens (1-hour expiration)
-- **Bearer Token Support** - Token-based API authentication
-- **Automatic Session Expiry** - Expired tokens redirect to login
+- **HTTPS Ready** - Deploy behind reverse proxy for TLS (server mode)
+- **kubeconfig Auth** - Desktop mode uses kubeconfig-based cluster authentication; no password required
+- **JWT Authentication** - Server/web mode uses JWT tokens with 1-hour expiration
 - **RBAC Compliant** - Respects Kubernetes RBAC
-- **Service Account** - Uses Kubernetes service accounts for API access
+- **Service Account** - Uses Kubernetes service accounts for in-cluster API access
 - **Read-Heavy** - Mostly read-only operations (safe for monitoring)
 
 ## 💡 Usage Examples
@@ -445,9 +447,9 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 5. Click "Scale" button
 6. Deployment will scale to the specified number of pods
 
-**API Call:**
+**API Call (server/web mode):**
 ```bash
-curl -X POST http://localhost:8091/api/deployments/default/my-app/scale \
+curl -X POST http://localhost:15222/api/deployments/default/my-app/scale \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"replicas": 2}'
@@ -459,11 +461,11 @@ curl -X POST http://localhost:8091/api/deployments/default/my-app/scale \
 2. In **Revisions**, pick a past revision and click **Rollback**.
 3. Confirm in the dialog; the release rolls back to that revision (`helm rollback`).
 
-### Authentication & Token Management
+### API Authentication (server/web mode)
 
 **Login and Get Token:**
 ```bash
-curl -X POST http://localhost:8091/api/login \
+curl -X POST http://localhost:15222/api/login \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "admin"}'
 ```
@@ -478,14 +480,11 @@ curl -X POST http://localhost:8091/api/login \
 
 **Use Token in API Calls:**
 ```bash
-curl http://localhost:8091/api/deployments \
+curl http://localhost:15222/api/deployments \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc..."
 ```
 
-**Token Expiration:**
-- Tokens expire after **1 hour** from login
-- Frontend automatically detects expiry and redirects to login
-- Return to login page to get a new token
+> Desktop mode bypasses JWT auth — the Tauri shell communicates with the backend sidecar directly without login.
 
 ## 📝 License
 
