@@ -100,7 +100,6 @@ Resource list pages subscribe over a single WebSocket and receive watch events (
 
 #### Other realtime
 - **Pod Exec** – Interactive shell (`/bin/sh`) via WebSocket **`/api/exec`** (bidirectional stream).
-- **Token refresh** – Frontend refreshes JWT before expiry.
 
 #### Polling (REST + refetchInterval)
 - **Dashboard** – Summary and pod count from REST (no interval); **nodes** (list + metrics) polled every **30s**.
@@ -110,11 +109,7 @@ Resource list pages subscribe over a single WebSocket and receive watch events (
 #### Not realtime
 - **Pod logs** – Single REST request returns log output (no WebSocket stream/follow from the UI).
 
-### Security & Authentication
-- **Desktop mode** – No login screen; authentication is handled by the selected kubeconfig/context
-- **Server/web mode** – JWT-based login with username/password; 1-hour token expiration
-- **Token Refresh** – `POST /api/refresh` to extend session (server mode only)
-- **Bearer Token** – Protected APIs require `Authorization: Bearer <token>` (server mode only)
+### Security
 - **RBAC** – Backend uses Kubernetes RBAC (service account / kubeconfig)
 - **Secure YAML** – Edit and apply with validation
 
@@ -138,29 +133,7 @@ Resource list pages subscribe over a single WebSocket and receive watch events (
 ```bash
 # build Rust backend
 make build-backend
-# or
-cargo build -p pertisk-kube-backend
-
-# run backend (no static files unless STATIC_DIR set)
-cargo run -p pertisk-kube-backend
 ```
-
-### Single-port Application (Backend + Frontend)
-
-```bash
-make run-monolith
-```
-
-Builds the React frontend and serves it from the Rust backend on a single port (default: http://localhost:15222).
-
-### Hot Reload Development
-
-```bash
-make dev
-```
-
-- Backend hot reload uses `cargo watch` (install with `make tools` if needed)
-- Frontend hot reload uses Vite dev server on `http://localhost:3000`
 
 ### Desktop (Tauri + Rust Backend Sidecar)
 
@@ -218,99 +191,7 @@ make build-macos-dmg
 - Sidecar lifecycle hardening includes: startup `/api/health` probe, auto-restart on crash, cluster verification before switch, and rollback on failure.
 - Set `PORT` before launching if you need a non-default backend port.
 
-### Local run with Kubernetes (k8s kubeconfig)
-
-```bash
-make run-ingress-k8s
-```
-
-- Uses `K8S_KUBECONFIG` (default: `~/.kube/...` or set it) for cluster access
-- Builds frontend, runs backend with static files and cargo watch; frontend build watcher runs in parallel
-- Override: `make run-ingress-k8s K8S_KUBECONFIG=/path/to/kubeconfig.yaml`
-
-##  API Endpoints
-
-All API routes are under `/api`. Protected routes require `Authorization: Bearer <JWT>` (or Basic auth).
-
-### Public
-- `GET /api/health` – Health check
-- `GET /api/readiness` – Readiness check
-- `POST /api/login` – Login (returns JWT, 1h expiry)
-
-### Token
-- `POST /api/refresh` – Refresh JWT (protected; extends session)
-
-### Protected – Cluster & Compute
-- `GET /api/dashboard` – Dashboard summary
-- `GET /api/nodes` – List nodes
-- `GET /api/nodes/:name/yaml`, `PUT /api/nodes/:name/yaml` – Node YAML
-- `DELETE /api/nodes/:name` – Delete node
-- `POST /api/nodes/:name/cordon` – Cordon node
-- `POST /api/nodes/:name/uncordon` – Uncordon node
-- `POST /api/nodes/:name/drain` – Drain node
-- `GET /api/namespaces` – List namespaces
-- `DELETE /api/namespaces/:name` – Delete namespace
-- `GET /api/pods` – List pods
-- `GET /api/pods/:namespace/:name/yaml`, `PUT /api/pods/:namespace/:name/yaml` – Pod YAML
-- `DELETE /api/pods/:namespace/:name` – Delete pod
-- `GET /api/pods/:namespace/:name/logs` – Pod logs (streaming)
-- `GET /api/events` – List events
-
-### Protected – Workloads
-- **Deployments:** `GET /api/deployments`, `GET|PUT .../yaml`, `DELETE ...`, `POST .../scale`, `POST .../restart`, `POST .../image-tag`
-- **StatefulSets / DaemonSets / ReplicaSets / Jobs / CronJobs:** `GET` list, `GET|PUT .../yaml`, `DELETE ...`
-
-### Protected – Config & Secrets
-- **ConfigMaps:** `GET`, `GET|PUT .../yaml`, `GET .../data`, `DELETE`
-- **Secrets:** `GET`, `GET|PUT .../yaml`, `GET .../data`, `DELETE`
-- **ResourceQuotas / LimitRanges:** `GET`, `GET|PUT .../yaml`, `DELETE`
-- **HPA / PDB:** `GET`, `GET|PUT .../yaml`, `DELETE`
-- **PriorityClasses / RuntimeClasses:** `GET`, `GET|PUT .../yaml`, `DELETE`
-- **Leases:** `GET`, `GET|PUT .../yaml`, `DELETE`
-- **MWC / VWC:** `GET /api/mwcs`, `GET|PUT /api/mwcs/:name/yaml`, `DELETE`; same for `vwcs`
-
-### Protected – Networking
-- **Services / Endpoints / Ingresses / IngressClasses / NetworkPolicies:** `GET`, `GET|PUT .../yaml`, `DELETE`
-- **Port-forward:** `GET /api/port-forwards`, `POST /api/port-forwards`, `POST /api/port-forwards/:id/stop`, `DELETE /api/port-forwards/:id`
-
-### Protected – Storage
-- **PersistentVolumes / PersistentVolumeClaims / StorageClasses:** `GET`, `GET|PUT .../yaml`, `DELETE`
-
-### Protected – RBAC
-- **ServiceAccounts / Roles / RoleBindings / ClusterRoles / ClusterRoleBindings:** `GET`, `GET|PUT .../yaml`, `DELETE`
-
-### Protected – Generic
-- `POST /api/apply` – Apply YAML manifest(s)
-- **CRDs:** `GET /api/crds`, `GET /api/crds/:crd_name/resources`, `GET .../resources/:name/yaml`, `DELETE .../resources/:name`
-
-### Protected – Backup & Restore
-- **Backup config:** `GET|PUT /api/backup/config`, `POST /api/backup/config/s3`, `POST /api/backup/config/test-s3`, `POST /api/backup/config/apply`
-- **Backup schedules:** `POST /api/backup/schedules`, `DELETE /api/backup/schedules/:name`, `POST /api/backup/schedules/:name/run`
-- **Backup runs:** `POST /api/backup/manual`, `GET /api/backup/overview`, `DELETE /api/backup/backups/:name`, `POST /api/backup/backups/delete`
-- **Restore:** `POST /api/backup/restore`
-
-### WebSocket
-- `WS /ws` – Real-time resource streaming (gRPC-Web)
-- `WS /api/exec` – Pod exec terminal
-
-### Frontend routes (SPA)
-
-| Path | Page |
-|------|------|
-| `/` | Dashboard |
-| `/workloads` | Workload overview |
-| `/namespaces`, `/nodes`, `/pods` | Namespaces, Nodes, Pods |
-| `/deployments` … `/cronjobs` | Workload resources |
-| `/config/configmaps` … `/config/leases`, `/config/mwc`, `/config/vwc` | Config & advanced |
-| `/config/backup` | Backup quick access (config section) |
-| `/backup/config`, `/backup/backup-schedule`, `/backup/backups`, `/backup/restores` | Backup and restore workflows |
-| `/network`, `/network/services` … `/network/portforwarding` | Networking |
-| `/storage`, `/storage/pvc`, `/storage/pv`, `/storage/storageclasses` | Storage |
-| `/access-control` … `/access-control/rolebindings` | RBAC |
-| `/events` | Events |
-| `/crds/:crdName` | Custom resources for a CRD |
-
-## 📊 Technology Stack
+##  Technology Stack
 
 ### Desktop Shell
 - **Tauri 2** - Native desktop framework (Rust core + WebView frontend)
@@ -342,16 +223,10 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 - `GRPC_PORT` - gRPC server port (default: `50051`)
 - `RUST_LOG` - Log level (default: `info`)
 
-> **Server/web mode only** (not needed for desktop):
-> - `USERNAME` - Login username (default: `admin`)
-> - `PASSWORD` - Login password (default: `admin`)
-> - `JWT_SECRET` - JWT signing secret ⚠️ **Change in production!**
-
 ## 🔐 Security
 
-- **HTTPS Ready** - Deploy behind reverse proxy for TLS (server mode)
-- **kubeconfig Auth** - Desktop mode uses kubeconfig-based cluster authentication; no password required
-- **JWT Authentication** - Server/web mode uses JWT tokens with 1-hour expiration
+- **HTTPS Ready** - Deploy behind reverse proxy for TLS
+- **kubeconfig Auth** - Uses kubeconfig-based cluster authentication
 - **RBAC Compliant** - Respects Kubernetes RBAC
 - **Service Account** - Uses Kubernetes service accounts for in-cluster API access
 - **Read-Heavy** - Mostly read-only operations (safe for monitoring)
@@ -366,39 +241,6 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 4. Enter the desired number of replicas (0-N)
 5. Click "Scale" button
 6. Deployment will scale to the specified number of pods
-
-**API Call (server/web mode):**
-```bash
-curl -X POST http://localhost:15222/api/deployments/default/my-app/scale \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"replicas": 2}'
-```
-
-### API Authentication (server/web mode)
-
-**Login and Get Token:**
-```bash
-curl -X POST http://localhost:15222/api/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin"}'
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "token": "eyJ0eXAiOiJKV1QiLCJhbGc..."
-}
-```
-
-**Use Token in API Calls:**
-```bash
-curl http://localhost:15222/api/deployments \
-  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc..."
-```
-
-> Desktop mode bypasses JWT auth — the Tauri shell communicates with the backend sidecar directly without login.
 
 ## 📝 License
 
