@@ -23,6 +23,36 @@ import {
 import { Card } from '../components/Card';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
+const parseServicePorts = (portsStr: string | undefined): number[] => {
+  if (!portsStr || typeof portsStr !== 'string') return [];
+  return portsStr
+    .split(',')
+    .map((p) => parseInt(p.trim().split('/')[0], 10))
+    .filter((port) => Number.isInteger(port) && port > 0);
+};
+
+const parsePodPorts = (containerPorts: string[] | undefined): number[] => {
+  if (!Array.isArray(containerPorts)) return [];
+  return containerPorts
+    .map((p) => parseInt(String(p).trim().split('/')[0], 10))
+    .filter((port) => Number.isInteger(port) && port > 0);
+};
+
+const pickDefaultLocalPort = (remotePort: number): number => {
+  if (remotePort === 80) return 8080;
+  if (remotePort === 443) return 8443;
+  return remotePort;
+};
+
+const getPortForwardUrl = (localPort: number): string => {
+  const browserHost = window.location.hostname;
+  const host =
+    browserHost && browserHost !== 'localhost' && browserHost !== '127.0.0.1'
+      ? browserHost
+      : '127.0.0.1';
+  return `http://${host}:${localPort}`;
+};
+
 export const PortForwardingPage = () => {
   const queryClient = useQueryClient();
   const { data: portForwards = [], isLoading, error, refetch } = usePortForwards();
@@ -41,6 +71,23 @@ export const PortForwardingPage = () => {
     remote_port: 80,
   });
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const openPortForward = (localPort: number) => {
+    const url = getPortForwardUrl(localPort);
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      window.location.assign(url);
+    }
+  };
+
+  const copyPortForwardUrl = async (localPort: number) => {
+    const url = getPortForwardUrl(localPort);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Ignore clipboard errors to avoid breaking row actions.
+    }
+  };
 
   const createMutation = useMutation({
     mutationFn: createPortForward,
@@ -80,6 +127,25 @@ export const PortForwardingPage = () => {
   const resourceOptions = resourceList
     .filter((r) => r.namespace === form.namespace)
     .map((r) => ({ value: r.name, label: r.name }));
+
+  const resourceListWithPorts = resourceList
+    .filter((r) => r.namespace === form.namespace)
+    .map((r) => {
+      const ports =
+        form.resource_type === 'service'
+          ? parseServicePorts((r as typeof services[number]).ports)
+          : Array.from(
+              new Set(
+                ((r as typeof pods[number]).containers || []).flatMap((container) =>
+                  parsePodPorts(container.ports)
+                )
+              )
+            );
+      return {
+        name: r.name,
+        ports,
+      };
+    });
 
   return (
     <div className="space-y-4">
@@ -163,15 +229,22 @@ export const PortForwardingPage = () => {
                     <td className="py-3 flex items-center gap-2">
                       {pf.status === 'running' && (
                         <>
-                          <a
-                            href={`http://127.0.0.1:${pf.local_port}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => openPortForward(pf.local_port)}
                             className="p-1.5 rounded border border-[var(--color-icon-info)] text-[var(--color-icon-info)] hover:bg-[var(--color-icon-info)]/10 transition-colors"
                             title="Open in browser"
                           >
                             <ExternalLink size={14} />
-                          </a>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => copyPortForwardUrl(pf.local_port)}
+                            className="px-2 py-1 rounded border border-border text-xs text-text-secondary hover:bg-hover transition-colors"
+                            title="Copy URL"
+                          >
+                            Copy URL
+                          </button>
                           <button
                             type="button"
                             onClick={() => stopMutation.mutate(pf.id)}
@@ -307,6 +380,55 @@ export const PortForwardingPage = () => {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <p className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
+                  {form.resource_type === 'service' ? 'Service list' : 'Pod list'}
+                </p>
+                <div
+                  className="max-h-40 overflow-y-auto rounded-lg border"
+                  style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
+                >
+                  {resourceListWithPorts.length === 0 ? (
+                    <p className="px-3 py-2 text-xs text-text-secondary">
+                      No {form.resource_type}s found in namespace {form.namespace}.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-border">
+                      {resourceListWithPorts.map((resource) => {
+                        const isSelected = form.resource_name === resource.name;
+                        return (
+                          <button
+                            key={resource.name}
+                            type="button"
+                            onClick={() => {
+                              const nextRemotePort = resource.ports[0] ?? form.remote_port;
+                              setForm((prev) => ({
+                                ...prev,
+                                resource_name: resource.name,
+                                remote_port: nextRemotePort,
+                                local_port: pickDefaultLocalPort(nextRemotePort),
+                              }));
+                            }}
+                            className={`w-full text-left px-3 py-2 transition-colors ${
+                              isSelected ? 'bg-[var(--color-primary)]/10' : 'hover:bg-hover'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium text-sm text-text">{resource.name}</span>
+                              <span className="text-xs text-text-secondary">
+                                {resource.ports.length > 0
+                                  ? `ports: ${resource.ports.join(', ')}`
+                                  : 'ports: n/a'}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

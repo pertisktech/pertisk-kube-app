@@ -82,7 +82,16 @@ async fn main() -> anyhow::Result<()> {
     let password = env::var("PASSWORD").unwrap_or_else(|_| "admin".to_string());
     let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key-change-in-production".to_string());
     
-    let port_forward_state = Some(Arc::new(handlers::portforward::PortForwardState::new()));
+    let cluster_key = handlers::portforward::cluster_key_from_env_or_default();
+    let storage_path = handlers::portforward::build_storage_path_from_env();
+    let port_forward_state = Some(Arc::new(handlers::portforward::PortForwardState::new(
+        storage_path,
+        cluster_key,
+    )));
+
+    if let Some(pf_state) = &port_forward_state {
+        handlers::portforward::restore_port_forwards_from_storage(pf_state).await;
+    }
     let state = AppState {
         client,
         username,

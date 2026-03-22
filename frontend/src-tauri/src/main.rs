@@ -130,12 +130,6 @@ fn backend_socket_addr(port: u16) -> SocketAddr {
 fn candidate_backend_paths(app: &AppHandle, cfg: &SidecarConfig) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
-    if let Some(explicit) = cfg.backend_bin.as_deref() {
-        if !explicit.trim().is_empty() {
-            paths.push(PathBuf::from(explicit));
-        }
-    }
-
     if let Ok(explicit) = std::env::var("PERTISK_BACKEND_BIN") {
         paths.push(PathBuf::from(explicit));
     }
@@ -143,6 +137,12 @@ fn candidate_backend_paths(app: &AppHandle, cfg: &SidecarConfig) -> Vec<PathBuf>
     if cfg!(debug_assertions) {
         paths.push(PathBuf::from("../target/debug/pertisk-kube-backend"));
         paths.push(PathBuf::from("../../target/debug/pertisk-kube-backend"));
+    }
+
+    if let Some(explicit) = cfg.backend_bin.as_deref() {
+        if !explicit.trim().is_empty() {
+            paths.push(PathBuf::from(explicit));
+        }
     }
 
     paths.push(PathBuf::from("../target/release/pertisk-kube-backend"));

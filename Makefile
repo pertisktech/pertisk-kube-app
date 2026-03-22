@@ -19,7 +19,7 @@ HELM_NAMESPACE ?= pertisk-rproxy
 APP_PORT ?= 8091
 GRPC_PORT ?= 50051
 
-.PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run run-desktop build-desktop build-macos-dmg run-monolith run-ingress-k8s
+.PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run run-desktop run-desktop-dev build-desktop build-macos-dmg run-monolith run-ingress-k8s
 .PHONY: docker-build docker-build-amd64 docker-build-arm64 docker-build-multi docker-push docker-push-multi
 .PHONY: docker-base-build docker-base-push docker-base-push-multi
 .PHONY: helm-install helm-upgrade helm-uninstall helm-template helm-deploy port-forward ingress-hosts lb-url
@@ -67,9 +67,16 @@ build-macos-dmg: build-backend frontend-install
 	fi
 	cd frontend && npm run tauri:build -- --bundles dmg
 
-run-desktop: build-backend frontend-install
+run-desktop: frontend-install
 	@lsof -ti:8091 | xargs kill -9 2>/dev/null || true
+	@test -x "$(CURDIR)/target/debug/pertisk-kube-backend" || $(MAKE) build-backend
 	cd frontend && PERTISK_BACKEND_BIN="$(CURDIR)/target/debug/pertisk-kube-backend" npm run tauri:dev
+
+run-desktop-dev: run-desktop
+	@echo "Desktop dev uses debug backend at target/debug/pertisk-kube-backend"
+
+
+
 
 # Build frontend and run backend serving the built SPA on a single port.
 run-monolith: frontend-build
