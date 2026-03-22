@@ -17,7 +17,7 @@ struct BackendState {
     config: Arc<Mutex<SidecarConfig>>,
 }
 
-const DEFAULT_PORT: u16 = 8091;
+const DEFAULT_PORT: u16 = 15222;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
 const CLUSTER_VERIFY_TIMEOUT: Duration = Duration::from_secs(20);
 const RESTART_BACKOFF: Duration = Duration::from_secs(2);
@@ -66,7 +66,7 @@ fn validated_config(mut cfg: SidecarConfig) -> SidecarConfig {
         }
     }
 
-    if let Ok(env_port) = std::env::var("PORT") {
+    if let Ok(env_port) = std::env::var("PORT").or_else(|_| std::env::var("APP_PORT")) {
         if let Ok(parsed) = env_port.parse::<u16>() {
             if parsed > 0 {
                 cfg.port = parsed;

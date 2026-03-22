@@ -16,7 +16,7 @@ BASE_TAG ?= latest
 HELM_RELEASE ?= pertisk-kube
 HELM_NAMESPACE ?= pertisk-rproxy
 # App port (must match helm/pertisk-kube/values.yaml app.service.port)
-APP_PORT ?= 8091
+APP_PORT ?= 15222
 GRPC_PORT ?= 50051
 
 .PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run run-desktop run-desktop-dev build-desktop build-macos-dmg run-monolith run-ingress-k8s
@@ -70,8 +70,11 @@ build-macos-dmg: build-backend frontend-install
 	cd frontend && npm run tauri:build -- --bundles dmg
 
 run-desktop: frontend-install build-backend
-	@lsof -ti:8091 | xargs kill -9 2>/dev/null || true
-	cd frontend && $(KUBE_ENV) PERTISK_BACKEND_BIN="$(CURDIR)/target/debug/pertisk-kube-backend" npm run tauri:dev
+	@pkill -f "ptkublet-desktop" 2>/dev/null || true
+	@pkill -f "pertisk-kube-backend" 2>/dev/null || true
+	@sleep 0.5
+	@lsof -ti:$(APP_PORT) -ti:$(GRPC_PORT) 2>/dev/null | sort -u | xargs kill -9 2>/dev/null || true
+	cd frontend && $(KUBE_ENV) APP_PORT=$(APP_PORT) GRPC_PORT=$(GRPC_PORT) PERTISK_BACKEND_BIN="$(CURDIR)/target/debug/pertisk-kube-backend" npm run tauri:dev
 
 run-desktop-dev: run-desktop
 	@echo "Desktop dev uses debug backend at target/debug/pertisk-kube-backend"
@@ -81,15 +84,15 @@ run-desktop-dev: run-desktop
 
 # Build frontend and run backend serving the built SPA on a single port.
 run-monolith: frontend-build
-	$(KUBE_ENV) STATIC_DIR=frontend/dist cargo run -p pertisk-kube-backend
+	$(KUBE_ENV) APP_PORT=$(APP_PORT) GRPC_PORT=$(GRPC_PORT) STATIC_DIR=frontend/dist cargo run -p pertisk-kube-backend
 
 # Simulate running as an ingress-style controller talking to k8s via kubeconfig.
 run-ingress-k8s: tools frontend-build
 	@pkill -f "cargo-watch watch -x run -p pertisk-kube-backend" 2>/dev/null || true
 	@pkill -f "target/debug/pertisk-kube-backend" 2>/dev/null || true
-	@EXISTING_PIDS=$$(lsof -ti:8091 -ti:50051 2>/dev/null | sort -u); \
+	@EXISTING_PIDS=$$(lsof -ti:$(APP_PORT) -ti:$(GRPC_PORT) 2>/dev/null | sort -u); \
 	if [ -n "$$EXISTING_PIDS" ]; then \
-		echo "Stopping existing process(es) on ports 8091/50051: $$EXISTING_PIDS"; \
+		echo "Stopping existing process(es) on ports $(APP_PORT)/$(GRPC_PORT): $$EXISTING_PIDS"; \
 		echo "$$EXISTING_PIDS" | xargs kill -9; \
 		sleep 1; \
 	fi
@@ -99,10 +102,12 @@ run-ingress-k8s: tools frontend-build
 	if [ -f "$(K8S_KUBECONFIG)" ]; then \
 		echo "Using local k8s kubeconfig: $(K8S_KUBECONFIG)"; \
 		KUBECONFIG="$(K8S_KUBECONFIG)" \
+		APP_PORT=$(APP_PORT) GRPC_PORT=$(GRPC_PORT) \
 		STATIC_DIR=frontend/dist \
 		cargo watch -x 'run -p pertisk-kube-backend'; \
 	else \
 		echo "k8s kubeconfig not found at $(K8S_KUBECONFIG); using current kubeconfig context instead."; \
+		APP_PORT=$(APP_PORT) GRPC_PORT=$(GRPC_PORT) \
 		STATIC_DIR=frontend/dist \
 		cargo watch -x 'run -p pertisk-kube-backend'; \
 	fi
