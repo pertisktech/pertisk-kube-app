@@ -8,7 +8,7 @@ This project is structured as a **single workspace**:
 - `frontend` – React SPA with real-time updates via WebSocket
 - `frontend/src-tauri` – Tauri 2 desktop shell: spawns and manages the backend sidecar
 - `proto` – gRPC protocol definitions for real-time resource streaming
-- `helm` – Kubernetes Helm chart for server/web deployment mode
+
 
 ## 🎯 Core Features
 
@@ -77,15 +77,6 @@ This project is structured as a **single workspace**:
 - **Backup Inventory** – List backups, inspect backup details, and bulk delete backup runs
 - **Restore Operations** – Trigger restore from selected backups and monitor restore list/status
 
-#### Helm
-- **Helm Charts** – Browse repos and charts; **install** from UI with:
-  - **Values** – Default values from `helm show values`, editable YAML, then **Apply** (`helm upgrade --install`)
-  - **README** – Chart README in bottom panel with **markdown viewer**
-- **Helm Releases** – List by namespace; detail panel with:
-  - **Revisions** – Table of revision history (revision, updated, status, chart, description)
-  - **Rollback** – Rollback to a prior revision with **confirmation dialog** before running `helm rollback`
-  - Upgrade release, view YAML, uninstall (with confirmation)
-
 #### Namespaces & Events
 - **Namespaces** – List, delete (with confirmation)
 - **Events** – Cluster/namespace-scoped events list
@@ -114,12 +105,10 @@ Resource list pages subscribe over a single WebSocket and receive watch events (
 #### Polling (REST + refetchInterval)
 - **Dashboard** – Summary and pod count from REST (no interval); **nodes** (list + metrics) polled every **30s**.
 - **Nodes page** – List is WebSocket; **node metrics** (CPU/memory, `kubectl top`) polled every **30s**.
-- **Helm releases** – List polled every **30s** (no WebSocket).
 - **Port forwards** – List polled every **5s**.
 
 #### Not realtime
 - **Pod logs** – Single REST request returns log output (no WebSocket stream/follow from the UI).
-- **Helm charts** – Cached ~10 min; no live updates.
 
 ### Security & Authentication
 - **Desktop mode** – No login screen; authentication is handled by the selected kubeconfig/context
@@ -136,14 +125,12 @@ Resource list pages subscribe over a single WebSocket and receive watch events (
 - **Detail Panels** – Key/value layout; **Labels** and **Annotations** in title case; aligned key/value columns
 - **Dashboard** – Gauges and charts (primary color dark green)
 - **Confirm Dialogs** – Confirm before destructive actions (delete, uninstall, rollback)
-- **Markdown Viewer** – Helm chart README rendered in bottom panel
 
 ## 📋 Build & Development
 
 ### Prerequisites
 - Rust 1.70+ (for backend)
 - Node.js 18+ (for frontend)
-- Docker (optional, for deployment)
 - Kubernetes cluster (1.20+)
 
 ### Build / Run (workspace root)
@@ -292,11 +279,9 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 ### Protected – RBAC
 - **ServiceAccounts / Roles / RoleBindings / ClusterRoles / ClusterRoleBindings:** `GET`, `GET|PUT .../yaml`, `DELETE`
 
-### Protected – Generic & Helm
+### Protected – Generic
 - `POST /api/apply` – Apply YAML manifest(s)
 - **CRDs:** `GET /api/crds`, `GET /api/crds/:crd_name/resources`, `GET .../resources/:name/yaml`, `DELETE .../resources/:name`
-- **Helm releases:** `GET /api/helm/releases`, `GET /api/helm/releases/:namespace/:name/yaml`, `GET .../history`, `POST .../rollback`, `POST .../upgrade`, `DELETE ...`
-- **Helm charts:** `GET /api/helm/charts`, `GET /api/helm/charts/versions`, `GET /api/helm/charts/values`, `GET /api/helm/charts/readme`, `POST /api/helm/charts/install`
 
 ### Protected – Backup & Restore
 - **Backup config:** `GET|PUT /api/backup/config`, `POST /api/backup/config/s3`, `POST /api/backup/config/test-s3`, `POST /api/backup/config/apply`
@@ -321,7 +306,6 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 | `/backup/config`, `/backup/backup-schedule`, `/backup/backups`, `/backup/restores` | Backup and restore workflows |
 | `/network`, `/network/services` … `/network/portforwarding` | Networking |
 | `/storage`, `/storage/pvc`, `/storage/pv`, `/storage/storageclasses` | Storage |
-| `/helm/charts`, `/helm/releases` | Helm charts & releases |
 | `/access-control` … `/access-control/rolebindings` | RBAC |
 | `/events` | Events |
 | `/crds/:crdName` | Custom resources for a CRD |
@@ -347,7 +331,7 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 - **Tailwind CSS** - Utility-first CSS framework
 - **Recharts** - React charting library
 - **Chart.js** - Data visualization
-- **react-markdown** / **remark-gfm** - Markdown rendering (e.g. Helm chart README)
+- **react-markdown** / **remark-gfm** - Markdown rendering
 - **Lucide React** - Icon library
 
 ## 📝 Configuration
@@ -362,13 +346,6 @@ All API routes are under `/api`. Protected routes require `Authorization: Bearer
 > - `USERNAME` - Login username (default: `admin`)
 > - `PASSWORD` - Login password (default: `admin`)
 > - `JWT_SECRET` - JWT signing secret ⚠️ **Change in production!**
-
-### Helm Values
-- `image.tag` - Container image tag
-- `replicaCount` - Number of dashboard replicas
-- `resources.limits` - Resource limits
-- `resources.requests` - Resource requests
-- `rbac.rules` - Custom RBAC rules
 
 ## 🔐 Security
 
@@ -397,12 +374,6 @@ curl -X POST http://localhost:15222/api/deployments/default/my-app/scale \
   -H "Content-Type: application/json" \
   -d '{"replicas": 2}'
 ```
-
-### Helm release rollback
-
-1. Go to **Helm → Releases**, select a release to open the detail panel.
-2. In **Revisions**, pick a past revision and click **Rollback**.
-3. Confirm in the dialog; the release rolls back to that revision (`helm rollback`).
 
 ### API Authentication (server/web mode)
 
