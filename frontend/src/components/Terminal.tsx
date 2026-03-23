@@ -175,72 +175,85 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       namespace
     )}&pod=${encodeURIComponent(podName)}${containerName ? `&container=${encodeURIComponent(containerName)}` : ''}`;
 
-    const transport = createRealtimeTransport({
-      path: execPath,
-      debugLabel: 'exec-shell',
-      allowWebSocketFallback: true,
-    });
-    transportRef.current = transport;
     let fatalTransportClose = false;
+    let disposed = false;
+    let connectTimeout: number | null = null;
 
-    transport.onOpen = () => {
-      xterm.writeln('\x1b[1;32m✓ Connected to pod shell\x1b[0m');
-      xterm.writeln(`\x1b[1;36mPod:\x1b[0m ${namespace}/${podName}`);
-      if (containerName) {
-        xterm.writeln(`\x1b[1;36mContainer:\x1b[0m ${containerName}`);
+    const initTransport = () => {
+      if (disposed) {
+        return;
       }
-      xterm.writeln('');
-      // Auto-focus terminal after connection
-      xterm.focus();
-      
-      // Ensure terminal is properly sized before sending dimensions
-      fitAddon.fit();
-      setTimeout(() => {
+
+      const transport = createRealtimeTransport({
+        path: execPath,
+        debugLabel: 'exec-shell',
+        allowWebSocketFallback: true,
+      });
+      transportRef.current = transport;
+
+      transport.onOpen = () => {
+        xterm.writeln('\x1b[1;32m✓ Connected to pod shell\x1b[0m');
+        xterm.writeln(`\x1b[1;36mPod:\x1b[0m ${namespace}/${podName}`);
+        if (containerName) {
+          xterm.writeln(`\x1b[1;36mContainer:\x1b[0m ${containerName}`);
+        }
+        xterm.writeln('');
+        // Auto-focus terminal after connection
+        xterm.focus();
+
+        // Ensure terminal is properly sized before sending dimensions
         fitAddon.fit();
-        sendResize();
-      }, 50);
-      setTimeout(() => {
-        fitAddon.fit();
-        sendResize();
-      }, 150);
-
-      if (namespace === 'node') {
         setTimeout(() => {
-          if (transport.isOpen()) {
-            transport.send('\n');
-          }
-        }, 180);
-      }
-
-      if (initialCommand && initialCommand.trim().length > 0) {
+          fitAddon.fit();
+          sendResize();
+        }, 50);
         setTimeout(() => {
-          if (transport.isOpen()) {
-            transport.send(`${initialCommand.trim()}\n`);
-          }
-        }, 220);
-      }
+          fitAddon.fit();
+          sendResize();
+        }, 150);
+
+        if (namespace === 'node') {
+          setTimeout(() => {
+            if (transport.isOpen()) {
+              transport.send('\n');
+            }
+          }, 180);
+        }
+
+        if (initialCommand && initialCommand.trim().length > 0) {
+          setTimeout(() => {
+            if (transport.isOpen()) {
+              transport.send(`${initialCommand.trim()}\n`);
+            }
+          }, 220);
+        }
+      };
+
+      transport.onMessage = (data) => {
+        xterm.write(data);
+      };
+
+      transport.onError = (errorEvent) => {
+        const friendly = toTerminalFriendlyError(errorEvent);
+        fatalTransportClose = isFatalRealtimeTransportError(errorEvent);
+        xterm.writeln(`\x1b[1;31m✗ ${friendly}\x1b[0m`);
+      };
+
+      transport.onClose = () => {
+        if (!fatalTransportClose) {
+          xterm.writeln('\r\n\x1b[1;33m✗ Connection closed\x1b[0m');
+        }
+      };
     };
 
-    transport.onMessage = (data) => {
-      xterm.write(data);
-    };
-
-    transport.onError = (errorEvent) => {
-      const friendly = toTerminalFriendlyError(errorEvent);
-      fatalTransportClose = isFatalRealtimeTransportError(errorEvent);
-      xterm.writeln(`\x1b[1;31m✗ ${friendly}\x1b[0m`);
-    };
-
-    transport.onClose = () => {
-      if (!fatalTransportClose) {
-        xterm.writeln('\r\n\x1b[1;33m✗ Connection closed\x1b[0m');
-      }
-    };
+    // Defer socket creation slightly so React StrictMode dev mount/unmount cycle
+    // can cancel the first attempt before any network connection is made.
+    connectTimeout = window.setTimeout(initTransport, 50);
 
     // Send terminal input directly to shell (pass-through mode)
     xterm.onData((data) => {
-      if (transport.isOpen()) {
-        transport.send(data);
+      if (transportRef.current?.isOpen()) {
+        transportRef.current.send(data);
       }
     });
 
@@ -278,6 +291,10 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
     window.addEventListener('resize', handleResize);
 
     return () => {
+      disposed = true;
+      if (connectTimeout !== null) {
+        window.clearTimeout(connectTimeout);
+      }
       if (resizeTimeoutRef.current) {
         window.clearTimeout(resizeTimeoutRef.current);
       }
@@ -285,7 +302,8 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
       layoutTimers.forEach((timer) => window.clearTimeout(timer));
-      transport.close();
+      transportRef.current?.close();
+      transportRef.current = null;
       xterm.dispose();
     };
   }, [podName, namespace, containerName, initialCommand, theme?.isDark]);
