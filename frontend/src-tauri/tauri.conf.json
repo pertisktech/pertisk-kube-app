@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "PTKublet",
@@ -18,7 +19,9 @@
         "minWidth": 1100,
         "minHeight": 720,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay"
       }
     ]
   },

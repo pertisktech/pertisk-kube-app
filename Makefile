@@ -47,15 +47,19 @@ build-backend:
 # Desktop run target (Tauri + backend sidecar)
 run: run-desktop
 
-build-desktop: build-backend
-	cd frontend && npm install && npm run tauri:build
+build-desktop: build-backend frontend-install
+	cd frontend && VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --config '{"version":"$(VERSION)"}'
 
-build-macos-dmg: build-backend frontend-install
+build-macos-dmg: frontend-install
 	@if [ "$$(uname -s)" != "Darwin" ]; then \
 		echo "build-macos-dmg is only supported on macOS"; \
 		exit 1; \
 	fi
-	cd frontend && npm run tauri:build -- --bundles dmg
+	@echo "Building macOS DMG v$(VERSION)..."
+	cd frontend && VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --bundles dmg --config '{"version":"$(VERSION)"}'
+	@echo ""
+	@echo "DMG output:"
+	@ls -lh frontend/src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null || echo "  (no .dmg found — check build output above)"
 
 run-desktop: frontend-install build-backend
 	@pkill -f "ptkublet-desktop" 2>/dev/null || true

@@ -51,7 +51,10 @@ import {
   saveDesktopSidecarConfig,
 } from '../utils/tauriDesktop';
 import { isDesktopRuntime } from '../utils/desktopBridge';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { APP_VERSION } from '../utils/version';
 
+const appWindow = getCurrentWindow();
 
 interface NavItem {
   label: string;
@@ -592,6 +595,19 @@ export const Layout = () => {
   })();
 
   const effectiveSidebarWidth = sidebarCollapsed ? 72 : sidebarWidthPx;
+  const topRightTitle = (typeof window !== 'undefined' && window.__PERTISK_CONFIG__?.topRightTitle?.trim())
+    || 'PTKublet';
+
+  const handleDesktopTitleBarMouseDown = (e: React.MouseEvent) => {
+    if (e.buttons !== 1) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, select, textarea, [role="button"]')) return;
+    if (e.detail === 2) {
+      appWindow.toggleMaximize();
+    } else {
+      appWindow.startDragging();
+    }
+  };
 
   const clusterSelectionDialog = (
     <div
@@ -742,10 +758,25 @@ export const Layout = () => {
   }
 
   return (
-    <div
-      className="flex h-screen bg-bg text-text relative"
-      style={{ '--layout-sidebar-width': `${effectiveSidebarWidth}px` } as CSSProperties}
-    >
+    <div className="flex h-screen flex-col bg-bg text-text">
+      {desktopMode && (
+        <div
+          data-tauri-drag-region
+          className="h-9 min-h-[36px] border-b border-border bg-surface select-none flex items-center justify-end"
+          onMouseDown={handleDesktopTitleBarMouseDown}
+        >
+          <div data-tauri-drag-region className="flex items-center gap-2.5 px-4">
+            <span className="text-[13px] font-medium tracking-wide text-text-secondary whitespace-nowrap">
+              {topRightTitle}
+            </span>
+            <span className="text-[11px] text-text-muted whitespace-nowrap">v{APP_VERSION}</span>
+          </div>
+        </div>
+      )}
+      <div
+        className="flex flex-1 min-h-0 relative"
+        style={{ '--layout-sidebar-width': `${effectiveSidebarWidth}px` } as CSSProperties}
+      >
       {/* Mobile menu overlay */}
       {sidebarOpen && (
         <div
@@ -1516,6 +1547,7 @@ export const Layout = () => {
       </div>
 
       {desktopMode && showKubeconfigModal && clusterSelectionDialog}
+      </div>
     </div>
   );
 };
