@@ -1066,7 +1066,7 @@ export const BottomPanel = () => {
   return (
     <div
       className={cn(
-        'flex flex-col rounded-xl overflow-hidden bg-sidebar border border-border',
+        'bottom-panel-shell flex flex-col rounded-xl overflow-hidden border border-border',
         fullScreen ? 'fixed inset-0 z-[100] rounded-none' : 'relative flex-shrink-0 mx-2 mb-2'
       )}
       style={{
@@ -1076,13 +1076,17 @@ export const BottomPanel = () => {
     >
       {/* Drag handle */}
       {!collapsed && tabs.length > 0 && (
-        <div onMouseDown={handleDragStart} className="h-1 flex-shrink-0 cursor-ns-resize hover:bg-primary/20 transition-colors" />
+        <div
+          onMouseDown={handleDragStart}
+          className="h-1 flex-shrink-0 cursor-ns-resize hover:bg-primary/20 transition-colors"
+          title="Drag to resize"
+        />
       )}
 
       {/* Tab bar */}
-      <div className="flex items-center h-8 flex-shrink-0 bg-sidebar">
+      <div className="bottom-panel-tabbar flex items-center flex-shrink-0">
         {/* Scrollable tabs */}
-        <div className="flex-1 flex items-center overflow-x-auto gap-0.5 px-1 min-w-0">
+        <div className="bottom-panel-tabs flex-1 flex items-center overflow-x-auto gap-1 px-2 min-w-0">
           {tabs.map((tab) => {
             const isActive = tab.id === activeTabId && !collapsed;
             return (
@@ -1091,8 +1095,8 @@ export const BottomPanel = () => {
                 type="button"
                 onClick={() => { setActiveTabId(tab.id); setCollapsed(false); }}
                 className={cn(
-                  'group flex items-center gap-1.5 px-2.5 h-7 rounded-t text-xs font-medium flex-shrink-0 border-b-2 transition-colors',
-                  isActive ? 'bg-bg border-border text-text' : 'border-transparent text-text-secondary hover:bg-hover'
+                  'bottom-panel-tab group flex items-center gap-1.5 px-3 text-xs font-medium flex-shrink-0 transition-colors',
+                  isActive ? 'is-active text-text' : 'text-text-secondary hover:text-text'
                 )}
               >
                 <TabIcon type={tab.type} size={12} />
@@ -1120,7 +1124,7 @@ export const BottomPanel = () => {
         </div>
 
         {/* Fixed right controls */}
-        <div className="flex-shrink-0 flex items-center gap-1 px-2">
+        <div className="bottom-panel-controls flex-shrink-0 flex items-center gap-1 px-2">
           {isActiveYamlTab && (
             <>
               {yamlActionResult?.tabId === activeTab.id && (
@@ -1163,8 +1167,8 @@ export const BottomPanel = () => {
             type="button"
             onClick={handleAddClick}
             className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
-              'bg-surface-elevated hover:bg-hover text-primary border border-border',
+              'bottom-panel-control-btn flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+              'text-primary border border-border',
               showAddMenu && 'bg-hover border-border'
             )}
             title="Add tab"
