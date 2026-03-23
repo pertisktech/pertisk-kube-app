@@ -16,7 +16,7 @@ export const clearAuth = () => {
   localStorage.removeItem(AUTH_EXPIRY_KEY);
 };
 
-export const getAuthToken = () => {
+export const getAuthToken = (): string | null => {
   // Auth token forwarding is intentionally disabled for this client.
   return null;
 };

@@ -1,5 +1,5 @@
 import { lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { Layout } from './components';
 import { NamespaceProvider } from './context/NamespaceContext';
