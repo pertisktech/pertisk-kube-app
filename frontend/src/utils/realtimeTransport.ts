@@ -15,6 +15,7 @@ export interface CreateRealtimeTransportOptions {
   path: string;
   mode?: RealtimeTransportMode;
   debugLabel?: string;
+  allowWebSocketFallback?: boolean;
 }
 
 interface RealtimeTransportCapabilities {
@@ -56,6 +57,11 @@ const isWebTransportEnvironmentSupported = (): boolean => {
 
 const toWebTransportUrl = (path: string): string => {
   return `https://${window.location.host}${path}`;
+};
+
+const toWebSocketUrl = (path: string): string => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}${path}`;
 };
 
 const shouldLogTransportDebug = (): boolean =>
@@ -256,11 +262,102 @@ const createWebTransportTransport = (path: string): RealtimeTransportClient => {
   return client;
 };
 
+const createWebSocketTransport = (path: string): RealtimeTransportClient => {
+  const ws = new WebSocket(toWebSocketUrl(path));
+  let opened = false;
+  let closedByClient = false;
+  let closeNotified = false;
+  let closeAfterOpen = false;
+  const sendQueue: string[] = [];
+
+  const notifyClose = (client: RealtimeTransportClient) => {
+    if (closeNotified) return;
+    closeNotified = true;
+    client.onClose?.();
+  };
+
+  const client: RealtimeTransportClient = {
+    mode: 'websocket',
+    onOpen: null,
+    onMessage: null,
+    onError: null,
+    onClose: null,
+    isOpen: () => opened && !closeNotified && ws.readyState === WebSocket.OPEN,
+    send: (data: string) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
+      } else {
+        sendQueue.push(data);
+      }
+    },
+    close: () => {
+      if (closedByClient) return;
+      closedByClient = true;
+      if (ws.readyState === WebSocket.CONNECTING) {
+        // In React StrictMode DEV, effects mount/unmount rapidly. Closing while CONNECTING
+        // causes noisy browser errors, so defer close until socket opens.
+        closeAfterOpen = true;
+      } else {
+        try {
+          ws.close();
+        } catch {
+          // ignore
+        }
+      }
+      notifyClose(client);
+    },
+  };
+
+  ws.onopen = () => {
+    if (closedByClient) {
+      if (closeAfterOpen) {
+        try {
+          ws.close();
+        } catch {
+          // ignore
+        }
+      }
+      return;
+    }
+
+    opened = true;
+    client.onOpen?.();
+
+    while (sendQueue.length > 0 && ws.readyState === WebSocket.OPEN) {
+      const next = sendQueue.shift();
+      if (next == null) break;
+      ws.send(next);
+    }
+  };
+
+  ws.onmessage = (event) => {
+    const data = typeof event.data === 'string' ? event.data : String(event.data ?? '');
+    client.onMessage?.(data);
+  };
+
+  ws.onerror = (event) => {
+    if (closedByClient) {
+      return;
+    }
+    client.onError?.(event);
+  };
+
+  ws.onclose = () => {
+    if (!closedByClient) {
+      notifyClose(client);
+    }
+  };
+
+  return client;
+};
+
 export const createRealtimeTransport = ({
   path: _path,
   mode = getRealtimeTransportMode(),
   debugLabel,
+  allowWebSocketFallback = false,
 }: CreateRealtimeTransportOptions): RealtimeTransportClient => {
+  const path = _path;
   const caps = getCachedCapabilities();
   triggerCapabilitiesProbe();
 
@@ -299,12 +396,18 @@ export const createRealtimeTransport = ({
 
   if (mode === 'webtransport') {
     if (!webTransportSupported) {
+      if (allowWebSocketFallback) {
+        return createWebSocketTransport(path);
+      }
       return createFailedTransport(
         'webtransport',
         `[realtime-transport${debugLabel ? `:${debugLabel}` : ''}] WebTransport unsupported in this environment (requires HTTPS + browser WebTransport API).`
       );
     }
     if (!caps.webtransport) {
+      if (allowWebSocketFallback) {
+        return createWebSocketTransport(path);
+      }
       return createFailedTransport(
         'webtransport',
         `[realtime-transport${debugLabel ? `:${debugLabel}` : ''}] Backend does not advertise WebTransport support.`
@@ -316,6 +419,10 @@ export const createRealtimeTransport = ({
 
   if (mode === 'auto' && canAttemptWebTransport) {
     return createWebTransportTransport(effectiveWebTransportPath);
+  }
+
+  if (allowWebSocketFallback) {
+    return createWebSocketTransport(path);
   }
 
   return createFailedTransport(

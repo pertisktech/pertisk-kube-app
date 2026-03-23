@@ -14,6 +14,41 @@ interface TerminalProps {
   onClose?: () => void;
 }
 
+const formatRealtimeTransportError = (err: unknown): string => {
+  if (typeof err === 'string' && err.trim()) {
+    return err;
+  }
+  if (err instanceof Error && err.message.trim()) {
+    return err.message;
+  }
+  return 'Realtime transport connection error';
+};
+
+const isFatalRealtimeTransportError = (err: unknown): boolean => {
+  const normalized = formatRealtimeTransportError(err).toLowerCase();
+  return normalized.includes('webtransport unsupported')
+    || normalized.includes('backend does not advertise webtransport support')
+    || normalized.includes('backend capability endpoint reports webtransport=false')
+    || normalized.includes('wt-only mode blocked non-webtransport path');
+};
+
+const toTerminalFriendlyError = (err: unknown): string => {
+  const normalized = formatRealtimeTransportError(err).toLowerCase();
+  if (normalized.includes('webtransport unsupported')) {
+    return 'Realtime terminal unavailable in this runtime. WebTransport requires HTTPS and browser support.';
+  }
+  if (
+    normalized.includes('backend does not advertise webtransport support')
+    || normalized.includes('backend capability endpoint reports webtransport=false')
+  ) {
+    return 'Realtime terminal unavailable. Backend WebTransport support is disabled.';
+  }
+  if (normalized.includes('wt-only mode blocked non-webtransport path')) {
+    return 'Realtime terminal unavailable because WT-only mode is enabled.';
+  }
+  return formatRealtimeTransportError(err);
+};
+
 export const Terminal = ({ podName, namespace, containerName, initialCommand }: TerminalProps) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -140,8 +175,13 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       namespace
     )}&pod=${encodeURIComponent(podName)}${containerName ? `&container=${encodeURIComponent(containerName)}` : ''}`;
 
-    const transport = createRealtimeTransport({ path: execPath, debugLabel: 'exec-shell' });
+    const transport = createRealtimeTransport({
+      path: execPath,
+      debugLabel: 'exec-shell',
+      allowWebSocketFallback: true,
+    });
     transportRef.current = transport;
+    let fatalTransportClose = false;
 
     transport.onOpen = () => {
       xterm.writeln('\x1b[1;32m✓ Connected to pod shell\x1b[0m');
@@ -185,12 +225,16 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       xterm.write(data);
     };
 
-    transport.onError = () => {
-      xterm.writeln('\x1b[1;31m✗ WebSocket error\x1b[0m');
+    transport.onError = (errorEvent) => {
+      const friendly = toTerminalFriendlyError(errorEvent);
+      fatalTransportClose = isFatalRealtimeTransportError(errorEvent);
+      xterm.writeln(`\x1b[1;31m✗ ${friendly}\x1b[0m`);
     };
 
     transport.onClose = () => {
-      xterm.writeln('\r\n\x1b[1;33m✗ Connection closed\x1b[0m');
+      if (!fatalTransportClose) {
+        xterm.writeln('\r\n\x1b[1;33m✗ Connection closed\x1b[0m');
+      }
     };
 
     // Send terminal input directly to shell (pass-through mode)

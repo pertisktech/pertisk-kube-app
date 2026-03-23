@@ -380,6 +380,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 10;
   const fatalTransportErrorRef = useRef(false);
+  const hasOpenedTransportRef = useRef(false);
   const deletionTimeoutsRef = useRef<Map<string, number>>(new Map()); // Track deletion timeouts
   const deletedPodsRef = useRef<Set<string>>(new Set()); // Track deleted pods to prevent re-adding
 
@@ -458,6 +459,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
         setError(null);
         reconnectAttemptsRef.current = 0;
         fatalTransportErrorRef.current = false;
+        hasOpenedTransportRef.current = true;
 
         // Subscribe to pods
         transport.send(JSON.stringify({
@@ -670,7 +672,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
         setIsConnected(false);
         transportRef.current = null;
 
-        if (fatalTransportErrorRef.current) {
+        if (fatalTransportErrorRef.current || !hasOpenedTransportRef.current) {
           return;
         }
 
@@ -698,6 +700,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       const fatalFromCreate = isFatalRealtimeTransportError(err);
       if (fatalFromCreate) {
         fatalTransportErrorRef.current = true;
+        hasOpenedTransportRef.current = false;
         allowReconnectRef.current = false;
         if (isRealtimeDebug() && !podsTransportUnavailableLogged) {
           podsTransportUnavailableLogged = true;
@@ -731,6 +734,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
     if (enabled) {
       allowReconnectRef.current = true;
       fatalTransportErrorRef.current = false;
+      hasOpenedTransportRef.current = false;
       connect();
     }
 
