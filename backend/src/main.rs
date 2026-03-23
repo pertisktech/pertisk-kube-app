@@ -27,7 +27,6 @@ pub mod utils;
 
 use auth::{login, refresh_token};
 use handlers::{
-    backup::*,
     config::*,
     crd::*,
     helm::*,
@@ -100,8 +99,6 @@ async fn main() -> anyhow::Result<()> {
         port_forward_state,
         workload_metric_history: Arc::new(RwLock::new(Vec::new())),
     };
-
-    start_backup_scheduler_worker(state.clone());
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -326,18 +323,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/helm/charts/values", get(get_helm_chart_values))
         .route("/helm/charts/readme", get(get_helm_chart_readme))
         .route("/helm/charts/install", post(install_helm_chart))
-        .route("/backup/config", get(get_backup_settings).put(save_backup_settings))
-        .route("/backup/config/s3", post(save_backup_s3_config))
-        .route("/backup/config/test-s3", post(test_backup_s3))
-        .route("/backup/config/apply", post(apply_backup_settings))
-        .route("/backup/schedules", post(create_backup_schedule))
-        .route("/backup/schedules/:name", delete(delete_backup_schedule))
-        .route("/backup/schedules/:name/run", post(run_backup_schedule_manual))
-        .route("/backup/backups/delete", post(delete_backup_runs_bulk))
-        .route("/backup/backups/:name", get(download_backup_run).delete(delete_backup_run))
-        .route("/backup/manual", post(run_manual_backup))
-        .route("/backup/restore", post(run_restore))
-        .route("/backup/overview", get(get_backup_overview))
         .route("/helm/releases/:namespace/:name/yaml", get(get_helm_release_yaml))
         .route("/helm/releases/:namespace/:name/history", get(get_helm_release_history))
         .route("/helm/releases/:namespace/:name/rollback", post(rollback_helm_release))

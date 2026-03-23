@@ -136,12 +136,6 @@ const WORKLOAD_ITEMS: NavItem[] = [
   { label: 'CronJob', path: '/cronjobs', icon: Clock },
 ];
 
-const BACKUP_ITEMS: NavItem[] = [
-  { label: 'Config', path: '/backup/config', icon: Settings },
-  { label: 'Scheduler', path: '/backup/backup-schedule', icon: Clock },
-  { label: 'Backups', path: '/backup/backups', icon: Archive },
-];
-
 interface BreadcrumbItem {
   label: string;
   path?: string;
@@ -180,7 +174,6 @@ export const Layout = () => {
   const [helmOpen, setHelmOpen] = useState(false);
   const [accessControlOpen, setAccessControlOpen] = useState(false);
   const [customResourcesOpen, setCustomResourcesOpen] = useState(false);
-  const [backupOpen, setBackupOpen] = useState(false);
   const [expandedCrdGroups, setExpandedCrdGroups] = useState<Set<string>>(new Set());
   const [sidebarWidthPx, setSidebarWidthPx] = useState(() => {
     if (typeof window === 'undefined') return SIDEBAR_WIDTH_DEFAULT;
@@ -216,14 +209,12 @@ export const Layout = () => {
   const { data: realtimeNamespaces } = useRealtimeNamespaces();
   const { data: apiNamespaces } = useNamespaces();
 
-  // Hide namespace filter on Dashboard, Nodes, Namespaces, Helm Charts, and all Backup pages
+  // Hide namespace filter on Dashboard, Nodes, Namespaces, and Helm Charts
   const shouldShowNamespaceFilter = location.pathname !== '/'
     && location.pathname !== '/cluster'
     && location.pathname !== '/nodes'
     && location.pathname !== '/namespaces'
-    && location.pathname !== '/helm/charts'
-    && !location.pathname.startsWith('/backup/')
-    && location.pathname !== '/config/backup';
+    && location.pathname !== '/helm/charts';
 
   // Connect to host machine or Kubernetes pod
   // (handled by BottomPanel via openPanelTab)
@@ -409,9 +400,6 @@ export const Layout = () => {
     if (ACCESS_CONTROL_ITEMS.some((item) => pathname.startsWith(item.path)) || pathname === '/access-control') {
       setAccessControlOpen(true);
     }
-    if (BACKUP_ITEMS.some((item) => pathname.startsWith(item.path)) || pathname === '/config/backup') {
-      setBackupOpen(true);
-    }
     // Custom Resources: when on /crds/:crdName, expand section and the API group so level 3 is visible
     if (pathname.startsWith('/crds/') && pathname !== '/crds') {
       const match = pathname.match(/^\/crds\/(.+)$/);
@@ -495,7 +483,6 @@ export const Layout = () => {
   const hasActiveNetwork = NETWORK_ITEMS.some((item) => isActive(item.path));
   const hasActiveHelm = HELM_ITEMS.some((item) => isActive(item.path));
   const hasActiveAccessControl = ACCESS_CONTROL_ITEMS.some((item) => isActive(item.path));
-  const hasActiveBackup = BACKUP_ITEMS.some((item) => isActive(item.path)) || isActive('/config/backup');
   const hasActiveCustomResources = location.pathname.startsWith('/crds');
 
   const breadcrumbs = (() => {
@@ -580,22 +567,6 @@ export const Layout = () => {
     }
     if (pathname === '/access-control') {
       return [{ label: 'Access Control', icon: Shield }] as BreadcrumbItem[];
-    }
-
-    const backupItem = BACKUP_ITEMS.find(
-      (item) => pathname === item.path || pathname.startsWith(`${item.path}/`)
-    );
-    if (backupItem) {
-      return [
-        { label: 'Pertisk Backups', icon: Archive },
-        { label: backupItem.label, icon: backupItem.icon },
-      ] as BreadcrumbItem[];
-    }
-    if (pathname === '/config/backup') {
-      return [
-        { label: 'Pertisk Backups', icon: Archive },
-        { label: 'Scheduler', icon: Clock },
-      ] as BreadcrumbItem[];
     }
 
     if (pathname.startsWith('/crds/')) {
@@ -794,7 +765,7 @@ export const Layout = () => {
       >
         <div
           className={cn(
-            'flex h-[63px] min-h-[63px] items-center border-b border-border shrink-0',
+            'flex h-[45px] min-h-[45px] items-center border-b border-border shrink-0',
             sidebarCollapsed ? 'justify-center px-2' : 'justify-between px-4'
           )}
         >
@@ -1335,60 +1306,6 @@ export const Layout = () => {
                 )}
               </div>
 
-            <div className="space-y-1 order-11">
-              <button
-                type="button"
-                onClick={() => {
-                  if (sidebarCollapsed) setSidebarCollapsed(false);
-                  setBackupOpen((p) => !p);
-                }}
-                className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
-                  sidebarCollapsed && 'justify-center px-2',
-                  hasActiveBackup
-                    ? 'bg-hover text-[var(--color-primary)] font-semibold'
-                    : 'text-text-secondary hover:bg-hover hover:text-text'
-                )}
-                title="Pertisk Backups"
-              >
-                <Archive size={18} className="flex-shrink-0" />
-                {!sidebarCollapsed && (
-                  <>
-                    <span className="flex-1 text-left">Pertisk Backups</span>
-                    <ChevronDown
-                      size={16}
-                      className={cn('transition-transform', backupOpen && 'rotate-180')}
-                    />
-                  </>
-                )}
-              </button>
-
-              {!sidebarCollapsed && backupOpen && (
-                <div className="space-y-1">
-                  {BACKUP_ITEMS.map((item) => {
-                    const Icon = item.icon;
-                    const active = isActive(item.path) || (item.path === '/backup/backup-schedule' && isActive('/config/backup'));
-                    return (
-                      <Link
-                        key={item.path}
-                        to={item.path}
-                        onClick={() => setSidebarOpen(false)}
-                        className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
-                          active
-                            ? 'bg-hover text-[var(--color-primary)] font-semibold'
-                            : 'text-text-secondary hover:bg-hover hover:text-text'
-                        )}
-                        title={item.label}
-                      >
-                        <Icon size={16} className="flex-shrink-0" />
-                        <span>{item.label}</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
           </nav>
         </div>
       </aside>
@@ -1414,7 +1331,7 @@ export const Layout = () => {
       {/* Main content */}
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Top bar */}
-        <header className="relative z-[70] bg-surface border-b border-border px-4 py-3 flex items-center justify-between">
+        <header className="relative z-[70] bg-surface border-b border-border px-4 h-[45px] min-h-[45px] flex items-center justify-between">
           <div className="flex items-center gap-4 flex-1">
             <button
               onClick={() => setSidebarOpen(true)}
