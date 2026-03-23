@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useTheme } from '../context/ThemeContext';
+import { createRealtimeTransport } from '../utils/realtimeTransport';
 
 interface TerminalProps {
   podName: string;
@@ -16,17 +17,17 @@ interface TerminalProps {
 export const Terminal = ({ podName, namespace, containerName, initialCommand }: TerminalProps) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const transportRef = useRef<ReturnType<typeof createRealtimeTransport> | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const lastSentDimensionsRef = useRef<{ cols: number; rows: number } | null>(null);
   const resizeTimeoutRef = useRef<number | null>(null);
   const theme = useTheme();
 
   const sendResize = () => {
-    const ws = wsRef.current;
+    const transport = transportRef.current;
     const xterm = xtermRef.current;
 
-    if (!ws || !xterm || ws.readyState !== WebSocket.OPEN) {
+    if (!transport || !xterm || !transport.isOpen()) {
       return;
     }
 
@@ -39,7 +40,7 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
     }
 
     lastSentDimensionsRef.current = current;
-    ws.send(
+    transport.send(
       JSON.stringify({
         type: 'resize',
         rows: xterm.rows,
@@ -135,15 +136,14 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
     xterm.focus();
 
     // Connect WebSocket for shell
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/exec?namespace=${encodeURIComponent(
+    const execPath = `/api/exec?namespace=${encodeURIComponent(
       namespace
     )}&pod=${encodeURIComponent(podName)}${containerName ? `&container=${encodeURIComponent(containerName)}` : ''}`;
 
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    const transport = createRealtimeTransport({ path: execPath, debugLabel: 'exec-shell' });
+    transportRef.current = transport;
 
-    ws.onopen = () => {
+    transport.onOpen = () => {
       xterm.writeln('\x1b[1;32m✓ Connected to pod shell\x1b[0m');
       xterm.writeln(`\x1b[1;36mPod:\x1b[0m ${namespace}/${podName}`);
       if (containerName) {
@@ -166,39 +166,37 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
 
       if (namespace === 'node') {
         setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send('\n');
+          if (transport.isOpen()) {
+            transport.send('\n');
           }
         }, 180);
       }
 
       if (initialCommand && initialCommand.trim().length > 0) {
         setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(`${initialCommand.trim()}\n`);
+          if (transport.isOpen()) {
+            transport.send(`${initialCommand.trim()}\n`);
           }
         }, 220);
       }
     };
 
-    ws.onmessage = (event) => {
-      if (typeof event.data === 'string') {
-        xterm.write(event.data);
-      }
+    transport.onMessage = (data) => {
+      xterm.write(data);
     };
 
-    ws.onerror = () => {
+    transport.onError = () => {
       xterm.writeln('\x1b[1;31m✗ WebSocket error\x1b[0m');
     };
 
-    ws.onclose = () => {
+    transport.onClose = () => {
       xterm.writeln('\r\n\x1b[1;33m✗ Connection closed\x1b[0m');
     };
 
     // Send terminal input directly to shell (pass-through mode)
     xterm.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
+      if (transport.isOpen()) {
+        transport.send(data);
       }
     });
 
@@ -243,7 +241,7 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
       layoutTimers.forEach((timer) => window.clearTimeout(timer));
-      ws.close();
+      transport.close();
       xterm.dispose();
     };
   }, [podName, namespace, containerName, initialCommand, theme?.isDark]);

@@ -17,15 +17,8 @@ export const clearAuth = () => {
 };
 
 export const getAuthToken = () => {
-  const token = localStorage.getItem(AUTH_TOKEN_KEY);
-  
-  // Check if token is expired
-  if (token && isTokenExpired()) {
-    clearAuth();
-    return null;
-  }
-  
-  return token ? `Bearer ${token}` : null;
+  // Auth token forwarding is intentionally disabled for this client.
+  return null;
 };
 
 export const getAuthUser = () => {

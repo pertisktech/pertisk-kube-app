@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { getAuthToken } from '../utils/auth';
+import { createRealtimeTransport } from '../utils/realtimeTransport';
 
 export type ResourceType = 'pods' | 'deployments' | 'services' | 'nodes';
 
@@ -7,6 +8,53 @@ export type ResourceType = 'pods' | 'deployments' | 'services' | 'nodes';
 const isRealtimeDebug = (): boolean =>
   typeof window !== 'undefined' &&
   (import.meta.env.DEV || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const isFatalRealtimeTransportError = (err: unknown): boolean => {
+  const text = typeof err === 'string'
+    ? err
+    : err instanceof Error
+      ? err.message
+      : '';
+
+  const normalized = text.toLowerCase();
+  return normalized.includes('webtransport unsupported')
+    || normalized.includes('backend does not advertise webtransport support')
+    || normalized.includes('backend capability endpoint reports webtransport=false')
+    || normalized.includes('wt-only mode blocked non-webtransport path');
+};
+
+const formatRealtimeTransportError = (err: unknown): string => {
+  if (typeof err === 'string' && err.trim()) {
+    return err;
+  }
+  if (err instanceof Error && err.message.trim()) {
+    return err.message;
+  }
+  return 'Realtime transport connection error';
+};
+
+let podsTransportUnavailableLogged = false;
+
+const toUserFacingRealtimeError = (rawMessage: string): string => {
+  const normalized = rawMessage.toLowerCase();
+
+  if (normalized.includes('webtransport unsupported')) {
+    return 'Realtime unavailable in this runtime. WebTransport requires HTTPS and browser support.';
+  }
+
+  if (
+    normalized.includes('backend does not advertise webtransport support')
+    || normalized.includes('backend capability endpoint reports webtransport=false')
+  ) {
+    return 'Realtime unavailable. Backend WebTransport support is currently disabled.';
+  }
+
+  if (normalized.includes('wt-only mode blocked non-webtransport path')) {
+    return 'Realtime unavailable because WT-only mode is enabled.';
+  }
+
+  return rawMessage;
+};
 
 interface UseRealtimePodsOptions {
   enabled?: boolean;
@@ -326,23 +374,32 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   const [data, setData] = useState<T[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const transportRef = useRef<ReturnType<typeof createRealtimeTransport> | null>(null);
   const reconnectTimeoutRef = useRef<number>();
+  const allowReconnectRef = useRef(true);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 10;
+  const fatalTransportErrorRef = useRef(false);
   const deletionTimeoutsRef = useRef<Map<string, number>>(new Map()); // Track deletion timeouts
   const deletedPodsRef = useRef<Set<string>>(new Set()); // Track deleted pods to prevent re-adding
 
   const syncPodDetails = useCallback(async () => {
     const token = getAuthToken();
-    if (!token) return;
 
     try {
       const response = await fetch('/api/pods', {
-        headers: {
-          Authorization: token,
-        },
+        cache: 'no-store',
+        headers: token
+          ? {
+              Authorization: token,
+            }
+          : undefined,
       });
+
+      if (response.status === 401) {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+        return;
+      }
 
       if (!response.ok) return;
 
@@ -392,30 +449,26 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   const connect = useCallback(() => {
     if (!enabled) return;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    const port = window.location.port ? `:${window.location.port}` : '';
-    const wsUrl = `${protocol}//${host}${port}/ws`;
-
     try {
-      const ws = new WebSocket(wsUrl);
+      const transport = createRealtimeTransport({ path: '/ws', debugLabel: 'pods' });
 
-      ws.onopen = () => {
-        if (isRealtimeDebug()) console.log('[useRealtimePods] WebSocket connected');
+      transport.onOpen = () => {
+        if (isRealtimeDebug()) console.log('[useRealtimePods] Realtime transport connected');
         setIsConnected(true);
         setError(null);
         reconnectAttemptsRef.current = 0;
+        fatalTransportErrorRef.current = false;
 
         // Subscribe to pods
-        ws.send(JSON.stringify({
+        transport.send(JSON.stringify({
           type: 'subscribe',
           resource: 'pods'
         }));
       };
 
-      ws.onmessage = (event) => {
+      transport.onMessage = (rawData) => {
         try {
-          const message = JSON.parse(event.data);
+          const message = JSON.parse(rawData);
 
           if (message.type === 'resource_update' && message.resource === 'pods') {
             const { action, data: rawPodData } = message;
@@ -585,24 +638,51 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
         }
       };
 
-      ws.onerror = (errorEvent) => {
-        console.error('[useRealtimePods] WebSocket error:', errorEvent);
-        setError('WebSocket connection error');
+      transport.onError = (errorEvent) => {
+        const transportErrorMessage = formatRealtimeTransportError(errorEvent);
+        const fatalEvent = isFatalRealtimeTransportError(errorEvent);
+
+        if (fatalEvent) {
+          fatalTransportErrorRef.current = true;
+          allowReconnectRef.current = false;
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = undefined;
+          }
+
+          if (isRealtimeDebug() && !podsTransportUnavailableLogged) {
+            podsTransportUnavailableLogged = true;
+            console.warn(`[useRealtimePods] Realtime transport unavailable: ${transportErrorMessage}`);
+          }
+        } else {
+          console.error('[useRealtimePods] Realtime transport error:', errorEvent);
+        }
+        if (fatalEvent) {
+          // Keep Pods page usable via polling sync instead of showing a blocking transport error.
+          setError(null);
+        } else {
+          setError(toUserFacingRealtimeError(transportErrorMessage));
+        }
       };
 
-      ws.onclose = () => {
-        if (isRealtimeDebug()) console.log('[useRealtimePods] WebSocket closed');
+      transport.onClose = () => {
+        if (isRealtimeDebug()) console.log('[useRealtimePods] Realtime transport closed');
         setIsConnected(false);
-        wsRef.current = null;
+        transportRef.current = null;
+
+        if (fatalTransportErrorRef.current) {
+          return;
+        }
 
         // Attempt reconnection
         if (
           enabled &&
+          allowReconnectRef.current &&
           reconnectAttemptsRef.current < maxReconnectAttempts
         ) {
           reconnectAttemptsRef.current += 1;
           if (isRealtimeDebug()) console.log(
-            `[useRealtimePods] Reconnecting... (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`
+            `[useRealtimePods] Reconnecting transport... (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`
           );
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
@@ -612,17 +692,29 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
         }
       };
 
-      wsRef.current = ws;
+      transportRef.current = transport;
     } catch (err) {
-      console.error('[useRealtimePods] Failed to create WebSocket:', err);
-      setError('Failed to create WebSocket connection');
+      const transportErrorMessage = formatRealtimeTransportError(err);
+      const fatalFromCreate = isFatalRealtimeTransportError(err);
+      if (fatalFromCreate) {
+        fatalTransportErrorRef.current = true;
+        allowReconnectRef.current = false;
+        if (isRealtimeDebug() && !podsTransportUnavailableLogged) {
+          podsTransportUnavailableLogged = true;
+          console.warn(`[useRealtimePods] Realtime transport unavailable: ${transportErrorMessage}`);
+        }
+        setError(null);
+      } else {
+        console.error('[useRealtimePods] Failed to create realtime transport:', err);
+        setError(toUserFacingRealtimeError(transportErrorMessage));
+      }
     }
   }, [enabled, reconnectInterval]);
 
   const disconnect = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+    if (transportRef.current) {
+      transportRef.current.close();
+      transportRef.current = null;
     }
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
@@ -637,6 +729,8 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
 
   useEffect(() => {
     if (enabled) {
+      allowReconnectRef.current = true;
+      fatalTransportErrorRef.current = false;
       connect();
     }
 

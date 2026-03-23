@@ -6,6 +6,7 @@ use axum::{
     Json, Router,
 };
 use kube::{config::KubeConfigOptions, Client, Config};
+use serde_json::json;
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tower_http::{
@@ -111,6 +112,7 @@ async fn main() -> anyhow::Result<()> {
     let public_api = Router::new()
         .route("/health", get(health))
         .route("/readiness", get(readiness))
+        .route("/realtime/capabilities", get(realtime_capabilities))
         .route("/login", post(login));
 
     let refresh_api = Router::new().route("/refresh", post(refresh_token));
@@ -409,6 +411,48 @@ async fn health() -> impl IntoResponse {
     let body = HealthResponse {
         status: "ok".into(),
     };
+    (StatusCode::OK, Json(body))
+}
+
+async fn realtime_capabilities() -> impl IntoResponse {
+    let webtransport_enabled_raw = std::env::var("WEBTRANSPORT_ENABLED").ok();
+    let webtransport_enabled = webtransport_enabled_raw
+        .as_deref()
+        .map(|value| {
+            let normalized = value.trim().to_ascii_lowercase();
+            normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
+        })
+        .unwrap_or(false);
+
+    let webtransport_path_raw = std::env::var("WEBTRANSPORT_PATH").ok();
+    let webtransport_path = webtransport_path_raw
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string);
+
+    let webtransport_reason = if webtransport_enabled {
+        "enabled"
+    } else if webtransport_enabled_raw.is_none() {
+        "WEBTRANSPORT_ENABLED not set"
+    } else {
+        "WEBTRANSPORT_ENABLED set but parsed as false (expected: 1|true|yes|on)"
+    };
+
+    info!(
+        "Realtime capabilities requested: websocket=true, webtransport={}, webtransport_path={:?}, reason={}",
+        webtransport_enabled,
+        webtransport_path,
+        webtransport_reason
+    );
+
+    let body = json!({
+        "websocket": true,
+        "webtransport": webtransport_enabled,
+        "webtransport_path": webtransport_path,
+        "webtransport_reason": webtransport_reason,
+        "webtransport_enabled_raw": webtransport_enabled_raw,
+        "webtransport_path_raw": webtransport_path_raw,
+    });
     (StatusCode::OK, Json(body))
 }
 

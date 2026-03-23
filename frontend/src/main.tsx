@@ -4,10 +4,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from './context/ThemeContext';
 import { App } from './App';
 import { installDesktopBridge } from './utils/desktopBridge';
+import { primeRealtimeTransportCapabilities } from './utils/realtimeTransport';
 import './index.css';
 import './styles/theme.css';
 
 installDesktopBridge();
+void primeRealtimeTransportCapabilities();
 
 const queryClient = new QueryClient({
   defaultOptions: {

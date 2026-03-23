@@ -10,11 +10,15 @@ VERSION ?= $(shell V=$$(git describe --tags --always --abbrev=7 2>/dev/null || e
 	fi)
 APP_PORT ?= 15222
 GRPC_PORT ?= 50051
+WEBTRANSPORT_ENABLED ?= true
+WEBTRANSPORT_PATH ?= /wt
+VITE_REALTIME_TRANSPORT ?= webtransport
 
-.PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run run-desktop run-desktop-dev build-desktop build-macos-dmg run-monolith run-ingress-k8s
+.PHONY: dev dev-backend dev-frontend frontend-install frontend-build frontend-build-watch tools fmt build-backend run run-desktop run-desktop-dev run-desktop-webtransport run-desktop-no-webtransport build-desktop build-macos-dmg run-monolith run-ingress-k8s
 .PHONY: version
 
 KUBE_ENV = $(if $(strip $(K8S_KUBECONFIG)),KUBECONFIG="$(K8S_KUBECONFIG)",)
+WEBTRANSPORT_ENV = $(if $(strip $(WEBTRANSPORT_ENABLED)),WEBTRANSPORT_ENABLED="$(WEBTRANSPORT_ENABLED)",) $(if $(strip $(WEBTRANSPORT_PATH)),WEBTRANSPORT_PATH="$(WEBTRANSPORT_PATH)",)
 
 # Development targets
 dev:
@@ -62,10 +66,17 @@ run-desktop: frontend-install build-backend
 	@pkill -f "pertisk-kube-backend" 2>/dev/null || true
 	@sleep 0.5
 	@lsof -ti:$(APP_PORT) -ti:$(GRPC_PORT) 2>/dev/null | sort -u | xargs kill -9 2>/dev/null || true
-	cd frontend && $(KUBE_ENV) APP_PORT=$(APP_PORT) GRPC_PORT=$(GRPC_PORT) PERTISK_BACKEND_BIN="$(CURDIR)/target/debug/pertisk-kube-backend" npm run tauri:dev
+	@echo "run-desktop WEBTRANSPORT_ENABLED='$(WEBTRANSPORT_ENABLED)' WEBTRANSPORT_PATH='$(WEBTRANSPORT_PATH)' VITE_REALTIME_TRANSPORT='$(VITE_REALTIME_TRANSPORT)'"
+	cd frontend && $(KUBE_ENV) APP_PORT=$(APP_PORT) GRPC_PORT=$(GRPC_PORT) PERTISK_BACKEND_BIN="$(CURDIR)/target/debug/pertisk-kube-backend" VITE_REALTIME_TRANSPORT="$(VITE_REALTIME_TRANSPORT)" $(WEBTRANSPORT_ENV) npm run tauri:dev
 
 run-desktop-dev: run-desktop
 	@echo "Desktop dev uses debug backend at target/debug/pertisk-kube-backend"
+
+run-desktop-webtransport:
+	$(MAKE) run-desktop WEBTRANSPORT_ENABLED=true WEBTRANSPORT_PATH=/wt
+
+run-desktop-no-webtransport:
+	$(MAKE) run-desktop WEBTRANSPORT_ENABLED=false WEBTRANSPORT_PATH=
 
 
 

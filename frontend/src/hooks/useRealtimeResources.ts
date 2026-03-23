@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import CronExpressionParser from 'cron-parser';
 import { sortNodeRoles } from '../utils/nodeRoles';
+import { createRealtimeTransport } from '../utils/realtimeTransport';
+import { getAuthToken } from '../utils/auth';
 import {
   Namespace,
   Deployment,
@@ -46,6 +48,100 @@ interface WebSocketMessage {
   data?: unknown;
   message?: string;
 }
+
+const isFatalRealtimeTransportError = (err: unknown): boolean => {
+  const text = typeof err === 'string'
+    ? err
+    : err instanceof Error
+      ? err.message
+      : '';
+
+  const normalized = text.toLowerCase();
+  return normalized.includes('webtransport unsupported')
+    || normalized.includes('backend does not advertise webtransport support')
+    || normalized.includes('backend capability endpoint reports webtransport=false')
+    || normalized.includes('wt-only mode blocked non-webtransport path');
+};
+
+const formatRealtimeTransportError = (err: unknown): string => {
+  if (typeof err === 'string' && err.trim()) {
+    return err;
+  }
+  if (err instanceof Error && err.message.trim()) {
+    return err.message;
+  }
+  return 'Realtime transport connection error';
+};
+
+const toUserFacingRealtimeError = (rawMessage: string): string => {
+  const normalized = rawMessage.toLowerCase();
+
+  if (normalized.includes('webtransport unsupported')) {
+    return 'Realtime unavailable in this runtime. WebTransport requires HTTPS and browser support.';
+  }
+
+  if (
+    normalized.includes('backend does not advertise webtransport support')
+    || normalized.includes('backend capability endpoint reports webtransport=false')
+  ) {
+    return 'Realtime unavailable. Backend WebTransport support is currently disabled.';
+  }
+
+  if (normalized.includes('wt-only mode blocked non-webtransport path')) {
+    return 'Realtime unavailable because WT-only mode is enabled.';
+  }
+
+  return rawMessage;
+};
+
+const logResourceTransportUnavailableOnce = (displayName: string, message: string) => {
+  // Keep UI error state but avoid per-resource console spam.
+  void displayName;
+  void message;
+};
+
+const resolveSnapshotApiPath = (resourceType: string): string => {
+  const aliases: Record<string, string> = {
+    mwc: 'mwcs',
+    vwc: 'vwcs',
+  };
+
+  return aliases[resourceType] || resourceType;
+};
+
+const fetchRealtimeResourceSnapshot = async <T>(
+  resourceType: string,
+  transformFn: (raw: any) => T
+): Promise<T[]> => {
+  const apiResource = resolveSnapshotApiPath(resourceType);
+  const token = getAuthToken();
+  const res = await fetch(`/api/${apiResource}`, {
+    cache: 'no-store',
+    headers: token
+      ? {
+          Authorization: token,
+        }
+      : undefined,
+  });
+
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+  }
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch /api/${apiResource} (${res.status})`);
+  }
+
+  const payload = await res.json();
+  const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+  return rows.map((row: any) => {
+    // Some REST endpoints already return UI-shaped objects. Avoid re-transforming those.
+    if (row && typeof row === 'object' && !('metadata' in row)) {
+      return row as T;
+    }
+    return transformFn(row);
+  });
+};
 
 /** Show WebSocket debug logs in Vite dev or when running on localhost (e.g. local run with built app). */
 const isRealtimeDebug = (): boolean =>
@@ -883,29 +979,63 @@ function createRealtimeHook<T>(
     const [emptyListConfirmed, setEmptyListConfirmed] = useState(false);
 
     useEffect(() => {
-      let ws: WebSocket | null = null;
+      let transport: ReturnType<typeof createRealtimeTransport> | null = null;
       let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
       let connectTimeout: ReturnType<typeof setTimeout> | null = null;
       let emptyListTimeout: ReturnType<typeof setTimeout> | null = null;
+      let restFallbackInterval: ReturnType<typeof setInterval> | null = null;
       let messageQueue: WebSocketMessage[] = [];
       let closingIntentional = false;
       let disposed = false;
+      let fatalTransportError = false;
+      let restFallbackEnabled = false;
+
+      const startRestFallbackIfSupported = (): boolean => {
+        if (restFallbackEnabled) {
+          return true;
+        }
+
+        restFallbackEnabled = true;
+
+        const loadSnapshot = async () => {
+          try {
+            const items = await fetchRealtimeResourceSnapshot(resourceType, transformFn);
+            if (disposed || closingIntentional) {
+              return;
+            }
+            setData(items);
+            setHasFetched(true);
+            setEmptyListConfirmed(items.length === 0);
+            setIsLoading(false);
+            setError(null);
+          } catch (snapshotErr) {
+            if (disposed || closingIntentional) {
+              return;
+            }
+            const message = formatRealtimeTransportError(snapshotErr);
+            setError(`Realtime unavailable and snapshot fetch failed: ${message}`);
+            setIsLoading(false);
+          }
+        };
+
+        void loadSnapshot();
+        restFallbackInterval = setInterval(() => {
+          void loadSnapshot();
+        }, 30000);
+
+        return true;
+      };
 
       const connect = () => {
         try {
-          // WebSocket URL construction
-          const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-          const host = window.location.host;
-          const wsUrl = `${protocol}://${host}/ws`;
+          transport = createRealtimeTransport({ path: '/ws', debugLabel: displayName });
 
-          ws = new WebSocket(wsUrl);
-
-          ws.onopen = () => {
-            if (isRealtimeDebug()) console.log(`WebSocket connected for ${displayName}`);
+          transport.onOpen = () => {
+            if (isRealtimeDebug()) console.log(`Realtime transport connected for ${displayName}`);
             setError(null);
 
             // Subscribe to resource
-            ws!.send(
+            transport!.send(
               JSON.stringify({
                 type: 'subscribe',
                 resource: resourceType,
@@ -916,15 +1046,15 @@ function createRealtimeHook<T>(
             while (messageQueue.length > 0) {
               const msg = messageQueue.shift();
               if (msg) {
-                ws!.send(JSON.stringify(msg));
+                transport!.send(JSON.stringify(msg));
               }
             }
             // Keep loading true until first data or "subscribed" + timeout (avoid "No ... found" on refresh)
           };
 
-          ws.onmessage = (event) => {
+          transport.onMessage = (rawData) => {
             try {
-              const message: WebSocketMessage = JSON.parse(event.data);
+              const message: WebSocketMessage = JSON.parse(rawData);
 
               if (message.type === 'resource_update' && message.resource === resourceType) {
                 if (emptyListTimeout) {
@@ -979,26 +1109,53 @@ function createRealtimeHook<T>(
             }
           };
 
-          ws.onerror = (event) => {
-            if (disposed || closingIntentional || !ws || ws.readyState !== WebSocket.OPEN) {
-              return;
-            }
-            console.error(`WebSocket error for ${displayName}:`, event);
-            setError(`Connection error for ${displayName}`);
-          };
-
-          ws.onclose = () => {
+          transport.onError = (event) => {
             if (disposed || closingIntentional) {
               return;
             }
-            if (isRealtimeDebug()) console.log(`WebSocket disconnected for ${displayName}`);
+            const transportErrorMessage = formatRealtimeTransportError(event);
+            const fatalEvent = isFatalRealtimeTransportError(event);
+            let fallbackActive = false;
+            if (fatalEvent) {
+              fatalTransportError = true;
+              if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+              }
+              fallbackActive = startRestFallbackIfSupported();
+              // Keep loading state while fallback snapshot is still being fetched.
+              if (!fallbackActive) {
+                setIsLoading(false);
+              }
+            }
+            if (fatalEvent) {
+              logResourceTransportUnavailableOnce(displayName, transportErrorMessage);
+            } else {
+              console.error(`Realtime transport error for ${displayName}:`, event);
+            }
+            // Expected WT-unavailable errors should not block data UI when fallback/polling is active.
+            if (fatalEvent || (resourceType === 'nodes' && fallbackActive)) {
+              setError(null);
+            } else {
+              setError(toUserFacingRealtimeError(transportErrorMessage));
+            }
+          };
+
+          transport.onClose = () => {
+            if (disposed || closingIntentional) {
+              return;
+            }
+            if (fatalTransportError) {
+              return;
+            }
+            if (isRealtimeDebug()) console.log(`Realtime transport disconnected for ${displayName}`);
 
             // Attempt to reconnect after 3 seconds
             reconnectTimeout = setTimeout(() => {
               if (disposed || closingIntentional) {
                 return;
               }
-              if (isRealtimeDebug()) console.log(`Attempting to reconnect to ${displayName}...`);
+              if (isRealtimeDebug()) console.log(`Attempting to reconnect transport for ${displayName}...`);
               connect();
             }, 3000);
           };
@@ -1006,11 +1163,28 @@ function createRealtimeHook<T>(
           if (disposed || closingIntentional) {
             return;
           }
-          console.error(`Failed to connect WebSocket for ${displayName}:`, err);
-          setError(`Failed to connect to ${displayName} stream`);
+          const transportErrorMessage = formatRealtimeTransportError(err);
+          const fatalFromConnect = isFatalRealtimeTransportError(err);
+          let fallbackActive = false;
+          if (fatalFromConnect) {
+            fatalTransportError = true;
+            fallbackActive = startRestFallbackIfSupported();
+          }
+          if (fatalFromConnect) {
+            logResourceTransportUnavailableOnce(displayName, transportErrorMessage);
+          } else {
+            console.error(`Failed to connect realtime transport for ${displayName}:`, err);
+          }
+          if (fatalFromConnect || (resourceType === 'nodes' && fallbackActive)) {
+            setError(null);
+          } else {
+            setError(toUserFacingRealtimeError(transportErrorMessage));
+          }
 
           // Attempt to reconnect
-          reconnectTimeout = setTimeout(connect, 3000);
+          if (!fatalFromConnect) {
+            reconnectTimeout = setTimeout(connect, 3000);
+          }
         }
       };
 
@@ -1030,8 +1204,11 @@ function createRealtimeHook<T>(
         if (emptyListTimeout) {
           clearTimeout(emptyListTimeout);
         }
-        if (ws) {
-          ws.close();
+        if (restFallbackInterval) {
+          clearInterval(restFallbackInterval);
+        }
+        if (transport) {
+          transport.close();
         }
       };
     }, []);
@@ -1267,25 +1444,23 @@ export function useRealtimeCustomResources(crdName: string | null): {
       setIsLoading(false);
       return;
     }
-    let ws: WebSocket | null = null;
+    let transport: ReturnType<typeof createRealtimeTransport> | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let connectTimeout: ReturnType<typeof setTimeout> | null = null;
     let closingIntentional = false;
     let disposed = false;
+    let fatalTransportError = false;
     const connect = () => {
       try {
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const host = window.location.host;
-        const wsUrl = `${protocol}://${host}/ws`;
-        ws = new WebSocket(wsUrl);
-        ws.onopen = () => {
+        transport = createRealtimeTransport({ path: '/ws', debugLabel: resourceType });
+        transport.onOpen = () => {
           setError(null);
-          ws!.send(JSON.stringify({ type: 'subscribe', resource: resourceType }));
+          transport!.send(JSON.stringify({ type: 'subscribe', resource: resourceType }));
           setIsLoading(false);
         };
-        ws.onmessage = (event) => {
+        transport.onMessage = (rawData) => {
           try {
-            const message: WebSocketMessage = JSON.parse(event.data);
+            const message: WebSocketMessage = JSON.parse(rawData);
             if (message.type === 'resource_update' && message.resource === resourceType && message.data) {
               const action = (message.action || '').toUpperCase();
               const item = transformCustomResource(message.data);
@@ -1310,14 +1485,23 @@ export function useRealtimeCustomResources(crdName: string | null): {
             console.error('Custom resource message parse error:', e);
           }
         };
-        ws.onerror = () => {
-          if (disposed || closingIntentional || !ws || ws.readyState !== WebSocket.OPEN) {
+        transport.onError = () => {
+          if (disposed || closingIntentional || !transport?.isOpen()) {
             return;
           }
+          fatalTransportError = true;
+          if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = null;
+          }
+          setIsLoading(false);
           setError('Connection error');
         };
-        ws.onclose = () => {
+        transport.onClose = () => {
           if (disposed || closingIntentional) {
+            return;
+          }
+          if (fatalTransportError) {
             return;
           }
           reconnectTimeout = setTimeout(connect, 3000);
@@ -1337,7 +1521,7 @@ export function useRealtimeCustomResources(crdName: string | null): {
       closingIntentional = true;
       if (connectTimeout) clearTimeout(connectTimeout);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      ws?.close();
+      transport?.close();
     };
   }, [crdName, resourceType]);
 

@@ -320,6 +320,18 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
+    if let Ok(enabled) = std::env::var("WEBTRANSPORT_ENABLED") {
+        if !enabled.trim().is_empty() {
+            command.env("WEBTRANSPORT_ENABLED", enabled);
+        }
+    }
+
+    if let Ok(path) = std::env::var("WEBTRANSPORT_PATH") {
+        if !path.trim().is_empty() {
+            command.env("WEBTRANSPORT_PATH", path);
+        }
+    }
+
     if let Some(kubeconfig_path) = cfg.kubeconfig_path.as_deref() {
         if !kubeconfig_path.trim().is_empty() {
             command.env("KUBECONFIG", kubeconfig_path);
