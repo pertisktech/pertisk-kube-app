@@ -1009,11 +1009,8 @@ function createRealtimeHook<T>(
           };
 
           ws.onerror = (event) => {
-            if (disposed || closingIntentional || !ws || ws.readyState !== WebSocket.OPEN) {
-              return;
-            }
+            // Don't set error here — onclose fires immediately after and handles reconnection.
             console.error(`WebSocket error for ${displayName}:`, event);
-            setError(`Connection error for ${displayName}`);
           };
 
           ws.onclose = () => {
@@ -1346,10 +1343,7 @@ export function useRealtimeCustomResources(crdName: string | null): {
           }
         };
         ws.onerror = () => {
-          if (disposed || closingIntentional || !ws || ws.readyState !== WebSocket.OPEN) {
-            return;
-          }
-          setError('Connection error');
+          // Don't set error here — onclose fires immediately after and handles reconnection.
         };
         ws.onclose = () => {
           if (disposed || closingIntentional) {

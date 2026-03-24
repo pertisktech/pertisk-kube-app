@@ -94,7 +94,7 @@ export const DataTable = <T extends Record<string, any>>({
   const getRowKeyValue = (row: T) =>
     typeof rowKey === 'function' ? rowKey(row) : String(row[rowKey]);
 
-  if (error) {
+  if (error && data.length === 0) {
     return (
       <div className="status-red border rounded-lg p-4">
         Error loading data: {error}

@@ -675,7 +675,8 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
 
       ws.onerror = (errorEvent) => {
         console.error('[useRealtimePods] WebSocket error:', errorEvent);
-        setError('WebSocket connection error');
+        // Don't set error here — onclose fires immediately after and handles reconnection.
+        // Only surface an error if reconnection is exhausted (handled in onclose).
       };
 
       ws.onclose = () => {

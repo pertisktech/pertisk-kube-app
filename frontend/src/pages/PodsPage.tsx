@@ -445,7 +445,7 @@ export const PodsPage = () => {
           columns={columns}
           data={sortedPods}
           isLoading={isLoading}
-          error={error || undefined}
+          error={sortedPods.length === 0 ? (error || undefined) : undefined}
           rowKey="id"
           onRowClick={(row) => {
             setSelectedPod(row);
