@@ -1,16 +1,33 @@
 use axum::http::Request;
 use futures_util::future::join_all;
 use kube::{
+    config::KubeConfigOptions,
     api::ListParams,
     core::{ApiResource, DynamicObject, GroupVersionKind},
-    Api, Client,
+    Api, Client, Config,
 };
 use std::collections::HashMap;
+use std::env;
 
 #[derive(Clone, Copy, Debug)]
 pub struct NodeDiskMetrics {
     pub used_bytes: f64,
     pub capacity_bytes: f64,
+}
+
+pub async fn load_kube_client() -> anyhow::Result<Client> {
+    if let Ok(context) = env::var("KUBE_CONTEXT") {
+        if !context.trim().is_empty() {
+            let options = KubeConfigOptions {
+                context: Some(context),
+                ..Default::default()
+            };
+            let cfg = Config::from_kubeconfig(&options).await?;
+            return Ok(Client::try_from(cfg)?);
+        }
+    }
+
+    Ok(Client::try_default().await?)
 }
 
 pub fn format_compact_duration(seconds: i64) -> String {

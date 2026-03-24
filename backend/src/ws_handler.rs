@@ -25,7 +25,7 @@ use tokio::{
 };
 use tracing::{error, info, warn};
 
-use crate::AppState;
+use crate::{utils::load_kube_client, AppState};
 
 const PREFERRED_SHELL_SCRIPT: &str = "if [ -x /bin/zsh ]; then exec /bin/zsh -il; elif command -v zsh >/dev/null 2>&1; then exec zsh -il; elif [ -x /bin/bash ]; then exec /bin/bash -il; elif command -v bash >/dev/null 2>&1; then exec bash -il; else exec /bin/sh -i; fi";
 
@@ -806,13 +806,24 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 }
 
 async fn watch_pods(
-    state: AppState,
+    _state: AppState,
     tx: tokio::sync::mpsc::Sender<ServerMessage>,
 ) {
     use k8s_openapi::api::core::v1::Pod;
     use kube::api::ListParams;
 
-    let api: Api<Pod> = Api::all(state.client.clone());
+    let client = match load_kube_client().await {
+        Ok(client) => client,
+        Err(err) => {
+            error!("Failed to create Kubernetes client for pod watch: {}", err);
+            let _ = tx.send(ServerMessage::Error {
+                message: format!("Failed to initialize Kubernetes client: {}", err),
+            }).await;
+            return;
+        }
+    };
+
+    let api: Api<Pod> = Api::all(client);
     
     // First, send all existing pods (excluding those marked for deletion)
     info!("Fetching initial pod list...");
@@ -928,12 +939,23 @@ async fn watch_pods(
 macro_rules! create_watch_fn {
     ($fn_name:ident, $resource_type:ty, $resource_name:expr) => {
         async fn $fn_name(
-            state: AppState,
+            _state: AppState,
             tx: tokio::sync::mpsc::Sender<ServerMessage>,
         ) {
             use kube::api::ListParams;
 
-            let api: Api<$resource_type> = Api::all(state.client.clone());
+            let client = match load_kube_client().await {
+                Ok(client) => client,
+                Err(err) => {
+                    error!("Failed to create Kubernetes client for {} watch: {}", $resource_name, err);
+                    let _ = tx.send(ServerMessage::Error {
+                        message: format!("Failed to initialize Kubernetes client: {}", err),
+                    }).await;
+                    return;
+                }
+            };
+
+            let api: Api<$resource_type> = Api::all(client);
             
             // First, send all existing resources
             info!("Fetching initial {} list...", $resource_name);
@@ -1073,12 +1095,23 @@ fn vwc_api_resource() -> ApiResource {
 }
 
 async fn watch_dynamic_cluster_resource(
-    state: AppState,
+    _state: AppState,
     tx: tokio::sync::mpsc::Sender<ServerMessage>,
     ar: ApiResource,
     resource_name: &str,
 ) {
-    let api: Api<DynamicObject> = Api::all_with(state.client.clone(), &ar);
+    let client = match load_kube_client().await {
+        Ok(client) => client,
+        Err(err) => {
+            error!("Failed to create Kubernetes client for {} watch: {}", resource_name, err);
+            let _ = tx.send(ServerMessage::Error {
+                message: format!("Failed to initialize Kubernetes client: {}", err),
+            }).await;
+            return;
+        }
+    };
+
+    let api: Api<DynamicObject> = Api::all_with(client, &ar);
     info!("Fetching initial {} list...", resource_name);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
@@ -1167,12 +1200,23 @@ async fn watch_vwcs(state: AppState, tx: tokio::sync::mpsc::Sender<ServerMessage
 }
 
 async fn watch_custom_resources(
-    state: AppState,
+    _state: AppState,
     tx: tokio::sync::mpsc::Sender<ServerMessage>,
     resource_name: &str,
     crd_name: &str,
 ) {
-    let crd_api: Api<CustomResourceDefinition> = Api::all(state.client.clone());
+    let client = match load_kube_client().await {
+        Ok(client) => client,
+        Err(err) => {
+            error!("Failed to create Kubernetes client for custom resource watch {}: {}", crd_name, err);
+            let _ = tx.send(ServerMessage::Error {
+                message: format!("Failed to initialize Kubernetes client: {}", err),
+            }).await;
+            return;
+        }
+    };
+
+    let crd_api: Api<CustomResourceDefinition> = Api::all(client.clone());
     let crd = match crd_api.get(crd_name).await {
         Ok(c) => c,
         Err(e) => {
@@ -1193,7 +1237,7 @@ async fn watch_custom_resources(
     let gvk = GroupVersionKind::gvk(&spec.group, &storage_version, &names.kind);
     let ar = ApiResource::from_gvk_with_plural(&gvk, &names.plural);
 
-    let api: Api<DynamicObject> = Api::all_with(state.client.clone(), &ar);
+    let api: Api<DynamicObject> = Api::all_with(client, &ar);
     info!("Fetching initial custom resource list for {}...", resource_name);
     match api.list(&ListParams::default()).await {
         Ok(list) => {

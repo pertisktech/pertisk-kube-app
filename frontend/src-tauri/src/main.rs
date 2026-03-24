@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
+use std::env;
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -121,6 +123,120 @@ fn save_sidecar_config(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<(
     let serialized = serde_json::to_string_pretty(cfg)?;
     fs::write(path, serialized)?;
     Ok(())
+}
+
+fn append_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if !paths.iter().any(|existing| existing == &candidate) {
+        paths.push(candidate);
+    }
+}
+
+fn login_shell_env_cache() -> &'static HashMap<String, String> {
+    static CACHE: OnceLock<HashMap<String, String>> = OnceLock::new();
+    CACHE.get_or_init(read_login_shell_env)
+}
+
+fn read_login_shell_env() -> HashMap<String, String> {
+    let shell = env::var("SHELL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "/bin/zsh".to_string());
+
+    let output = Command::new(&shell)
+        .arg("-ilc")
+        .arg("env -0")
+        .stdin(Stdio::null())
+        .output();
+
+    let Ok(output) = output else {
+        return HashMap::new();
+    };
+
+    if !output.status.success() {
+        return HashMap::new();
+    }
+
+    let mut vars = HashMap::new();
+    for entry in output.stdout.split(|byte| *byte == 0).filter(|entry| !entry.is_empty()) {
+        if let Ok(line) = std::str::from_utf8(entry) {
+            if let Some((key, value)) = line.split_once('=') {
+                vars.insert(key.to_string(), value.to_string());
+            }
+        }
+    }
+
+    vars
+}
+
+fn env_value(key: &str) -> Option<String> {
+    login_shell_env_cache()
+        .get(key)
+        .cloned()
+        .or_else(|| env::var(key).ok())
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn sidecar_path() -> Option<String> {
+    let mut paths: Vec<PathBuf> = env_value("PATH")
+        .and_then(|value| env::split_paths(&value).next().map(|_| value))
+        .map(|value| env::split_paths(&value).collect())
+        .unwrap_or_default();
+
+    for candidate in [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ] {
+        append_unique_path(&mut paths, PathBuf::from(candidate));
+    }
+
+    if let Some(home) = env_value("HOME") {
+        append_unique_path(&mut paths, PathBuf::from(home).join(".local/bin"));
+    }
+
+    env::join_paths(paths)
+        .ok()
+        .and_then(|value| value.into_string().ok())
+}
+
+fn forward_env_if_present(command: &mut Command, key: &str) {
+    if let Some(value) = env_value(key) {
+        command.env(key, value);
+    }
+}
+
+fn configure_sidecar_environment(command: &mut Command) {
+    if let Some(path) = sidecar_path() {
+        command.env("PATH", path);
+    }
+
+    for key in [
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "AWS_PROFILE",
+        "AWS_REGION",
+        "AWS_DEFAULT_REGION",
+        "AWS_CONFIG_FILE",
+        "AWS_SHARED_CREDENTIALS_FILE",
+        "AWS_SDK_LOAD_CONFIG",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_ROLE_ARN",
+        "AWS_ROLE_SESSION_NAME",
+        "AWS_WEB_IDENTITY_TOKEN_FILE",
+        "AWS_CA_BUNDLE",
+        "AWS_EC2_METADATA_DISABLED",
+    ] {
+        forward_env_if_present(command, key);
+    }
+
+    command.env("AWS_PAGER", "");
 }
 
 fn backend_socket_addr(port: u16) -> SocketAddr {
@@ -319,6 +435,8 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
         .env("PORT", cfg.port.to_string())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
+
+    configure_sidecar_environment(&mut command);
 
     if let Some(kubeconfig_path) = cfg.kubeconfig_path.as_deref() {
         if !kubeconfig_path.trim().is_empty() {

@@ -5,7 +5,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
-use kube::{config::KubeConfigOptions, Client, Config};
+use kube::Client;
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tower_http::{
@@ -60,22 +60,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(env_filter)
         .init();
 
-    // In-cluster config (works in Kubernetes) or falls back to local kubeconfig.
-    // When KUBE_CONTEXT is set, prefer that context from kubeconfig.
-    let client = if let Ok(context) = env::var("KUBE_CONTEXT") {
-        if context.trim().is_empty() {
-            Client::try_default().await?
-        } else {
-            let options = KubeConfigOptions {
-                context: Some(context),
-                ..Default::default()
-            };
-            let cfg = Config::from_kubeconfig(&options).await?;
-            Client::try_from(cfg)?
-        }
-    } else {
-        Client::try_default().await?
-    };
+    let client = utils::load_kube_client().await?;
 
     let username = env::var("USERNAME").unwrap_or_else(|_| "admin".to_string());
     let password = env::var("PASSWORD").unwrap_or_else(|_| "admin".to_string());
@@ -412,9 +397,18 @@ async fn health() -> impl IntoResponse {
     (StatusCode::OK, Json(body))
 }
 
-async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
-    // Check if we can connect to Kubernetes API
-    match state.client.apiserver_version().await {
+async fn readiness(State(_state): State<AppState>) -> impl IntoResponse {
+    let client = match utils::load_kube_client().await {
+        Ok(client) => client,
+        Err(err) => {
+            error!("Failed to build Kubernetes client for readiness probe: {}", err);
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(HealthResponse {
+                status: "not ready".into(),
+            })).into_response();
+        }
+    };
+
+    match client.apiserver_version().await {
         Ok(_) => {
             let body = HealthResponse {
                 status: "ready".into(),

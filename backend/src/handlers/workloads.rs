@@ -472,10 +472,16 @@ pub async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
-pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn list_nodes(State(_state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Node;
 
-    let client = state.client.clone();
+    let client = match load_kube_client().await {
+        Ok(client) => client,
+        Err(err) => {
+            error!("Failed to create Kubernetes client while listing nodes: {}", err);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
     let api: Api<Node> = Api::all(client.clone());
     match api.list(&ListParams::default()).await {
         Ok(list) => {
@@ -2398,22 +2404,30 @@ pub async fn list_cronjobs(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
-pub async fn get_dashboard_summary(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn get_dashboard_summary(State(_state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::{
         apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet},
         batch::v1::{CronJob, Job},
         core::v1::{Event, Namespace, Pod},
     };
 
-    let namespaces_api: Api<Namespace> = Api::all(state.client.clone());
-    let pods_api: Api<Pod> = Api::all(state.client.clone());
-    let deployments_api: Api<Deployment> = Api::all(state.client.clone());
-    let statefulsets_api: Api<StatefulSet> = Api::all(state.client.clone());
-    let daemonsets_api: Api<DaemonSet> = Api::all(state.client.clone());
-    let replicasets_api: Api<ReplicaSet> = Api::all(state.client.clone());
-    let jobs_api: Api<Job> = Api::all(state.client.clone());
-    let cronjobs_api: Api<CronJob> = Api::all(state.client.clone());
-    let events_api: Api<Event> = Api::all(state.client.clone());
+    let client = match load_kube_client().await {
+        Ok(client) => client,
+        Err(err) => {
+            error!("Failed to create Kubernetes client while building dashboard summary: {}", err);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let namespaces_api: Api<Namespace> = Api::all(client.clone());
+    let pods_api: Api<Pod> = Api::all(client.clone());
+    let deployments_api: Api<Deployment> = Api::all(client.clone());
+    let statefulsets_api: Api<StatefulSet> = Api::all(client.clone());
+    let daemonsets_api: Api<DaemonSet> = Api::all(client.clone());
+    let replicasets_api: Api<ReplicaSet> = Api::all(client.clone());
+    let jobs_api: Api<Job> = Api::all(client.clone());
+    let cronjobs_api: Api<CronJob> = Api::all(client.clone());
+    let events_api: Api<Event> = Api::all(client.clone());
 
     let result = async {
         let namespaces = namespaces_api.list(&ListParams::default()).await?.items.len();
@@ -2427,7 +2441,7 @@ pub async fn get_dashboard_summary(State(state): State<AppState>) -> impl IntoRe
         let events = events_api.list(&ListParams::default()).await?.items.len();
 
         // Get cluster version info
-        let kube_version = state.client.apiserver_version().await.ok().map(|v| v.git_version);
+        let kube_version = client.apiserver_version().await.ok().map(|v| v.git_version);
         
         // Try to get cluster name from kubeconfig or default
         let cluster_name = Some(env::var("CLUSTER_NAME").unwrap_or_else(|_| {
