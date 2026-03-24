@@ -8,10 +8,10 @@ use kube::{
     api::{ApiResource, DeleteParams, DynamicObject, GroupVersionKind, ListParams, Patch, PatchParams},
     Api,
 };
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use crate::models::*;
-use crate::AppState;
+use crate::{utils::kube_list_warning_response, AppState};
 
 pub async fn list_configmaps(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::ConfigMap;
@@ -58,6 +58,9 @@ pub async fn list_configmaps(State(state): State<AppState>) -> impl IntoResponse
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("configmaps", &err) {
+                return response;
+            }
             error!("Error listing configmaps: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -111,6 +114,9 @@ pub async fn list_secrets(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("secrets", &err) {
+                return response;
+            }
             error!("Error listing secrets: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -162,6 +168,9 @@ pub async fn list_resourcequotas(State(state): State<AppState>) -> impl IntoResp
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("resourcequotas", &err) {
+                return response;
+            }
             error!("Error listing resourcequotas: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -217,6 +226,9 @@ pub async fn list_limitranges(State(state): State<AppState>) -> impl IntoRespons
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("limitranges", &err) {
+                return response;
+            }
             error!("Error listing limitranges: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -285,6 +297,9 @@ pub async fn list_hpa(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("hpa", &err) {
+                return response;
+            }
             error!("Error listing hpa: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -352,6 +367,9 @@ pub async fn list_pdb(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("pdb", &err) {
+                return response;
+            }
             error!("Error listing pdb: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -403,15 +421,8 @@ pub async fn list_priorityclasses(State(state): State<AppState>) -> impl IntoRes
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
-            if let kube::Error::Api(api_err) = &err {
-                if api_err.code == 403 || api_err.code == 404 {
-                    warn!(
-                        "PriorityClass API unavailable or forbidden (code {}): {}",
-                        api_err.code, api_err.message
-                    );
-                    return (StatusCode::OK, Json(ApiResponse::<PriorityClassItem> { data: vec![], total: 0 }))
-                        .into_response();
-                }
+            if let Some(response) = kube_list_warning_response("priorityclasses", &err) {
+                return response;
             }
             error!("Error listing priorityclasses: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -468,15 +479,8 @@ pub async fn list_runtimeclasses(State(state): State<AppState>) -> impl IntoResp
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
-            if let kube::Error::Api(api_err) = &err {
-                if api_err.code == 403 || api_err.code == 404 {
-                    warn!(
-                        "RuntimeClass API unavailable or forbidden (code {}): {}",
-                        api_err.code, api_err.message
-                    );
-                    return (StatusCode::OK, Json(ApiResponse::<RuntimeClassItem> { data: vec![], total: 0 }))
-                        .into_response();
-                }
+            if let Some(response) = kube_list_warning_response("runtimeclasses", &err) {
+                return response;
             }
             error!("Error listing runtimeclasses: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -536,15 +540,8 @@ pub async fn list_leases(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
-            if let kube::Error::Api(api_err) = &err {
-                if api_err.code == 403 || api_err.code == 404 {
-                    warn!(
-                        "Lease API unavailable or forbidden (code {}): {}",
-                        api_err.code, api_err.message
-                    );
-                    return (StatusCode::OK, Json(ApiResponse::<LeaseItem> { data: vec![], total: 0 }))
-                        .into_response();
-                }
+            if let Some(response) = kube_list_warning_response("leases", &err) {
+                return response;
             }
             error!("Error listing leases: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -1701,14 +1698,8 @@ pub async fn list_mwcs(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
-            if let kube::Error::Api(api_err) = &err {
-                if api_err.code == 403 || api_err.code == 404 {
-                    warn!(
-                        "MutatingWebhookConfiguration API unavailable or forbidden (code {}): {}",
-                        api_err.code, api_err.message
-                    );
-                    return (StatusCode::OK, Json(ApiResponse::<MwcItem> { data: vec![], total: 0 })).into_response();
-                }
+            if let Some(response) = kube_list_warning_response("mwc", &err) {
+                return response;
             }
             error!("Error listing mutating webhook configurations: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -1810,14 +1801,8 @@ pub async fn list_vwcs(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
-            if let kube::Error::Api(api_err) = &err {
-                if api_err.code == 403 || api_err.code == 404 {
-                    warn!(
-                        "ValidatingWebhookConfiguration API unavailable or forbidden (code {}): {}",
-                        api_err.code, api_err.message
-                    );
-                    return (StatusCode::OK, Json(ApiResponse::<VwcItem> { data: vec![], total: 0 })).into_response();
-                }
+            if let Some(response) = kube_list_warning_response("vwc", &err) {
+                return response;
             }
             error!("Error listing validating webhook configurations: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()

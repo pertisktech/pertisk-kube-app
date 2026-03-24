@@ -8,7 +8,7 @@ use kube::{api::{DeleteParams, ListParams, Patch, PatchParams}, Api};
 use tracing::{error, info};
 
 use crate::models::*;
-use crate::AppState;
+use crate::{utils::kube_list_warning_response, AppState};
 
 pub async fn list_services(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Service;
@@ -113,6 +113,9 @@ pub async fn list_services(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("services", &err) {
+                return response;
+            }
             error!("Error listing services: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -203,6 +206,9 @@ pub async fn list_endpoints(State(state): State<AppState>) -> impl IntoResponse 
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("endpoints", &err) {
+                return response;
+            }
             error!("Error listing endpoints: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -312,6 +318,9 @@ pub async fn list_ingresses(State(state): State<AppState>) -> impl IntoResponse 
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("ingresses", &err) {
+                return response;
+            }
             error!("Error listing ingresses: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -386,6 +395,9 @@ pub async fn list_ingressclasses(State(state): State<AppState>) -> impl IntoResp
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("ingressclasses", &err) {
+                return response;
+            }
             error!("Error listing ingress classes: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -480,6 +492,9 @@ pub async fn list_networkpolicies(State(state): State<AppState>) -> impl IntoRes
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("networkpolicies", &err) {
+                return response;
+            }
             error!("Error listing network policies: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }

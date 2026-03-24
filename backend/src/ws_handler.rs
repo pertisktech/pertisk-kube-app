@@ -27,6 +27,20 @@ use tracing::{error, info, warn};
 
 use crate::{utils::load_kube_client, AppState};
 
+fn is_forbidden_or_missing_api(err: &kube::Error) -> bool {
+    matches!(err, kube::Error::Api(api_err) if api_err.code == 403 || api_err.code == 404)
+}
+
+fn is_forbidden_or_missing_watch_api(err: &watcher::Error) -> bool {
+    match err {
+        watcher::Error::WatchError(api_err) => api_err.code == 403 || api_err.code == 404,
+        watcher::Error::WatchFailed(client_err)
+        | watcher::Error::InitialListFailed(client_err)
+        | watcher::Error::WatchStartFailed(client_err) => is_forbidden_or_missing_api(client_err),
+        _ => false,
+    }
+}
+
 const PREFERRED_SHELL_SCRIPT: &str = "if [ -x /bin/zsh ]; then exec /bin/zsh -il; elif command -v zsh >/dev/null 2>&1; then exec zsh -il; elif [ -x /bin/bash ]; then exec /bin/bash -il; elif command -v bash >/dev/null 2>&1; then exec bash -il; else exec /bin/sh -i; fi";
 
 fn node_debug_namespace() -> String {
@@ -853,6 +867,10 @@ async fn watch_pods(
             }
         }
         Err(e) => {
+            if is_forbidden_or_missing_api(&e) {
+                warn!("Skipping pod watch initialization due to unavailable/forbidden API: {}", e);
+                return;
+            }
             error!("Failed to fetch initial pod list: {}", e);
             let msg = ServerMessage::Error {
                 message: format!("Failed to fetch initial pods: {}", e),
@@ -924,6 +942,10 @@ async fn watch_pods(
                 }
             }
             Err(e) => {
+                if is_forbidden_or_missing_watch_api(&e) {
+                    warn!("Stopping pod watch due to unavailable/forbidden API: {}", e);
+                    break;
+                }
                 error!("Watch error: {}", e);
                 let msg = ServerMessage::Error {
                     message: format!("Watch error: {}", e),
@@ -980,6 +1002,10 @@ macro_rules! create_watch_fn {
                     }
                 }
                 Err(e) => {
+                    if is_forbidden_or_missing_api(&e) {
+                        warn!("Skipping {} watch initialization due to unavailable/forbidden API: {}", $resource_name, e);
+                        return;
+                    }
                     error!("Failed to fetch initial {} list: {}", $resource_name, e);
                     let msg = ServerMessage::Error {
                         message: format!("Failed to fetch initial {}: {}", $resource_name, e),
@@ -1033,6 +1059,10 @@ macro_rules! create_watch_fn {
                         }
                     }
                     Err(e) => {
+                        if is_forbidden_or_missing_watch_api(&e) {
+                            warn!("Stopping {} watch due to unavailable/forbidden API: {}", $resource_name, e);
+                            break;
+                        }
                         error!("Watch error for {}: {}", $resource_name, e);
                         let msg = ServerMessage::Error {
                             message: format!("Watch error: {}", e),
@@ -1130,6 +1160,10 @@ async fn watch_dynamic_cluster_resource(
             }
         }
         Err(e) => {
+            if is_forbidden_or_missing_api(&e) {
+                warn!("Skipping {} watch initialization due to unavailable/forbidden API: {}", resource_name, e);
+                return;
+            }
             error!("Failed to fetch initial {} list: {}", resource_name, e);
             let _ = tx.send(ServerMessage::Error {
                 message: format!("Failed to fetch initial {}: {}", resource_name, e),
@@ -1180,6 +1214,10 @@ async fn watch_dynamic_cluster_resource(
                 }
             }
             Err(e) => {
+                if is_forbidden_or_missing_watch_api(&e) {
+                    warn!("Stopping {} watch due to unavailable/forbidden API: {}", resource_name, e);
+                    return;
+                }
                 error!("Watch error for {}: {}", resource_name, e);
                 let _ = tx.send(ServerMessage::Error {
                     message: format!("Watch error: {}", e),
@@ -1253,6 +1291,10 @@ async fn watch_custom_resources(
             }
         }
         Err(e) => {
+            if is_forbidden_or_missing_api(&e) {
+                warn!("Skipping custom resource watch initialization for {} due to unavailable/forbidden API: {}", crd_name, e);
+                return;
+            }
             error!("Failed to list custom resources for {}: {}", crd_name, e);
             let _ = tx.send(ServerMessage::Error { message: format!("List failed: {}", e) }).await;
             return;
@@ -1294,6 +1336,10 @@ async fn watch_custom_resources(
                 }
             }
             Err(e) => {
+                if is_forbidden_or_missing_watch_api(&e) {
+                    warn!("Stopping custom resource watch for {} due to unavailable/forbidden API: {}", resource_name, e);
+                    break;
+                }
                 error!("Watch error for {}: {}", resource_name, e);
                 let _ = tx.send(ServerMessage::Error { message: format!("Watch error: {}", e) }).await;
                 break;

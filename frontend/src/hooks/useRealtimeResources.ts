@@ -52,6 +52,12 @@ const isRealtimeDebug = (): boolean =>
   typeof window !== 'undefined' &&
   (import.meta.env.DEV || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
+const shouldIgnoreRealtimeError = (message?: string): boolean => {
+  if (!message) return false;
+  const normalized = message.toLowerCase();
+  return normalized.includes('watch stream failed') && normalized.includes('forbidden');
+};
+
 // Transformation functions to convert raw K8s objects to frontend format
 function transformNamespace(raw: any): Namespace {
   const metadata = raw.metadata || {};
@@ -971,6 +977,12 @@ function createRealtimeHook<T>(
                   setEmptyListConfirmed(true);
                 }, 2000);
               } else if (message.type === 'error') {
+                if (shouldIgnoreRealtimeError(message.message)) {
+                  if (isRealtimeDebug()) {
+                    console.warn(`Ignoring realtime permission error for ${displayName}:`, message.message);
+                  }
+                  return;
+                }
                 console.error(`WebSocket error for ${displayName}:`, message.message);
                 setError(message.message || 'Unknown error');
               }
@@ -1304,6 +1316,12 @@ export function useRealtimeCustomResources(crdName: string | null): {
                 setData((prev) => prev.filter((p) => getCustomResourceKey(p) !== itemKey));
               }
             } else if (message.type === 'error') {
+              if (shouldIgnoreRealtimeError(message.message)) {
+                if (isRealtimeDebug()) {
+                  console.warn('Ignoring realtime permission error for custom resource:', message.message);
+                }
+                return;
+              }
               setError(message.message || 'Unknown error');
             }
           } catch (e) {

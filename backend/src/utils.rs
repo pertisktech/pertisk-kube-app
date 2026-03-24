@@ -1,4 +1,8 @@
-use axum::http::Request;
+use axum::{
+    http::{Request, StatusCode},
+    response::{IntoResponse, Response},
+    Json,
+};
 use futures_util::future::join_all;
 use kube::{
     config::KubeConfigOptions,
@@ -8,6 +12,46 @@ use kube::{
 };
 use std::collections::HashMap;
 use std::env;
+use tracing::warn;
+
+pub fn kube_list_warning_response(resource_name: &str, err: &kube::Error) -> Option<Response> {
+    if let kube::Error::Api(api_err) = err {
+        if api_err.code == 403 || api_err.code == 404 {
+            let warning = if api_err.code == 403 {
+                format!(
+                    "Limited access: no permission to list {}. The app will continue without this resource.",
+                    resource_name
+                )
+            } else {
+                format!(
+                    "{} is unavailable in this cluster. The app will continue without this resource.",
+                    resource_name
+                )
+            };
+
+            warn!(
+                "{} API unavailable or forbidden (code {}): {}",
+                resource_name,
+                api_err.code,
+                api_err.message
+            );
+
+            return Some(
+                (
+                    StatusCode::OK,
+                    Json(serde_json::json!({
+                        "data": [],
+                        "total": 0,
+                        "warnings": [warning],
+                    })),
+                )
+                    .into_response(),
+            );
+        }
+    }
+
+    None
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct NodeDiskMetrics {

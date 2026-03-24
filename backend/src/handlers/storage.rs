@@ -8,7 +8,7 @@ use kube::{api::{DeleteParams, ListParams, Patch, PatchParams}, Api};
 use tracing::{error, info};
 
 use crate::models::*;
-use crate::AppState;
+use crate::{utils::kube_list_warning_response, AppState};
 
 pub async fn list_persistent_volumes(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::PersistentVolume;
@@ -107,6 +107,9 @@ pub async fn list_persistent_volumes(State(state): State<AppState>) -> impl Into
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("persistentvolumes", &err) {
+                return response;
+            }
             error!("Error listing persistent volumes: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -198,6 +201,9 @@ pub async fn list_persistent_volume_claims(State(state): State<AppState>) -> imp
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("persistentvolumeclaims", &err) {
+                return response;
+            }
             error!("Error listing persistent volume claims: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -281,6 +287,9 @@ pub async fn list_storage_classes(State(state): State<AppState>) -> impl IntoRes
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("storageclasses", &err) {
+                return response;
+            }
             error!("Error listing storage classes: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }

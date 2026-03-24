@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import type {
   Namespace,
   Pod,
@@ -47,6 +48,22 @@ import type {
 import { getAuthToken } from '../utils/auth';
 
 const API_BASE = '/api';
+const seenApiWarnings = new Set<string>();
+
+const emitApiWarnings = (payload: unknown) => {
+  if (!payload || typeof payload !== 'object') return;
+
+  const warnings = (payload as { warnings?: unknown }).warnings;
+  if (!Array.isArray(warnings)) return;
+
+  warnings.forEach((warning) => {
+    if (typeof warning !== 'string') return;
+    const normalized = warning.trim();
+    if (!normalized || seenApiWarnings.has(normalized)) return;
+    seenApiWarnings.add(normalized);
+    toast.warning(normalized);
+  });
+};
 
 const apiFetch = async (path: string) => {
   const token = getAuthToken();
@@ -61,6 +78,18 @@ const apiFetch = async (path: string) => {
   if (res.status === 401) {
     window.dispatchEvent(new CustomEvent('auth:expired'));
   }
+
+  const contentType = res.headers.get('content-type') || '';
+  if (res.ok && contentType.includes('application/json')) {
+    void res
+      .clone()
+      .json()
+      .then((payload) => {
+        emitApiWarnings(payload);
+      })
+      .catch(() => undefined);
+  }
+
   return res;
 };
 

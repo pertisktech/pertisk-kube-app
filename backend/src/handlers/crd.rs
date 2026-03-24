@@ -15,7 +15,7 @@ use serde::Deserialize;
 use tracing::error;
 
 use crate::models::*;
-use crate::AppState;
+use crate::{utils::kube_list_warning_response, AppState};
 
 fn custom_resource_from_dynamic(obj: DynamicObject) -> CustomResourceItem {
     let labels = obj
@@ -108,6 +108,9 @@ pub async fn list_crds(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("crds", &err) {
+                return response;
+            }
             error!("Error listing CRDs: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }

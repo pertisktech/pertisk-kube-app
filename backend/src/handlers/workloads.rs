@@ -466,6 +466,9 @@ pub async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("pods", &err) {
+                return response;
+            }
             error!("Error listing pods: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -792,6 +795,9 @@ pub async fn list_nodes(State(_state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("nodes", &err) {
+                return response;
+            }
             error!("Error listing nodes: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -847,6 +853,9 @@ pub async fn list_events(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("events", &err) {
+                return response;
+            }
             error!("Error listing events: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -862,6 +871,9 @@ pub async fn list_deployments(State(state): State<AppState>) -> impl IntoRespons
     let deployment_list = match deployment_api.list(&ListParams::default()).await {
         Ok(list) => list,
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("deployments", &err) {
+                return response;
+            }
             error!("Error listing deployments: {:?}", err);
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
@@ -1932,6 +1944,9 @@ pub async fn list_statefulsets(State(state): State<AppState>) -> impl IntoRespon
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("statefulsets", &err) {
+                return response;
+            }
             error!("Error listing statefulsets: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -2039,6 +2054,9 @@ pub async fn list_daemonsets(State(state): State<AppState>) -> impl IntoResponse
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("daemonsets", &err) {
+                return response;
+            }
             error!("Error listing daemonsets: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -2130,6 +2148,9 @@ pub async fn list_replicasets(State(state): State<AppState>) -> impl IntoRespons
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("replicasets", &err) {
+                return response;
+            }
             error!("Error listing replicasets: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -2310,6 +2331,9 @@ pub async fn list_jobs(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("jobs", &err) {
+                return response;
+            }
             error!("Error listing jobs: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -2398,6 +2422,9 @@ pub async fn list_cronjobs(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("cronjobs", &err) {
+                return response;
+            }
             error!("Error listing cronjobs: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }

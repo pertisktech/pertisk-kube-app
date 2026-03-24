@@ -8,7 +8,7 @@ use kube::{api::{DeleteParams, ListParams}, Api};
 use tracing::{error, info};
 
 use crate::models::*;
-use crate::utils::load_kube_client;
+use crate::utils::{kube_list_warning_response, load_kube_client};
 use crate::AppState;
 
 pub async fn list_namespaces(State(_state): State<AppState>) -> impl IntoResponse {
@@ -66,6 +66,9 @@ pub async fn list_namespaces(State(_state): State<AppState>) -> impl IntoRespons
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("namespaces", &err) {
+                return response;
+            }
             error!("Error listing namespaces: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }

@@ -8,7 +8,7 @@ use kube::{api::{DeleteParams, ListParams, Patch, PatchParams}, Api};
 use tracing::{error, info};
 
 use crate::models::*;
-use crate::AppState;
+use crate::{utils::kube_list_warning_response, AppState};
 
 pub async fn list_service_accounts(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::ServiceAccount;
@@ -64,6 +64,9 @@ pub async fn list_service_accounts(State(state): State<AppState>) -> impl IntoRe
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("serviceaccounts", &err) {
+                return response;
+            }
             error!("Error listing service accounts: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -124,6 +127,9 @@ pub async fn list_roles(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("roles", &err) {
+                return response;
+            }
             error!("Error listing roles: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -187,6 +193,9 @@ pub async fn list_role_bindings(State(state): State<AppState>) -> impl IntoRespo
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("rolebindings", &err) {
+                return response;
+            }
             error!("Error listing role bindings: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -245,6 +254,9 @@ pub async fn list_cluster_roles(State(state): State<AppState>) -> impl IntoRespo
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("clusterroles", &err) {
+                return response;
+            }
             error!("Error listing cluster roles: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
@@ -306,6 +318,9 @@ pub async fn list_cluster_role_bindings(State(state): State<AppState>) -> impl I
             (StatusCode::OK, Json(ApiResponse { data: items, total })).into_response()
         }
         Err(err) => {
+            if let Some(response) = kube_list_warning_response("clusterrolebindings", &err) {
+                return response;
+            }
             error!("Error listing cluster role bindings: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
