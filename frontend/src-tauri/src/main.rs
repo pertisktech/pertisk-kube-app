@@ -17,11 +17,12 @@ struct BackendState {
     child: Arc<Mutex<Option<Child>>>,
     shutting_down: Arc<Mutex<bool>>,
     config: Arc<Mutex<SidecarConfig>>,
+    switch_status: Arc<Mutex<ClusterSwitchStatus>>,
 }
 
 const DEFAULT_PORT: u16 = 15222;
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
-const CLUSTER_VERIFY_TIMEOUT: Duration = Duration::from_secs(20);
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(12);
+const CLUSTER_VERIFY_TIMEOUT: Duration = Duration::from_secs(8);
 const RESTART_BACKOFF: Duration = Duration::from_secs(2);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
@@ -55,6 +56,26 @@ struct KubeconfigCluster {
     namespace: Option<String>,
     is_current: bool,
     kubeconfig_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClusterSwitchStatus {
+    in_progress: bool,
+    last_success: Option<bool>,
+    message: Option<String>,
+    requested_context: Option<String>,
+}
+
+impl Default for ClusterSwitchStatus {
+    fn default() -> Self {
+        Self {
+            in_progress: false,
+            last_success: None,
+            message: None,
+            requested_context: None,
+        }
+    }
 }
 
 fn validated_config(mut cfg: SidecarConfig) -> SidecarConfig {
@@ -770,21 +791,71 @@ fn set_sidecar_config(
     save_sidecar_config(&app, &next_config)
         .map_err(|e| format!("failed to persist sidecar config: {e}"))?;
 
-    if let Err(e) = restart_backend_sidecar(&app, &state) {
-        // Roll back to the last known-good configuration on failure.
-        if let Ok(mut current) = state.config.lock() {
-            *current = previous_config.clone();
-        }
-
-        let _ = save_sidecar_config(&app, &previous_config);
-        let _ = restart_backend_sidecar(&app, &state);
-
-        return Err(format!(
-            "failed to switch cluster: {e}. restored previous cluster configuration"
-        ));
+    {
+        let mut status = state
+            .switch_status
+            .lock()
+            .map_err(|e| format!("failed to lock switch status: {e}"))?;
+        status.in_progress = true;
+        status.last_success = None;
+        status.message = None;
+        status.requested_context = next_config.kube_context.clone();
     }
 
+    let app_handle = app.clone();
+    let child_ref = Arc::clone(&state.child);
+    let config_ref = Arc::clone(&state.config);
+    let shutting_down = Arc::clone(&state.shutting_down);
+    let switch_status_ref = Arc::clone(&state.switch_status);
+
+    // Restart sidecar in background so the command returns immediately and UI stays responsive.
+    tauri::async_runtime::spawn(async move {
+        let restart_state = BackendState {
+            child: child_ref,
+            shutting_down,
+            config: config_ref,
+            switch_status: switch_status_ref,
+        };
+
+        match restart_backend_sidecar(&app_handle, &restart_state) {
+            Ok(()) => {
+                if let Ok(mut status) = restart_state.switch_status.lock() {
+                    status.in_progress = false;
+                    status.last_success = Some(true);
+                    status.message = None;
+                }
+            }
+            Err(e) => {
+                // Roll back to previous known-good config and restart old cluster.
+                if let Ok(mut current) = restart_state.config.lock() {
+                    *current = previous_config.clone();
+                }
+                let _ = save_sidecar_config(&app_handle, &previous_config);
+                let _ = restart_backend_sidecar(&app_handle, &restart_state);
+
+                let message = format!(
+                    "failed to switch cluster: {e}. restored previous cluster configuration"
+                );
+                error!("{message}");
+                if let Ok(mut status) = restart_state.switch_status.lock() {
+                    status.in_progress = false;
+                    status.last_success = Some(false);
+                    status.message = Some(message);
+                }
+            }
+        }
+    });
+
     Ok(())
+}
+
+#[tauri::command]
+fn get_cluster_switch_status(state: State<'_, BackendState>) -> Result<ClusterSwitchStatus, String> {
+    state
+        .switch_status
+        .lock()
+        .map(|status| status.clone())
+        .map_err(|e| format!("failed to read switch status: {e}"))
 }
 
 #[tauri::command]
@@ -836,6 +907,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_sidecar_config,
             set_sidecar_config,
+            get_cluster_switch_status,
             restart_sidecar,
             list_kubeconfig_candidates,
             list_kubeconfig_clusters,
@@ -875,6 +947,7 @@ fn main() {
                 child: child_ref,
                 shutting_down,
                 config: config_ref,
+                switch_status: Arc::new(Mutex::new(ClusterSwitchStatus::default())),
             });
             Ok(())
         })

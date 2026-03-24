@@ -49,6 +49,7 @@ import {
   listDesktopKubeconfigClusters,
   listDesktopKubeconfigCandidates,
   saveDesktopSidecarConfig,
+  waitDesktopClusterSwitchResult,
 } from '../utils/tauriDesktop';
 import { isDesktopRuntime } from '../utils/desktopBridge';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -336,6 +337,14 @@ export const Layout = () => {
         kubeContext: nextContext || null,
       });
 
+      // Clear stale old-cluster content immediately while switch is in progress.
+      window.dispatchEvent(new CustomEvent('cluster:switched'));
+
+      const switchResult = await waitDesktopClusterSwitchResult(nextContext, 25_000);
+      if (!switchResult.success) {
+        throw new Error(switchResult.message || 'Cluster switch failed. Previous cluster was restored.');
+      }
+
       const candidates = await listDesktopKubeconfigCandidates();
       const merged = new Set(candidates);
       if (nextPath) merged.add(nextPath);
@@ -349,10 +358,6 @@ export const Layout = () => {
       setShowKubeconfigModal(false);
       setStartupClusterSelectionDone(true);
       toast.success('Cluster selection applied and sidecar restarted.');
-      // Reset all in-memory query/websocket state so UI reflects the new cluster immediately.
-      window.setTimeout(() => {
-        window.location.reload();
-      }, 150);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to apply cluster selection.');
     } finally {
@@ -740,6 +745,10 @@ export const Layout = () => {
   );
 
   if (mustSelectCluster) {
+    return <div className="h-screen bg-bg">{clusterSelectionDialog}</div>;
+  }
+
+  if (desktopMode && showKubeconfigModal) {
     return <div className="h-screen bg-bg">{clusterSelectionDialog}</div>;
   }
 

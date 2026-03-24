@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { useDashboard, useNodes, usePods } from '../hooks/useKubernetes';
+import { useDashboard, useNodes } from '../hooks/useKubernetes';
+import { useRealtimeNodes } from '../hooks/useRealtimeResources';
+import { useRealtimePods } from '../hooks/useRealtimePods';
 import { StatusBadge } from '../components/StatusBadge';
 import { WorkloadSummary } from '../components/WorkloadSummary';
 import { MetricsCharts } from '../components/MetricsCharts';
@@ -19,8 +21,8 @@ import {
   ExternalLink,
   Loader,
 } from '../components/Icons';
-import { formatCpuRange, formatK8sQuantityUsedAlloc, formatMemoryUsedAlloc } from '../utils';
-import { K8sNode } from '../types';
+import { formatCpuRange, formatK8sQuantityUsedAlloc, formatMemoryUsedAlloc, parseK8sQuantityToBytes } from '../utils';
+import { K8sNode, Pod } from '../types';
 
 const CHART_USED = 'var(--color-dashboard-metric-primary)';
 const CHART_AVAILABLE = 'var(--color-muted)';
@@ -85,11 +87,9 @@ function parseCPU(cpuStr?: string): number {
 // Helper to parse Memory string (e.g., "16Gi", "16384Mi")
 function parseMemory(memStr?: string): number {
   if (!memStr) return 0;
-  const num = parseFloat(memStr);
-  if (memStr.endsWith('Gi')) return num;
-  if (memStr.endsWith('Mi')) return num / 1024;
-  if (memStr.endsWith('Ki')) return num / (1024 * 1024);
-  return num;
+  const bytes = parseK8sQuantityToBytes(memStr);
+  if (!Number.isFinite(bytes) || bytes <= 0) return 0;
+  return bytes / (1024 * 1024 * 1024);
 }
 
 // Helper to format CPU display
@@ -116,11 +116,35 @@ const toPercent = (value?: number) =>
   value == null || Number.isNaN(value) ? 0 : Math.max(0, Math.min(100, value));
 
 export const Dashboard = () => {
-  const { data: dashboard, isLoading: dashLoading } = useDashboard();
-  const { data: nodes, isLoading: nodesLoading } = useNodes({ refetchInterval: 30_000 });
-  const { data: pods, isLoading: podsLoading } = usePods();
+  const { data: dashboard, isLoading: dashLoading } = useDashboard({ refetchInterval: 10_000 });
+  const { data: realtimeNodes, isLoading: realtimeNodesLoading } = useRealtimeNodes();
+  const { data: apiNodes, isLoading: apiNodesLoading } = useNodes({ refetchInterval: 10_000 });
+  const { data: pods = [], isLoading: podsLoading } = useRealtimePods<Pod>({ enabled: true });
 
-  const isLoading = dashLoading || nodesLoading || podsLoading;
+  const nodes = useMemo(() => {
+    if (!realtimeNodes?.length) return realtimeNodes ?? [];
+    const byName = new Map((apiNodes ?? []).map((n) => [n.name, n]));
+    return realtimeNodes.map((node) => {
+      const fromApi = byName.get(node.name);
+      if (!fromApi) return node;
+      return {
+        ...node,
+        cpu: fromApi.cpu ?? node.cpu,
+        memory: fromApi.memory ?? node.memory,
+        ephemeral_storage: fromApi.ephemeral_storage ?? node.ephemeral_storage,
+        cpu_used: fromApi.cpu_used ?? node.cpu_used,
+        memory_used: fromApi.memory_used ?? node.memory_used,
+        ephemeral_storage_used: fromApi.ephemeral_storage_used ?? node.ephemeral_storage_used,
+        cpu_usage_percent: fromApi.cpu_usage_percent ?? node.cpu_usage_percent,
+        memory_usage_percent: fromApi.memory_usage_percent ?? node.memory_usage_percent,
+        ephemeral_storage_usage_percent:
+          fromApi.ephemeral_storage_usage_percent ?? node.ephemeral_storage_usage_percent,
+      };
+    });
+  }, [realtimeNodes, apiNodes]);
+
+  const nodesLoading = realtimeNodesLoading || apiNodesLoading;
+  const isLoading = dashLoading || realtimeNodesLoading || apiNodesLoading || podsLoading;
 
   const sortedNodes = useMemo(() => {
     const list = [...(nodes ?? [])];
@@ -167,19 +191,62 @@ export const Dashboard = () => {
   // Calculate total allocatable and used (from metrics) for pie charts
   let totalCPU = 0;
   let totalMemory = 0;
+  let totalDisk = 0;
   let totalPodsAllocatable = 0;
   let usedCPU = 0;
   let usedMemory = 0;
+  let usedDisk = 0;
   if (nodes) {
     nodes.forEach((node) => {
       totalCPU += parseCPU(node.cpu);
       totalMemory += parseMemory(node.memory);
+      totalDisk += parseMemory(node.ephemeral_storage);
       totalPodsAllocatable += parsePods(node.pods);
-      usedCPU += parseCPU(node.cpu_used);
-      usedMemory += parseMemory(node.memory_used);
+
+      const cpuUsed = node.cpu_used != null
+        ? parseCPU(node.cpu_used)
+        : node.cpu_usage_percent != null
+          ? (parseCPU(node.cpu) * toPercent(node.cpu_usage_percent)) / 100
+          : 0;
+      const memoryUsed = node.memory_used != null
+        ? parseMemory(node.memory_used)
+        : node.memory_usage_percent != null
+          ? (parseMemory(node.memory) * toPercent(node.memory_usage_percent)) / 100
+          : 0;
+      const diskUsed = node.ephemeral_storage_used != null
+        ? parseMemory(node.ephemeral_storage_used)
+        : node.ephemeral_storage_usage_percent != null
+          ? (parseMemory(node.ephemeral_storage) * toPercent(node.ephemeral_storage_usage_percent)) / 100
+          : 0;
+
+      usedCPU += cpuUsed;
+      usedMemory += memoryUsed;
+      usedDisk += diskUsed;
     });
   }
-  const podCount = dashboard?.pods ?? pods?.length ?? 0;
+  const podCount = pods.length || dashboard?.pods || 0;
+
+  const cpuUsagePercent = totalCPU > 0
+    ? toPercent((usedCPU / totalCPU) * 100)
+    : toPercent(
+        nodes.length > 0
+          ? nodes.reduce((sum, node) => sum + toPercent(node.cpu_usage_percent), 0) / nodes.length
+          : 0
+      );
+  const memoryUsagePercent = totalMemory > 0
+    ? toPercent((usedMemory / totalMemory) * 100)
+    : toPercent(
+        nodes.length > 0
+          ? nodes.reduce((sum, node) => sum + toPercent(node.memory_usage_percent), 0) / nodes.length
+          : 0
+      );
+  const diskUsagePercent = totalDisk > 0
+    ? toPercent((usedDisk / totalDisk) * 100)
+    : toPercent(
+        nodes.length > 0
+          ? nodes.reduce((sum, node) => sum + toPercent(node.ephemeral_storage_usage_percent), 0) / nodes.length
+          : 0
+      );
 
   // Calculate health status
   const nodeHealthPercent = totalNodeCount > 0 ? (readyNodeCount / totalNodeCount) * 100 : 0;
@@ -591,11 +658,11 @@ export const Dashboard = () => {
             {/* CPU Panel */}
             <div className="bg-bg border border-border rounded-lg p-6 transition-all hover:shadow-md">
               <GaugeChart
-                value={45}
+                value={Math.round(cpuUsagePercent)}
                 color="var(--color-dashboard-metric-primary)"
                 label="CPU"
-                used="4.5 cores"
-                total="10 cores"
+                used={`${formatCPU(usedCPU)} cores`}
+                total={`${formatCPU(totalCPU)} cores`}
                 icon={<Cpu size={20} className="text-dashboard-metric-primary" />}
               />
             </div>
@@ -603,11 +670,11 @@ export const Dashboard = () => {
             {/* Memory Panel */}
             <div className="bg-bg border border-border rounded-lg p-6 transition-all hover:shadow-md">
               <GaugeChart
-                value={62}
+                value={Math.round(memoryUsagePercent)}
                 color="var(--color-dashboard-metric-secondary)"
                 label="Memory"
-                used="24 GB"
-                total="40 GB"
+                used={formatMemory(usedMemory)}
+                total={formatMemory(totalMemory)}
                 icon={<HardDrive size={20} className="text-dashboard-metric-secondary" />}
               />
             </div>
@@ -615,11 +682,11 @@ export const Dashboard = () => {
             {/* Disk Panel */}
             <div className="bg-bg border border-border rounded-lg p-6 transition-all hover:shadow-md">
               <GaugeChart
-                value={38}
+                value={Math.round(diskUsagePercent)}
                 color="var(--color-dashboard-metric-tertiary)"
                 label="Disk"
-                used="19 GB"
-                total="50 GB"
+                used={formatMemory(usedDisk)}
+                total={formatMemory(totalDisk)}
                 icon={<HardDrive size={20} className="text-dashboard-metric-tertiary" />}
               />
             </div>

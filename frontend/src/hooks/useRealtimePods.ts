@@ -336,6 +336,28 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   const maxReconnectAttempts = 10;
   const deletionTimeoutsRef = useRef<Map<string, number>>(new Map()); // Track deletion timeouts
   const deletedPodsRef = useRef<Set<string>>(new Set()); // Track deleted pods to prevent re-adding
+  const [clusterSwitchVersion, setClusterSwitchVersion] = useState(0);
+
+  useEffect(() => {
+    const handleClusterSwitched = () => {
+      setData([]);
+      setError(null);
+      setIsConnected(false);
+      setIsLoading(true);
+      setHasFetched(false);
+      setEmptyListConfirmed(false);
+      reconnectAttemptsRef.current = 0;
+      deletedPodsRef.current.clear();
+      deletionTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      deletionTimeoutsRef.current.clear();
+      setClusterSwitchVersion((v) => v + 1);
+    };
+
+    window.addEventListener('cluster:switched', handleClusterSwitched);
+    return () => {
+      window.removeEventListener('cluster:switched', handleClusterSwitched);
+    };
+  }, []);
 
   const syncPodDetails = useCallback(async () => {
     const token = getAuthToken();
@@ -697,7 +719,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       deletionTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
       deletionTimeoutsRef.current.clear();
     };
-  }, [enabled, connect, disconnect]);
+  }, [enabled, connect, disconnect, clusterSwitchVersion]);
 
   useEffect(() => {
     if (!enabled) return;

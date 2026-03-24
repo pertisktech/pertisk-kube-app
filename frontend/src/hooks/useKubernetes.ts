@@ -230,7 +230,7 @@ export const useNodes = (options?: { refetchInterval?: number }) => {
   });
 };
 
-export const useDashboard = () => {
+export const useDashboard = (options?: { refetchInterval?: number }) => {
   return useQuery({
     queryKey: ['dashboard'],
     queryFn: async () => {
@@ -239,6 +239,7 @@ export const useDashboard = () => {
       const data = (await res.json()) as DashboardSummary;
       return data;
     },
+    refetchInterval: options?.refetchInterval,
   });
 };
 

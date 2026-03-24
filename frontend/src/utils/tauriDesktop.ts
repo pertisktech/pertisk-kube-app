@@ -15,6 +15,18 @@ export interface DesktopKubeconfigCluster {
   kubeconfigPath: string;
 }
 
+export interface DesktopClusterSwitchResult {
+  success: boolean;
+  message?: string | null;
+}
+
+interface DesktopClusterSwitchStatus {
+  inProgress: boolean;
+  lastSuccess: boolean | null;
+  message?: string | null;
+  requestedContext?: string | null;
+}
+
 export async function getDesktopSidecarConfig(): Promise<DesktopSidecarConfig> {
   if (!isDesktopRuntime()) {
     return {
@@ -80,4 +92,47 @@ export async function listDesktopKubeconfigClusters(kubeconfigPath?: string | nu
     kubeconfigPath: kubeconfigPath ?? null,
   });
   return clusters;
+}
+
+export async function waitDesktopClusterSwitchResult(
+  expectedContext: string,
+  timeoutMs: number = 25_000
+): Promise<DesktopClusterSwitchResult> {
+  if (!isDesktopRuntime()) {
+    return { success: true };
+  }
+
+  const { invoke } = await import('@tauri-apps/api/core');
+  const startedAt = Date.now();
+  const normalizedExpected = expectedContext.trim();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const status = await invoke<DesktopClusterSwitchStatus>('get_cluster_switch_status');
+
+    if (status.inProgress) {
+      await new Promise((resolve) => window.setTimeout(resolve, 300));
+      continue;
+    }
+
+    if (status.lastSuccess === true) {
+      const requested = (status.requestedContext || '').trim();
+      if (!normalizedExpected || !requested || requested === normalizedExpected) {
+        return { success: true };
+      }
+    }
+
+    if (status.lastSuccess === false) {
+      return {
+        success: false,
+        message: status.message || 'Cluster switch failed and previous cluster was restored.',
+      };
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
+  }
+
+  return {
+    success: false,
+    message: 'Timed out while waiting for cluster switch. Previous cluster may still be active.',
+  };
 }

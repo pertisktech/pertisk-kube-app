@@ -887,6 +887,23 @@ function createRealtimeHook<T>(
     const [error, setError] = useState<string | null>(null);
     const [hasFetched, setHasFetched] = useState(false);
     const [emptyListConfirmed, setEmptyListConfirmed] = useState(false);
+    const [clusterSwitchVersion, setClusterSwitchVersion] = useState(0);
+
+    useEffect(() => {
+      const handleClusterSwitched = () => {
+        setData([]);
+        setError(null);
+        setIsLoading(true);
+        setHasFetched(false);
+        setEmptyListConfirmed(false);
+        setClusterSwitchVersion((v) => v + 1);
+      };
+
+      window.addEventListener('cluster:switched', handleClusterSwitched);
+      return () => {
+        window.removeEventListener('cluster:switched', handleClusterSwitched);
+      };
+    }, []);
 
     useEffect(() => {
       let ws: WebSocket | null = null;
@@ -1046,7 +1063,7 @@ function createRealtimeHook<T>(
           ws.close();
         }
       };
-    }, []);
+    }, [clusterSwitchVersion]);
 
     return { data, isLoading, error, hasFetched, emptyListConfirmed };
   };
