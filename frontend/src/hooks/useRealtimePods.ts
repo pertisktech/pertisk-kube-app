@@ -79,6 +79,24 @@ const transformPod = (rawPod: any): any => {
   // Determine detailed pod status based on lifecycle
   let podStatus = status.phase || 'Unknown';
   const phase = status.phase || 'Unknown';
+  let lastErrorMessage: string | undefined;
+
+  const setLastError = (reason?: unknown, message?: unknown) => {
+    if (lastErrorMessage) return;
+    const reasonText = typeof reason === 'string' ? reason.trim() : '';
+    const messageText = typeof message === 'string' ? message.trim() : '';
+    if (reasonText && messageText) {
+      lastErrorMessage = `${reasonText}: ${messageText}`;
+      return;
+    }
+    if (messageText) {
+      lastErrorMessage = messageText;
+      return;
+    }
+    if (reasonText) {
+      lastErrorMessage = reasonText;
+    }
+  };
   
   // Priority 1: Check for deletion/termination
   if (metadata.deletionTimestamp) {
@@ -89,12 +107,14 @@ const transformPod = (rawPod: any): any => {
     for (const initStatus of initContainerStatuses) {
       if (initStatus.state?.waiting) {
         podStatus = initStatus.state.waiting.reason || 'PodInitializing';
+        setLastError(initStatus.state.waiting.reason, initStatus.state.waiting.message);
         break;
       } else if (initStatus.state?.running) {
         podStatus = 'PodInitializing';
         break;
       } else if (initStatus.state?.terminated && initStatus.state.terminated.exitCode !== 0) {
         podStatus = 'Init:' + (initStatus.state.terminated.reason || 'Error');
+        setLastError(initStatus.state.terminated.reason, initStatus.state.terminated.message);
         break;
       }
     }
@@ -107,6 +127,7 @@ const transformPod = (rawPod: any): any => {
     // Check if pod is unschedulable
     if (scheduledCondition && scheduledCondition.status === 'False') {
       podStatus = scheduledCondition.reason || 'Unschedulable';
+      setLastError(scheduledCondition.reason, scheduledCondition.message);
     }
     // Check container statuses for specific waiting reasons
     else if (containerStatuses.length > 0) {
@@ -116,6 +137,7 @@ const transformPod = (rawPod: any): any => {
           const reason = containerStatus.state.waiting.reason;
           if (reason) {
             podStatus = reason;
+            setLastError(reason, containerStatus.state.waiting.message);
             foundWaitingReason = true;
             break;
           }
@@ -158,6 +180,7 @@ const transformPod = (rawPod: any): any => {
         const reason = containerStatus.state.waiting.reason;
         if (reason && errorWaitingReasons.includes(reason)) {
           podStatus = reason;
+          setLastError(reason, containerStatus.state.waiting.message);
           hasError = true;
           break;
         }
@@ -167,6 +190,7 @@ const transformPod = (rawPod: any): any => {
         const reason = containerStatus.state.terminated.reason;
         if (reason && reason !== 'Completed') {
           podStatus = reason;
+          setLastError(reason, containerStatus.state.terminated.message);
           hasError = true;
           break;
         }
@@ -195,6 +219,7 @@ const transformPod = (rawPod: any): any => {
         const reason = containerStatus.state.terminated.reason;
         if (reason) {
           podStatus = reason;
+          setLastError(reason, containerStatus.state.terminated.message);
           break;
         }
       }
@@ -297,6 +322,7 @@ const transformPod = (rawPod: any): any => {
     created: metadata.creationTimestamp || '',
     status: podStatus,
     phase: phase,
+    last_error: lastErrorMessage,
     ready,
     restarts,
     age: metadata.creationTimestamp || '',

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from '../components/Icons';
+import { HelpCircle, Trash2 } from '../components/Icons';
 import { useRealtimePods } from '../hooks/useRealtimePods';
 import { useRealtimeEvents } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
@@ -247,11 +247,37 @@ export const PodsPage = () => {
     },
     {
       header: 'Status',
-      accessor: (row: Pod) => (
-        <span className="whitespace-nowrap">
-          <StatusBadge status={row.status || row.phase || 'Unknown'} />
-        </span>
-      ),
+      accessor: (row: Pod) => {
+        const podStatus = row.status || row.phase || 'Unknown';
+        const normalized = podStatus.toLowerCase();
+        const showWarning = normalized !== 'running' && normalized !== 'completed' && normalized !== 'succeeded';
+        const tooltip = row.last_error || podStatus;
+
+        return (
+          <span className="whitespace-nowrap inline-flex items-center gap-1.5">
+            <StatusBadge status={podStatus} />
+            {showWarning && (
+              <span className="relative inline-flex group">
+                <button
+                  type="button"
+                  aria-label={tooltip}
+                  className="inline-flex text-[var(--color-dashboard-warning)]"
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <HelpCircle size={14} />
+                </button>
+                <span
+                  className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 hidden w-72 -translate-x-1/2 rounded border border-border bg-surface px-2 py-1 text-xs text-text shadow-lg group-hover:block"
+                  role="tooltip"
+                >
+                  {tooltip}
+                </span>
+              </span>
+            )}
+          </span>
+        );
+      },
       width: '8%',
       sortable: true,
       sortKey: 'status',

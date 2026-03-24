@@ -83,6 +83,7 @@ export interface Pod {
   created?: string;
   status?: string;
   phase?: string;
+  last_error?: string;
   ready: string;
   restarts: number;
   age: string;

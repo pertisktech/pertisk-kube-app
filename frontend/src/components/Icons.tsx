@@ -143,6 +143,7 @@ export const Plus = icon(PlusIcon);
 export const TrendingUp = icon(ArrowTrendingUpIcon);
 export const Check = icon(CheckIcon);
 export const Minus = icon(MinusIcon);
+export const HelpCircle = Lucide.CircleHelp;
 
 export const Droplet = Lucide.Droplet;
 export const Circle = Lucide.Circle;
