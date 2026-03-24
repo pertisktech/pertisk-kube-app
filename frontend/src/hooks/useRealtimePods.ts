@@ -324,30 +324,46 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   const { enabled = true, reconnectInterval = 3000 } = options;
   
   const [data, setData] = useState<T[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasFetched, setHasFetched] = useState(false);
+  const [emptyListConfirmed, setEmptyListConfirmed] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number>();
   const reconnectAttemptsRef = useRef(0);
+  const emptyListTimeoutRef = useRef<number>();
   const maxReconnectAttempts = 10;
   const deletionTimeoutsRef = useRef<Map<string, number>>(new Map()); // Track deletion timeouts
   const deletedPodsRef = useRef<Set<string>>(new Set()); // Track deleted pods to prevent re-adding
 
   const syncPodDetails = useCallback(async () => {
     const token = getAuthToken();
-    if (!token) return;
 
     try {
       const response = await fetch('/api/pods', {
-        headers: {
-          Authorization: token,
-        },
+        headers: token ? { Authorization: token } : undefined,
       });
 
-      if (!response.ok) return;
+      if (response.status === 401) {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+      }
+
+      if (!response.ok) {
+        setError(`Failed to sync pod metrics (${response.status})`);
+        return;
+      }
 
       const payload = await response.json();
       const apiPods: any[] = Array.isArray(payload?.data) ? (payload.data as any[]) : [];
+
+      if (emptyListTimeoutRef.current) {
+        clearTimeout(emptyListTimeoutRef.current);
+        emptyListTimeoutRef.current = undefined;
+      }
+      setHasFetched(true);
+      setIsLoading(false);
+      setEmptyListConfirmed(apiPods.length === 0);
 
       setData((prevData) => {
         const keyOf = (item: any) => `${item.namespace}/${item.name}`;
@@ -386,6 +402,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       });
     } catch (syncError) {
       console.error('[useRealtimePods] Failed to sync pod details:', syncError);
+      setError('Failed to sync pod details');
     }
   }, []);
 
@@ -411,6 +428,9 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
           type: 'subscribe',
           resource: 'pods'
         }));
+
+        // Hydrate full pod rows (including cpu/memory metrics) as soon as socket connects.
+        void syncPodDetails();
       };
 
       ws.onmessage = (event) => {
@@ -418,6 +438,13 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
           const message = JSON.parse(event.data);
 
           if (message.type === 'resource_update' && message.resource === 'pods') {
+            if (emptyListTimeoutRef.current) {
+              clearTimeout(emptyListTimeoutRef.current);
+              emptyListTimeoutRef.current = undefined;
+            }
+            setHasFetched(true);
+            setIsLoading(false);
+            setEmptyListConfirmed(false);
             const { action, data: rawPodData } = message;
             const transformedPod = transformPod(rawPodData);
             
@@ -574,11 +601,24 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                   return prevData;
               }
             });
-          } else if (message.type === 'subscribed') {
+          } else if (message.type === 'subscribed' && message.resource === 'pods') {
             if (isRealtimeDebug()) console.log('[useRealtimePods] Subscription confirmed');
+            if (emptyListTimeoutRef.current) {
+              clearTimeout(emptyListTimeoutRef.current);
+            }
+            // If no pod events arrive shortly after subscribe, confirm empty list and stop loading.
+            emptyListTimeoutRef.current = window.setTimeout(() => {
+              setHasFetched(true);
+              setIsLoading(false);
+              setEmptyListConfirmed(true);
+              emptyListTimeoutRef.current = undefined;
+            }, 2000);
           } else if (message.type === 'error') {
             console.error('[useRealtimePods] Server error:', message.message);
             setError(message.message);
+            if (!hasFetched) {
+              setIsLoading(false);
+            }
           }
         } catch (err) {
           console.error('[useRealtimePods] Failed to parse message:', err);
@@ -627,6 +667,10 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
+    if (emptyListTimeoutRef.current) {
+      clearTimeout(emptyListTimeoutRef.current);
+      emptyListTimeoutRef.current = undefined;
+    }
     
     // Clear all pending deletion timeouts
     deletionTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
@@ -637,11 +681,18 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
 
   useEffect(() => {
     if (enabled) {
+      setIsLoading(true);
+      setHasFetched(false);
+      setEmptyListConfirmed(false);
       connect();
     }
 
     return () => {
       disconnect();
+      if (emptyListTimeoutRef.current) {
+        clearTimeout(emptyListTimeoutRef.current);
+        emptyListTimeoutRef.current = undefined;
+      }
       // Clear all deletion timeouts on unmount
       deletionTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
       deletionTimeoutsRef.current.clear();
@@ -661,6 +712,9 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
 
   return {
     data,
+    isLoading,
+    hasFetched,
+    emptyListConfirmed,
     isConnected,
     error,
     reconnect: connect,
