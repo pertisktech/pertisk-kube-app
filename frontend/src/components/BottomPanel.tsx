@@ -140,6 +140,16 @@ const makeTabIdentity = (type: PanelTabType, opts?: Partial<OpenPanelTabOptions>
   }
 
   if (type === 'host-shell') {
+    const command = opts?.initialCommand?.trim();
+    if (command) {
+      return `${type}:${command}`;
+    }
+
+    const title = opts?.title?.trim();
+    if (title) {
+      return `${type}:${title}`;
+    }
+
     return type;
   }
 
