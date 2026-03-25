@@ -112,6 +112,11 @@ export const PodsPage = () => {
     openPanelTab({ type: 'pod-exec', podName: pod.name, namespace: pod.namespace });
   };
 
+  const handleOpenFilesTab = (pod: Pod) => {
+    setPanelOpen(false);
+    openPanelTab({ type: 'pod-files', podName: pod.name, namespace: pod.namespace });
+  };
+
   const handleOpenLogsTab = (pod: Pod) => {
     setPanelOpen(false);
     openPanelTab({ type: 'logs', podName: pod.name, namespace: pod.namespace });
@@ -471,6 +476,7 @@ export const PodsPage = () => {
             onClose={() => setPanelOpen(false)}
             onOpenYamlEditor={handleOpenYamlTab}
             onOpenShell={handleOpenShellTab}
+            onOpenFiles={handleOpenFilesTab}
             onOpenLogs={handleOpenLogsTab}
             onDelete={handleDeleteSingle}
           />

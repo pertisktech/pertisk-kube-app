@@ -148,6 +148,14 @@ export interface Pod {
   }>;
 }
 
+export interface PodFileItem {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  modified_unix: number;
+}
+
 export interface Deployment {
   name: string;
   namespace: string;

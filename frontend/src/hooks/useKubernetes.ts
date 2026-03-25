@@ -44,6 +44,7 @@ import type {
   HelmRevision,
   ResourceMapData,
   WorkloadMetricSeriesResponse,
+  PodFileItem,
 } from '../types';
 import { getAuthToken } from '../utils/auth';
 
@@ -933,6 +934,112 @@ const apiDelete = async (path: string): Promise<void> => {
 
 export const deletePod = (namespace: string, name: string) =>
   apiDelete(`/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+
+export const getPodFiles = async (
+  namespace: string,
+  podName: string,
+  path: string,
+  containerName?: string,
+): Promise<PodFileItem[]> => {
+  const params = new URLSearchParams();
+  params.set('path', path || '/');
+  if (containerName) params.set('container', containerName);
+
+  const res = await apiFetch(
+    `/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/files?${params.toString()}`,
+  );
+
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    if (res.status === 404) {
+      throw new Error('Pod files API not found (404). Rebuild and restart backend to load /api/pods/:namespace/:name/files routes.');
+    }
+    throw new Error(body.message || `Failed to list pod files (${res.status})`);
+  }
+
+  const data = (await res.json()) as ApiResponse<PodFileItem>;
+  return data.data;
+};
+
+export const uploadPodFiles = async (
+  namespace: string,
+  podName: string,
+  destination: string,
+  files: Array<{ file: File; relativePath: string }>,
+  containerName?: string,
+): Promise<void> => {
+  const token = getAuthToken();
+  const params = new URLSearchParams();
+  params.set('dest', destination || '/');
+  if (containerName) params.set('container', containerName);
+
+  const formData = new FormData();
+  files.forEach(({ file, relativePath }) => {
+    formData.append('relative_path', relativePath);
+    formData.append('file', file, file.name);
+  });
+
+  const res = await fetch(
+    `${API_BASE}/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/files/upload?${params.toString()}`,
+    {
+      method: 'POST',
+      headers: token ? { Authorization: token } : undefined,
+      body: formData,
+    },
+  );
+
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    if (res.status === 404) {
+      throw new Error('Pod file upload API not found (404). Rebuild and restart backend to load /api/pods/:namespace/:name/files/upload route.');
+    }
+    throw new Error(body.message || `Failed to upload files (${res.status})`);
+  }
+};
+
+export const downloadPodPath = async (
+  namespace: string,
+  podName: string,
+  remotePath: string,
+  containerName?: string,
+): Promise<{ blob: Blob; filename: string }> => {
+  const token = getAuthToken();
+  const params = new URLSearchParams();
+  params.set('path', remotePath || '/');
+  if (containerName) params.set('container', containerName);
+
+  const res = await fetch(
+    `${API_BASE}/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/files/download?${params.toString()}`,
+    {
+      headers: token ? { Authorization: token } : undefined,
+    },
+  );
+
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message || `Failed to download pod path (${res.status})`);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get('content-disposition') || '';
+  const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+  const fallback = remotePath.split('/').filter(Boolean).pop() || 'download.bin';
+
+  return {
+    blob,
+    filename: filenameMatch?.[1] || fallback,
+  };
+};
 
 export const deleteDeployment = (namespace: string, name: string) =>
   apiDelete(`/deployments/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);

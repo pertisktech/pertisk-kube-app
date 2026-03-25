@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Pencil, Terminal, ScrollText, Trash2, Cable, Eye, EyeOff } from './Icons';
+import { X, Pencil, Terminal, ScrollText, Trash2, Cable, Eye, EyeOff, Upload } from './Icons';
 import { StatusBadge } from './StatusBadge';
 import type { Pod } from '../types';
 import { timeAgo, formatCpuRange, formatCpuCores, parseCpuToCores } from '../utils';
@@ -15,6 +15,7 @@ interface PodDetailPanelProps {
   onClose: () => void;
   onOpenYamlEditor: (pod: Pod) => void;
   onOpenShell: (pod: Pod) => void;
+  onOpenFiles: (pod: Pod) => void;
   onOpenLogs: (pod: Pod) => void;
   onDelete?: (namespace: string, name: string) => Promise<void>;
   onPortForward?: (pod: Pod, port: string) => void;
@@ -50,7 +51,7 @@ const parseResourceString = (s: string | undefined): string[] => {
     .filter(Boolean);
 };
 
-export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, onOpenLogs, onDelete }: PodDetailPanelProps) => {
+export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, onOpenFiles, onOpenLogs, onDelete }: PodDetailPanelProps) => {
   const queryClient = useQueryClient();
   const { data: portForwards = [] } = usePortForwards();
   const [portForwardModal, setPortForwardModal] = useState<{ remotePort: number; localPort: number } | null>(null);
@@ -116,6 +117,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
             >
               <PanelActionButton icon={ScrollText} label="Logs" onClick={() => onOpenLogs(pod)} />
               <PanelActionButton icon={Terminal} label="Shell" onClick={() => onOpenShell(pod)} />
+              <PanelActionButton icon={Upload} label="Files" onClick={() => onOpenFiles(pod)} />
               <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor(pod)} />
               {onDelete && <PanelActionButton icon={Trash2} label="Delete" danger onClick={() => onDelete(pod.namespace, pod.name)} />}
               <PanelCloseButton

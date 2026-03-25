@@ -27,13 +27,14 @@ import remarkGfm from 'remark-gfm';
 import YAML from 'yaml';
 import { toast } from 'sonner';
 import { Terminal as TerminalComponent } from './Terminal';
+import { PodFileTransfer } from './PodFileTransfer';
 import { getHelmChartReadme, getHelmChartValues, installHelmChart, useHelmChartVersions, useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
 import { getAuthToken } from '../utils/auth';
 import { cn } from '../utils';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type PanelTabType = 'pod-exec' | 'node-exec' | 'logs' | 'yaml-editor' | 'host-shell' | 'install-chart';
+export type PanelTabType = 'pod-exec' | 'pod-files' | 'node-exec' | 'logs' | 'yaml-editor' | 'host-shell' | 'install-chart';
 
 export interface OpenPanelTabOptions {
   type: PanelTabType;
@@ -109,6 +110,7 @@ spec:
 const LABEL_MAP: Record<PanelTabType, string> = {
   'host-shell': 'Terminal',
   'pod-exec': 'Pod Shell',
+  'pod-files': 'Pod Files',
   'node-exec': 'Node Shell',
   logs: 'Logs',
   'yaml-editor': 'YAML',
@@ -121,7 +123,7 @@ const makeTabIdentity = (type: PanelTabType, opts?: Partial<OpenPanelTabOptions>
     return null;
   }
 
-  if (type === 'pod-exec' || type === 'logs') {
+  if (type === 'pod-exec' || type === 'pod-files' || type === 'logs') {
     const ns = opts?.namespace ?? 'default';
     const pod = opts?.podName ?? '';
     if (!pod) return null;
@@ -165,6 +167,7 @@ const ADD_OPTIONS: {
   { type: 'host-shell',  label: 'Terminal',   icon: Terminal,   description: 'Open a host shell' },
   { type: 'yaml-editor', label: 'New YAML',   icon: FileText,   description: 'Edit & apply a YAML manifest' },
   { type: 'pod-exec',    label: 'Pod Shell',  icon: Terminal,   description: 'Exec into a running pod' },
+  { type: 'pod-files',   label: 'Pod Files',  icon: Upload,     description: 'Two-panel local-to-pod file transfer' },
   { type: 'node-exec',   label: 'Node Shell', icon: Server,     description: 'Shell on a Kubernetes node' },
   { type: 'logs',        label: 'Logs',       icon: ScrollText, description: 'Stream logs from a pod' },
 ];
@@ -707,6 +710,8 @@ const TabIcon = ({ type, size = 13 }: { type: PanelTabType; size?: number }) => 
     case 'host-shell':
     case 'pod-exec':
       return <Terminal size={size} />;
+    case 'pod-files':
+      return <Upload size={size} />;
     case 'node-exec':
       return <Server size={size} />;
     case 'logs':
@@ -771,6 +776,23 @@ const TabContent = ({
           namespace={tab.target.namespace}
           containerName={tab.target.containerName}
           initialCommand={tab.initialCommand}
+        />
+      );
+
+    case 'pod-files':
+      if (!tab.target) {
+        return (
+          <PodSelector
+            title="Select a pod to open file transfer"
+            onSelect={(ns, pod, container) => onConnect({ namespace: ns, podName: pod, containerName: container })}
+          />
+        );
+      }
+      return (
+        <PodFileTransfer
+          podName={tab.target.podName}
+          namespace={tab.target.namespace}
+          containerName={tab.target.containerName}
         />
       );
 

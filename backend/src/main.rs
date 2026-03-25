@@ -121,6 +121,9 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/pods/:namespace/:name", delete(delete_pod))
         .route("/pods/:namespace/:name/logs", get(get_pod_logs))
+        .route("/pods/:namespace/:name/files", get(list_pod_files))
+        .route("/pods/:namespace/:name/files/upload", post(upload_pod_files))
+        .route("/pods/:namespace/:name/files/download", get(download_pod_path))
         .route("/events", get(list_events))
         .route("/deployments", get(list_deployments))
         .route(

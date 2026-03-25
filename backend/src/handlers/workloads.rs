@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::{header, StatusCode},
     response::IntoResponse,
     Json,
@@ -14,7 +14,12 @@ use kube::{
 };
 use std::collections::HashMap;
 use std::env;
+use std::path::{Component, Path as StdPath, PathBuf};
+use std::process::Stdio;
+use tokio::io::AsyncWriteExt;
 use std::str::FromStr;
+use tokio::fs;
+use tokio::process::Command;
 use tracing::{error, info};
 
 use crate::models::*;
@@ -1345,6 +1350,620 @@ pub async fn get_pod_logs(
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct PodFilesQuery {
+    pub path: Option<String>,
+    pub container: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PodUploadQuery {
+    pub dest: Option<String>,
+    pub container: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PodDownloadQuery {
+    pub path: Option<String>,
+    pub container: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct PodFileItem {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified_unix: i64,
+}
+
+fn shell_escape_single_quoted(input: &str) -> String {
+    input.replace('\'', "'\"'\"'")
+}
+
+fn normalize_remote_path(path: Option<&str>) -> String {
+    let raw = path.unwrap_or("/").trim();
+    if raw.is_empty() {
+        "/".to_string()
+    } else {
+        raw.to_string()
+    }
+}
+
+fn join_remote_path(base: &str, name: &str) -> String {
+    if base == "/" {
+        format!("/{}", name)
+    } else if base.ends_with('/') {
+        format!("{}{}", base, name)
+    } else {
+        format!("{}/{}", base, name)
+    }
+}
+
+fn sanitize_relative_path(raw: &str) -> Option<PathBuf> {
+    let candidate = raw.trim().replace('\\', "/");
+    if candidate.is_empty() {
+        return None;
+    }
+
+    let mut out = PathBuf::new();
+    for comp in StdPath::new(&candidate).components() {
+        match comp {
+            Component::Normal(seg) => out.push(seg),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+
+    if out.as_os_str().is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn destination_segments(dest: &str) -> Vec<String> {
+    StdPath::new(dest)
+        .components()
+        .filter_map(|comp| match comp {
+            Component::Normal(seg) => Some(seg.to_string_lossy().to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn strip_destination_prefix(path: PathBuf, dest_segments: &[String]) -> PathBuf {
+    if dest_segments.is_empty() {
+        return path;
+    }
+
+    let path_segments: Vec<String> = path
+        .components()
+        .filter_map(|comp| match comp {
+            Component::Normal(seg) => Some(seg.to_string_lossy().to_string()),
+            _ => None,
+        })
+        .collect();
+
+    if path_segments.len() <= dest_segments.len() {
+        return path;
+    }
+
+    let has_prefix = path_segments
+        .iter()
+        .zip(dest_segments.iter())
+        .all(|(a, b)| a == b);
+
+    if !has_prefix {
+        return path;
+    }
+
+    let mut out = PathBuf::new();
+    for seg in path_segments.iter().skip(dest_segments.len()) {
+        out.push(seg);
+    }
+    out
+}
+
+fn basename_for_download(path: &str) -> String {
+    StdPath::new(path)
+        .file_name()
+        .map(|v| v.to_string_lossy().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "root".to_string())
+}
+
+pub async fn list_pod_files(
+    Path((namespace, name)): Path<(String, String)>,
+    Query(query): Query<PodFilesQuery>,
+) -> impl IntoResponse {
+    let target_path = normalize_remote_path(query.path.as_deref());
+    let escaped_path = shell_escape_single_quoted(&target_path);
+
+    let script = format!(
+        "TARGET='{}'; if [ ! -d \"$TARGET\" ]; then echo '__NOT_DIR__'; exit 0; fi; for p in \"$TARGET\"/* \"$TARGET\"/.[!.]* \"$TARGET\"/..?*; do [ -e \"$p\" ] || continue; b=$(basename \"$p\"); if [ -d \"$p\" ]; then t=d; s=0; else t=f; s=$(wc -c < \"$p\" 2>/dev/null || echo 0); fi; m=$(date -r \"$p\" +%s 2>/dev/null || stat -c %Y \"$p\" 2>/dev/null || stat -f %m \"$p\" 2>/dev/null || echo 0); printf '%s\\t%s\\t%s\\t%s\\n' \"$b\" \"$t\" \"$s\" \"$m\"; done",
+        escaped_path
+    );
+
+    let mut cmd = Command::new("kubectl");
+    cmd.arg("exec")
+        .arg("-n")
+        .arg(&namespace)
+        .arg(&name);
+    if let Some(container) = query.container.as_deref().filter(|v| !v.is_empty()) {
+        cmd.arg("-c").arg(container);
+    }
+    cmd.arg("--").arg("sh").arg("-c").arg(script);
+
+    let output = match cmd.output().await {
+        Ok(out) => out,
+        Err(err) => {
+            error!("Failed to execute kubectl for pod files {}/{}: {:?}", namespace, name, err);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "message": format!("Failed to execute kubectl: {}", err) })),
+            )
+                .into_response();
+        }
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "message": if stderr.is_empty() { "Failed to list pod files" } else { &stderr } })),
+        )
+            .into_response();
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if stdout.lines().any(|line| line.trim() == "__NOT_DIR__") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "message": format!("Path is not a directory: {}", target_path) })),
+        )
+            .into_response();
+    }
+
+    let mut items: Vec<PodFileItem> = stdout
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\t');
+            let name = parts.next()?.to_string();
+            let typ = parts.next().unwrap_or("f");
+            let size = parts
+                .next()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(0);
+            let modified_unix = parts
+                .next()
+                .and_then(|v| v.parse::<i64>().ok())
+                .unwrap_or(0);
+
+            Some(PodFileItem {
+                path: join_remote_path(&target_path, &name),
+                name,
+                is_dir: typ == "d",
+                size,
+                modified_unix,
+            })
+        })
+        .collect();
+
+    items.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    (StatusCode::OK, Json(ApiResponse { total: items.len(), data: items })).into_response()
+}
+
+pub async fn upload_pod_files(
+    Path((namespace, name)): Path<(String, String)>,
+    Query(query): Query<PodUploadQuery>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    let destination = normalize_remote_path(query.dest.as_deref());
+    let dest_segments = destination_segments(&destination);
+    let upload_root = std::env::temp_dir().join(format!("pertisk-upload-{}", uuid::Uuid::new_v4()));
+
+    if let Err(err) = fs::create_dir_all(&upload_root).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "message": format!("Failed to prepare upload directory: {}", err) })),
+        )
+            .into_response();
+    }
+
+    let mut pending_relative_path: Option<String> = None;
+    let mut uploaded_files = 0usize;
+    let mut relative_files: Vec<String> = Vec::new();
+
+    loop {
+        let next = match multipart.next_field().await {
+            Ok(field) => field,
+            Err(err) => {
+                let _ = fs::remove_dir_all(&upload_root).await;
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "message": format!("Invalid multipart payload: {}", err) })),
+                )
+                    .into_response();
+            }
+        };
+
+        let Some(field) = next else {
+            break;
+        };
+
+        let field_name = field.name().unwrap_or("").to_string();
+
+        if field_name == "relative_path" {
+            pending_relative_path = field.text().await.ok();
+            continue;
+        }
+
+        if field_name != "file" {
+            continue;
+        }
+
+        let fallback_name = field
+            .file_name()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("file-{}", uploaded_files + 1));
+        let relative = pending_relative_path
+            .take()
+            .unwrap_or_else(|| fallback_name.clone());
+
+        let safe_relative = match sanitize_relative_path(&relative) {
+            Some(path) => path,
+            None => {
+                let _ = fs::remove_dir_all(&upload_root).await;
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "message": format!("Invalid relative path: {}", relative) })),
+                )
+                    .into_response();
+            }
+        };
+
+        let normalized_relative = {
+            let stripped = strip_destination_prefix(safe_relative.clone(), &dest_segments);
+            if stripped.as_os_str().is_empty() {
+                safe_relative
+            } else {
+                stripped
+            }
+        };
+
+        let destination_path = upload_root.join(&normalized_relative);
+        if let Some(parent) = destination_path.parent() {
+            if let Err(err) = fs::create_dir_all(parent).await {
+                let _ = fs::remove_dir_all(&upload_root).await;
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "message": format!("Failed to create directory: {}", err) })),
+                )
+                    .into_response();
+            }
+        }
+
+        let bytes = match field.bytes().await {
+            Ok(data) => data,
+            Err(err) => {
+                let _ = fs::remove_dir_all(&upload_root).await;
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "message": format!("Failed to read upload bytes: {}", err) })),
+                )
+                    .into_response();
+            }
+        };
+
+        if let Err(err) = fs::write(&destination_path, &bytes).await {
+            let _ = fs::remove_dir_all(&upload_root).await;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "message": format!("Failed to write upload file: {}", err) })),
+            )
+                .into_response();
+        }
+
+            relative_files.push(normalized_relative.to_string_lossy().replace('\\', "/"));
+        uploaded_files += 1;
+    }
+
+    if uploaded_files == 0 {
+        let _ = fs::remove_dir_all(&upload_root).await;
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "message": "No files uploaded" })),
+        )
+            .into_response();
+    }
+
+    let escaped_dest = shell_escape_single_quoted(&destination);
+    let mut preflight_cmd = Command::new("kubectl");
+    preflight_cmd
+        .arg("exec")
+        .arg("-n")
+        .arg(&namespace)
+        .arg(&name);
+    if let Some(container) = query.container.as_deref().filter(|v| !v.is_empty()) {
+        preflight_cmd.arg("-c").arg(container);
+    }
+    preflight_cmd
+        .arg("--")
+        .arg("sh")
+        .arg("-c")
+        .arg(format!(
+            "DEST='{}'; if [ ! -d \"$DEST\" ]; then mkdir -p \"$DEST\"; fi; if [ ! -w \"$DEST\" ]; then echo 'Destination is not writable'; exit 1; fi",
+            escaped_dest
+        ));
+
+    let preflight_out = match preflight_cmd.output().await {
+        Ok(out) => out,
+        Err(err) => {
+            let _ = fs::remove_dir_all(&upload_root).await;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "message": format!("Failed to verify destination in pod: {}", err) })),
+            )
+                .into_response();
+        }
+    };
+
+    if !preflight_out.status.success() {
+        let _ = fs::remove_dir_all(&upload_root).await;
+        let stderr = String::from_utf8_lossy(&preflight_out.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&preflight_out.stdout).trim().to_string();
+        let msg = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("Destination path is not writable: {}", destination)
+        };
+
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "message": msg })),
+        )
+            .into_response();
+    }
+
+    for rel in &relative_files {
+        let local_path = upload_root.join(rel);
+        let file_bytes = match fs::read(&local_path).await {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                let _ = fs::remove_dir_all(&upload_root).await;
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "message": format!("Failed reading temporary upload file {}: {}", rel, err) })),
+                )
+                    .into_response();
+            }
+        };
+
+        let remote_path = if destination == "/" {
+            format!("/{}", rel)
+        } else {
+            format!("{}/{}", destination.trim_end_matches('/'), rel)
+        };
+        let escaped_remote = shell_escape_single_quoted(&remote_path);
+
+        let mut write_cmd = Command::new("kubectl");
+        write_cmd
+            .arg("exec")
+            .arg("-i")
+            .arg("-n")
+            .arg(&namespace)
+            .arg(&name);
+        if let Some(container) = query.container.as_deref().filter(|v| !v.is_empty()) {
+            write_cmd.arg("-c").arg(container);
+        }
+        write_cmd
+            .arg("--")
+            .arg("sh")
+            .arg("-c")
+            .arg(format!(
+                "p='{}'; mkdir -p \"$(dirname \"$p\")\" && cat > \"$p\"",
+                escaped_remote
+            ))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+
+        let mut child = match write_cmd.spawn() {
+            Ok(c) => c,
+            Err(err) => {
+                let _ = fs::remove_dir_all(&upload_root).await;
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "message": format!("Failed to start pod upload command for {}: {}", rel, err) })),
+                )
+                    .into_response();
+            }
+        };
+
+        if let Some(mut stdin) = child.stdin.take() {
+            if let Err(err) = stdin.write_all(&file_bytes).await {
+                let _ = fs::remove_dir_all(&upload_root).await;
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "message": format!("Failed streaming file {} to pod: {}", rel, err) })),
+                )
+                    .into_response();
+            }
+        }
+
+        let write_out = match child.wait_with_output().await {
+            Ok(out) => out,
+            Err(err) => {
+                let _ = fs::remove_dir_all(&upload_root).await;
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "message": format!("Upload command failed for {}: {}", rel, err) })),
+                )
+                    .into_response();
+            }
+        };
+
+        if !write_out.status.success() {
+            let _ = fs::remove_dir_all(&upload_root).await;
+            let stderr = String::from_utf8_lossy(&write_out.stderr).trim().to_string();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "message": if stderr.is_empty() {
+                        format!("Failed to upload {}", rel)
+                    } else {
+                        format!("Failed to upload {}: {}", rel, stderr)
+                    }
+                })),
+            )
+                .into_response();
+        }
+    }
+
+    let _ = fs::remove_dir_all(&upload_root).await;
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true,
+            "uploaded_files": uploaded_files,
+            "destination": destination,
+        })),
+    )
+        .into_response()
+}
+
+pub async fn download_pod_path(
+    Path((namespace, name)): Path<(String, String)>,
+    Query(query): Query<PodDownloadQuery>,
+) -> impl IntoResponse {
+    let target_path = normalize_remote_path(query.path.as_deref());
+    let escaped_path = shell_escape_single_quoted(&target_path);
+
+    let mut kind_cmd = Command::new("kubectl");
+    kind_cmd
+        .arg("exec")
+        .arg("-n")
+        .arg(&namespace)
+        .arg(&name);
+    if let Some(container) = query.container.as_deref().filter(|v| !v.is_empty()) {
+        kind_cmd.arg("-c").arg(container);
+    }
+    kind_cmd
+        .arg("--")
+        .arg("sh")
+        .arg("-c")
+        .arg(format!(
+            "TARGET='{}'; if [ -d \"$TARGET\" ]; then echo dir; elif [ -f \"$TARGET\" ]; then echo file; else echo missing; fi",
+            escaped_path
+        ));
+
+    let kind_output = match kind_cmd.output().await {
+        Ok(out) => out,
+        Err(err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "message": format!("Failed to execute kubectl: {}", err) })),
+            )
+                .into_response();
+        }
+    };
+
+    if !kind_output.status.success() {
+        let stderr = String::from_utf8_lossy(&kind_output.stderr).trim().to_string();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "message": if stderr.is_empty() { "Failed to inspect pod path" } else { &stderr } })),
+        )
+            .into_response();
+    }
+
+    let kind = String::from_utf8_lossy(&kind_output.stdout).trim().to_string();
+    if kind == "missing" {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "message": format!("Path not found: {}", target_path) })),
+        )
+            .into_response();
+    }
+
+    let mut content_cmd = Command::new("kubectl");
+    content_cmd
+        .arg("exec")
+        .arg("-n")
+        .arg(&namespace)
+        .arg(&name);
+    if let Some(container) = query.container.as_deref().filter(|v| !v.is_empty()) {
+        content_cmd.arg("-c").arg(container);
+    }
+
+    if kind == "dir" {
+        content_cmd
+            .arg("--")
+            .arg("sh")
+            .arg("-c")
+            .arg(format!(
+                "TARGET='{}'; tar -C \"$(dirname \"$TARGET\")\" -czf - \"$(basename \"$TARGET\")\"",
+                escaped_path
+            ));
+    } else {
+        content_cmd.arg("--").arg("cat").arg(&target_path);
+    }
+
+    let output = match content_cmd.output().await {
+        Ok(out) => out,
+        Err(err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "message": format!("Failed to stream pod file: {}", err) })),
+            )
+                .into_response();
+        }
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "message": if stderr.is_empty() { "Failed to download pod path" } else { &stderr } })),
+        )
+            .into_response();
+    }
+
+    let base_name = basename_for_download(&target_path);
+    let download_name = if kind == "dir" {
+        format!("{}.tar.gz", base_name)
+    } else {
+        base_name
+    };
+    let content_type = if kind == "dir" {
+        "application/gzip"
+    } else {
+        "application/octet-stream"
+    };
+
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, content_type.to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{}\"", download_name),
+            ),
+        ],
+        output.stdout,
+    )
+        .into_response()
 }
 
 pub async fn update_pod_yaml(

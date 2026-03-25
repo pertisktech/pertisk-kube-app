@@ -4,7 +4,7 @@
  edition = "2021"
 
  [dependencies]
- axum = { version = "0.7", features = ["macros", "json", "ws"] }
+ axum = { version = "0.7", features = ["macros", "json", "ws", "multipart"] }
  hyper = { version = "1", features = ["full"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "process", "io-util"] }
  serde = { version = "1", features = ["derive"] }
