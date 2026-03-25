@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Box, FileText, Upload, RotateCw, ArrowUp, ArrowDown } from './Icons';
-import { downloadPodPath, getPodFiles, uploadPodFiles } from '../hooks/useKubernetes';
+import { getPodFiles, getPodPathDownloadUrl, uploadPodFiles } from '../hooks/useKubernetes';
 
 type LocalQueuedFile = {
   id: string;
@@ -77,11 +77,10 @@ const parentPath = (path: string): string => {
 };
 
 export const PodFileTransfer = ({ namespace, podName, containerName }: PodFileTransferProps) => {
-  const [remotePath, setRemotePath] = useState('/');
+  const [remotePath, setRemotePath] = useState('/tmp');
   const [queuedFiles, setQueuedFiles] = useState<LocalQueuedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dropUploading, setDropUploading] = useState(false);
-  const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
   const [isRemoteDropActive, setIsRemoteDropActive] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -173,24 +172,36 @@ export const PodFileTransfer = ({ namespace, podName, containerName }: PodFileTr
     }
   };
 
-  const triggerDownload = async (path: string) => {
-    setDownloadingPath(path);
+  const triggerDownload = (path: string, suggestedName?: string) => {
     try {
-      const { blob, filename } = await downloadPodPath(namespace, podName, path, containerName);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success(`Downloaded ${filename}`);
+      const directUrl = getPodPathDownloadUrl(namespace, podName, path, containerName);
+      const anchor = document.createElement('a');
+      anchor.href = directUrl;
+      anchor.download = suggestedName || path.split('/').filter(Boolean).pop() || 'download.bin';
+      anchor.rel = 'noopener';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      toast.success('Download started');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Download failed');
-    } finally {
-      setDownloadingPath(null);
     }
+  };
+
+  const handleDragOutDownload = (
+    event: React.DragEvent<HTMLElement>,
+    path: string,
+    name: string,
+    isDir: boolean,
+  ) => {
+    const url = getPodPathDownloadUrl(namespace, podName, path, containerName);
+    const filename = isDir ? `${name}.tar.gz` : name;
+    const mime = isDir ? 'application/gzip' : 'application/octet-stream';
+
+    event.dataTransfer.effectAllowed = 'copy';
+    event.dataTransfer.setData('DownloadURL', `${mime}:${filename}:${url}`);
+    event.dataTransfer.setData('text/uri-list', url);
+    event.dataTransfer.setData('text/plain', url);
   };
 
   return (
@@ -331,10 +342,12 @@ export const PodFileTransfer = ({ namespace, podName, containerName }: PodFileTr
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => void triggerDownload(remotePath)}
+                onClick={() => {
+                  const base = remotePath.split('/').filter(Boolean).pop() || 'download';
+                  triggerDownload(remotePath, `${base}.tar.gz`);
+                }}
                 title="Download current directory"
-                disabled={downloadingPath === remotePath}
-                className="p-1 rounded hover:bg-hover text-text-secondary disabled:opacity-50"
+                className="p-1 rounded hover:bg-hover text-text-secondary"
               >
                 <ArrowDown size={13} />
               </button>
@@ -373,6 +386,9 @@ export const PodFileTransfer = ({ namespace, podName, containerName }: PodFileTr
                   <div
                     key={`${item.path}:${item.is_dir ? 'd' : 'f'}`}
                     className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-hover"
+                    draggable
+                    onDragStart={(e) => handleDragOutDownload(e, item.path, item.name, item.is_dir)}
+                    title="Drag to local filesystem or click download icon"
                   >
                     <button
                       type="button"
@@ -396,10 +412,11 @@ export const PodFileTransfer = ({ namespace, podName, containerName }: PodFileTr
                       </span>
                       <button
                         type="button"
-                        onClick={() => void triggerDownload(item.path)}
+                        onClick={() =>
+                          triggerDownload(item.path, item.is_dir ? `${item.name}.tar.gz` : item.name)
+                        }
                         title={`Download ${item.name}`}
-                        disabled={downloadingPath === item.path}
-                        className="p-1 rounded hover:bg-hover text-text-secondary disabled:opacity-50"
+                        className="p-1 rounded hover:bg-hover text-text-secondary"
                       >
                         <ArrowDown size={12} />
                       </button>

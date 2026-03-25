@@ -76,7 +76,7 @@ pub async fn require_basic_auth(
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok());
 
-    // Check for JWT Bearer token
+    // Check for JWT Bearer token in Authorization header
     if let Some(auth) = auth_header {
         if auth.starts_with("Bearer ") {
             let token = &auth[7..];
@@ -88,6 +88,23 @@ pub async fn require_basic_auth(
                 Ok(_) => return next.run(request).await,
                 Err(_) => return StatusCode::UNAUTHORIZED.into_response(),
             }
+        }
+    }
+
+    // Check for JWT token in ?token= query param (used by direct download links)
+    let query_token = request.uri().query().and_then(|q| {
+        q.split('&')
+            .find(|part| part.starts_with("token="))
+            .map(|part| &part[6..])
+    });
+    if let Some(token) = query_token {
+        match decode::<Claims>(
+            token,
+            &DecodingKey::from_secret(state.jwt_secret.as_ref()),
+            &Validation::default(),
+        ) {
+            Ok(_) => return next.run(request).await,
+            Err(_) => return StatusCode::UNAUTHORIZED.into_response(),
         }
     }
 

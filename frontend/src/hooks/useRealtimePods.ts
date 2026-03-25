@@ -358,6 +358,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number>();
   const reconnectAttemptsRef = useRef(0);
+  const intentionalCloseRef = useRef(false);
   const emptyListTimeoutRef = useRef<number>();
   const maxReconnectAttempts = 10;
   const deletionTimeoutsRef = useRef<Map<string, number>>(new Map()); // Track deletion timeouts
@@ -463,6 +464,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
     const wsUrl = `${protocol}//${host}${port}/ws`;
 
     try {
+      intentionalCloseRef.current = false;
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
@@ -674,12 +676,25 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       };
 
       ws.onerror = (errorEvent) => {
+        if (intentionalCloseRef.current) {
+          return;
+        }
+        if (import.meta.env.DEV && ws.readyState !== WebSocket.OPEN) {
+          if (isRealtimeDebug()) {
+            console.log('[useRealtimePods] Ignoring pre-open websocket error during dev remount');
+          }
+          return;
+        }
         console.error('[useRealtimePods] WebSocket error:', errorEvent);
         // Don't set error here — onclose fires immediately after and handles reconnection.
         // Only surface an error if reconnection is exhausted (handled in onclose).
       };
 
       ws.onclose = () => {
+        if (intentionalCloseRef.current) {
+          if (isRealtimeDebug()) console.log('[useRealtimePods] WebSocket closed intentionally');
+          return;
+        }
         if (isRealtimeDebug()) console.log('[useRealtimePods] WebSocket closed');
         setIsConnected(false);
         wsRef.current = null;
@@ -709,6 +724,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   }, [enabled, reconnectInterval]);
 
   const disconnect = useCallback(() => {
+    intentionalCloseRef.current = true;
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;

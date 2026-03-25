@@ -1475,6 +1475,46 @@ fn basename_for_download(path: &str) -> String {
         .unwrap_or_else(|| "root".to_string())
 }
 
+async fn collect_upload_diagnostics(
+    namespace: &str,
+    pod_name: &str,
+    container: Option<&str>,
+    remote_path: &str,
+) -> String {
+    let escaped_remote = shell_escape_single_quoted(remote_path);
+    let script = format!(
+        "p='{}'; d=$(dirname \"$p\"); echo \"target=$p\"; echo \"dir=$d\"; if [ -e \"$d\" ]; then echo \"dir_exists=yes\"; else echo \"dir_exists=no\"; fi; ls -ld \"$d\" 2>&1 || true; mkdir -p \"$d\" 2>&1 || true; if [ -w \"$d\" ]; then echo \"dir_writable=yes\"; else echo \"dir_writable=no\"; fi; id 2>/dev/null || true",
+        escaped_remote
+    );
+
+    let mut cmd = Command::new("kubectl");
+    cmd.arg("exec").arg("-n").arg(namespace).arg(pod_name);
+    if let Some(c) = container.filter(|v| !v.is_empty()) {
+        cmd.arg("-c").arg(c);
+    }
+    cmd.arg("--").arg("sh").arg("-c").arg(script);
+
+    match cmd.output().await {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            let mut parts = Vec::new();
+            if !stdout.is_empty() {
+                parts.push(stdout);
+            }
+            if !stderr.is_empty() {
+                parts.push(stderr);
+            }
+            if parts.is_empty() {
+                "no diagnostics output".to_string()
+            } else {
+                parts.join(" | ")
+            }
+        }
+        Err(err) => format!("failed to collect diagnostics: {}", err),
+    }
+}
+
 pub async fn list_pod_files(
     Path((namespace, name)): Path<(String, String)>,
     Query(query): Query<PodFilesQuery>,
@@ -1720,13 +1760,33 @@ pub async fn upload_pod_files(
         let _ = fs::remove_dir_all(&upload_root).await;
         let stderr = String::from_utf8_lossy(&preflight_out.stderr).trim().to_string();
         let stdout = String::from_utf8_lossy(&preflight_out.stdout).trim().to_string();
-        let msg = if !stderr.is_empty() {
+        let mut msg = if !stderr.is_empty() {
             stderr
         } else if !stdout.is_empty() {
             stdout
         } else {
             format!("Destination path is not writable: {}", destination)
         };
+
+        let generic_failure = msg == "command terminated with exit code 1"
+            || msg.ends_with("command terminated with exit code 1");
+        if generic_failure {
+            let diag = collect_upload_diagnostics(
+                &namespace,
+                &name,
+                query.container.as_deref(),
+                &destination,
+            )
+            .await;
+            if diag.contains("dir_writable=no") {
+                msg = format!(
+                    "Destination '{}' is not writable for the container user. Use a writable path like '/tmp' or a writable mounted volume. diagnostics: {}",
+                    destination, diag
+                );
+            } else {
+                msg = format!("{}; diagnostics: {}", msg, diag);
+            }
+        }
 
         return (
             StatusCode::BAD_REQUEST,
@@ -1771,11 +1831,11 @@ pub async fn upload_pod_files(
             .arg("sh")
             .arg("-c")
             .arg(format!(
-                "p='{}'; mkdir -p \"$(dirname \"$p\")\" && cat > \"$p\"",
+                "p='{}'; d=$(dirname \"$p\"); mkdir -p \"$d\" || {{ echo \"mkdir failed: $d\" 1>&2; exit 1; }}; cat > \"$p\" || {{ echo \"write failed: $p\" 1>&2; exit 1; }}",
                 escaped_remote
             ))
             .stdin(Stdio::piped())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
         let mut child = match write_cmd.spawn() {
@@ -1814,15 +1874,176 @@ pub async fn upload_pod_files(
         };
 
         if !write_out.status.success() {
-            let _ = fs::remove_dir_all(&upload_root).await;
             let stderr = String::from_utf8_lossy(&write_out.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&write_out.stdout).trim().to_string();
+            let generic_failure = stderr.is_empty()
+                || stderr == "command terminated with exit code 1"
+                || stderr.ends_with("command terminated with exit code 1");
+
+            let diagnostics = if generic_failure {
+                Some(
+                    collect_upload_diagnostics(
+                        &namespace,
+                        &name,
+                        query.container.as_deref(),
+                        &remote_path,
+                    )
+                    .await,
+                )
+            } else {
+                None
+            };
+
+            // Fallback: if nested path upload fails, retry by flattening to destination root.
+            if rel.contains('/') {
+                if let Some(file_name) = StdPath::new(rel)
+                    .file_name()
+                    .map(|v| v.to_string_lossy().to_string())
+                    .filter(|v| !v.is_empty())
+                {
+                    let flat_remote_path = if destination == "/" {
+                        format!("/{}", file_name)
+                    } else {
+                        format!("{}/{}", destination.trim_end_matches('/'), file_name)
+                    };
+                    let escaped_flat = shell_escape_single_quoted(&flat_remote_path);
+
+                    let mut fallback_cmd = Command::new("kubectl");
+                    fallback_cmd
+                        .arg("exec")
+                        .arg("-i")
+                        .arg("-n")
+                        .arg(&namespace)
+                        .arg(&name);
+                    if let Some(container) = query.container.as_deref().filter(|v| !v.is_empty()) {
+                        fallback_cmd.arg("-c").arg(container);
+                    }
+                    fallback_cmd
+                        .arg("--")
+                        .arg("sh")
+                        .arg("-c")
+                        .arg(format!(
+                            "p='{}'; cat > \"$p\" || {{ echo \"write failed: $p\" 1>&2; exit 1; }}",
+                            escaped_flat
+                        ))
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::piped());
+
+                    let mut fallback_child = match fallback_cmd.spawn() {
+                        Ok(c) => c,
+                        Err(err) => {
+                            let _ = fs::remove_dir_all(&upload_root).await;
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(serde_json::json!({
+                                    "message": format!(
+                                        "Failed to start fallback upload command for {}: {}",
+                                        rel, err
+                                    )
+                                })),
+                            )
+                                .into_response();
+                        }
+                    };
+
+                    if let Some(mut stdin) = fallback_child.stdin.take() {
+                        if let Err(err) = stdin.write_all(&file_bytes).await {
+                            let _ = fs::remove_dir_all(&upload_root).await;
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(serde_json::json!({
+                                    "message": format!(
+                                        "Failed streaming fallback file {} to pod: {}",
+                                        rel, err
+                                    )
+                                })),
+                            )
+                                .into_response();
+                        }
+                    }
+
+                    let fallback_out = match fallback_child.wait_with_output().await {
+                        Ok(out) => out,
+                        Err(err) => {
+                            let _ = fs::remove_dir_all(&upload_root).await;
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(serde_json::json!({
+                                    "message": format!(
+                                        "Fallback upload command failed for {}: {}",
+                                        rel, err
+                                    )
+                                })),
+                            )
+                                .into_response();
+                        }
+                    };
+
+                    if fallback_out.status.success() {
+                        continue;
+                    }
+
+                    let fallback_stderr = String::from_utf8_lossy(&fallback_out.stderr).trim().to_string();
+                    let fallback_stdout = String::from_utf8_lossy(&fallback_out.stdout).trim().to_string();
+                    let _ = fs::remove_dir_all(&upload_root).await;
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({
+                            "message": if fallback_stderr.is_empty() && fallback_stdout.is_empty() {
+                                if let Some(diag) = diagnostics {
+                                    format!(
+                                        "Failed nested upload {} to {} and flat fallback to {}. Diagnostics: {}",
+                                        rel, remote_path, flat_remote_path, diag
+                                    )
+                                } else {
+                                    format!(
+                                        "Failed nested upload {} to {} and flat fallback to {}",
+                                        rel, remote_path, flat_remote_path
+                                    )
+                                }
+                            } else {
+                                format!(
+                                    "Failed nested upload {} to {} and flat fallback to {}: {}{}",
+                                    rel,
+                                    remote_path,
+                                    flat_remote_path,
+                                    if !fallback_stderr.is_empty() { fallback_stderr } else { "".to_string() },
+                                    if !fallback_stdout.is_empty() {
+                                        format!(" {}", fallback_stdout)
+                                    } else {
+                                        "".to_string()
+                                    }
+                                )
+                            }
+                        })),
+                    )
+                        .into_response();
+                }
+            }
+
+            let _ = fs::remove_dir_all(&upload_root).await;
             return (
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({
-                    "message": if stderr.is_empty() {
-                        format!("Failed to upload {}", rel)
+                    "message": if stderr.is_empty() && stdout.is_empty() {
+                        if let Some(diag) = diagnostics {
+                            format!("Failed to upload {} to {}. Diagnostics: {}", rel, remote_path, diag)
+                        } else {
+                            format!("Failed to upload {} to {}", rel, remote_path)
+                        }
                     } else {
-                        format!("Failed to upload {}: {}", rel, stderr)
+                        format!(
+                            "Failed to upload {} to {}: {}{}",
+                            rel,
+                            remote_path,
+                            if !stderr.is_empty() { stderr } else { "".to_string() },
+                            if !stdout.is_empty() {
+                                format!(" {}", stdout)
+                            } else {
+                                "".to_string()
+                            }
+                        )
                     }
                 })),
             )

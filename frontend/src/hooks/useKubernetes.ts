@@ -994,11 +994,29 @@ export const uploadPodFiles = async (
   }
 
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    const raw = await res.text().catch(() => '');
+    let message = '';
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { message?: string };
+        message = typeof parsed.message === 'string' ? parsed.message : raw;
+      } catch {
+        message = raw;
+      }
+    }
     if (res.status === 404) {
       throw new Error('Pod file upload API not found (404). Rebuild and restart backend to load /api/pods/:namespace/:name/files/upload route.');
     }
-    throw new Error(body.message || `Failed to upload files (${res.status})`);
+    const normalizedMessage = message.trim();
+    const genericExecFailure = /^command terminated with exit code 1\.?$/i.test(normalizedMessage);
+    if (genericExecFailure) {
+      throw new Error(
+        `Upload failed inside pod (generic exec failure).\n` +
+          `Likely causes: destination path is not writable, or backend process has not been restarted with latest diagnostics.\n` +
+          `HTTP ${res.status}`,
+      );
+    }
+    throw new Error(message || `Failed to upload files (${res.status})`);
   }
 };
 
@@ -1039,6 +1057,20 @@ export const downloadPodPath = async (
     blob,
     filename: filenameMatch?.[1] || fallback,
   };
+};
+
+export const getPodPathDownloadUrl = (
+  namespace: string,
+  podName: string,
+  remotePath: string,
+  containerName?: string,
+): string => {
+  const params = new URLSearchParams();
+  params.set('path', remotePath || '/');
+  if (containerName) params.set('container', containerName);
+  const rawToken = localStorage.getItem('pertisk_auth_token');
+  if (rawToken) params.set('token', rawToken);
+  return `${API_BASE}/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/files/download?${params.toString()}`;
 };
 
 export const deleteDeployment = (namespace: string, name: string) =>
