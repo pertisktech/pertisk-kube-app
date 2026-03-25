@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, RunEvent, State};
 use tracing::{error, info, warn};
@@ -881,21 +882,110 @@ fn open_external_url(url: String) -> Result<(), String> {
     if url.trim().is_empty() {
         return Err("url is empty".to_string());
     }
-
     #[cfg(target_os = "macos")]
     let status = Command::new("open").arg(&url).status();
-
     #[cfg(target_os = "linux")]
     let status = Command::new("xdg-open").arg(&url).status();
-
     #[cfg(target_os = "windows")]
     let status = Command::new("cmd").args(["/C", "start", "", &url]).status();
-
     match status {
         Ok(s) if s.success() => Ok(()),
-        Ok(s) => Err(format!("failed to open url, exit status: {}", s)),
-        Err(e) => Err(format!("failed to open url: {}", e)),
+        Ok(s) => Err(format!("failed to open url, exit status: {s}")),
+        Err(e) => Err(format!("failed to open url: {e}")),
     }
+}
+
+#[tauri::command]
+fn get_home_directory() -> Result<String, String> {
+    dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| "Could not determine home directory".to_string())
+}
+
+#[derive(serde::Serialize)]
+struct LocalFileEntry {
+    name: String,
+    path: String,
+    is_dir: bool,
+    size: u64,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalFilePayload {
+    name: String,
+    path: String,
+    content_base64: String,
+}
+
+#[tauri::command]
+fn list_local_directory(path: String) -> Result<Vec<LocalFileEntry>, String> {
+    let dir_path = if path.is_empty() {
+        dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
+    } else {
+        PathBuf::from(&path)
+    };
+    let entries = fs::read_dir(&dir_path)
+        .map_err(|e| format!("Failed to read directory: {e}"))?;
+    let mut files: Vec<LocalFileEntry> = Vec::new();
+    for entry in entries.flatten() {
+        let meta = entry.metadata().ok();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') { continue; }
+        let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+        let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+        let path = entry.path().to_string_lossy().to_string();
+        files.push(LocalFileEntry { name, path, is_dir, size });
+    }
+    files.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+    Ok(files)
+}
+
+#[tauri::command]
+fn read_local_files(paths: Vec<String>) -> Result<Vec<LocalFilePayload>, String> {
+    let mut out: Vec<LocalFilePayload> = Vec::new();
+    for p in paths {
+        let path = PathBuf::from(&p);
+        let meta = fs::metadata(&path).map_err(|e| format!("Failed to read metadata for {}: {e}", p))?;
+        if !meta.is_file() {
+            continue;
+        }
+        let bytes = fs::read(&path).map_err(|e| format!("Failed to read file {}: {e}", p))?;
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("file.bin")
+            .to_string();
+        out.push(LocalFilePayload {
+            name,
+            path: p,
+            content_base64: STANDARD.encode(bytes),
+        });
+    }
+    Ok(out)
+}
+
+/// Save a file from the local backend API to an absolute local path.
+/// URL must point to 127.0.0.1 to prevent SSRF.
+#[tauri::command]
+fn save_pod_file(url: String, local_path: String) -> Result<String, String> {
+    if url.trim().is_empty() { return Err("url is empty".to_string()); }
+    if !url.starts_with("http://127.0.0.1:") && !url.starts_with("http://localhost:") {
+        return Err("download is only allowed from the local backend".to_string());
+    }
+    if local_path.trim().is_empty() { return Err("local_path is empty".to_string()); }
+    let dest = PathBuf::from(&local_path);
+    if let Some(parent) = dest.parent() { let _ = fs::create_dir_all(parent); }
+    let status = Command::new("curl")
+        .arg("-sL").arg("--output").arg(&dest).arg("--max-time").arg("120").arg(&url)
+        .status()
+        .map_err(|e| format!("failed to run curl: {e}"))?;
+    if !status.success() { return Err(format!("curl failed with status: {status}")); }
+    Ok(dest.display().to_string())
 }
 
 fn main() {
@@ -911,7 +1001,11 @@ fn main() {
             restart_sidecar,
             list_kubeconfig_candidates,
             list_kubeconfig_clusters,
-            open_external_url
+            open_external_url,
+            get_home_directory,
+            list_local_directory,
+            read_local_files,
+            save_pod_file
         ])
         .setup(|app| {
             let initial_config = load_sidecar_config(app.handle());

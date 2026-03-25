@@ -39,6 +39,7 @@ import {
   EyeIcon,
   EyeSlashIcon,
   FlagIcon,
+  FolderIcon,
   GlobeAltIcon,
   KeyIcon,
   LinkIcon,
@@ -109,6 +110,7 @@ export const Shield = icon(ShieldCheckIcon);
 export const Star = icon(StarIcon);
 export const ExternalLink = icon(ArrowTopRightOnSquareIcon);
 export const FileText = icon(DocumentTextIcon);
+export const Folder = icon(FolderIcon);
 export const Lock = icon(LockClosedIcon);
 export const Unlock = icon(LockOpenIcon);
 export const Terminal = icon(CommandLineIcon);

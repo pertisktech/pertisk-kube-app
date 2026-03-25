@@ -64,8 +64,10 @@ build-macos-dmg: frontend-install
 run-desktop: frontend-install build-backend
 	@pkill -f "ptkublet-desktop" 2>/dev/null || true
 	@pkill -f "pertisk-kube-backend" 2>/dev/null || true
+	@pkill -f "tauri dev" 2>/dev/null || true
+	@pkill -f "vite" 2>/dev/null || true
 	@sleep 0.5
-	@lsof -ti:$(APP_PORT) -ti:$(GRPC_PORT) 2>/dev/null | sort -u | xargs kill -9 2>/dev/null || true
+	@lsof -ti:3000 -ti:$(APP_PORT) -ti:$(GRPC_PORT) 2>/dev/null | sort -u | xargs kill -9 2>/dev/null || true
 	cd frontend && $(KUBE_ENV) APP_PORT=$(APP_PORT) GRPC_PORT=$(GRPC_PORT) PERTISK_BACKEND_BIN="$(CURDIR)/target/debug/pertisk-kube-backend" npm run tauri:dev
 
 run-desktop-dev: run-desktop

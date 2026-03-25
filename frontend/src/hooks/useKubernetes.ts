@@ -66,15 +66,15 @@ const emitApiWarnings = (payload: unknown) => {
   });
 };
 
-const apiFetch = async (path: string) => {
+const apiFetch = async (path: string, init?: RequestInit) => {
   const token = getAuthToken();
   const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
     cache: 'no-store',
-    headers: token
-      ? {
-          Authorization: token,
-        }
-      : undefined,
+    headers: {
+      ...(token ? { Authorization: token } : {}),
+      ...(init?.headers ?? {}),
+    },
   });
   if (res.status === 401) {
     window.dispatchEvent(new CustomEvent('auth:expired'));
@@ -92,6 +92,16 @@ const apiFetch = async (path: string) => {
   }
 
   return res;
+};
+
+const POD_NOT_FOUND_PATTERN = /(?:error\s+from\s+server\s*\(notfound\):\s*)?(?:pods?|pod)\s+"[^"]+"\s+not\s+found/i;
+
+const normalizePodMutationError = (message: string, namespace: string, podName: string): string => {
+  const trimmed = message.trim();
+  if (POD_NOT_FOUND_PATTERN.test(trimmed)) {
+    return `Pod ${namespace}/${podName} changed during restart/rollout.`;
+  }
+  return trimmed;
 };
 
 export const useNamespaces = () => {
@@ -945,16 +955,32 @@ export const getPodFiles = async (
   params.set('path', path || '/');
   if (containerName) params.set('container', containerName);
 
-  const res = await apiFetch(
-    `/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/files?${params.toString()}`,
-  );
+  const timeoutController = new AbortController();
+  const timeoutId = window.setTimeout(() => timeoutController.abort(), 12000);
+
+  let res: Response;
+  try {
+    res = await apiFetch(
+      `/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/files?${params.toString()}`,
+      { signal: timeoutController.signal },
+    );
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Loading pod files timed out. Please refresh or reopen the pod tab.');
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };
-    if (res.status === 404) {
+    const backendMessage = (body.message || '').trim();
+    if (res.status === 404 && !backendMessage) {
       throw new Error('Pod files API not found (404). Rebuild and restart backend to load /api/pods/:namespace/:name/files routes.');
     }
-    throw new Error(body.message || `Failed to list pod files (${res.status})`);
+    const baseMessage = backendMessage || `Failed to list pod files (${res.status})`;
+    throw new Error(normalizePodMutationError(baseMessage, namespace, podName));
   }
 
   const data = (await res.json()) as ApiResponse<PodFileItem>;
@@ -1004,10 +1030,11 @@ export const uploadPodFiles = async (
         message = raw;
       }
     }
-    if (res.status === 404) {
+    if (res.status === 404 && !message.trim()) {
       throw new Error('Pod file upload API not found (404). Rebuild and restart backend to load /api/pods/:namespace/:name/files/upload route.');
     }
     const normalizedMessage = message.trim();
+    const normalizedPodMessage = normalizePodMutationError(normalizedMessage, namespace, podName);
     const genericExecFailure = /^command terminated with exit code 1\.?$/i.test(normalizedMessage);
     if (genericExecFailure) {
       throw new Error(
@@ -1016,7 +1043,7 @@ export const uploadPodFiles = async (
           `HTTP ${res.status}`,
       );
     }
-    throw new Error(message || `Failed to upload files (${res.status})`);
+    throw new Error(normalizedPodMessage || `Failed to upload files (${res.status})`);
   }
 };
 
@@ -1045,7 +1072,10 @@ export const downloadPodPath = async (
 
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(body.message || `Failed to download pod path (${res.status})`);
+    const backendMessage = (body.message || '').trim();
+    throw new Error(
+      normalizePodMutationError(backendMessage || `Failed to download pod path (${res.status})`, namespace, podName)
+    );
   }
 
   const blob = await res.blob();
@@ -1065,12 +1095,27 @@ export const getPodPathDownloadUrl = (
   remotePath: string,
   containerName?: string,
 ): string => {
+  const resolveAbsoluteApiBase = (): string => {
+    // If API_BASE is already absolute, use it as-is.
+    if (/^https?:\/\//i.test(API_BASE)) return API_BASE;
+
+    // In dev (http://localhost:xxxx), use current origin + /api so Vite proxy still works.
+    const origin = window.location.origin;
+    if (/^https?:\/\//i.test(origin)) {
+      return `${origin}${API_BASE.startsWith('/') ? API_BASE : `/${API_BASE}`}`;
+    }
+
+    // In non-http origins (e.g. tauri://), use sidecar backend directly.
+    return `http://127.0.0.1:15222${API_BASE.startsWith('/') ? API_BASE : `/${API_BASE}`}`;
+  };
+
   const params = new URLSearchParams();
   params.set('path', remotePath || '/');
   if (containerName) params.set('container', containerName);
   const rawToken = localStorage.getItem('pertisk_auth_token');
   if (rawToken) params.set('token', rawToken);
-  return `${API_BASE}/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/files/download?${params.toString()}`;
+  const absoluteBase = resolveAbsoluteApiBase();
+  return `${absoluteBase}/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/files/download?${params.toString()}`;
 };
 
 export const deleteDeployment = (namespace: string, name: string) =>

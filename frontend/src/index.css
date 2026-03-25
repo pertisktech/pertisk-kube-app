@@ -111,6 +111,19 @@
   --bottom-panel-tab-active-bg: color-mix(in srgb, var(--color-bg) 72%, var(--color-surface));
   --bottom-panel-tab-active-border: color-mix(in srgb, var(--color-primary) 34%, var(--color-border));
   --bottom-panel-tab-hover-bg: color-mix(in srgb, var(--color-hover) 80%, var(--color-surface));
+
+  /* Pod transfer tokens */
+  --pod-transfer-shell-bg: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--color-surface-elevated) 88%, var(--color-bg)) 0%,
+    color-mix(in srgb, var(--color-surface) 90%, var(--color-bg)) 60%,
+    color-mix(in srgb, var(--color-primary) 5%, var(--color-bg)) 100%
+  );
+  --pod-transfer-topbar-bg: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-primary) 10%, var(--color-surface-elevated)) 0%,
+    color-mix(in srgb, var(--color-surface) 92%, var(--color-bg)) 100%
+  );
 }
 
 /* html.dark tweaks — glow + minor overrides only (all core tokens already in :root) */
@@ -141,6 +154,9 @@ html.light {
   --bottom-panel-tab-active-bg: #ffffff;
   --bottom-panel-tab-active-border: color-mix(in srgb, var(--color-primary) 26%, var(--color-border));
   --bottom-panel-tab-hover-bg: color-mix(in srgb, var(--color-hover) 72%, #ffffff);
+
+  --pod-transfer-shell-bg: linear-gradient(165deg, #f8fafc 0%, #ffffff 60%, #fff8f4 100%);
+  --pod-transfer-topbar-bg: linear-gradient(90deg, #fff5ef 0%, #ffffff 100%);
 }
 
 :root {
@@ -318,6 +334,48 @@ body,
 [data-sonner-toast] [data-close-button]:hover {
   background: var(--color-naturals-n6) !important;
   color: var(--color-naturals-n13) !important;
+}
+
+.pod-transfer-shell {
+  background: var(--pod-transfer-shell-bg);
+  position: relative;
+}
+
+.pod-transfer-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(420px 160px at 95% 0%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 70%),
+    radial-gradient(320px 180px at 0% 100%, color-mix(in srgb, var(--color-blue-b1) 8%, transparent), transparent 76%);
+  opacity: 0.75;
+}
+
+.pod-transfer-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.pod-transfer-topbar {
+  background: var(--pod-transfer-topbar-bg);
+  animation: podTransferSlideIn 380ms ease-out;
+}
+
+.transfer-actions-panel {
+  backdrop-filter: blur(6px);
+  animation: podTransferSlideIn 420ms ease-out;
+}
+
+@keyframes podTransferSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ── Resource labels (Omni design system) ────────────────────────────────── */

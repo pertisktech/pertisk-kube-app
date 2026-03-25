@@ -793,6 +793,13 @@ const TabContent = ({
           podName={tab.target.podName}
           namespace={tab.target.namespace}
           containerName={tab.target.containerName}
+          onPodReplaced={(nextPodName) =>
+            onConnect({
+              namespace: tab.target!.namespace,
+              podName: nextPodName,
+              containerName: tab.target!.containerName,
+            })
+          }
         />
       );
 
@@ -973,7 +980,20 @@ export const BottomPanel = () => {
   };
 
   const connectTab = (id: string, target: TabTarget) => {
-    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, target, label: target.podName } : t)));
+    setTabs((prev) =>
+      prev.map((t) => {
+        if (t.id !== id) return t;
+        return {
+          ...t,
+          target,
+          label: target.podName,
+          identity:
+            t.type === 'pod-exec' || t.type === 'pod-files' || t.type === 'logs'
+              ? `${t.type}:${target.namespace}:${target.podName}:${target.containerName ?? ''}`
+              : t.identity,
+        };
+      })
+    );
   };
 
   const updateYaml = (id: string, content: string) => {
