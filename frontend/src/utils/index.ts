@@ -156,7 +156,6 @@ export const getStatusColor = (
     lower === 'podinitializing' ||
     lower === 'terminating' ||
     lower === 'released' ||
-    lower === 'notready' ||
     lower.startsWith('init:') ||
     lower.includes('pending')
   )
@@ -164,6 +163,8 @@ export const getStatusColor = (
   
   // Error states
   if (
+    lower === 'notready' ||
+    lower === 'not ready' ||
     lower === 'failed' ||
     lower === 'error' ||
     lower === 'crashed' ||

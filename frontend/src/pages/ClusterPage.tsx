@@ -338,7 +338,7 @@ export const ClusterPage = () => {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       {allReady
-                        ? <CheckCircle size={15} className="text-[var(--color-icon-success)]" />
+                        ? <CheckCircle size={15} className="text-[var(--color-status-ready)]" />
                         : <AlertCircle size={15} className="text-[var(--color-icon-warning)]" />
                       }
                       <span className="text-[11px] text-text-secondary uppercase tracking-wide">Node Readiness</span>
@@ -352,7 +352,7 @@ export const ClusterPage = () => {
                       className="h-full rounded-full transition-all"
                       style={{
                         width: `${pct}%`,
-                        background: allReady ? 'var(--color-icon-success)' : 'var(--color-icon-warning)',
+                        background: allReady ? 'var(--color-status-ready)' : 'var(--color-icon-warning)',
                       }}
                     />
                   </div>

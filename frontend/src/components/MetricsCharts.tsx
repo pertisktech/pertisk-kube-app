@@ -48,7 +48,7 @@ export const MetricsCharts = () => {
   const textColor = isDark ? '#d4d4d4' : '#000000';
   const gridColor = isDark ? '#333333' : '#e5e5e5';
   const backgroundColor = isDark ? '#1e1e1e' : '#ffffff';
-  const chartPrimaryGreen = '#2d9663'; // --color-green-g2, dark green for chart series
+  const chartPrimaryGreen = '#25a7a0'; // --color-status-ready teal, matches node readiness metric
 
   // Pod Status Distribution
   const podStatusCounts = {

@@ -6,7 +6,6 @@ import { deleteNode, cordonNode, uncordonNode, drainNode } from '../hooks/useKub
 import { DataTable } from '../components/DataTable';
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { StatusBadge } from '../components/StatusBadge';
 import { openPanelTab } from '../components/BottomPanel';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, formatMemoryUsedAlloc, formatCpuRange, formatK8sQuantityUsedAlloc } from '../utils';
@@ -201,9 +200,21 @@ export const NodesPage = () => {
     },
     {
       header: 'Status',
-      accessor: (row: K8sNode) => (
-        <StatusBadge status={String(row.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady'} />
-      ),
+      accessor: (row: K8sNode) => {
+        const isReady = String(row.ready).toLowerCase() === 'true';
+        return (
+          <span
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
+            style={{
+              background: isReady ? 'var(--color-status-ready-bg)' : 'var(--color-dashboard-danger-bg)',
+              color: isReady ? 'var(--color-status-ready)' : 'var(--color-dashboard-danger)',
+            }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: 'currentColor' }} />
+            {isReady ? 'Ready' : 'Not Ready'}
+          </span>
+        );
+      },
       width: '7%',
       sortable: true,
       sortKey: 'status',
