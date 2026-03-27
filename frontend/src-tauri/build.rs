@@ -3,7 +3,7 @@ use std::path::Path;
 
 fn main() {
     // Copy the compiled backend binary to a bundlable location
-    let backend_src = Path::new("../../backend/target/release/pertisk-kube-backend");
+    let backend_src = Path::new("../../target/release/pertisk-kube-backend");
     let bundle_dir = Path::new("./bundle-resources");
     let backend_dst = bundle_dir.join("pertisk-kube-backend");
 

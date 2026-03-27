@@ -48,7 +48,7 @@ export async function saveDesktopSidecarConfig(config: DesktopSidecarConfig): Pr
     throw new Error('Desktop sidecar settings are only available in Tauri runtime.');
   }
 
-  const normalizedPort = Number.isFinite(config.port) && config.port > 0 ? Math.floor(config.port) : 8091;
+  const normalizedPort = Number.isFinite(config.port) && config.port > 0 ? Math.floor(config.port) : 15222;
   const normalizedConfig: DesktopSidecarConfig = {
     backendBin: config.backendBin && config.backendBin.trim() ? config.backendBin.trim() : null,
     kubeconfigPath: config.kubeconfigPath && config.kubeconfigPath.trim() ? config.kubeconfigPath.trim() : null,

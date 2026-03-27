@@ -55,6 +55,8 @@ build-macos-dmg: frontend-install
 		echo "build-macos-dmg is only supported on macOS"; \
 		exit 1; \
 	fi
+	@echo "Building backend release binary for bundling..."
+	cargo build --release -p pertisk-kube-backend
 	@echo "Building macOS DMG v$(VERSION)..."
 	cd frontend && VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --bundles dmg --config '{"version":"$(VERSION)"}'
 	@echo ""

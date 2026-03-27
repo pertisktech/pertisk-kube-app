@@ -3,7 +3,7 @@ type WindowWithTauri = Window & {
 };
 
 const DESKTOP_PORT_STORAGE_KEY = "pertisk-desktop-backend-port";
-const DEFAULT_DESKTOP_PORT = 8091;
+const DEFAULT_DESKTOP_PORT = 15222;
 
 let desktopBackendOrigin = buildBackendOrigin(readPersistedPort());
 
