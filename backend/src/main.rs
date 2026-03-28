@@ -1,19 +1,21 @@
 use axum::{
+    extract::Request,
     extract::State,
     http::StatusCode,
+    middleware::{self, Next},
     response::IntoResponse,
     routing::{delete, get, post},
     Json, Router,
 };
 use kube::Client;
-use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{env, net::SocketAddr, path::PathBuf, sync::Arc, time::Instant};
 use tokio::sync::RwLock;
 use tower_http::{
     cors::{Any, CorsLayer},
     services::{ServeDir, ServeFile},
 };
 use tonic::transport::Server;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 mod grpc_service;
@@ -89,6 +91,15 @@ async fn main() -> anyhow::Result<()> {
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
+    let slow_request_threshold_ms: u64 = env::var("SLOW_REQUEST_MS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(1000);
+    info!(
+        slow_request_threshold_ms,
+        "Slow request logging enabled"
+    );
     let static_dir: PathBuf = env::var("STATIC_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("frontend/dist"));
@@ -358,6 +369,10 @@ async fn main() -> anyhow::Result<()> {
         .route_service("/", ServeFile::new(index_html.clone()))
         .fallback_service(ServeFile::new(index_html))
         .with_state(state)
+        .layer(middleware::from_fn_with_state(
+            slow_request_threshold_ms,
+            log_slow_requests,
+        ))
         .layer(cors);
 
     let http_port: u16 = std::env::var("PORT")
@@ -391,6 +406,30 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     Ok(())
+}
+
+async fn log_slow_requests(
+    State(threshold_ms): State<u64>,
+    req: Request,
+    next: Next,
+) -> axum::response::Response {
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+    let started = Instant::now();
+    let response = next.run(req).await;
+    let elapsed_ms = started.elapsed().as_millis();
+
+    if elapsed_ms >= threshold_ms as u128 {
+        warn!(
+            method = %method,
+            path = %path,
+            status = response.status().as_u16(),
+            elapsed_ms,
+            "Slow request"
+        );
+    }
+
+    response
 }
 
 async fn health() -> impl IntoResponse {
