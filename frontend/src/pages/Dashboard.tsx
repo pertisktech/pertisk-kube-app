@@ -23,7 +23,7 @@ import {
 import { formatCpuRange, formatK8sQuantityUsedAlloc, formatMemoryUsedAlloc, parseK8sQuantityToBytes } from '../utils';
 import { K8sNode, Pod } from '../types';
 
-const CHART_USED = 'var(--color-dashboard-metric-primary)';
+const CHART_USED = '#14b8a6';
 const CHART_AVAILABLE = 'var(--color-muted)';
 
 // Helper to get IPv4 and IPv6 for display (values only, no labels)

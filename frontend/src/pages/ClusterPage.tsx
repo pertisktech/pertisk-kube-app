@@ -25,9 +25,9 @@ import { formatCpuRange, parseCpuToCores, parseK8sMemoryToGB } from '../utils';
 import type { Pod } from '../types';
 
 const PIE_DEFAULT = 'var(--color-muted)';
-const PIE_USAGE = '#c93dce';
-const PIE_REQUESTS = '#4caf50';
-const PIE_LIMITS = '#00a7a0';
+const PIE_USAGE = '#0f766e';
+const PIE_REQUESTS = '#14b8a6';
+const PIE_LIMITS = '#5eead4';
 
 const parsePods = (podsStr?: string): number => {
   if (!podsStr) return 0;
