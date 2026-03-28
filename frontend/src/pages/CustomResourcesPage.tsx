@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import YAML from 'yaml';
 import { ChevronDown, Layers, Pencil, Trash2 } from '../components/Icons';
-import { deleteCustomResource, useCrds, useCustomResources } from '../hooks/useKubernetes';
+import { deleteCustomResource } from '../hooks/useKubernetes';
+import { useRealtimeCrds, useRealtimeCustomResources } from '../hooks/useRealtimeResources';
 import { DataTable } from '../components';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ResourceDetailPanelLayout, PanelActionButton } from '../components/ResourceDetailPanelLayout';
@@ -268,18 +269,16 @@ export const CustomResourcesPage = () => {
   const { crdName } = useParams<{ crdName: string }>();
   const decodedCrdName = crdName ? decodeURIComponent(crdName) : '';
 
-  const { data: crds, isLoading: crdsLoading } = useCrds(Boolean(decodedCrdName));
+  const { data: crds, isLoading: crdsLoading } = useRealtimeCrds();
   const { selectedNamespaces, resourceNameFilter } = useNamespace();
 
   const crd = crds?.find((c) => c.name === decodedCrdName);
   const isNamespaced = crd?.scope === 'Namespaced';
 
-  const { data: restData, isLoading: queryLoading, error, isFetched } = useCustomResources(decodedCrdName || '');
-  const rawData = restData ?? [];
-  // Wait for both CRD definition and resources so columns are stable from first paint (no show/hide flicker)
-  const isLoading = Boolean(
-    decodedCrdName && (queryLoading || !isFetched || restData === undefined || crdsLoading)
-  );
+  const { data: realtimeData, isLoading: resourcesLoading, error } = useRealtimeCustomResources(decodedCrdName || null);
+  const rawData = realtimeData ?? [];
+  // Wait for both CRD definitions and custom resource stream to avoid first paint flicker.
+  const isLoading = Boolean(decodedCrdName && (resourcesLoading || crdsLoading));
   // For namespaced CRDs filter by selected namespaces when set
   const data = useMemo(() => {
     if (!rawData?.length) return rawData ?? [];
