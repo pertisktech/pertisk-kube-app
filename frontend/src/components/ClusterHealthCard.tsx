@@ -1,6 +1,7 @@
 import { usePods, useNodes } from '../hooks/useKubernetes';
 import { Card } from './Card';
-import { CheckCircle, AlertCircle, XCircle, Loader } from './Icons';
+import { CheckCircle, AlertCircle, XCircle } from './Icons';
+import { LoadingState } from './LoadingState';
 
 interface ClusterHealth {
   status: 'healthy' | 'warning' | 'critical';
@@ -21,9 +22,7 @@ export const ClusterHealthCard = () => {
   if (isLoading) {
     return (
       <Card title="Cluster Health">
-        <div className="flex items-center justify-center h-32">
-          <Loader size={24} className="animate-spin text-primary" />
-        </div>
+        <LoadingState className="h-32" />
       </Card>
     );
   }

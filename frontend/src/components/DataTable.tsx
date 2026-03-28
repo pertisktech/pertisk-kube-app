@@ -1,7 +1,8 @@
 import { ReactNode } from 'react';
-import { Loader, ArrowUp, ArrowDown, ArrowUpDown } from './Icons';
+import { ArrowUp, ArrowDown, ArrowUpDown } from './Icons';
 import { cn } from '../utils';
 import { Checkbox } from './Checkbox';
+import { LoadingState } from './LoadingState';
 
 export type SortDirection = 'asc' | 'desc';
 
@@ -179,10 +180,7 @@ export const DataTable = <T extends Record<string, any>>({
             {isLoading ? (
               <tr>
                 <td colSpan={columns.length} className="px-3 py-12 text-center text-sm">
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader size={32} className="text-primary animate-spin" />
-                    <p className="text-text-secondary">Loading...</p>
-                  </div>
+                  <LoadingState size={32} className="min-h-[6rem]" />
                 </td>
               </tr>
             ) : data.length === 0 ? (

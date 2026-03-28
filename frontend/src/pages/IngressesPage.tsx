@@ -9,6 +9,7 @@ import type { Ingress } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
+import { openExternalUrl } from '../utils/openExternalUrl';
 
 type IngressSortKey = 'name' | 'namespace' | 'ingress_class' | 'hosts' | 'address' | 'rules' | 'age';
 
@@ -37,8 +38,16 @@ const normalizeIngressHosts = (hosts: string): string[] =>
 const toExternalIngressUrl = (host: string): string | null => {
   const sanitized = host.replace(/^\*\./, '').trim();
   if (!sanitized) return null;
+
+  const normalized = sanitized.toLowerCase();
+  if (normalized === '-' || normalized === '<none>' || normalized === 'none' || normalized === 'n/a') {
+    return null;
+  }
+
   if (/^https?:\/\//i.test(sanitized)) return sanitized;
-  return `https://${sanitized}`;
+
+  const defaultProtocol = typeof window !== 'undefined' && window.location.protocol === 'http:' ? 'http' : 'https';
+  return `${defaultProtocol}://${sanitized}`;
 };
 
 const getKey = (item: Ingress) => `${item.namespace}/${item.name}`;
@@ -81,17 +90,19 @@ export const IngressesPage = () => {
                 <span key={`${row.namespace}/${row.name}/${host}`} className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-xs text-text-secondary">
                   <span className="max-w-[180px] truncate" title={host}>{host}</span>
                   {targetUrl && (
-                    <a
-                      href={targetUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
                       className="text-[var(--color-icon-info)] hover:opacity-80"
                       title={`Open ${host} in new tab`}
-                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        await openExternalUrl(targetUrl);
+                      }}
                       aria-label={`Open ${host} in new tab`}
                     >
                       <ExternalLink size={12} />
-                    </a>
+                    </button>
                   )}
                 </span>
               );

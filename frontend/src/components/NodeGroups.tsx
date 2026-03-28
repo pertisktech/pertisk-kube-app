@@ -1,6 +1,6 @@
 import { useNodes } from '../hooks/useKubernetes';
 import { Card } from './Card';
-import { Loader } from './Icons';
+import { LoadingState } from './LoadingState';
 import { compareNodeRoleSets, sortNodeRoles } from '../utils/nodeRoles';
 import type { K8sNode } from '../types';
 
@@ -18,9 +18,7 @@ export const NodeGroups = () => {
   if (isLoading) {
     return (
       <Card title="Node Groups">
-        <div className="flex items-center justify-center h-32">
-          <Loader size={24} className="animate-spin text-primary" />
-        </div>
+        <LoadingState className="h-32" />
       </Card>
     );
   }

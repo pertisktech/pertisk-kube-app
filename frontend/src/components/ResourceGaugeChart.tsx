@@ -1,6 +1,6 @@
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { useTheme } from '../context/ThemeContext';
-import { Loader } from './Icons';
+import { LoadingState } from './LoadingState';
 
 interface ResourceGaugeChartProps {
   label: string;
@@ -24,9 +24,7 @@ export const ResourceGaugeChart = ({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader size={24} className="animate-spin text-primary" />
-      </div>
+      <LoadingState className="h-64" />
     );
   }
 

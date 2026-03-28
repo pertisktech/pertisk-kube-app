@@ -7,7 +7,7 @@ import {
   useReplicaSets 
 } from '../hooks/useKubernetes';
 import { Card } from './Card';
-import { Loader } from './Icons';
+import { LoadingState } from './LoadingState';
 
 export const WorkloadSummary = () => {
   const { data: deployments, isLoading: deploymentsLoading } = useDeployments();
@@ -22,9 +22,7 @@ export const WorkloadSummary = () => {
   if (isLoading) {
     return (
       <Card title="Workload Summary">
-        <div className="flex items-center justify-center h-32">
-          <Loader size={24} className="animate-spin text-primary" />
-        </div>
+        <LoadingState className="h-32" />
       </Card>
     );
   }

@@ -1,6 +1,6 @@
 import { usePods, useNodes } from '../hooks/useKubernetes';
 import { Card } from './Card';
-import { Loader } from './Icons';
+import { LoadingState } from './LoadingState';
 import { useTheme } from '../context/ThemeContext';
 import {
   Chart as ChartJS,
@@ -36,9 +36,7 @@ export const MetricsCharts = () => {
   if (podsLoading || nodesLoading) {
     return (
       <Card title="Metrics">
-        <div className="flex items-center justify-center h-64">
-          <Loader size={24} className="animate-spin text-primary" />
-        </div>
+        <LoadingState className="h-64" />
       </Card>
     );
   }

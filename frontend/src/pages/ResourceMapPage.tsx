@@ -39,10 +39,10 @@ import {
   Pause,
   Play,
   Plus,
-  Loader,
   X,
 } from '../components/Icons';
 import type { IconComponent } from '../components/Icons';
+import { LoadingState } from '../components/LoadingState';
 import { useNamespace } from '../context/NamespaceContext';
 import { useResourceMap } from '../hooks/useKubernetes';
 import type { ResourceMapNode as ApiNode, ResourceMapEdge as ApiEdge } from '../types';
@@ -580,12 +580,7 @@ export const ResourceMapPage = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="flex flex-col items-center gap-2">
-          <Loader size={24} className="text-primary animate-spin" />
-          <p className="text-text-secondary text-sm">Loading...</p>
-        </div>
-      </div>
+      <LoadingState className="h-64" />
     );
   }
 

@@ -52,6 +52,7 @@ export { WorkloadSummary } from './WorkloadSummary';
 export { MetricsCharts } from './MetricsCharts';
 export { NodeGroups } from './NodeGroups';
 export { ClusterHealthCard } from './ClusterHealthCard';
+export { LoadingState } from './LoadingState';
 export { ResourceGaugeChart } from './ResourceGaugeChart';
 export { GaugeChart } from './GaugeChart';
 export { ResourceMetricsPanel } from './ResourceMetricsPanel';

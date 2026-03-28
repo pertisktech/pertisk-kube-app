@@ -7,6 +7,7 @@ import { useRealtimePods } from '../hooks/useRealtimePods';
 import { WorkloadSummary } from '../components/WorkloadSummary';
 import { MetricsCharts } from '../components/MetricsCharts';
 import { GaugeChart } from '../components/GaugeChart';
+import { LoadingState } from '../components/LoadingState';
 import {
   Box,
   Server,
@@ -18,7 +19,6 @@ import {
   XCircle,
   AlertCircle,
   ExternalLink,
-  Loader,
 } from '../components/Icons';
 import { formatCpuRange, formatK8sQuantityUsedAlloc, formatMemoryUsedAlloc, parseK8sQuantityToBytes } from '../utils';
 import { K8sNode, Pod } from '../types';
@@ -165,12 +165,7 @@ export const Dashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="flex flex-col items-center gap-2">
-          <Loader size={32} className="text-primary animate-spin" />
-          <p className="text-text-secondary">Loading dashboard...</p>
-        </div>
-      </div>
+      <LoadingState message="Loading dashboard..." size={32} className="h-96" />
     );
   }
 
@@ -516,9 +511,7 @@ export const Dashboard = () => {
           </div>
         </div>
         {nodesLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader size={28} className="text-[var(--color-primary)] animate-spin" />
-          </div>
+          <LoadingState className="py-16" size={28} />
         ) : !sortedNodes?.length ? (
           <div className="text-center py-12 text-text-secondary rounded-lg border border-dashed" style={{ borderColor: 'var(--color-border)' }}>
             No nodes found

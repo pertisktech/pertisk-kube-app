@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card } from '../components/Card';
+import { LoadingState } from '../components/LoadingState';
 import {
   useDashboard,
   useNodes,
@@ -16,7 +17,6 @@ import {
   Cpu,
   HardDrive,
   Layers,
-  Loader,
   Monitor,
   Network,
   Server,
@@ -240,12 +240,7 @@ export const ClusterPage = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="flex flex-col items-center gap-2">
-          <Loader size={32} className="text-primary animate-spin" />
-          <p className="text-text-secondary">Loading cluster overview...</p>
-        </div>
-      </div>
+      <LoadingState message="Loading cluster overview..." size={32} className="h-96" />
     );
   }
 
