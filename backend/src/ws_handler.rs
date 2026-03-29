@@ -14,6 +14,7 @@ use kube::{
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::env;
 use std::sync::{Arc, Mutex};
 use std::io::{Read, Write};
@@ -25,7 +26,32 @@ use tokio::{
 };
 use tracing::{error, info, warn};
 
-use crate::{utils::load_kube_client, AppState};
+use crate::{models::CustomResourceItem, utils::load_kube_client, AppState};
+
+fn custom_resource_from_dynamic(obj: DynamicObject) -> CustomResourceItem {
+    let manifest = serde_json::to_value(&obj).unwrap_or_default();
+    let labels = obj
+        .metadata
+        .labels
+        .as_ref()
+        .map(|bt| bt.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<HashMap<_, _>>());
+    let annotations = obj
+        .metadata
+        .annotations
+        .as_ref()
+        .map(|bt| bt.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<HashMap<_, _>>());
+
+    CustomResourceItem {
+        name: obj.metadata.name.unwrap_or_default(),
+        namespace: obj.metadata.namespace,
+        created_at: obj.metadata.creation_timestamp.map(|t| t.0.to_rfc3339()),
+        spec: obj.data.get("spec").cloned().unwrap_or(serde_json::Value::Null),
+        status: obj.data.get("status").cloned(),
+        labels,
+        annotations,
+        manifest,
+    }
+}
 
 fn is_forbidden_or_missing_api(err: &kube::Error) -> bool {
     matches!(err, kube::Error::Api(api_err) if api_err.code == 403 || api_err.code == 404)
@@ -1146,7 +1172,7 @@ async fn watch_dynamic_cluster_resource(
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             for item in list.items {
-                let item_data = serde_json::to_value(&item).unwrap_or_default();
+                let item_data = serde_json::to_value(custom_resource_from_dynamic(item)).unwrap_or_default();
                 if tx.send(ServerMessage::ResourceUpdate {
                     resource: resource_name.to_string(),
                     action: "ADDED".to_string(),
@@ -1184,7 +1210,7 @@ async fn watch_dynamic_cluster_resource(
                     Event::Deleted(item) => ("DELETED", Some(item)),
                     Event::Restarted(items) => {
                         for item in items {
-                            let item_data = serde_json::to_value(&item).unwrap_or_default();
+                            let item_data = serde_json::to_value(custom_resource_from_dynamic(item)).unwrap_or_default();
                             if tx.send(ServerMessage::ResourceUpdate {
                                 resource: resource_name.to_string(),
                                 action: "MODIFIED".to_string(),
@@ -1200,7 +1226,7 @@ async fn watch_dynamic_cluster_resource(
                     }
                 };
                 if let Some(item) = item_opt {
-                    let item_data = serde_json::to_value(&item).unwrap_or_default();
+                    let item_data = serde_json::to_value(custom_resource_from_dynamic(item)).unwrap_or_default();
                     if tx.send(ServerMessage::ResourceUpdate {
                         resource: resource_name.to_string(),
                         action: action.to_string(),

@@ -18,6 +18,7 @@ use crate::models::*;
 use crate::{utils::kube_list_warning_response, AppState};
 
 fn custom_resource_from_dynamic(obj: DynamicObject) -> CustomResourceItem {
+    let manifest = serde_json::to_value(&obj).unwrap_or_default();
     let labels = obj
         .metadata
         .labels
@@ -39,6 +40,7 @@ fn custom_resource_from_dynamic(obj: DynamicObject) -> CustomResourceItem {
         status: obj.data.get("status").cloned(),
         labels,
         annotations,
+        manifest,
     }
 }
 

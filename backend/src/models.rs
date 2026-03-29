@@ -590,6 +590,7 @@ pub struct CustomResourceItem {
     pub labels: Option<std::collections::HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub annotations: Option<std::collections::HashMap<String, String>>,
+    pub manifest: serde_json::Value,
 }
 
 #[derive(Serialize)]

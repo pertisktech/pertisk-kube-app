@@ -817,15 +817,23 @@ function transformVwc(raw: any): Vwc {
 }
 
 function transformCustomResource(raw: any): CustomResource {
+  const manifest = (raw?.manifest && typeof raw.manifest === 'object')
+    ? raw.manifest
+    : (raw && typeof raw === 'object' ? raw : null);
+  const manifestMetadata = manifest && typeof manifest === 'object' && manifest.metadata && typeof manifest.metadata === 'object'
+    ? manifest.metadata as Record<string, unknown>
+    : {};
   const metadata = raw.metadata || {};
-  const name = metadata.name || '';
-  const namespace = metadata.namespace ?? null;
-  const created_at = metadata.creationTimestamp ? new Date(metadata.creationTimestamp).toISOString() : null;
+  const name = metadata.name || manifestMetadata.name || '';
+  const namespace = metadata.namespace ?? manifestMetadata.namespace ?? null;
+  const created_at = metadata.creationTimestamp ?? manifestMetadata.creationTimestamp
+    ? new Date((metadata.creationTimestamp ?? manifestMetadata.creationTimestamp) as string).toISOString()
+    : null;
   const spec = (raw.data && raw.data.spec) ? raw.data.spec : (raw.spec || {});
   const status = (raw.data && raw.data.status) != null ? raw.data.status : (raw.status != null ? raw.status : null);
-  const labels = (metadata.labels as Record<string, string> | undefined) ?? undefined;
-  const annotations = (metadata.annotations as Record<string, string> | undefined) ?? undefined;
-  return { name, namespace, created_at, spec, status, labels, annotations };
+  const labels = ((metadata.labels ?? manifestMetadata.labels) as Record<string, string> | undefined) ?? undefined;
+  const annotations = ((metadata.annotations ?? manifestMetadata.annotations) as Record<string, string> | undefined) ?? undefined;
+  return { name, namespace, created_at, spec, status, labels, annotations, manifest };
 }
 
 function transformCrd(raw: any): Crd {
@@ -1288,14 +1296,19 @@ export function useRealtimeCustomResources(crdName: string | null): {
   const resourceType = crdName ? `customresources/${crdName}` : '';
 
   useEffect(() => {
+    setData([]);
+    setError(null);
+    setIsLoading(Boolean(crdName && resourceType));
+
     if (!crdName || !resourceType) {
-      setData([]);
       setIsLoading(false);
       return;
     }
+
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let connectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let emptyListTimeout: ReturnType<typeof setTimeout> | null = null;
     let closingIntentional = false;
     let disposed = false;
     const connect = () => {
@@ -1307,12 +1320,16 @@ export function useRealtimeCustomResources(crdName: string | null): {
         ws.onopen = () => {
           setError(null);
           ws!.send(JSON.stringify({ type: 'subscribe', resource: resourceType }));
-          setIsLoading(false);
         };
         ws.onmessage = (event) => {
           try {
             const message: WebSocketMessage = JSON.parse(event.data);
             if (message.type === 'resource_update' && message.resource === resourceType && message.data) {
+              if (emptyListTimeout) {
+                clearTimeout(emptyListTimeout);
+                emptyListTimeout = null;
+              }
+              setIsLoading(false);
               const action = (message.action || '').toUpperCase();
               const item = transformCustomResource(message.data);
               const itemKey = getCustomResourceKey(item);
@@ -1329,6 +1346,11 @@ export function useRealtimeCustomResources(crdName: string | null): {
               } else if (action === 'DELETED') {
                 setData((prev) => prev.filter((p) => getCustomResourceKey(p) !== itemKey));
               }
+            } else if (message.type === 'subscribed' && message.resource === resourceType) {
+              emptyListTimeout = setTimeout(() => {
+                emptyListTimeout = null;
+                setIsLoading(false);
+              }, 2000);
             } else if (message.type === 'error') {
               if (shouldIgnoreRealtimeError(message.message)) {
                 if (isRealtimeDebug()) {
@@ -1366,6 +1388,7 @@ export function useRealtimeCustomResources(crdName: string | null): {
       closingIntentional = true;
       if (connectTimeout) clearTimeout(connectTimeout);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (emptyListTimeout) clearTimeout(emptyListTimeout);
       ws?.close();
     };
   }, [crdName, resourceType]);

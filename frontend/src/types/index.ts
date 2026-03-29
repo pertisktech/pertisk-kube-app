@@ -68,6 +68,7 @@ export interface CustomResource {
   status: Record<string, unknown> | null;
   labels?: Record<string, string> | null;
   annotations?: Record<string, string> | null;
+  manifest?: Record<string, unknown> | null;
 }
 
 export interface Namespace {

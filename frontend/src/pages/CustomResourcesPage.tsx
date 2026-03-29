@@ -20,6 +20,9 @@ import type { CustomResource, Crd, CrdPrinterColumn } from '../types';
  * so CRD printer column paths like .metadata.labels, .spec.addresses, .status.conditions resolve.
  */
 function resourceObjectForJsonPath(item: CustomResource): Record<string, unknown> {
+  if (item.manifest && typeof item.manifest === 'object') {
+    return item.manifest;
+  }
   return {
     metadata: {
       name: item.name,
@@ -245,6 +248,11 @@ const DetailPanel = ({
               ))}
             </>
           ) : null}
+          <DrawerParamToggler label="Content">
+            <div className="py-2 font-mono text-xs overflow-x-auto">
+              <JsonTree value={resourceObj} />
+            </div>
+          </DrawerParamToggler>
           <DrawerParamToggler label="Spec">
             <div className="py-2 font-mono text-xs overflow-x-auto">
               <JsonTree value={item.spec} />
@@ -295,6 +303,7 @@ export const CustomResourcesPage = () => {
   useEffect(() => {
     setPanelOpen(false);
     setSelectedItem(null);
+    setConfirmDelete(null);
   }, [decodedCrdName]);
 
   const handleEditYaml = async (item: CustomResource) => {
