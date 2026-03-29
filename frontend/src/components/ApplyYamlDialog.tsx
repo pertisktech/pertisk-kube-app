@@ -35,6 +35,16 @@ interface ApplyYamlDialogProps {
   onClose: () => void;
 }
 
+const splitYamlDocuments = (yamlText: string): string[] => {
+  const normalized = yamlText.replaceAll('\r\n', '\n').trim();
+  if (!normalized) return [];
+  const docs = normalized
+    .split(/^\s*---\s*$/m)
+    .map((doc) => doc.trim())
+    .filter(Boolean);
+  return docs.length > 0 ? docs : [normalized];
+};
+
 export const ApplyYamlDialog = ({ onClose }: ApplyYamlDialogProps) => {
   const theme = useTheme();
   const [yaml, setYaml] = useState(DEFAULT_YAML);
@@ -58,19 +68,33 @@ export const ApplyYamlDialog = ({ onClose }: ApplyYamlDialogProps) => {
     setSuccess(null);
     try {
       const token = getAuthToken();
-      const res = await fetch('/api/apply', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/yaml',
-          ...(token ? { Authorization: token } : {}),
-        },
-        body: yaml,
-      });
-      const data = await res.json().catch(() => ({ message: res.statusText }));
-      if (!res.ok) {
-        throw new Error(data.message || `Failed to apply (${res.status})`);
+      const docs = splitYamlDocuments(yaml);
+      if (docs.length === 0) {
+        throw new Error('YAML is empty.');
       }
-      setSuccess(data.message || 'Resource applied successfully');
+
+      let lastMessage = 'Resource applied successfully';
+      for (let index = 0; index < docs.length; index += 1) {
+        const res = await fetch('/api/apply', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/yaml',
+            ...(token ? { Authorization: token } : {}),
+          },
+          body: docs[index],
+        });
+        const data = await res.json().catch(() => ({ message: res.statusText }));
+        if (!res.ok) {
+          const baseMessage = data.message || `Failed to apply (${res.status})`;
+          const withIndex = docs.length > 1
+            ? `Document ${index + 1}/${docs.length}: ${baseMessage}`
+            : baseMessage;
+          throw new Error(withIndex);
+        }
+        lastMessage = data.message || lastMessage;
+      }
+
+      setSuccess(docs.length > 1 ? `Applied ${docs.length} YAML documents successfully.` : lastMessage);
     } catch (err) {
       setError((err as Error).message);
     } finally {

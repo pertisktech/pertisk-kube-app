@@ -31,6 +31,7 @@ import { PodFileTransfer } from './PodFileTransfer';
 import { getHelmChartReadme, getHelmChartValues, installHelmChart, useHelmChartVersions, useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
 import { getAuthToken } from '../utils/auth';
 import { cn } from '../utils';
+import { Checkbox } from './Checkbox';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,6 +108,324 @@ spec:
           image: nginx:latest
 `;
 
+type YamlKindTemplate = {
+  key: string;
+  label: string;
+  template: string;
+};
+
+const YAML_KIND_TEMPLATES: YamlKindTemplate[] = [
+  {
+    key: 'ConfigMap',
+    label: 'ConfigMap',
+    template: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example-config
+  namespace: default
+data:
+  key: value
+`,
+  },
+  {
+    key: 'Secret',
+    label: 'Secret',
+    template: `apiVersion: v1
+kind: Secret
+metadata:
+  name: example-secret
+  namespace: default
+type: Opaque
+stringData:
+  username: admin
+  password: change-me
+`,
+  },
+  {
+    key: 'Service',
+    label: 'Service',
+    template: `apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+  namespace: default
+spec:
+  selector:
+    app: my-app
+  ports:
+    - port: 80
+      targetPort: 80
+`,
+  },
+  {
+    key: 'PersistentVolumeClaim',
+    label: 'PersistentVolumeClaim',
+    template: `apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+`,
+  },
+  {
+    key: 'Deployment',
+    label: 'Deployment',
+    template: DEFAULT_YAML,
+  },
+  {
+    key: 'StatefulSet',
+    label: 'StatefulSet',
+    template: `apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: my-statefulset
+  namespace: default
+spec:
+  serviceName: my-statefulset
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-statefulset
+  template:
+    metadata:
+      labels:
+        app: my-statefulset
+    spec:
+      containers:
+        - name: app
+          image: nginx:latest
+`,
+  },
+  {
+    key: 'DaemonSet',
+    label: 'DaemonSet',
+    template: `apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: my-daemonset
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: my-daemonset
+  template:
+    metadata:
+      labels:
+        app: my-daemonset
+    spec:
+      containers:
+        - name: app
+          image: nginx:latest
+`,
+  },
+  {
+    key: 'Job',
+    label: 'Job',
+    template: `apiVersion: batch/v1
+kind: Job
+metadata:
+  name: my-job
+  namespace: default
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: app
+          image: busybox
+          command: ["sh", "-c", "echo hello"]
+`,
+  },
+  {
+    key: 'CronJob',
+    label: 'CronJob',
+    template: `apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: my-cronjob
+  namespace: default
+spec:
+  schedule: "0 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: app
+              image: busybox
+              command: ["sh", "-c", "date"]
+`,
+  },
+  {
+    key: 'Ingress',
+    label: 'Ingress',
+    template: `apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-ingress
+  namespace: default
+spec:
+  rules:
+    - host: example.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: my-service
+                port:
+                  number: 80
+`,
+  },
+  {
+    key: 'NetworkPolicy',
+    label: 'NetworkPolicy',
+    template: `apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: default
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+`,
+  },
+  {
+    key: 'HorizontalPodAutoscaler',
+    label: 'HorizontalPodAutoscaler',
+    template: `apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-app-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-app
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+`,
+  },
+  {
+    key: 'PodDisruptionBudget',
+    label: 'PodDisruptionBudget',
+    template: `apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: my-app-pdb
+  namespace: default
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: my-app
+`,
+  },
+  {
+    key: 'Role',
+    label: 'Role',
+    template: `apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-reader
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+`,
+  },
+  {
+    key: 'RoleBinding',
+    label: 'RoleBinding',
+    template: `apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-reader-binding
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: app-reader
+`,
+  },
+  {
+    key: 'ClusterRole',
+    label: 'ClusterRole',
+    template: `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: app-cluster-reader
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "namespaces"]
+    verbs: ["get", "list", "watch"]
+`,
+  },
+  {
+    key: 'ClusterRoleBinding',
+    label: 'ClusterRoleBinding',
+    template: `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: app-cluster-reader-binding
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: app-cluster-reader
+`,
+  },
+  {
+    key: 'StorageClass',
+    label: 'StorageClass',
+    template: `apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: example-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+`,
+  },
+  {
+    key: 'PriorityClass',
+    label: 'PriorityClass',
+    template: `apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 100000
+globalDefault: false
+description: "Priority class for critical workloads"
+`,
+  },
+];
+
 const LABEL_MAP: Record<PanelTabType, string> = {
   'host-shell': 'Terminal',
   'pod-exec': 'Pod Shell',
@@ -115,6 +434,16 @@ const LABEL_MAP: Record<PanelTabType, string> = {
   logs: 'Logs',
   'yaml-editor': 'YAML',
   'install-chart': 'Helm Install',
+};
+
+const splitYamlDocuments = (yamlText: string): string[] => {
+  const normalized = yamlText.replaceAll('\r\n', '\n').trim();
+  if (!normalized) return [];
+  const docs = normalized
+    .split(/^\s*---\s*$/m)
+    .map((doc) => doc.trim())
+    .filter(Boolean);
+  return docs.length > 0 ? docs : [normalized];
 };
 
 const makeTabIdentity = (type: PanelTabType, opts?: Partial<OpenPanelTabOptions>): string | null => {
@@ -675,16 +1004,120 @@ const YamlEditorTab = ({
   onContentChange: (content: string) => void;
 }) => {
   const [yaml, setYaml] = useState(initialContent);
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+  const [selectedKinds, setSelectedKinds] = useState<string[]>(['Deployment']);
+  const templateMenuRef = useRef<HTMLDivElement | null>(null);
 
   const handleChange = (value: string) => {
     setYaml(value);
     onContentChange(value);
   };
 
+  const toggleKind = (kind: string) => {
+    setSelectedKinds((previous) =>
+      previous.includes(kind)
+        ? previous.filter((item) => item !== kind)
+        : [...previous, kind],
+    );
+  };
+
+  const selectAllKinds = () => {
+    setSelectedKinds(YAML_KIND_TEMPLATES.map((item) => item.key));
+  };
+
+  const clearKinds = () => {
+    setSelectedKinds([]);
+  };
+
+  const applyKindsTemplate = () => {
+    if (selectedKinds.length === 0) return;
+    const selectedTemplates = YAML_KIND_TEMPLATES
+      .filter((item) => selectedKinds.includes(item.key))
+      .map((item) => item.template.trim())
+      .filter(Boolean);
+    if (selectedTemplates.length === 0) return;
+
+    const generated = selectedTemplates.join('\n\n---\n\n') + '\n';
+    handleChange(generated);
+    setShowTemplateMenu(false);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (templateMenuRef.current && !templateMenuRef.current.contains(target)) {
+        setShowTemplateMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   return (
     <div className="yaml-editor-pane h-full flex flex-col bg-surface-elevated">
-      <div className="flex items-center gap-2 px-3 py-1 border-b border-white/10 flex-shrink-0 bg-surface-elevated">
+      <div className="flex items-center justify-between gap-2 px-3 py-1 border-b border-white/10 flex-shrink-0 bg-surface-elevated">
         <span className="text-xs text-white/50">{title ?? 'New Resource'}</span>
+        <div ref={templateMenuRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setShowTemplateMenu((previous) => !previous)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-hover"
+          >
+            Kind Templates
+            <ChevronDown size={12} className={cn('transition-transform', showTemplateMenu && 'rotate-180')} />
+          </button>
+
+          {showTemplateMenu && (
+            <div className="absolute right-0 top-7 z-20 w-72 rounded-md border border-border bg-surface shadow-xl">
+              <div className="flex items-center justify-between border-b border-border px-2 py-1.5">
+                <span className="text-[11px] text-text-secondary">Select kinds ({selectedKinds.length})</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={selectAllKinds}
+                    className="text-[11px] text-primary hover:underline"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearKinds}
+                    className="text-[11px] text-text-secondary hover:underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-64 overflow-y-auto p-1">
+                {YAML_KIND_TEMPLATES.map((item) => {
+                  const checked = selectedKinds.includes(item.key);
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => toggleKind(item.key)}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-text-secondary hover:bg-hover"
+                    >
+                      <Checkbox checked={checked} onChange={() => toggleKind(item.key)} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-end border-t border-border px-2 py-1.5">
+                <button
+                  type="button"
+                  onClick={applyKindsTemplate}
+                  disabled={selectedKinds.length === 0}
+                  className="rounded-md bg-primary px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+                >
+                  Generate YAML
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       <div className="flex-1 overflow-hidden">
         <AceEditor
@@ -1032,31 +1465,51 @@ export const BottomPanel = () => {
         ? `/api/helm/releases/${encodeURIComponent(activeTab.helmReleaseNamespace as string)}/${encodeURIComponent(activeTab.helmReleaseName as string)}/upgrade`
         : '/api/apply';
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/yaml',
-          ...(token ? { Authorization: token } : {}),
-        },
-        body: yaml,
-      });
-
-      const text = await res.text().catch(() => '');
-      let message: string;
-      try {
-        const json = JSON.parse(text);
-        message = json.message ?? (res.ok ? 'Applied successfully' : `Error ${res.status}`);
-      } catch {
-        message = text || (res.ok ? 'Applied successfully' : `Error ${res.status}`);
+      const documents = isHelmUpgrade ? [yaml] : splitYamlDocuments(yaml);
+      if (documents.length === 0) {
+        toast.error('YAML is empty.');
+        setYamlActionResult({ ok: false, tabId: activeTab.id });
+        return;
       }
 
-      if (res.ok) {
-        toast.success(message);
+      let lastSuccessMessage = activeTab.yamlActionLabel === 'Upgrade' ? 'Upgraded successfully' : 'Applied successfully';
+      for (let index = 0; index < documents.length; index += 1) {
+        const body = documents[index];
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/yaml',
+            ...(token ? { Authorization: token } : {}),
+          },
+          body,
+        });
+
+        const text = await res.text().catch(() => '');
+        let message: string;
+        try {
+          const json = JSON.parse(text);
+          message = json.message ?? (res.ok ? 'Applied successfully' : `Error ${res.status}`);
+        } catch {
+          message = text || (res.ok ? 'Applied successfully' : `Error ${res.status}`);
+        }
+
+        if (!res.ok) {
+          const withIndex = documents.length > 1
+            ? `Document ${index + 1}/${documents.length}: ${message}`
+            : message;
+          throw new Error(withIndex);
+        }
+
+        lastSuccessMessage = message;
+      }
+
+      if (documents.length > 1) {
+        toast.success(`Applied ${documents.length} YAML documents successfully.`);
       } else {
-        toast.error(message);
+        toast.success(lastSuccessMessage);
       }
 
-      if (res.ok) {
+      if (documents.length >= 1) {
         setTabs((prev) =>
           prev.map((t) =>
             t.id === activeTab.id && t.type === 'yaml-editor'
@@ -1066,7 +1519,7 @@ export const BottomPanel = () => {
         );
       }
 
-      setYamlActionResult({ ok: res.ok, tabId: activeTab.id });
+      setYamlActionResult({ ok: true, tabId: activeTab.id });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Network error';
       toast.error(message);
