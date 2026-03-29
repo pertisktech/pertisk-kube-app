@@ -41,8 +41,6 @@ import {
   Minimize2,
   Monitor,
   Network,
-  Pause,
-  Play,
   Plus,
   RefreshCw,
   Upload,
@@ -500,14 +498,12 @@ export const ResourceMapPage = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const reactFlowRef = useRef<ReactFlowInstance<Node<ResourceFlowNodeData>, Edge> | null>(null);
 
-  const [isLive, setIsLive] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
   const REFRESH_INTERVAL = 15_000;
 
   const { data, isLoading, error, refetch } = useResourceMap(nsParam, {
-    refetchInterval: isLive ? REFRESH_INTERVAL : false,
+    refetchInterval: REFRESH_INTERVAL,
   });
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<ResourceFlowNodeData>>([]);
@@ -515,7 +511,7 @@ export const ResourceMapPage = () => {
   const [selectedNode, setSelectedNode] = useState<ApiNode | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(new Set());
-  const [isSummaryPanelCollapsed, setIsSummaryPanelCollapsed] = useState(false);
+  const [isSummaryPanelCollapsed, setIsSummaryPanelCollapsed] = useState(true);
 
   const toggleNodeCollapse = useCallback((nodeId: string) => {
     setCollapsedNodeIds((previous) => {
@@ -580,10 +576,6 @@ export const ResourceMapPage = () => {
 
       return changed ? next : previous;
     });
-  }, [data]);
-
-  useEffect(() => {
-    if (data) setLastUpdated(new Date());
   }, [data]);
 
   useEffect(() => {
@@ -928,28 +920,6 @@ export const ResourceMapPage = () => {
               <Upload size={12} />
               <span>{isExporting ? 'Exporting...' : 'Export image'}</span>
             </button>
-
-            {/* Live / pause toggle */}
-            <div className="flex flex-col items-end gap-0.5">
-              <button
-                type="button"
-                onClick={() => setIsLive((v) => !v)}
-                className={cn(
-                  'inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[11px] font-medium transition-colors shadow-sm',
-                  isLive
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-                    : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]',
-                )}
-              >
-                {isLive ? <Pause size={12} /> : <Play size={12} />}
-                <span>{isLive ? 'Live' : 'Paused'}</span>
-              </button>
-              {lastUpdated && (
-                <span className="text-[9px] text-[var(--color-text-secondary)] pr-0.5">
-                  updated {lastUpdated.toLocaleTimeString()}
-                </span>
-              )}
-            </div>
 
             {/* Fullscreen toggle */}
             <button
