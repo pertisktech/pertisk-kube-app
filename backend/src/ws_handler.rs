@@ -201,25 +201,29 @@ async fn spawn_exec_shell(
         };
 
         let home = std::env::var("HOME").unwrap_or_else(|_| "/home/appuser".to_string());
-        let path = format!("{}/.local/bin:/usr/local/bin:/usr/bin:/bin", home);
+        let shell_bin = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+        // Include common macOS/Homebrew and Linux paths so desktop host-shell commands
+        // (e.g. ktail installed via brew) resolve correctly in packaged DMG runs.
+        let path = format!(
+            "{}/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
+            home
+        );
         
-        let mut cmd = CommandBuilder::new("zsh");
+        let mut cmd = CommandBuilder::new(shell_bin.clone());
         cmd.arg("-i");
-        cmd.arg("-l");  // Login shell to read /etc/profile and /etc/environment
+        cmd.arg("-l");  // Login shell to read profile/environment
         cmd.env("HOME", &home);
-        cmd.env("ZSH", format!("{}/.oh-my-zsh", home));
+        cmd.env("SHELL", &shell_bin);
         cmd.env("PATH", path);
         cmd.env("TERM", "xterm-256color");
         cmd.env("LANG", "en_US.UTF-8");
-        cmd.env("POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD", "true");
-        cmd.env("ZDOTDIR", &home);
         
         // Spawn the shell process
         if let Err(err) = pair.slave.spawn_command(cmd) {
-            error!("Failed to spawn zsh: {}", err);
+            error!("Failed to spawn host shell: {}", err);
             let _ = tx
                 .send(format!(
-                    "\r\n\u{1b}[1;31mFailed to spawn zsh: {}\u{1b}[0m\r\n",
+                    "\r\n\u{1b}[1;31mFailed to spawn host shell: {}\u{1b}[0m\r\n",
                     err
                 ))
                 .await;
