@@ -988,6 +988,41 @@ fn save_pod_file(url: String, local_path: String) -> Result<String, String> {
     Ok(dest.display().to_string())
 }
 
+#[tauri::command]
+fn save_base64_file(default_file_name: String, base64_data: String) -> Result<Option<String>, String> {
+    let suggested_name = if default_file_name.trim().is_empty() {
+        "resource-map.png".to_string()
+    } else {
+        default_file_name.trim().to_string()
+    };
+
+    let dest = rfd::FileDialog::new()
+        .set_file_name(&suggested_name)
+        .add_filter("PNG image", &["png"])
+        .save_file();
+
+    let Some(dest) = dest else {
+        return Ok(None);
+    };
+
+    let encoded = base64_data
+        .split_once(',')
+        .map(|(_, value)| value)
+        .unwrap_or(base64_data.as_str());
+
+    let bytes = STANDARD
+        .decode(encoded)
+        .map_err(|e| format!("failed to decode file data: {e}"))?;
+
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create destination directory: {e}"))?;
+    }
+
+    fs::write(&dest, bytes).map_err(|e| format!("failed to save file: {e}"))?;
+    Ok(Some(dest.display().to_string()))
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -1005,7 +1040,8 @@ fn main() {
             get_home_directory,
             list_local_directory,
             read_local_files,
-            save_pod_file
+            save_pod_file,
+            save_base64_file
         ])
         .setup(|app| {
             let initial_config = load_sidecar_config(app.handle());
