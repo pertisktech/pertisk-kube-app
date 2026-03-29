@@ -9,6 +9,15 @@ This project is structured as a **single workspace**:
 - `frontend/src-tauri` – Tauri 2 desktop shell: spawns and manages the backend sidecar
 - `proto` – gRPC protocol definitions for real-time resource streaming
 
+## 📸 Screenshots
+
+Add screenshots to `docs/screenshots/` and they will render in GitHub README.
+
+### Desktop Overview
+
+![Dashboard](docs/screenshots/dashboard.png)
+![Resource Map](docs/screenshots/resource-map.png)
+![Deployments](docs/screenshots/deployments.png)
 
 ## 🎯 Core Features
 
