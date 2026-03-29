@@ -1,11 +1,11 @@
 use axum::{
-    http::{Request, StatusCode},
+    http::{Request, StatusCode, Uri},
     response::{IntoResponse, Response},
     Json,
 };
 use futures_util::future::join_all;
 use kube::{
-    config::KubeConfigOptions,
+    config::{KubeConfigOptions, Kubeconfig},
     api::ListParams,
     core::{ApiResource, DynamicObject, GroupVersionKind},
     Api, Client, Config,
@@ -59,19 +59,154 @@ pub struct NodeDiskMetrics {
     pub capacity_bytes: f64,
 }
 
+/// Convenience wrapper for handlers/websocket code that only needs the client.
 pub async fn load_kube_client() -> anyhow::Result<Client> {
-    if let Ok(context) = env::var("KUBE_CONTEXT") {
-        if !context.trim().is_empty() {
-            let options = KubeConfigOptions {
-                context: Some(context),
-                ..Default::default()
-            };
-            let cfg = Config::from_kubeconfig(&options).await?;
-            return Ok(Client::try_from(cfg)?);
+    load_kube_client_with_status().await.map(|(c, _)| c)
+}
+
+/// Returns `(client, is_placeholder)`.
+/// `is_placeholder = true` means the exec credential failed and the client has no auth —
+/// all Kubernetes API calls will fail until the user re-authenticates.
+pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, bool)> {
+    let context = env::var("KUBE_CONTEXT").ok().filter(|s| !s.trim().is_empty());
+
+    if let Some(ref ctx) = context {
+        let options = KubeConfigOptions {
+            context: Some(ctx.clone()),
+            ..Default::default()
+        };
+        // Exec-credential plugins (kubectl-oidc-login, omnictl, aws eks get-token,
+        // kubelogin, gke-gcloud-auth-plugin, etc.) are invoked eagerly by kube-rs
+        // during config loading. They may fail immediately (OIDC server down, 502,
+        // connection refused) or hang. Either way we must NOT let the error propagate
+        // to main() — the HTTP server must start so the Tauri sidecar health probe
+        // passes and the cluster switch is not rolled back.
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(8),
+            Config::from_kubeconfig(&options),
+        )
+        .await
+        {
+            Ok(Ok(cfg)) => match Client::try_from(cfg) {
+                Ok(c) => return Ok((c, false)),
+                Err(e) => warn!(
+                    "Kubernetes client build failed for context '{}': {}. \
+                     Starting with placeholder client.",
+                    ctx, e
+                ),
+            },
+            Ok(Err(e)) => warn!(
+                "Kubeconfig load failed for context '{}': {}. \
+                 Exec credential may be unavailable (OIDC server down, plugin missing, etc.). \
+                 Starting with placeholder client — API calls will fail with auth errors \
+                 until credentials are available.",
+                ctx, e
+            ),
+            Err(_) => warn!(
+                "Kubeconfig load timed out (>8 s) for context '{}'. \
+                 Exec credential plugin is slow or unresponsive. \
+                 Starting with placeholder client.",
+                ctx
+            ),
+        }
+
+        // Exec credential failed. Build a client from the same kubeconfig but with
+        // the exec plugin stripped out. The server starts, health probes pass, and
+        // API calls return 401/403 until the user's credentials are working.
+        return build_placeholder_client(Some(ctx)).await.map(|c| (c, true));
+    }
+
+    // No explicit KUBE_CONTEXT — use system default; fall back to placeholder on failure.
+    match Client::try_default().await {
+        Ok(c) => Ok((c, false)),
+        Err(e) => {
+            warn!(
+                "Default Kubernetes client init failed ({}). \
+                 Starting with placeholder client.",
+                e
+            );
+            build_placeholder_client(None).await.map(|c| (c, true))
+        }
+    }
+}
+
+/// Build a Kubernetes client that points at the correct API server but carries NO auth
+/// credentials. All API calls will return 401/403 until credentials are available.
+///
+/// This function parses the kubeconfig file WITHOUT invoking exec-credential plugins,
+/// strips the exec entry from the user auth info, and builds the client from that.
+/// It exists solely to let the HTTP server start and respond to health probes even
+/// when exec credential plugins are temporarily unavailable.
+async fn build_placeholder_client(context_name: Option<&str>) -> anyhow::Result<Client> {
+    let kubeconfig_path = env::var("KUBECONFIG")
+        .ok()
+        .map(|s| std::path::PathBuf::from(s.trim().to_string()))
+        .filter(|p| p.exists());
+
+    let mut kubeconfig = match kubeconfig_path {
+        Some(ref path) => Kubeconfig::read_from(path)
+            .or_else(|_| Kubeconfig::read()),
+        None => Kubeconfig::read(),
+    };
+
+    if let Ok(ref mut kc) = kubeconfig {
+        // Find the user entry for the target context and strip exec credentials
+        // so Config::from_custom_kubeconfig won't invoke the plugin.
+        let user_name: Option<String> = {
+            let ctx_name = context_name
+                .or_else(|| kc.current_context.as_deref());
+            ctx_name.and_then(|n| {
+                kc.contexts
+                    .iter()
+                    .find(|c| c.name == n)
+                    .and_then(|c| c.context.as_ref())
+                    .map(|c| c.user.clone())
+            })
+        };
+
+        if let Some(ref uname) = user_name {
+            for named_auth in &mut kc.auth_infos {
+                if named_auth.name == *uname {
+                    if let Some(ref mut ai) = named_auth.auth_info {
+                        ai.exec = None;
+                    }
+                }
+            }
+        }
+
+        let options = KubeConfigOptions {
+            context: context_name.map(String::from),
+            ..Default::default()
+        };
+
+        if let Ok(mut cfg) = Config::from_custom_kubeconfig(kc.clone(), &options).await {
+            // Skip TLS validation on the placeholder — the real token is absent anyway.
+            cfg.accept_invalid_certs = true;
+            if let Ok(client) = Client::try_from(cfg) {
+                warn!(
+                    "Started backend with UNAUTHENTICATED placeholder client for context '{}'. \
+                     All Kubernetes API calls will return auth errors until credentials are valid.",
+                    context_name.unwrap_or("<default>")
+                );
+                return Ok(client);
+            }
         }
     }
 
-    Ok(Client::try_default().await?)
+    // Absolute last resort: point at localhost. The server starts and health probes pass;
+    // every API call will fail with a connection error shown in the UI.
+    let uri = "http://127.0.0.1:6443"
+        .parse::<Uri>()
+        .expect("hardcoded valid URI");
+    let cfg = Config::new(uri);
+    let client = Client::try_from(cfg)
+        .map_err(|e| anyhow::anyhow!("Fallback placeholder client creation failed: {}", e))?;
+    warn!(
+        "Started backend with minimal localhost placeholder client for context '{}'. \
+         All API calls will fail.",
+        context_name.unwrap_or("<default>")
+    );
+    Ok(client)
 }
 
 pub fn format_compact_duration(seconds: i64) -> String {

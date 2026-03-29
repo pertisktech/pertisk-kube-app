@@ -50,6 +50,9 @@ pub struct AppState {
     pub jwt_secret: String,
     pub port_forward_state: Option<Arc<handlers::portforward::PortForwardState>>,
     pub workload_metric_history: Arc<RwLock<Vec<WorkloadMetricSnapshot>>>,
+    /// True when the kube client is a placeholder (exec credential failed at startup).
+    /// Used by the frontend to surface a "Login Required" banner.
+    pub auth_placeholder: bool,
 }
 
 #[tokio::main]
@@ -62,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(env_filter)
         .init();
 
-    let client = utils::load_kube_client().await?;
+    let (client, auth_placeholder) = utils::load_kube_client_with_status().await?;
 
     let username = env::var("USERNAME").unwrap_or_else(|_| "admin".to_string());
     let password = env::var("PASSWORD").unwrap_or_else(|_| "admin".to_string());
@@ -75,9 +78,11 @@ async fn main() -> anyhow::Result<()> {
         cluster_key,
     )));
 
-    if let Some(pf_state) = &port_forward_state {
-        handlers::portforward::restore_port_forwards_from_storage(pf_state).await;
-    }
+    // Clone the Arc before constructing state so port-forwards can be restored in the
+    // background. Restoring forwards before the server starts delays the health-probe response
+    // and causes cluster-switch failures when any forward takes several seconds to re-establish.
+    let pf_state_for_restore = port_forward_state.as_ref().map(Arc::clone);
+
     let state = AppState {
         client,
         username,
@@ -85,6 +90,7 @@ async fn main() -> anyhow::Result<()> {
         jwt_secret,
         port_forward_state,
         workload_metric_history: Arc::new(RwLock::new(Vec::new())),
+        auth_placeholder,
     };
 
     let cors = CorsLayer::new()
@@ -107,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
     let public_api = Router::new()
         .route("/health", get(health))
         .route("/readiness", get(readiness))
+        .route("/auth-status", get(auth_status))
         .route("/login", post(login));
 
     let refresh_api = Router::new().route("/refresh", post(refresh_token));
@@ -399,6 +406,17 @@ async fn main() -> anyhow::Result<()> {
         .add_service(tonic_web::enable(grpc_service))
         .serve(grpc_addr);
 
+    // Restore persisted port-forwards in the background so the server can start and respond
+    // to health probes immediately. Each forward can take several seconds to re-establish, so
+    // doing this synchronously before bind blocked the sidecar startup check.
+    if let Some(pf_state) = pf_state_for_restore {
+        tokio::spawn(async move {
+            // Brief pause to ensure the HTTP server is already accepting connections.
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            handlers::portforward::restore_port_forwards_from_storage(&pf_state).await;
+        });
+    }
+
     // Run both servers concurrently
     tokio::try_join!(
         async { http_server.await.map_err(|e| anyhow::anyhow!(e)) },
@@ -437,6 +455,36 @@ async fn health() -> impl IntoResponse {
         status: "ok".into(),
     };
     (StatusCode::OK, Json(body))
+}
+
+async fn auth_status(State(state): State<AppState>) -> impl IntoResponse {
+    #[derive(serde::Serialize)]
+    struct AuthStatusResponse {
+        ok: bool,
+        placeholder: bool,
+        message: Option<String>,
+    }
+    let (ok, message) = if state.auth_placeholder {
+        (
+            false,
+            Some(
+                "Kubernetes credentials are not available. \
+                 The exec credential plugin (e.g. kubectl oidc-login) failed at startup. \
+                 Use \"Login with Browser\" to authenticate."
+                    .to_string(),
+            ),
+        )
+    } else {
+        (true, None)
+    };
+    (
+        StatusCode::OK,
+        Json(AuthStatusResponse {
+            ok,
+            placeholder: state.auth_placeholder,
+            message,
+        }),
+    )
 }
 
 async fn readiness(State(_state): State<AppState>) -> impl IntoResponse {

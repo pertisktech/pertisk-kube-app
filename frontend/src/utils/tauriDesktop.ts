@@ -72,6 +72,30 @@ export async function restartDesktopSidecar(): Promise<void> {
   await invoke('restart_sidecar');
 }
 
+export async function triggerKubeBrowserLogin(): Promise<void> {
+  if (!isDesktopRuntime()) {
+    throw new Error('Browser login is only available in Tauri runtime.');
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('trigger_kube_browser_login');
+}
+
+export interface DesktopAuthStatus {
+  ok: boolean;
+  placeholder: boolean;
+  message: string | null;
+}
+
+export async function getDesktopAuthStatus(): Promise<DesktopAuthStatus> {
+  try {
+    const res = await fetch('/api/auth-status');
+    if (!res.ok) return { ok: true, placeholder: false, message: null };
+    return await res.json() as DesktopAuthStatus;
+  } catch {
+    return { ok: true, placeholder: false, message: null };
+  }
+}
+
 export async function listDesktopKubeconfigCandidates(): Promise<string[]> {
   if (!isDesktopRuntime()) {
     return [];
@@ -96,7 +120,7 @@ export async function listDesktopKubeconfigClusters(kubeconfigPath?: string | nu
 
 export async function waitDesktopClusterSwitchResult(
   expectedContext: string,
-  timeoutMs: number = 25_000
+  timeoutMs: number = 65_000
 ): Promise<DesktopClusterSwitchResult> {
   if (!isDesktopRuntime()) {
     return { success: true };

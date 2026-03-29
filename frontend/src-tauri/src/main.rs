@@ -22,8 +22,8 @@ struct BackendState {
 }
 
 const DEFAULT_PORT: u16 = 15222;
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(12);
-const CLUSTER_VERIFY_TIMEOUT: Duration = Duration::from_secs(8);
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
+const CLUSTER_VERIFY_TIMEOUT: Duration = Duration::from_secs(40);
 const RESTART_BACKOFF: Duration = Duration::from_secs(2);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
@@ -216,7 +216,10 @@ fn sidecar_path() -> Option<String> {
     }
 
     if let Some(home) = env_value("HOME") {
-        append_unique_path(&mut paths, PathBuf::from(home).join(".local/bin"));
+        let home_path = PathBuf::from(&home);
+        append_unique_path(&mut paths, home_path.join(".local/bin"));
+        // Manual gcloud SDK installs are often at ~/google-cloud-sdk/bin.
+        append_unique_path(&mut paths, PathBuf::from(home).join("google-cloud-sdk/bin"));
     }
 
     env::join_paths(paths)
@@ -254,6 +257,42 @@ fn configure_sidecar_environment(command: &mut Command) {
         "AWS_WEB_IDENTITY_TOKEN_FILE",
         "AWS_CA_BUNDLE",
         "AWS_EC2_METADATA_DISABLED",
+    ] {
+        forward_env_if_present(command, key);
+    }
+
+    // Azure / kubelogin – needed for service-principal and workload-identity auth modes.
+    for key in [
+        "AZURE_CLIENT_ID",
+        "AZURE_CLIENT_SECRET",
+        "AZURE_CLIENT_CERTIFICATE_PATH",
+        "AZURE_TENANT_ID",
+        "AZURE_AUTHORITY_HOST",
+        "AZURE_FEDERATED_TOKEN_FILE",
+    ] {
+        forward_env_if_present(command, key);
+    }
+
+    // GCP / GKE – GOOGLE_APPLICATION_CREDENTIALS is required for service-account auth;
+    // USE_GKE_GCLOUD_AUTH_PLUGIN tells kubectl/kube-rs to use the gke plugin.
+    for key in [
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "GOOGLE_CLOUD_PROJECT",
+        "CLOUDSDK_CORE_PROJECT",
+        "USE_GKE_GCLOUD_AUTH_PLUGIN",
+    ] {
+        forward_env_if_present(command, key);
+    }
+
+    // Talos Linux / Talos Omni – omnictl reads OMNICONFIG; talosctl reads TALOSCONFIG.
+    // Both tools fall back to XDG config dirs when these env vars are absent.
+    for key in [
+        "OMNICONFIG",
+        "TALOSCONFIG",
+        "OMNI_ENDPOINT",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CACHE_HOME",
     ] {
         forward_env_if_present(command, key);
     }
@@ -343,10 +382,13 @@ fn probe_backend_health(port: u16) -> bool {
 
 fn probe_backend_status(port: u16, path: &str) -> Option<u16> {
     let addr = backend_socket_addr(port);
-    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(600)).ok()?;
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(1500)).ok()?;
 
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(900)));
-    let _ = stream.set_write_timeout(Some(Duration::from_millis(900)));
+    // Use a long read timeout: exec-credential plugins (omnictl, aws eks get-token,
+    // kubelogin, gke-gcloud-auth-plugin) are invoked lazily on the first request and
+    // can take 5–20 s on the first call or when the cached token has expired.
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(22)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(1500)));
 
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
@@ -651,18 +693,22 @@ fn restart_backend_sidecar(app: &AppHandle, state: &BackendState) -> anyhow::Res
         ));
     }
 
-    if !wait_for_cluster_verification(cfg.port, CLUSTER_VERIFY_TIMEOUT) {
-        let mut child_to_stop = child;
-        graceful_stop_child(&mut child_to_stop);
-        return Err(anyhow::anyhow!(
-            "cluster verification failed for selected context: backend is up but Kubernetes API check failed"
-        ));
+    // Cluster verification is best-effort: exec-credential plugins (omnictl for Talos Omni,
+    // aws eks get-token, kubelogin, gke-gcloud-auth-plugin) run lazily on the first request
+    // and may take 10–30 s on their first call. If verification times out we keep the new
+    // sidecar running — the cluster will become reachable once credentials are ready.
+    if wait_for_cluster_verification(cfg.port, CLUSTER_VERIFY_TIMEOUT) {
+        info!(
+            "backend sidecar restarted and cluster verification passed on {}",
+            backend_socket_addr(cfg.port)
+        );
+    } else {
+        warn!(
+            "cluster verification timed out on {} — exec-credential plugin may still be initialising; \
+             keeping sidecar running",
+            backend_socket_addr(cfg.port)
+        );
     }
-
-    info!(
-        "backend sidecar restarted and cluster verification passed on {}",
-        backend_socket_addr(cfg.port)
-    );
 
     let mut guard = state
         .child
@@ -864,6 +910,149 @@ fn restart_sidecar(app: AppHandle, state: State<'_, BackendState>) -> Result<(),
     restart_backend_sidecar(&app, &state).map_err(|e| format!("failed to restart sidecar: {e}"))
 }
 
+/// Run the exec-credential plugin for the currently selected kubeconfig context
+/// interactively. For OIDC contexts (e.g. kubectl-oidc-login / kubelogin) this
+/// opens the system browser for the user to complete authentication. After the
+/// command exits successfully the sidecar is restarted so the backend picks up
+/// the freshly cached credentials.
+#[tauri::command]
+fn trigger_kube_browser_login(app: AppHandle, state: State<'_, BackendState>) -> Result<(), String> {
+    let cfg = state
+        .config
+        .lock()
+        .map_err(|e| format!("lock error: {e}"))?
+        .clone();
+
+    // Resolve kubeconfig file.
+    let kubeconfig_path = resolve_kubeconfig_path(cfg.kubeconfig_path.clone());
+    let raw = match &kubeconfig_path {
+        Some(p) => fs::read_to_string(p).map_err(|e| format!("cannot read kubeconfig: {e}"))?,
+        None => return Err("no kubeconfig file found".to_string()),
+    };
+
+    let yaml: serde_yaml::Value =
+        serde_yaml::from_str(&raw).map_err(|e| format!("invalid kubeconfig yaml: {e}"))?;
+    let root = yaml.as_mapping().ok_or("kubeconfig is not a mapping")?;
+
+    // Determine the context name.
+    let context_name = cfg
+        .kube_context
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            root.get(serde_yaml::Value::String("current-context".into()))
+                .and_then(|v| v.as_str())
+        })
+        .ok_or("no context specified")?
+        .to_string();
+
+    // Find user name for this context.
+    let user_name = root
+        .get(serde_yaml::Value::String("contexts".into()))
+        .and_then(|v| v.as_sequence())
+        .and_then(|ctxs| {
+            ctxs.iter().find(|c| {
+                c.as_mapping()
+                    .and_then(|m| m.get(serde_yaml::Value::String("name".into())))
+                    .and_then(|v| v.as_str())
+                    == Some(&context_name)
+            })
+        })
+        .and_then(|c| c.as_mapping())
+        .and_then(|m| m.get(serde_yaml::Value::String("context".into())))
+        .and_then(|v| v.as_mapping())
+        .and_then(|m| m.get(serde_yaml::Value::String("user".into())))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| format!("context '{context_name}' not found or has no user"))?;
+
+    // Find exec credential for this user.
+    let auth_info = root
+        .get(serde_yaml::Value::String("users".into()))
+        .and_then(|v| v.as_sequence())
+        .and_then(|users| {
+            users.iter().find(|u| {
+                u.as_mapping()
+                    .and_then(|m| m.get(serde_yaml::Value::String("name".into())))
+                    .and_then(|v| v.as_str())
+                    == Some(&user_name)
+            })
+        })
+        .and_then(|u| u.as_mapping())
+        .and_then(|m| m.get(serde_yaml::Value::String("user".into())))
+        .and_then(|v| v.as_mapping())
+        .ok_or_else(|| format!("user '{user_name}' not found in kubeconfig"))?;
+
+    let exec = auth_info
+        .get(serde_yaml::Value::String("exec".into()))
+        .and_then(|v| v.as_mapping())
+        .ok_or_else(|| format!("no exec credential configured for user '{user_name}'"))?;
+
+    let command_str = exec
+        .get(serde_yaml::Value::String("command".into()))
+        .and_then(|v| v.as_str())
+        .ok_or("exec credential has no 'command' field")?;
+
+    let args: Vec<String> = exec
+        .get(serde_yaml::Value::String("args".into()))
+        .and_then(|v| v.as_sequence())
+        .map(|seq| {
+            seq.iter()
+                .filter_map(|a| a.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    info!(
+        "Launching exec credential browser login: {} {:?}",
+        command_str, args
+    );
+
+    let mut cmd = Command::new(command_str);
+    cmd.args(&args);
+
+    // Provide a full PATH and all required env vars so the plugin can find its
+    // dependencies and open the system browser.
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+    for key in [
+        "HOME", "USER", "LOGNAME", "SHELL",
+        "DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
+        "BROWSER",
+        "OMNICONFIG", "TALOSCONFIG",
+        "AWS_PROFILE", "AWS_CONFIG_FILE",
+        "AZURE_CLIENT_ID", "AZURE_TENANT_ID",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "USE_GKE_GCLOUD_AUTH_PLUGIN",
+    ] {
+        forward_env_if_present(&mut cmd, key);
+    }
+    if let Some(ref p) = kubeconfig_path {
+        cmd.env("KUBECONFIG", p);
+    }
+
+    // Run synchronously — the plugin opens a browser and blocks until the user
+    // finishes logging in or the operation is cancelled.
+    let status = cmd
+        .status()
+        .map_err(|e| format!("failed to launch '{command_str}': {e}"))?;
+
+    if !status.success() {
+        return Err(format!(
+            "Exec credential command exited with {status}. \
+             Check that the OIDC provider is reachable and try again."
+        ));
+    }
+
+    info!("Exec credential login succeeded; restarting sidecar to pick up new token.");
+
+    // Restart the sidecar so the backend builds a fresh Kubernetes client using
+    // the credentials that were just written to the credential cache.
+    restart_backend_sidecar(&app, &state)
+        .map_err(|e| format!("login succeeded but sidecar restart failed: {e}"))
+}
+
 #[tauri::command]
 fn list_kubeconfig_candidates() -> Vec<String> {
     discover_kubeconfig_candidates()
@@ -1034,6 +1223,7 @@ fn main() {
             set_sidecar_config,
             get_cluster_switch_status,
             restart_sidecar,
+            trigger_kube_browser_login,
             list_kubeconfig_candidates,
             list_kubeconfig_clusters,
             open_external_url,

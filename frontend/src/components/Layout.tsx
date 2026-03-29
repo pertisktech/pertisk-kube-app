@@ -51,6 +51,11 @@ import {
   saveDesktopSidecarConfig,
   waitDesktopClusterSwitchResult,
 } from '../utils/tauriDesktop';
+import {
+  type DesktopAuthStatus,
+  getDesktopAuthStatus,
+  triggerKubeBrowserLogin,
+} from '../utils/tauriDesktop';
 import { isDesktopRuntime } from '../utils/desktopBridge';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { APP_VERSION } from '../utils/version';
@@ -171,6 +176,8 @@ export const Layout = () => {
   const [kubeconfigInitialized, setKubeconfigInitialized] = useState(false);
   const [kubeconfigError, setKubeconfigError] = useState<string | null>(null);
   const [startupClusterSelectionDone, setStartupClusterSelectionDone] = useState(false);
+  const [authStatus, setAuthStatus] = useState<DesktopAuthStatus | null>(null);
+  const [browserLoginLoading, setBrowserLoginLoading] = useState(false);
   const [workloadsOpen, setWorkloadsOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [storageOpen, setStorageOpen] = useState(false);
@@ -303,6 +310,41 @@ export const Layout = () => {
     };
   }, [desktopMode]);
 
+  // Poll /api/auth-status every 5s so we can show the browser-login CTA when
+  // the sidecar starts with a placeholder (unauthenticated) kube client.
+  useEffect(() => {
+    if (!desktopMode) return;
+    let alive = true;
+
+    const poll = async () => {
+      const status = await getDesktopAuthStatus();
+      if (alive) setAuthStatus(status);
+    };
+
+    void poll();
+    const id = window.setInterval(() => {
+      void poll();
+    }, 5_000);
+
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [desktopMode]);
+
+  const handleBrowserLogin = async () => {
+    setBrowserLoginLoading(true);
+    try {
+      await triggerKubeBrowserLogin();
+      toast.success('Authenticated successfully. Cluster connection restored.');
+      setAuthStatus(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Browser login failed.');
+    } finally {
+      setBrowserLoginLoading(false);
+    }
+  };
+
   const refreshClustersForKubeconfig = async (path: string) => {
     if (!desktopMode) return;
     setKubeconfigLoading(true);
@@ -340,7 +382,7 @@ export const Layout = () => {
       // Clear stale old-cluster content immediately while switch is in progress.
       window.dispatchEvent(new CustomEvent('cluster:switched'));
 
-      const switchResult = await waitDesktopClusterSwitchResult(nextContext, 25_000);
+      const switchResult = await waitDesktopClusterSwitchResult(nextContext, 65_000);
       if (!switchResult.success) {
         throw new Error(switchResult.message || 'Cluster switch failed. Previous cluster was restored.');
       }
@@ -1536,12 +1578,38 @@ export const Layout = () => {
                 <div className="text-xs text-red-600">{kubeconfigError}</div>
               </div>
             </div>
-            <Link 
+            <Link
               to="/config/desktop-settings"
               className="flex-shrink-0 rounded-md bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-600 transition-colors"
             >
               Configure
             </Link>
+          </div>
+        )}
+
+        {/* Auth placeholder banner — shown when sidecar started with a placeholder kube client */}
+        {desktopMode && authStatus?.placeholder && (
+          <div className="bg-amber-900/20 border-b border-amber-700/50 px-4 py-2.5 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="text-amber-500 font-semibold shrink-0">⚠</div>
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <div className="text-sm font-medium text-amber-600">Authentication required</div>
+                <div className="text-xs text-amber-500">
+                  Credentials are expired or the OIDC provider was unreachable at startup.
+                  Click <strong>Login with Browser</strong> to re-authenticate.
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={browserLoginLoading}
+              onClick={() => {
+                void handleBrowserLogin();
+              }}
+              className="flex-shrink-0 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-500 disabled:opacity-50 transition-colors"
+            >
+              {browserLoginLoading ? 'Logging in…' : 'Login with Browser'}
+            </button>
           </div>
         )}
 
