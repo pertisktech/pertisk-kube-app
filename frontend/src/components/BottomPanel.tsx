@@ -437,11 +437,11 @@ const LABEL_MAP: Record<PanelTabType, string> = {
 };
 
 const splitYamlDocuments = (yamlText: string): string[] => {
-  const normalized = yamlText.replaceAll('\r\n', '\n').trim();
+  const normalized = yamlText.split('\r\n').join('\n').trim();
   if (!normalized) return [];
   const docs = normalized
     .split(/^\s*---\s*$/m)
-    .map((doc) => doc.trim())
+    .map((doc: string) => doc.trim())
     .filter(Boolean);
   return docs.length > 0 ? docs : [normalized];
 };
