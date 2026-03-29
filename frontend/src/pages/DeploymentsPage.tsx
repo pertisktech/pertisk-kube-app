@@ -87,33 +87,31 @@ const sanitizeDeploymentYamlForEdit = (yamlText: string) => {
   }
 };
 
-const buildDeploymentTailSelector = (deployment: Deployment): string | null => {
-  const preferredEntries = Object.entries(deployment.selector_labels ?? {}).filter(
+const buildDeploymentKtailCommand = (deployment: Deployment): string => {
+  const selectorEntries = Object.entries(deployment.selector_labels ?? {}).filter(
     ([key, value]) => key.trim().length > 0 && String(value).trim().length > 0
   );
 
-  if (preferredEntries.length > 0) {
-    return preferredEntries
+  if (selectorEntries.length > 0) {
+    const preferredSelector = selectorEntries
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, value]) => `${key}=${String(value)}`)
       .join(',');
+    return `ktail -n ${deployment.namespace} -l ${preferredSelector}`;
   }
 
   const labels = deployment.labels ?? {};
-  const fallbackKeys = ['app.kubernetes.io/name', 'k8s-app', 'app'];
-
-  for (const key of fallbackKeys) {
-    const value = labels[key];
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return `${key}=${value}`;
-    }
+  const preferredKeys = ['app.kubernetes.io/instance', 'app.kubernetes.io/name', 'app', 'k8s-app'];
+  const fallbackSelector = preferredKeys
+    .map((key) => [key, labels[key]] as const)
+    .filter(([, value]) => typeof value === 'string' && value.trim().length > 0)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(',');
+  if (fallbackSelector) {
+    return `ktail -n ${deployment.namespace} -l ${fallbackSelector}`;
   }
 
-  const firstEntry = Object.entries(labels).find(
-    ([key, value]) => key.trim().length > 0 && String(value).trim().length > 0
-  );
-
-  return firstEntry ? `${firstEntry[0]}=${String(firstEntry[1])}` : null;
+  return `ktail -n ${deployment.namespace}`;
 };
 
 export const DeploymentsPage = () => {
@@ -169,15 +167,20 @@ export const DeploymentsPage = () => {
   };
 
   const handleTailLogs = (deployment: Deployment) => {
-    const selector = buildDeploymentTailSelector(deployment);
-    if (!selector) {
-      return;
-    }
-
+    const command = buildDeploymentKtailCommand(deployment);
     openPanelTab({
       type: 'host-shell',
       title: `ktail ${deployment.name}`,
-      initialCommand: `ktail -n ${deployment.namespace} -l "${selector}"`,
+      initialCommand: command,
+    });
+  };
+
+  const handleOpenTerminal = (deployment: Deployment) => {
+    const command = buildDeploymentKtailCommand(deployment);
+    openPanelTab({
+      type: 'host-shell',
+      title: `Terminal ${deployment.name}`,
+      initialCommand: command,
     });
   };
 
@@ -274,9 +277,29 @@ export const DeploymentsPage = () => {
       sortKey: 'images',
     },
     {
+      header: 'Tail Logs',
+      accessor: (row: Deployment) => {
+        return (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleTailLogs(row);
+            }}
+            title="Open ktail in terminal"
+            className="inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded-md border text-xs font-medium transition-colors hover:opacity-90"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary)', backgroundColor: 'var(--color-surface-elevated)' }}
+          >
+            Open Terminal
+          </button>
+        );
+      },
+      width: '14%',
+    },
+    {
       header: 'Age',
       accessor: (row: Deployment) => timeAgo(row.age),
-      width: '8%',
+      width: '6%',
       sortable: true,
       sortKey: 'age',
     },
@@ -360,6 +383,7 @@ export const DeploymentsPage = () => {
             onScale={scaleDeployment}
             onRestart={restartDeployment}
             onTailLogs={handleTailLogs}
+            onOpenTerminal={handleOpenTerminal}
             onQuickUpdateTag={quickUpdateDeploymentImageTag}
             onDelete={handleDeleteSingle}
           />
