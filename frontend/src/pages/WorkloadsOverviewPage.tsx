@@ -33,10 +33,9 @@ import {
 import { useNamespace } from '../context/NamespaceContext';
 import type { Pod, Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob } from '../types';
 
-// Pie chart and summary use dashboard-metric-primary (same as dashboard metrics) for healthy/success
-// so workload overview and dashboard metrics share the same primary pie color.
+// Workload overview uses its own modern teal accent to visually separate from dashboard cards.
 const PIE_AND_THEME = {
-  success: 'var(--color-dashboard-metric-primary)',
+  success: 'var(--color-workload-accent)',
   warning: 'var(--color-dashboard-warning)',
   danger: 'var(--color-dashboard-danger)',
   muted: 'var(--color-muted)',
@@ -205,11 +204,11 @@ function ChartCard({ title, icon: Icon, data, total, linkTo, isLoading }: ChartC
   const hasData = data.length > 0 && total > 0;
 
   return (
-    <div className="bg-surface border border-border rounded-xl p-6 transition-all hover:shadow-lg backdrop-blur-sm">
+    <div className="bg-surface border border-border rounded-xl p-6 transition-all hover:shadow-lg hover:border-[color:var(--color-workload-accent-soft)] backdrop-blur-sm">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-dashboard-metric-primary/20">
-            <Icon size={20} className="text-dashboard-metric-primary" />
+          <div className="p-2 rounded-lg" style={{ backgroundColor: 'var(--color-workload-accent-bg)' }}>
+            <Icon size={20} style={{ color: 'var(--color-workload-accent)' }} />
           </div>
           <div>
             <h3 className="font-semibold text-text">{title}</h3>
@@ -218,7 +217,8 @@ function ChartCard({ title, icon: Icon, data, total, linkTo, isLoading }: ChartC
         </div>
         <Link
           to={linkTo}
-          className="text-sm px-3 py-1 rounded-lg hover:bg-hover transition-colors text-[var(--color-primary)]"
+          className="text-sm px-3 py-1 rounded-lg hover:bg-hover transition-colors"
+          style={{ color: 'var(--color-workload-accent)' }}
         >
           View All →
         </Link>
@@ -226,7 +226,7 @@ function ChartCard({ title, icon: Icon, data, total, linkTo, isLoading }: ChartC
 
       {isLoading ? (
         <div className="h-48 flex items-center justify-center">
-          <RefreshCw size={24} className="animate-spin text-text-secondary" />
+          <RefreshCw size={24} className="animate-spin" style={{ color: 'var(--color-workload-accent)' }} />
         </div>
       ) : !hasData ? (
         <div className="h-48 flex items-center justify-center">
@@ -317,7 +317,7 @@ function SummaryRow({
 }: SummaryRowProps) {
   const cellContent = (
     <span className="flex items-center gap-2 text-text">
-      <Icon size={16} className="text-dashboard-metric-primary flex-shrink-0" />
+      <Icon size={16} className="flex-shrink-0" style={{ color: 'var(--color-workload-accent)' }} />
       <span>{name}</span>
     </span>
   );
@@ -327,9 +327,9 @@ function SummaryRow({
         {linkTo && linkTo !== '#' ? (
           <Link
             to={linkTo}
-            className="flex items-center gap-2 hover:text-[var(--color-primary)] transition-colors text-text"
+            className="flex items-center gap-2 hover:text-[var(--color-workload-accent)] transition-colors text-text"
           >
-            <Icon size={16} className="text-dashboard-metric-primary flex-shrink-0" />
+            <Icon size={16} className="flex-shrink-0" style={{ color: 'var(--color-workload-accent)' }} />
             <span>{name}</span>
           </Link>
         ) : (
@@ -342,7 +342,7 @@ function SummaryRow({
           className="px-2 py-1 rounded-full text-sm"
           style={
             healthy > 0
-              ? { backgroundColor: 'var(--color-dashboard-metric-primary-bg)', color: 'var(--color-dashboard-metric-primary)' }
+              ? { backgroundColor: 'var(--color-workload-accent-bg)', color: 'var(--color-workload-accent)' }
               : undefined
           }
         >
@@ -439,7 +439,7 @@ export const WorkloadsOverviewPage = () => {
   const healthNum = parseFloat(healthPercentage);
   const healthColorStyle =
     healthNum >= 80
-      ? { color: 'var(--color-dashboard-metric-primary)' }
+      ? { color: 'var(--color-workload-accent)' }
       : healthNum >= 50
         ? { color: 'var(--color-dashboard-warning)' }
         : { color: 'var(--color-dashboard-danger)' };
@@ -450,7 +450,7 @@ export const WorkloadsOverviewPage = () => {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-text flex items-center gap-2">
-            <LayoutGrid size={28} className="text-dashboard-metric-primary" />
+            <LayoutGrid size={28} style={{ color: 'var(--color-workload-accent)' }} />
             Workload Overview
           </h1>
           <p className="text-text-secondary mt-1">
@@ -461,7 +461,7 @@ export const WorkloadsOverviewPage = () => {
           {workloadRealtimeConnected && (
             <span
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium"
-              style={{ backgroundColor: 'var(--color-dashboard-metric-primary-bg)', color: 'var(--color-dashboard-metric-primary)' }}
+              style={{ backgroundColor: 'var(--color-workload-accent-bg)', color: 'var(--color-workload-accent)' }}
             >
               <Circle size={8} className="fill-current animate-pulse" />
               Live
@@ -548,7 +548,7 @@ export const WorkloadsOverviewPage = () => {
                   Resource Type
                 </th>
                 <th className="text-center py-3 px-4 text-text-secondary font-medium">Total</th>
-                <th className="text-center py-3 px-4 font-medium" style={{ color: 'var(--color-dashboard-metric-primary)' }}>
+                <th className="text-center py-3 px-4 font-medium" style={{ color: 'var(--color-workload-accent)' }}>
                   Healthy
                 </th>
                 <th className="text-center py-3 px-4 font-medium" style={{ color: 'var(--color-dashboard-warning)' }}>
