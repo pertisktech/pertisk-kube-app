@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pencil, RotateCcw, ScrollText, Terminal, Trash2 } from './Icons';
+import { Pencil, RotateCcw, ScrollText, Trash2 } from './Icons';
 import type { Deployment, Pod, ReplicaSet, KubernetesEvent } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
@@ -16,7 +16,6 @@ interface DeploymentDetailPanelProps {
   onScale?: (namespace: string, name: string, replicas: number) => Promise<void>;
   onRestart?: (namespace: string, name: string) => Promise<void>;
   onTailLogs?: (deployment: Deployment) => void;
-  onOpenTerminal?: (deployment: Deployment) => void;
   onQuickUpdateTag?: (namespace: string, name: string, tag: string, image?: string) => Promise<void>;
   onDelete?: (namespace: string, name: string) => Promise<void>;
 }
@@ -58,7 +57,7 @@ const extractTag = (image?: string): string => {
   return '';
 };
 
-export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, onScale, onRestart, onTailLogs, onOpenTerminal, onQuickUpdateTag, onDelete }: DeploymentDetailPanelProps) => {
+export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, onScale, onRestart, onTailLogs, onQuickUpdateTag, onDelete }: DeploymentDetailPanelProps) => {
   const getReadyReplicaCounts = () => {
     const readyText = deployment.ready ?? '0/0';
     const [availableText, desiredText] = readyText.split('/');
@@ -261,7 +260,6 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
             >
               <PanelActionButton icon={RotateCcw} label="Restart" onClick={handleRestart} disabled={isRestarting} />
               {onTailLogs && <PanelActionButton icon={ScrollText} label="Tail Logs" onClick={() => onTailLogs(deployment)} />}
-              {onOpenTerminal && <PanelActionButton icon={Terminal} label="Open Terminal" onClick={() => onOpenTerminal(deployment)} />}
               <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor(deployment)} />
               {onDelete && (
                 <PanelActionButton icon={Trash2} label="Delete" danger onClick={() => onDelete(deployment.namespace, deployment.name)} />

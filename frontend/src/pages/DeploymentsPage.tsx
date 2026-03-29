@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from '../components/Icons';
+import { ScrollText, Trash2 } from '../components/Icons';
 import { useRealtimeDeployments } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
@@ -175,15 +175,6 @@ export const DeploymentsPage = () => {
     });
   };
 
-  const handleOpenTerminal = (deployment: Deployment) => {
-    const command = buildDeploymentKtailCommand(deployment);
-    openPanelTab({
-      type: 'host-shell',
-      title: `Terminal ${deployment.name}`,
-      initialCommand: command,
-    });
-  };
-
   const handleDeleteSelected = () => {
     if (selectedRows.length === 0) return;
     setConfirmDelete({
@@ -215,42 +206,42 @@ export const DeploymentsPage = () => {
       accessor: (row: Deployment) => (
         <span className="font-medium text-text">{row.name}</span>
       ),
-      width: '16%',
+      width: '14%',
       sortable: true,
       sortKey: 'name',
     },
     {
       header: 'Namespace',
       accessor: 'namespace' as const,
-      width: '10%',
+      width: '8%',
       sortable: true,
       sortKey: 'namespace',
     },
     {
       header: 'Status',
       accessor: (row: Deployment) => <StatusBadge status={row.status || 'Unknown'} />,
-      width: '8%',
+      width: '7%',
       sortable: true,
       sortKey: 'status',
     },
     {
       header: 'Ready',
       accessor: 'ready' as const,
-      width: '7%',
+      width: '6%',
       sortable: true,
       sortKey: 'ready',
     },
     {
       header: 'Updated',
       accessor: 'updated' as const,
-      width: '7%',
+      width: '6%',
       sortable: true,
       sortKey: 'updated',
     },
     {
       header: 'Available',
       accessor: 'available' as const,
-      width: '7%',
+      width: '6%',
       sortable: true,
       sortKey: 'available',
     },
@@ -272,36 +263,43 @@ export const DeploymentsPage = () => {
           </div>
         );
       },
-      width: '37%',
+      width: '35%',
       sortable: true,
       sortKey: 'images',
     },
     {
-      header: 'Tail Logs',
-      accessor: (row: Deployment) => {
-        return (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleTailLogs(row);
-            }}
-            title="Open ktail in terminal"
-            className="inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded-md border text-xs font-medium transition-colors hover:opacity-90"
-            style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary)', backgroundColor: 'var(--color-surface-elevated)' }}
-          >
-            Open Terminal
-          </button>
-        );
-      },
-      width: '14%',
-    },
-    {
       header: 'Age',
       accessor: (row: Deployment) => timeAgo(row.age),
-      width: '6%',
+      width: '62px',
+      headerClassName: 'px-1.5 py-2',
+      cellClassName: 'px-1.5 py-2',
       sortable: true,
       sortKey: 'age',
+    },
+    {
+      header: 'Logs',
+      accessor: (row: Deployment) => {
+        return (
+          <div className="inline-flex items-center justify-center">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleTailLogs(row);
+              }}
+              title="Tail Logs"
+              aria-label="Tail logs"
+              className="inline-flex items-center justify-center h-6 w-6 rounded-md border transition-colors hover:opacity-90"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary)', backgroundColor: 'var(--color-surface-elevated)' }}
+            >
+              <ScrollText size={13} />
+            </button>
+          </div>
+        );
+      },
+      width: '42px',
+      headerClassName: 'px-0.5 py-2 text-center',
+      cellClassName: 'px-0.5 py-1.5 text-center',
     },
   ];
 
@@ -366,6 +364,7 @@ export const DeploymentsPage = () => {
           enableRowSelection={true}
           selectedRows={selectedRows}
           onRowSelectionChange={(rows) => setSelectedRows(rows)}
+          autoFitContent={false}
         />
 
         </div>
@@ -383,7 +382,6 @@ export const DeploymentsPage = () => {
             onScale={scaleDeployment}
             onRestart={restartDeployment}
             onTailLogs={handleTailLogs}
-            onOpenTerminal={handleOpenTerminal}
             onQuickUpdateTag={quickUpdateDeploymentImageTag}
             onDelete={handleDeleteSingle}
           />

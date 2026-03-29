@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Trash2 } from '../components/Icons';
+import { ScrollText, Trash2 } from '../components/Icons';
 import { useRealtimeNamespaces } from '../hooks/useRealtimeResources';
 import { DataTable } from '../components/DataTable';
 import { NamespaceDetailPanel } from '../components/NamespaceDetailPanel';
@@ -85,7 +85,7 @@ export const NamespacesPage = () => {
       accessor: (row: Namespace) => (
         <span className="font-medium text-text">{row.name}</span>
       ),
-      width: '25%',
+      width: '23%',
       sortable: true,
       sortKey: 'name',
     },
@@ -96,38 +96,46 @@ export const NamespacesPage = () => {
           {row.phase}
         </span>
       ),
-      width: '20%',
+      width: '18%',
       sortable: true,
       sortKey: 'status',
     },
     {
       header: 'Labels',
       accessor: 'labels' as const,
-      width: '35%',
+      width: '30%',
     },
     {
       header: 'Age',
       accessor: (row: Namespace) => timeAgo(row.age),
-      width: '15%',
+      width: '62px',
+      headerClassName: 'px-1.5 py-2',
+      cellClassName: 'px-1.5 py-2',
       sortable: true,
       sortKey: 'age',
     },
     {
-      header: 'Tail Logs',
+      header: 'Logs',
       accessor: (row: Namespace) => (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            handleTailLogs(row.name);
-          }}
-          className="inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded-md border text-xs font-medium transition-colors hover:opacity-90"
-          style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary)', backgroundColor: 'var(--color-surface-elevated)' }}
-        >
-          Open Terminal
-        </button>
+        <div className="inline-flex items-center justify-center">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleTailLogs(row.name);
+            }}
+            title="Tail Logs"
+            aria-label="Tail logs"
+            className="inline-flex items-center justify-center h-6 w-6 rounded-md border transition-colors hover:opacity-90"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary)', backgroundColor: 'var(--color-surface-elevated)' }}
+          >
+            <ScrollText size={13} />
+          </button>
+        </div>
       ),
-      width: '15%',
+      width: '42px',
+      headerClassName: 'px-0.5 py-2 text-center',
+      cellClassName: 'px-0.5 py-1.5 text-center',
     },
   ];
 
@@ -181,6 +189,7 @@ export const NamespacesPage = () => {
         enableRowSelection={true}
         selectedRows={selectedRows}
         onRowSelectionChange={(rows) => setSelectedRows(rows)}
+        autoFitContent={false}
       />
 
       {panelOpen && selectedNamespace && (

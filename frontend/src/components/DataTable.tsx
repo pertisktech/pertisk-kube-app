@@ -57,6 +57,8 @@ interface Column<T> {
   accessor: keyof T | ((row: T) => ReactNode);
   render?: (row: T) => ReactNode;
   width?: string;
+  headerClassName?: string;
+  cellClassName?: string;
   sortable?: boolean;
   sortKey?: string;
 }
@@ -133,14 +135,22 @@ export const DataTable = <T extends Record<string, any>>({
         Total: {data.length} records
       </div>
       <div className="overflow-x-auto">
-        <table className={cn('text-sm table-auto', autoFitContent ? 'w-max min-w-full' : 'w-full')}>
+        <table className={cn('text-sm', autoFitContent ? 'table-auto w-max min-w-full' : 'table-fixed w-full')}>
           <thead>
             <tr className="border-b border-border bg-surface-elevated">
               {columns.map((col, idx) => (
                 <th
                   key={idx}
-                  className="px-3 py-2 text-left text-sm font-semibold text-text align-middle"
-                  style={{ width: col.width, whiteSpace: autoFitContent ? 'nowrap' : undefined }}
+                  className={cn(
+                    'text-left text-sm font-semibold text-text align-middle',
+                    col.headerClassName ?? 'px-3 py-2'
+                  )}
+                  style={{
+                    width: col.width,
+                    minWidth: col.width,
+                    maxWidth: col.width,
+                    whiteSpace: autoFitContent ? 'nowrap' : undefined,
+                  }}
                 >
                   {enableRowSelection && idx === 0 ? (
                     <div className="flex items-center gap-2">
@@ -210,12 +220,18 @@ export const DataTable = <T extends Record<string, any>>({
                     <td
                       key={colIdx}
                       className={cn(
-                        'px-3 py-2 align-middle text-sm',
+                        'align-middle text-sm',
+                        col.cellClassName ?? 'px-3 py-2',
                         autoFitContent && 'whitespace-nowrap',
                         col.header === 'Name' && typeof col.accessor !== 'function'
                           ? 'text-text font-medium'
                           : 'text-text-secondary'
                       )}
+                      style={{
+                        width: col.width,
+                        minWidth: col.width,
+                        maxWidth: col.width,
+                      }}
                     >
                       {(() => {
                         const cellValue =
