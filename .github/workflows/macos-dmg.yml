@@ -6,7 +6,7 @@ on:
       - '*'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-dmg:
@@ -72,3 +72,11 @@ jobs:
           name: ptkublet-dmg-${{ env.APP_VERSION }}
           path: frontend/src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
+
+      - name: Publish GitHub Release with DMG
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: frontend/src-tauri/target/release/bundle/dmg/*.dmg
