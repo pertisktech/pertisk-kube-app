@@ -641,7 +641,7 @@ export const ResourceMapPage = () => {
         backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--color-bg').trim() || '#0b1020',
       });
 
-      const stamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
+      const stamp = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-');
       const filename = `resource-map-${stamp}.png`;
 
       if (isTauri()) {
