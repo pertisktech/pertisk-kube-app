@@ -153,8 +153,25 @@ fn append_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
     }
 }
 
+fn ensure_executable(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(path) {
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(path, perms);
+        }
+    }
+}
+
 fn bundled_bin_dirs(app: &AppHandle) -> Vec<PathBuf> {
     let mut dirs = Vec::<PathBuf>::new();
+
+    append_unique_path(
+        &mut dirs,
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("bundle-resources"),
+    );
 
     if let Ok(resource_dir) = app.path().resource_dir() {
         append_unique_path(&mut dirs, resource_dir.clone());
@@ -170,6 +187,27 @@ fn bundled_bin_dirs(app: &AppHandle) -> Vec<PathBuf> {
     }
 
     dirs
+}
+
+fn prepare_embedded_ktail(app: &AppHandle) -> Option<PathBuf> {
+    let source = bundled_bin_dirs(app)
+        .into_iter()
+        .flat_map(|dir| [dir.join("ktail"), dir.join("pertisk-ktail")])
+        .find(|path| path.exists())?;
+
+    let app_config_dir = app.path().app_config_dir().ok()?;
+    let tool_dir = app_config_dir.join("embedded-tools");
+    if fs::create_dir_all(&tool_dir).is_err() {
+        return None;
+    }
+
+    let dst = tool_dir.join("ktail");
+    if fs::copy(&source, &dst).is_err() {
+        return None;
+    }
+    ensure_executable(&dst);
+
+    Some(tool_dir)
 }
 
 fn login_shell_env_cache() -> &'static HashMap<String, String> {
@@ -529,6 +567,12 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
 
     if !bundled_dirs.is_empty() {
         command.env("PERTISK_BUNDLED_BIN_DIRS", bundled_dirs.join(":"));
+    }
+
+    if let Some(tool_dir) = prepare_embedded_ktail(app) {
+        if let Some(tool_dir_str) = tool_dir.to_str() {
+            command.env("PERTISK_TOOL_BIN_DIR", tool_dir_str);
+        }
     }
 
     if let Some(kubeconfig_path) = cfg.kubeconfig_path.as_deref() {

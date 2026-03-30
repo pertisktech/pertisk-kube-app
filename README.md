@@ -193,7 +193,8 @@ make build-macos-dmg
 **DMG Builds:**
 - `make build-macos-dmg` creates a bundled `PTKublet_0.1.0_aarch64.dmg` for distribution.
 - The bundled app includes the backend sidecar binary and will also bundle `ktail` when available at build time.
-- `make build-macos-dmg` auto-builds `../pertisk-ktail` (if that sibling repository exists) and embeds its `ktail` binary.
+- `make build-macos-dmg` auto-builds `../pertisk-ktail` or `../ktail` (if a sibling repository exists) and embeds its `ktail` binary.
+- If no local ktail repository is found, `make build-macos-dmg` tries a shallow clone from `https://github.com/pertisktech/pertisk-ktail.git` and builds from that.
 - You can also explicitly provide a ktail path: `KTAIL_BINARY_PATH=/absolute/path/to/ktail make build-macos-dmg`.
 - If `ktail` is not bundled and not installed on the host, `ktail` terminal actions will not work until one of those is available.
 - For development, `make run-desktop` auto-discovers the binary from standard workspace layout.

@@ -24,6 +24,9 @@ fn copy_if_exists(src: &Path, dst: &Path) {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=KTAIL_BINARY_PATH");
+    println!("cargo:rerun-if-changed=build.rs");
+
     // Copy compiled binaries to a bundlable location.
     let backend_src = Path::new("../../target/release/pertisk-kube-backend");
     let bundle_dir = Path::new("./bundle-resources");
@@ -34,8 +37,12 @@ fn main() {
         ktail_env_path.as_deref().map(Path::new),
         Some(Path::new("../../../pertisk-ktail/target/release/ktail")),
         Some(Path::new("../../../pertisk-ktail/target/release/pertisk-ktail")),
+        Some(Path::new("../../../ktail/target/release/ktail")),
+        Some(Path::new("../../../ktail/target/release/pertisk-ktail")),
         Some(Path::new("../../pertisk-ktail/target/release/ktail")),
         Some(Path::new("../../pertisk-ktail/target/release/pertisk-ktail")),
+        Some(Path::new("../../ktail/target/release/ktail")),
+        Some(Path::new("../../ktail/target/release/pertisk-ktail")),
     ];
     let ktail_src = ktail_candidates
         .into_iter()

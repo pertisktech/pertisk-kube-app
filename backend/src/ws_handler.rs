@@ -81,6 +81,10 @@ fn append_unique_path(paths: &mut Vec<String>, value: String) {
 fn host_shell_path(home: &str) -> String {
     let mut entries = Vec::<String>::new();
 
+    if let Ok(tool_dir) = env::var("PERTISK_TOOL_BIN_DIR") {
+        append_unique_path(&mut entries, tool_dir);
+    }
+
     if let Ok(extra_dirs) = env::var("PERTISK_BUNDLED_BIN_DIRS") {
         for entry in extra_dirs.split(':').map(str::trim).filter(|entry| !entry.is_empty()) {
             append_unique_path(&mut entries, entry.to_string());
@@ -95,6 +99,7 @@ fn host_shell_path(home: &str) -> String {
 
     for entry in [
         format!("{home}/.local/bin"),
+        format!("{home}/.cargo/bin"),
         "/opt/homebrew/bin".to_string(),
         "/opt/homebrew/sbin".to_string(),
         "/usr/local/bin".to_string(),
@@ -253,6 +258,16 @@ async fn spawn_exec_shell(
         cmd.env("HOME", &home);
         cmd.env("SHELL", &shell_bin);
         cmd.env("PATH", path);
+        if let Ok(tool_dir) = env::var("PERTISK_TOOL_BIN_DIR") {
+            if !tool_dir.trim().is_empty() {
+                cmd.env("PERTISK_TOOL_BIN_DIR", tool_dir);
+            }
+        }
+        if let Ok(bundled_dirs) = env::var("PERTISK_BUNDLED_BIN_DIRS") {
+            if !bundled_dirs.trim().is_empty() {
+                cmd.env("PERTISK_BUNDLED_BIN_DIRS", bundled_dirs);
+            }
+        }
         cmd.env("TERM", "xterm-256color");
         cmd.env("LANG", "en_US.UTF-8");
         

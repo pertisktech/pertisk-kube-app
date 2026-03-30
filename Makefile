@@ -48,7 +48,39 @@ build-backend:
 run: run-desktop
 
 build-desktop: build-backend frontend-install
-	cd frontend && VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --config '{"version":"$(VERSION)"}'
+	@KTAIL_BIN=""; \
+	KTAIL_REPO=""; \
+	if [ -f ../pertisk-ktail/Cargo.toml ]; then \
+		KTAIL_REPO="../pertisk-ktail"; \
+	elif [ -f ../ktail/Cargo.toml ]; then \
+		KTAIL_REPO="../ktail"; \
+	fi; \
+	if [ -z "$$KTAIL_REPO" ]; then \
+		TMP_KTAIL_DIR="/tmp/pertisk-ktail-$$USER"; \
+		echo "Fetching pertisk-ktail source from GitHub..."; \
+		rm -rf "$$TMP_KTAIL_DIR"; \
+		git clone --depth 1 https://github.com/pertisktech/pertisk-ktail.git "$$TMP_KTAIL_DIR" >/dev/null 2>&1 || true; \
+		if [ -f "$$TMP_KTAIL_DIR/Cargo.toml" ]; then \
+			KTAIL_REPO="$$TMP_KTAIL_DIR"; \
+		fi; \
+	fi; \
+	if [ -n "$$KTAIL_REPO" ]; then \
+		echo "Building ktail release binary from $$KTAIL_REPO..."; \
+		cargo build --release --manifest-path "$$KTAIL_REPO/Cargo.toml"; \
+		if [ -x "$$KTAIL_REPO/target/release/ktail" ]; then \
+			KTAIL_BIN="$$(cd "$$KTAIL_REPO/target/release" && pwd)/ktail"; \
+		elif [ -x "$$KTAIL_REPO/target/release/pertisk-ktail" ]; then \
+			KTAIL_BIN="$$(cd "$$KTAIL_REPO/target/release" && pwd)/pertisk-ktail"; \
+		fi; \
+	fi; \
+	if [ -n "$$KTAIL_BIN" ]; then \
+		echo "Using ktail binary: $$KTAIL_BIN"; \
+	else \
+		echo "ktail binary not auto-detected; build will continue without bundled ktail"; \
+	fi; \
+	TAURI_VERSION=$$(echo "$(VERSION)" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/'); \
+	if [ -z "$$TAURI_VERSION" ]; then TAURI_VERSION="0.1.0"; fi; \
+	cd frontend && KTAIL_BINARY_PATH="$$KTAIL_BIN" VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --config '{"version":"'"$$TAURI_VERSION"'"}'
 
 build-macos-dmg: frontend-install
 	@if [ "$$(uname -s)" != "Darwin" ]; then \
@@ -58,11 +90,28 @@ build-macos-dmg: frontend-install
 	@echo "Building backend release binary for bundling..."
 	cargo build --release -p pertisk-kube-backend
 	@KTAIL_BIN=""; \
-	if [ -d ../pertisk-ktail ]; then \
-		echo "Building ktail release binary from ../pertisk-ktail..."; \
-		(cd ../pertisk-ktail && cargo build --release); \
-		if [ -x ../pertisk-ktail/target/release/ktail ]; then \
-			KTAIL_BIN="$$PWD/../pertisk-ktail/target/release/ktail"; \
+	KTAIL_REPO=""; \
+	if [ -f ../pertisk-ktail/Cargo.toml ]; then \
+		KTAIL_REPO="../pertisk-ktail"; \
+	elif [ -f ../ktail/Cargo.toml ]; then \
+		KTAIL_REPO="../ktail"; \
+	fi; \
+	if [ -z "$$KTAIL_REPO" ]; then \
+		TMP_KTAIL_DIR="/tmp/pertisk-ktail-$$USER"; \
+		echo "Fetching pertisk-ktail source from GitHub..."; \
+		rm -rf "$$TMP_KTAIL_DIR"; \
+		git clone --depth 1 https://github.com/pertisktech/pertisk-ktail.git "$$TMP_KTAIL_DIR" >/dev/null 2>&1 || true; \
+		if [ -f "$$TMP_KTAIL_DIR/Cargo.toml" ]; then \
+			KTAIL_REPO="$$TMP_KTAIL_DIR"; \
+		fi; \
+	fi; \
+	if [ -n "$$KTAIL_REPO" ]; then \
+		echo "Building ktail release binary from $$KTAIL_REPO..."; \
+		cargo build --release --manifest-path "$$KTAIL_REPO/Cargo.toml"; \
+		if [ -x "$$KTAIL_REPO/target/release/ktail" ]; then \
+			KTAIL_BIN="$$(cd "$$KTAIL_REPO/target/release" && pwd)/ktail"; \
+		elif [ -x "$$KTAIL_REPO/target/release/pertisk-ktail" ]; then \
+			KTAIL_BIN="$$(cd "$$KTAIL_REPO/target/release" && pwd)/pertisk-ktail"; \
 		fi; \
 	fi; \
 	if [ -n "$$KTAIL_BIN" ]; then \
@@ -70,8 +119,10 @@ build-macos-dmg: frontend-install
 	else \
 		echo "ktail binary not auto-detected; build will continue without bundled ktail"; \
 	fi; \
-	echo "Building macOS DMG v$(VERSION)..."; \
-	cd frontend && KTAIL_BINARY_PATH="$$KTAIL_BIN" VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --bundles dmg --config '{"version":"$(VERSION)"}'
+	TAURI_VERSION=$$(echo "$(VERSION)" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/'); \
+	if [ -z "$$TAURI_VERSION" ]; then TAURI_VERSION="0.1.0"; fi; \
+	echo "Building macOS DMG v$$TAURI_VERSION (display $(VERSION))..."; \
+	cd frontend && KTAIL_BINARY_PATH="$$KTAIL_BIN" VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --bundles dmg --config '{"version":"'"$$TAURI_VERSION"'"}'
 	@echo ""
 	@echo "DMG output:"
 	@ls -lh frontend/src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null || echo "  (no .dmg found — check build output above)"
