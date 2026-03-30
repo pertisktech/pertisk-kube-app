@@ -57,8 +57,21 @@ build-macos-dmg: frontend-install
 	fi
 	@echo "Building backend release binary for bundling..."
 	cargo build --release -p pertisk-kube-backend
-	@echo "Building macOS DMG v$(VERSION)..."
-	cd frontend && VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --bundles dmg --config '{"version":"$(VERSION)"}'
+	@KTAIL_BIN=""; \
+	if [ -d ../pertisk-ktail ]; then \
+		echo "Building ktail release binary from ../pertisk-ktail..."; \
+		(cd ../pertisk-ktail && cargo build --release); \
+		if [ -x ../pertisk-ktail/target/release/ktail ]; then \
+			KTAIL_BIN="$$PWD/../pertisk-ktail/target/release/ktail"; \
+		fi; \
+	fi; \
+	if [ -n "$$KTAIL_BIN" ]; then \
+		echo "Using ktail binary: $$KTAIL_BIN"; \
+	else \
+		echo "ktail binary not auto-detected; build will continue without bundled ktail"; \
+	fi; \
+	echo "Building macOS DMG v$(VERSION)..."; \
+	cd frontend && KTAIL_BINARY_PATH="$$KTAIL_BIN" VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --bundles dmg --config '{"version":"$(VERSION)"}'
 	@echo ""
 	@echo "DMG output:"
 	@ls -lh frontend/src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null || echo "  (no .dmg found — check build output above)"

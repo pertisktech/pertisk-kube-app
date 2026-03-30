@@ -153,6 +153,25 @@ fn append_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
     }
 }
 
+fn bundled_bin_dirs(app: &AppHandle) -> Vec<PathBuf> {
+    let mut dirs = Vec::<PathBuf>::new();
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        append_unique_path(&mut dirs, resource_dir.clone());
+        append_unique_path(&mut dirs, resource_dir.join("bundle-resources"));
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            append_unique_path(&mut dirs, dir.to_path_buf());
+            append_unique_path(&mut dirs, dir.join("../Resources"));
+            append_unique_path(&mut dirs, dir.join("../Resources/bundle-resources"));
+        }
+    }
+
+    dirs
+}
+
 fn login_shell_env_cache() -> &'static HashMap<String, String> {
     static CACHE: OnceLock<HashMap<String, String>> = OnceLock::new();
     CACHE.get_or_init(read_login_shell_env)
@@ -501,6 +520,16 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
         .stderr(Stdio::inherit());
 
     configure_sidecar_environment(&mut command);
+
+    let bundled_dirs = bundled_bin_dirs(app)
+        .into_iter()
+        .filter(|path| path.exists())
+        .filter_map(|path| path.to_str().map(str::to_string))
+        .collect::<Vec<_>>();
+
+    if !bundled_dirs.is_empty() {
+        command.env("PERTISK_BUNDLED_BIN_DIRS", bundled_dirs.join(":"));
+    }
 
     if let Some(kubeconfig_path) = cfg.kubeconfig_path.as_deref() {
         if !kubeconfig_path.trim().is_empty() {

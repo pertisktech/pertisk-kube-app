@@ -69,6 +69,47 @@ fn is_forbidden_or_missing_watch_api(err: &watcher::Error) -> bool {
 
 const PREFERRED_SHELL_SCRIPT: &str = "if [ -x /bin/zsh ]; then exec /bin/zsh -il; elif command -v zsh >/dev/null 2>&1; then exec zsh -il; elif [ -x /bin/bash ]; then exec /bin/bash -il; elif command -v bash >/dev/null 2>&1; then exec bash -il; else exec /bin/sh -i; fi";
 
+fn append_unique_path(paths: &mut Vec<String>, value: String) {
+    if value.trim().is_empty() {
+        return;
+    }
+    if !paths.iter().any(|existing| existing == &value) {
+        paths.push(value);
+    }
+}
+
+fn host_shell_path(home: &str) -> String {
+    let mut entries = Vec::<String>::new();
+
+    if let Ok(extra_dirs) = env::var("PERTISK_BUNDLED_BIN_DIRS") {
+        for entry in extra_dirs.split(':').map(str::trim).filter(|entry| !entry.is_empty()) {
+            append_unique_path(&mut entries, entry.to_string());
+        }
+    }
+
+    if let Ok(existing_path) = env::var("PATH") {
+        for entry in existing_path.split(':').map(str::trim).filter(|entry| !entry.is_empty()) {
+            append_unique_path(&mut entries, entry.to_string());
+        }
+    }
+
+    for entry in [
+        format!("{home}/.local/bin"),
+        "/opt/homebrew/bin".to_string(),
+        "/opt/homebrew/sbin".to_string(),
+        "/usr/local/bin".to_string(),
+        "/usr/local/sbin".to_string(),
+        "/usr/bin".to_string(),
+        "/usr/sbin".to_string(),
+        "/bin".to_string(),
+        "/sbin".to_string(),
+    ] {
+        append_unique_path(&mut entries, entry);
+    }
+
+    entries.join(":")
+}
+
 fn node_debug_namespace() -> String {
     env::var("NODE_DEBUG_NAMESPACE")
         .ok()
@@ -202,12 +243,9 @@ async fn spawn_exec_shell(
 
         let home = std::env::var("HOME").unwrap_or_else(|_| "/home/appuser".to_string());
         let shell_bin = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-        // Include common macOS/Homebrew and Linux paths so desktop host-shell commands
-        // (e.g. ktail installed via brew) resolve correctly in packaged DMG runs.
-        let path = format!(
-            "{}/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
-            home
-        );
+        // Preserve inherited PATH and prepend bundled binary directories so packaged
+        // tools (like ktail) are available even when not installed system-wide.
+        let path = host_shell_path(&home);
         
         let mut cmd = CommandBuilder::new(shell_bin.clone());
         cmd.arg("-i");
