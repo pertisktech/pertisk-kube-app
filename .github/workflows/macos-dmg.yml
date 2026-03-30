@@ -60,7 +60,7 @@ jobs:
           echo "Resolved app version: ${VERSION}"
           echo "Resolved tauri version: ${TAURI_VERSION}"
 
-      - name: Validate macOS signing secrets
+      - name: Detect macOS signing configuration
         shell: bash
         run: |
           missing=0
@@ -78,9 +78,12 @@ jobs:
             fi
           done
 
-          if [[ "${missing}" -ne 0 ]]; then
-            echo "Refusing to publish unsigned macOS release artifacts." >&2
-            exit 1
+          if [[ "${missing}" -eq 0 ]]; then
+            echo "HAS_APPLE_SIGNING=true" >> "$GITHUB_ENV"
+            echo "Apple signing/notarization secrets detected."
+          else
+            echo "HAS_APPLE_SIGNING=false" >> "$GITHUB_ENV"
+            echo "Apple signing/notarization secrets are incomplete."
           fi
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -89,6 +92,14 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Fail tag release when Apple signing secrets are missing
+        if: github.ref_type == 'tag' && env.HAS_APPLE_SIGNING != 'true'
+        shell: bash
+        run: |
+          echo "Refusing to publish unsigned macOS release artifacts for tag builds." >&2
+          echo "Configure APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID in repository secrets." >&2
+          exit 1
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -115,6 +126,7 @@ jobs:
           fi
 
       - name: Build signed and notarized macOS DMG
+        if: env.HAS_APPLE_SIGNING == 'true'
         working-directory: frontend
         env:
           VITE_APP_VERSION: ${{ env.APP_VERSION }}
@@ -128,7 +140,17 @@ jobs:
         run: |
           npm run tauri:build -- --bundles dmg --config '{"version":"${{ env.TAURI_VERSION }}"}'
 
+      - name: Build unsigned macOS DMG (manual runs only)
+        if: env.HAS_APPLE_SIGNING != 'true' && github.event_name == 'workflow_dispatch'
+        working-directory: frontend
+        env:
+          VITE_APP_VERSION: ${{ env.APP_VERSION }}
+          KTAIL_BINARY_PATH: ${{ env.KTAIL_BINARY_PATH }}
+        run: |
+          npm run tauri:build -- --bundles dmg --config '{"version":"${{ env.TAURI_VERSION }}"}'
+
       - name: Verify DMG signatures and notarization staple
+        if: env.HAS_APPLE_SIGNING == 'true'
         shell: bash
         run: |
           DMG_PATH="$(ls -1 frontend/src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)"
@@ -150,6 +172,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub Release with DMG
+        if: github.ref_type == 'tag' && env.HAS_APPLE_SIGNING == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
