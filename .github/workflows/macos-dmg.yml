@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - '*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -59,6 +60,36 @@ jobs:
           echo "Resolved app version: ${VERSION}"
           echo "Resolved tauri version: ${TAURI_VERSION}"
 
+      - name: Validate macOS signing secrets
+        shell: bash
+        run: |
+          missing=0
+          for var in \
+            APPLE_CERTIFICATE \
+            APPLE_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY \
+            APPLE_ID \
+            APPLE_APP_SPECIFIC_PASSWORD \
+            APPLE_TEAM_ID
+          do
+            if [[ -z "${!var}" ]]; then
+              echo "Missing required secret: ${var}" >&2
+              missing=1
+            fi
+          done
+
+          if [[ "${missing}" -ne 0 ]]; then
+            echo "Refusing to publish unsigned macOS release artifacts." >&2
+            exit 1
+          fi
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
@@ -83,13 +114,33 @@ jobs:
             exit 1
           fi
 
-      - name: Build unsigned macOS DMG
+      - name: Build signed and notarized macOS DMG
         working-directory: frontend
         env:
           VITE_APP_VERSION: ${{ env.APP_VERSION }}
           KTAIL_BINARY_PATH: ${{ env.KTAIL_BINARY_PATH }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           npm run tauri:build -- --bundles dmg --config '{"version":"${{ env.TAURI_VERSION }}"}'
+
+      - name: Verify DMG signatures and notarization staple
+        shell: bash
+        run: |
+          DMG_PATH="$(ls -1 frontend/src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)"
+          if [[ -z "${DMG_PATH}" ]]; then
+            echo "No DMG produced" >&2
+            exit 1
+          fi
+
+          echo "Verifying DMG at ${DMG_PATH}"
+          codesign --verify --deep --strict --verbose=2 "${DMG_PATH}"
+          xcrun stapler validate "${DMG_PATH}"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "${DMG_PATH}"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
