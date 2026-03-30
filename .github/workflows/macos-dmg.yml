@@ -47,10 +47,17 @@ jobs:
           fi
 
           VERSION="${VERSION#v}"
-          VERSION="${VERSION//-/.}"
+
+          # Keep display/app version as-is, but force a strict semver for tauri config.
+          TAURI_VERSION="$(echo "${VERSION}" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+          if [[ -z "${TAURI_VERSION}" ]]; then
+            TAURI_VERSION="0.1.0"
+          fi
 
           echo "APP_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "TAURI_VERSION=${TAURI_VERSION}" >> "$GITHUB_ENV"
           echo "Resolved app version: ${VERSION}"
+          echo "Resolved tauri version: ${TAURI_VERSION}"
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -59,12 +66,30 @@ jobs:
       - name: Build bundled backend binary
         run: cargo build --release -p pertisk-kube-backend
 
+      - name: Build ktail binary for bundling
+        shell: bash
+        run: |
+          KTAIL_DIR="/tmp/pertisk-ktail"
+          rm -rf "${KTAIL_DIR}"
+          git clone --depth 1 https://github.com/pertisktech/pertisk-ktail.git "${KTAIL_DIR}"
+          cargo build --release --manifest-path "${KTAIL_DIR}/Cargo.toml"
+
+          if [[ -x "${KTAIL_DIR}/target/release/ktail" ]]; then
+            echo "KTAIL_BINARY_PATH=${KTAIL_DIR}/target/release/ktail" >> "$GITHUB_ENV"
+          elif [[ -x "${KTAIL_DIR}/target/release/pertisk-ktail" ]]; then
+            echo "KTAIL_BINARY_PATH=${KTAIL_DIR}/target/release/pertisk-ktail" >> "$GITHUB_ENV"
+          else
+            echo "ktail binary was not produced" >&2
+            exit 1
+          fi
+
       - name: Build unsigned macOS DMG
         working-directory: frontend
         env:
           VITE_APP_VERSION: ${{ env.APP_VERSION }}
+          KTAIL_BINARY_PATH: ${{ env.KTAIL_BINARY_PATH }}
         run: |
-          npm run tauri:build -- --bundles dmg --config '{"version":"${{ env.APP_VERSION }}"}'
+          npm run tauri:build -- --bundles dmg --config '{"version":"${{ env.TAURI_VERSION }}"}'
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
