@@ -53,6 +53,7 @@ pub struct AppState {
     /// True when the kube client is a placeholder (exec credential failed at startup).
     /// Used by the frontend to surface a "Login Required" banner.
     pub auth_placeholder: bool,
+    pub auth_message: Option<String>,
 }
 
 #[tokio::main]
@@ -65,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(env_filter)
         .init();
 
-    let (client, auth_placeholder) = utils::load_kube_client_with_status().await?;
+    let (client, kube_status) = utils::load_kube_client_with_status().await?;
 
     let username = env::var("USERNAME").unwrap_or_else(|_| "admin".to_string());
     let password = env::var("PASSWORD").unwrap_or_else(|_| "admin".to_string());
@@ -90,7 +91,8 @@ async fn main() -> anyhow::Result<()> {
         jwt_secret,
         port_forward_state,
         workload_metric_history: Arc::new(RwLock::new(Vec::new())),
-        auth_placeholder,
+        auth_placeholder: kube_status.is_placeholder,
+        auth_message: kube_status.user_message,
     };
 
     let cors = CorsLayer::new()
@@ -468,10 +470,12 @@ async fn auth_status(State(state): State<AppState>) -> impl IntoResponse {
         (
             false,
             Some(
-                "Kubernetes credentials are not available. \
-                 The exec credential plugin (e.g. kubectl oidc-login) failed at startup. \
-                 Use \"Login with Browser\" to authenticate."
-                    .to_string(),
+                state
+                    .auth_message
+                    .clone()
+                    .unwrap_or_else(|| {
+                        "Kubernetes credentials are not available. Check kubeconfig/context and try again.".to_string()
+                    }),
             ),
         )
     } else {
@@ -487,18 +491,18 @@ async fn auth_status(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-async fn readiness(State(_state): State<AppState>) -> impl IntoResponse {
-    let client = match utils::load_kube_client().await {
-        Ok(client) => client,
-        Err(err) => {
-            error!("Failed to build Kubernetes client for readiness probe: {}", err);
-            return (StatusCode::SERVICE_UNAVAILABLE, Json(HealthResponse {
+async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
+    if state.auth_placeholder {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(HealthResponse {
                 status: "not ready".into(),
-            })).into_response();
-        }
-    };
+            }),
+        )
+            .into_response();
+    }
 
-    match client.apiserver_version().await {
+    match state.client.apiserver_version().await {
         Ok(_) => {
             let body = HealthResponse {
                 status: "ready".into(),

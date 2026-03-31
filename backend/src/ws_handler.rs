@@ -26,7 +26,7 @@ use tokio::{
 };
 use tracing::{error, info, warn};
 
-use crate::{models::CustomResourceItem, utils::load_kube_client, AppState};
+use crate::{models::CustomResourceItem, AppState};
 
 fn custom_resource_from_dynamic(obj: DynamicObject) -> CustomResourceItem {
     let manifest = serde_json::to_value(&obj).unwrap_or_default();
@@ -64,6 +64,19 @@ fn is_forbidden_or_missing_watch_api(err: &watcher::Error) -> bool {
         | watcher::Error::InitialListFailed(client_err)
         | watcher::Error::WatchStartFailed(client_err) => is_forbidden_or_missing_api(client_err),
         _ => false,
+    }
+}
+
+fn placeholder_error_message(state: &AppState) -> Option<String> {
+    if state.auth_placeholder {
+        Some(
+            state.auth_message.clone().unwrap_or_else(|| {
+                "Kubernetes cluster configuration is not available. Add kubeconfig and restart the app."
+                    .to_string()
+            }),
+        )
+    } else {
+        None
     }
 }
 
@@ -903,22 +916,18 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 }
 
 async fn watch_pods(
-    _state: AppState,
+    state: AppState,
     tx: tokio::sync::mpsc::Sender<ServerMessage>,
 ) {
     use k8s_openapi::api::core::v1::Pod;
     use kube::api::ListParams;
 
-    let client = match load_kube_client().await {
-        Ok(client) => client,
-        Err(err) => {
-            error!("Failed to create Kubernetes client for pod watch: {}", err);
-            let _ = tx.send(ServerMessage::Error {
-                message: format!("Failed to initialize Kubernetes client: {}", err),
-            }).await;
-            return;
-        }
-    };
+    if let Some(message) = placeholder_error_message(&state) {
+        let _ = tx.send(ServerMessage::Error { message }).await;
+        return;
+    }
+
+    let client = state.client.clone();
 
     let api: Api<Pod> = Api::all(client);
     
@@ -1044,21 +1053,17 @@ async fn watch_pods(
 macro_rules! create_watch_fn {
     ($fn_name:ident, $resource_type:ty, $resource_name:expr) => {
         async fn $fn_name(
-            _state: AppState,
+            state: AppState,
             tx: tokio::sync::mpsc::Sender<ServerMessage>,
         ) {
             use kube::api::ListParams;
 
-            let client = match load_kube_client().await {
-                Ok(client) => client,
-                Err(err) => {
-                    error!("Failed to create Kubernetes client for {} watch: {}", $resource_name, err);
-                    let _ = tx.send(ServerMessage::Error {
-                        message: format!("Failed to initialize Kubernetes client: {}", err),
-                    }).await;
-                    return;
-                }
-            };
+            if let Some(message) = placeholder_error_message(&state) {
+                let _ = tx.send(ServerMessage::Error { message }).await;
+                return;
+            }
+
+            let client = state.client.clone();
 
             let api: Api<$resource_type> = Api::all(client);
             
@@ -1208,21 +1213,17 @@ fn vwc_api_resource() -> ApiResource {
 }
 
 async fn watch_dynamic_cluster_resource(
-    _state: AppState,
+    state: AppState,
     tx: tokio::sync::mpsc::Sender<ServerMessage>,
     ar: ApiResource,
     resource_name: &str,
 ) {
-    let client = match load_kube_client().await {
-        Ok(client) => client,
-        Err(err) => {
-            error!("Failed to create Kubernetes client for {} watch: {}", resource_name, err);
-            let _ = tx.send(ServerMessage::Error {
-                message: format!("Failed to initialize Kubernetes client: {}", err),
-            }).await;
-            return;
-        }
-    };
+    if let Some(message) = placeholder_error_message(&state) {
+        let _ = tx.send(ServerMessage::Error { message }).await;
+        return;
+    }
+
+    let client = state.client.clone();
 
     let api: Api<DynamicObject> = Api::all_with(client, &ar);
     info!("Fetching initial {} list...", resource_name);
@@ -1321,21 +1322,17 @@ async fn watch_vwcs(state: AppState, tx: tokio::sync::mpsc::Sender<ServerMessage
 }
 
 async fn watch_custom_resources(
-    _state: AppState,
+    state: AppState,
     tx: tokio::sync::mpsc::Sender<ServerMessage>,
     resource_name: &str,
     crd_name: &str,
 ) {
-    let client = match load_kube_client().await {
-        Ok(client) => client,
-        Err(err) => {
-            error!("Failed to create Kubernetes client for custom resource watch {}: {}", crd_name, err);
-            let _ = tx.send(ServerMessage::Error {
-                message: format!("Failed to initialize Kubernetes client: {}", err),
-            }).await;
-            return;
-        }
-    };
+    if let Some(message) = placeholder_error_message(&state) {
+        let _ = tx.send(ServerMessage::Error { message }).await;
+        return;
+    }
+
+    let client = state.client.clone();
 
     let crd_api: Api<CustomResourceDefinition> = Api::all(client.clone());
     let crd = match crd_api.get(crd_name).await {

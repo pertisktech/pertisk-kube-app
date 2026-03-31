@@ -14,6 +14,47 @@ use std::collections::HashMap;
 use std::env;
 use tracing::warn;
 
+#[derive(Clone, Debug, Default)]
+pub struct KubeClientStatus {
+    pub is_placeholder: bool,
+    pub user_message: Option<String>,
+}
+
+fn has_accessible_kubeconfig() -> bool {
+    let configured_paths = env::var("KUBECONFIG")
+        .ok()
+        .map(|raw| {
+            raw.split(':')
+                .map(str::trim)
+                .filter(|segment| !segment.is_empty())
+                .map(std::path::PathBuf::from)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if !configured_paths.is_empty() {
+        return configured_paths.iter().any(|path| path.exists());
+    }
+
+    match env::var("HOME") {
+        Ok(home) if !home.trim().is_empty() => {
+            std::path::PathBuf::from(home).join(".kube/config").exists()
+        }
+        _ => false,
+    }
+}
+
+fn default_placeholder_user_message() -> String {
+    let has_incluster_env = env::var("KUBERNETES_SERVICE_HOST").is_ok()
+        && env::var("KUBERNETES_SERVICE_PORT").is_ok();
+
+    if !has_incluster_env && !has_accessible_kubeconfig() {
+        return "No Kubernetes cluster configuration found. Add a kubeconfig at ~/.kube/config or set KUBECONFIG, then restart the app.".to_string();
+    }
+
+    "Kubernetes credentials are not available. Check your kubeconfig/context and re-authenticate, then restart the app.".to_string()
+}
+
 pub fn kube_list_warning_response(resource_name: &str, err: &kube::Error) -> Option<Response> {
     if let kube::Error::Api(api_err) = err {
         if api_err.code == 403 || api_err.code == 404 {
@@ -64,10 +105,9 @@ pub async fn load_kube_client() -> anyhow::Result<Client> {
     load_kube_client_with_status().await.map(|(c, _)| c)
 }
 
-/// Returns `(client, is_placeholder)`.
-/// `is_placeholder = true` means the exec credential failed and the client has no auth —
-/// all Kubernetes API calls will fail until the user re-authenticates.
-pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, bool)> {
+/// Returns `(client, status)`.
+/// `status.is_placeholder = true` means credentials/configuration were not available at startup.
+pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, KubeClientStatus)> {
     let context = env::var("KUBE_CONTEXT").ok().filter(|s| !s.trim().is_empty());
 
     if let Some(ref ctx) = context {
@@ -88,7 +128,7 @@ pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, bool)> {
         .await
         {
             Ok(Ok(cfg)) => match Client::try_from(cfg) {
-                Ok(c) => return Ok((c, false)),
+                Ok(c) => return Ok((c, KubeClientStatus::default())),
                 Err(e) => warn!(
                     "Kubernetes client build failed for context '{}': {}. \
                      Starting with placeholder client.",
@@ -113,19 +153,35 @@ pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, bool)> {
         // Exec credential failed. Build a client from the same kubeconfig but with
         // the exec plugin stripped out. The server starts, health probes pass, and
         // API calls return 401/403 until the user's credentials are working.
-        return build_placeholder_client(Some(ctx)).await.map(|c| (c, true));
+        return build_placeholder_client(Some(ctx)).await.map(|c| {
+            (
+                c,
+                KubeClientStatus {
+                    is_placeholder: true,
+                    user_message: Some(default_placeholder_user_message()),
+                },
+            )
+        });
     }
 
     // No explicit KUBE_CONTEXT — use system default; fall back to placeholder on failure.
     match Client::try_default().await {
-        Ok(c) => Ok((c, false)),
+        Ok(c) => Ok((c, KubeClientStatus::default())),
         Err(e) => {
             warn!(
                 "Default Kubernetes client init failed ({}). \
                  Starting with placeholder client.",
                 e
             );
-            build_placeholder_client(None).await.map(|c| (c, true))
+            build_placeholder_client(None).await.map(|c| {
+                (
+                    c,
+                    KubeClientStatus {
+                        is_placeholder: true,
+                        user_message: Some(default_placeholder_user_message()),
+                    },
+                )
+            })
         }
     }
 }

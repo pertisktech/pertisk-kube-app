@@ -480,16 +480,21 @@ pub async fn list_pods(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
-pub async fn list_nodes(State(_state): State<AppState>) -> impl IntoResponse {
+pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Node;
 
-    let client = match load_kube_client().await {
-        Ok(client) => client,
-        Err(err) => {
-            error!("Failed to create Kubernetes client while listing nodes: {}", err);
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    if state.auth_placeholder {
+        error!(
+            "Cannot list nodes: {}",
+            state
+                .auth_message
+                .clone()
+                .unwrap_or_else(|| "Kubernetes cluster configuration is not available.".to_string())
+        );
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
+    let client = state.client.clone();
     let api: Api<Node> = Api::all(client.clone());
     match api.list(&ListParams::default()).await {
         Ok(list) => {
@@ -3271,20 +3276,25 @@ pub async fn list_cronjobs(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
-pub async fn get_dashboard_summary(State(_state): State<AppState>) -> impl IntoResponse {
+pub async fn get_dashboard_summary(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::{
         apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet},
         batch::v1::{CronJob, Job},
         core::v1::{Event, Namespace, Pod},
     };
 
-    let client = match load_kube_client().await {
-        Ok(client) => client,
-        Err(err) => {
-            error!("Failed to create Kubernetes client while building dashboard summary: {}", err);
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    if state.auth_placeholder {
+        error!(
+            "Cannot build dashboard summary: {}",
+            state
+                .auth_message
+                .clone()
+                .unwrap_or_else(|| "Kubernetes cluster configuration is not available.".to_string())
+        );
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
+    let client = state.client.clone();
 
     let namespaces_api: Api<Namespace> = Api::all(client.clone());
     let pods_api: Api<Pod> = Api::all(client.clone());

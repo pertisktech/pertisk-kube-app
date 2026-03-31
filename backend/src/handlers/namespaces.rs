@@ -8,21 +8,25 @@ use kube::{api::{DeleteParams, ListParams}, Api};
 use tracing::{error, info};
 
 use crate::models::*;
-use crate::utils::{kube_list_warning_response, load_kube_client};
+use crate::utils::kube_list_warning_response;
 use crate::AppState;
 
-pub async fn list_namespaces(State(_state): State<AppState>) -> impl IntoResponse {
+pub async fn list_namespaces(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Namespace;
 
-    let client = match load_kube_client().await {
-        Ok(client) => client,
-        Err(err) => {
-            error!("Failed to create Kubernetes client while listing namespaces: {}", err);
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
+    if state.auth_placeholder {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": state.auth_message.clone().unwrap_or_else(|| {
+                    "Kubernetes cluster configuration is not available.".to_string()
+                })
+            })),
+        )
+            .into_response();
+    }
 
-    let api: Api<Namespace> = Api::all(client);
+    let api: Api<Namespace> = Api::all(state.client.clone());
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<NamespaceItem> = list

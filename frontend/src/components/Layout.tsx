@@ -120,6 +120,24 @@ const STORAGE_ITEMS: NavItem[] = [
   { label: 'Storage Classes', path: '/storage/storageclasses', icon: Database },
 ];
 
+function getErrorMessage(err: unknown): string | null {
+  if (err instanceof Error && err.message.trim()) return err.message;
+  if (typeof err === 'string' && err.trim()) return err;
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return null;
+}
+
+function isNoKubeconfigError(message: string | null): boolean {
+  if (!message) return false;
+  const normalized = message.toLowerCase();
+  return normalized.includes('no kubeconfig file found')
+    || normalized.includes('no kubeconfig files found')
+    || normalized.includes('no kubernetes cluster configuration found');
+}
+
 const CONFIG_ITEMS: NavItem[] = [
   { label: 'Config Maps', path: '/config/configmaps', icon: FileText },
   { label: 'Secrets', path: '/config/secrets', icon: KeyRound },
@@ -256,9 +274,9 @@ export const Layout = () => {
 
         // Check if no kubeconfig files were found
         if (!candidates || candidates.length === 0) {
-          const errorMsg = 'No kubeconfig files found. Please check your KUBECONFIG environment variable or ensure ~/.kube/config exists.';
-          setKubeconfigError(errorMsg);
-          toast.error(errorMsg);
+          setKubeconfigError(null);
+          setKubeClusters([]);
+          setSelectedClusterContext('');
           setKubeconfigLoading(false);
           setKubeconfigInitialized(true);
           return;
@@ -281,20 +299,28 @@ export const Layout = () => {
         if (cancelled) return;
         setKubeClusters(clusters);
 
-        // If no clusters found and no context set, force user to select
-        if (clusters.length === 0 && !currentContext) {
-          toast.error('No cluster contexts found in kubeconfig. Please add a context or select a different kubeconfig.');
-        }
-
         if (!currentContext) {
           const currentCluster = clusters.find((item) => item.isCurrent)?.context ?? '';
           setSelectedClusterContext(currentCluster);
         }
       } catch (err) {
         if (cancelled) return;
-        const errorMsg = err instanceof Error ? err.message : 'Failed to load kubeconfig options. Check backend configuration.';
-        setKubeconfigError(errorMsg);
-        toast.error(errorMsg);
+        const rawMessage = getErrorMessage(err);
+        const auth = await getDesktopAuthStatus();
+        const resolvedMessage =
+          rawMessage
+          || auth.message
+          || 'No Kubernetes cluster configuration found. Add a kubeconfig at ~/.kube/config or set KUBECONFIG, then restart the app.';
+
+        if (isNoKubeconfigError(resolvedMessage)) {
+          setKubeconfigError(null);
+          setKubeClusters([]);
+          setSelectedClusterContext('');
+          return;
+        }
+
+        setKubeconfigError(resolvedMessage);
+        toast.error(resolvedMessage);
       } finally {
         if (!cancelled) {
           setKubeconfigLoading(false);
@@ -358,6 +384,12 @@ export const Layout = () => {
         setSelectedClusterContext((prev) => prev || currentCluster);
       }
     } catch (err) {
+      const rawMessage = getErrorMessage(err);
+      if (isNoKubeconfigError(rawMessage)) {
+        setKubeClusters([]);
+        setSelectedClusterContext('');
+        return;
+      }
       setKubeClusters([]);
       toast.error(err instanceof Error ? err.message : 'Failed to load clusters for kubeconfig.');
     } finally {
@@ -1595,8 +1627,8 @@ export const Layout = () => {
               <div className="flex flex-col gap-0.5 min-w-0">
                 <div className="text-sm font-medium text-amber-600">Authentication required</div>
                 <div className="text-xs text-amber-500">
-                  Credentials are expired or the OIDC provider was unreachable at startup.
-                  Click <strong>Login with Browser</strong> to re-authenticate.
+                  {authStatus.message
+                    || 'Credentials are expired or the OIDC provider was unreachable at startup. Click Login with Browser to re-authenticate.'}
                 </div>
               </div>
             </div>

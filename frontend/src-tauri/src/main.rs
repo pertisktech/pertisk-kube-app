@@ -615,7 +615,10 @@ fn discover_kubeconfig_candidates() -> Vec<String> {
         for item in from_env.split(':') {
             let path = item.trim();
             if !path.is_empty() {
-                candidates.push(path.to_string());
+                let candidate = PathBuf::from(path);
+                if candidate.exists() {
+                    candidates.push(candidate.to_string_lossy().to_string());
+                }
             }
         }
     }
@@ -623,14 +626,18 @@ fn discover_kubeconfig_candidates() -> Vec<String> {
     if let Ok(home) = std::env::var("HOME") {
         let kube_dir = PathBuf::from(home).join(".kube");
         let default_config = kube_dir.join("config");
-        candidates.push(default_config.to_string_lossy().to_string());
+        if default_config.exists() {
+            candidates.push(default_config.to_string_lossy().to_string());
+        }
 
         if let Ok(entries) = fs::read_dir(kube_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                     if ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml") {
-                        candidates.push(path.to_string_lossy().to_string());
+                        if path.exists() {
+                            candidates.push(path.to_string_lossy().to_string());
+                        }
                     }
                 }
             }
@@ -1133,8 +1140,9 @@ fn list_kubeconfig_candidates() -> Vec<String> {
 
 #[tauri::command]
 fn list_kubeconfig_clusters(kubeconfig_path: Option<String>) -> Result<Vec<KubeconfigCluster>, String> {
-    let path = resolve_kubeconfig_path(kubeconfig_path)
-        .ok_or_else(|| "No kubeconfig file found.".to_string())?;
+    let Some(path) = resolve_kubeconfig_path(kubeconfig_path) else {
+        return Ok(Vec::new());
+    };
 
     parse_kubeconfig_clusters(&path).map_err(|e| format!("failed to parse kubeconfig clusters: {e}"))
 }
