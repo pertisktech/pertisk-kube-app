@@ -132,7 +132,7 @@ export const ApplyYamlDialog = ({ onClose }: ApplyYamlDialogProps) => {
         </div>
 
         {/* Editor */}
-        <div className="flex-1 overflow-hidden">
+        <div className="yaml-editor-pane flex-1 overflow-hidden">
           <AceEditor
             mode="yaml"
             theme={theme?.isDark ? 'tomorrow_night' : 'github'}

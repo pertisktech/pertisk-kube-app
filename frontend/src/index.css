@@ -474,6 +474,63 @@ body,
   background: color-mix(in srgb, var(--color-surface-elevated) 85%, black 15%) !important;
 }
 
+/* YAML editor — semantic token colors
+   Ace YAML token → CSS class mapping:
+     meta.tag                  → .ace_meta.ace_tag           (keys, e.g. "apiVersion")
+     keyword                   → .ace_keyword                (colon separator)
+     text                      → NO SPAN emitted (plain text node, inherits base color)
+     string                    → .ace_string                 (quoted string values)
+     constant.numeric          → .ace_constant.ace_numeric   (numbers)
+     constant.language         → .ace_constant.ace_language  (anchors &foo, *ref)
+     constant.language.boolean → .ace_constant.ace_language.ace_boolean (true/false/yes/no)
+     list.markup               → .ace_list.ace_markup        (-, ---, ...)
+     comment                   → .ace_comment
+
+   NOTE: Ace's renderer deliberately skips <span> for "text"-type tokens (raw text node).
+   To color unquoted scalar values we must override the editor's base foreground color.
+*/
+
+/* Base foreground = value color.
+   This colors all unquoted scalars (Deployment, nginx:latest, my-app, …)
+   which are emitted as classless text nodes and inherit the editor foreground. */
+.yaml-editor-pane .ace-tomorrow-night,
+.yaml-editor-pane .ace-github {
+  color: #C18971 !important;
+}
+
+/* Keys (meta.tag token → .ace_meta.ace_tag) */
+.yaml-editor-pane .ace_meta.ace_tag {
+  color: #3CC7B0 !important;
+}
+
+/* Quoted string values */
+.yaml-editor-pane .ace_string {
+  color: #C18971 !important;
+}
+
+/* Numbers */
+.yaml-editor-pane .ace_constant.ace_numeric {
+  color: var(--color-text) !important;
+}
+
+/* Booleans / null (true, false, yes, no) */
+.yaml-editor-pane .ace_constant.ace_language {
+  color: #549AD3 !important;
+}
+
+/* Structural: colon separators, list markers, document markers */
+.yaml-editor-pane .ace_keyword,
+.yaml-editor-pane .ace_list.ace_markup {
+  color: var(--color-text) !important;
+  opacity: 0.45;
+}
+
+/* Comments */
+.yaml-editor-pane .ace_comment {
+  color: var(--color-text) !important;
+  opacity: 0.35;
+}
+
 /* Workload overview charts — use theme text color so labels are visible in dark/light mode */
 .chart-theme-text text {
   fill: var(--color-text) !important;
