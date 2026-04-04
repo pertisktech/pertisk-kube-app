@@ -1318,22 +1318,32 @@ fn main() {
             let initial_config = load_sidecar_config(app.handle());
             let _ = save_sidecar_config(app.handle(), &initial_config);
 
-            let child = spawn_backend(app.handle(), &initial_config)?;
+            let initial_child = match spawn_backend(app.handle(), &initial_config) {
+                Ok(child) => {
+                    if !wait_for_backend_ready(initial_config.port, STARTUP_TIMEOUT) {
+                        warn!(
+                            "backend sidecar did not become reachable on {} within {:?}",
+                            backend_socket_addr(initial_config.port),
+                            STARTUP_TIMEOUT
+                        );
+                    } else {
+                        info!(
+                            "backend sidecar is healthy on {}",
+                            backend_socket_addr(initial_config.port)
+                        );
+                    }
 
-            if !wait_for_backend_ready(initial_config.port, STARTUP_TIMEOUT) {
-                warn!(
-                    "backend sidecar did not become reachable on {} within {:?}",
-                    backend_socket_addr(initial_config.port),
-                    STARTUP_TIMEOUT
-                );
-            } else {
-                info!(
-                    "backend sidecar is healthy on {}",
-                    backend_socket_addr(initial_config.port)
-                );
-            }
+                    Some(child)
+                }
+                Err(e) => {
+                    error!(
+                        "failed to start backend sidecar during app setup: {e}. continuing without backend and allowing monitor retries"
+                    );
+                    None
+                }
+            };
 
-            let child_ref = Arc::new(Mutex::new(Some(child)));
+            let child_ref = Arc::new(Mutex::new(initial_child));
             let shutting_down = Arc::new(Mutex::new(false));
             let config_ref = Arc::new(Mutex::new(initial_config));
 
