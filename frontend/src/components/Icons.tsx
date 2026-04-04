@@ -156,3 +156,8 @@ export const Dot = Lucide.Dot;
 export const Share2 = icon(ShareIcon);
 export const Pause = icon(PauseIcon);
 export const Play = icon(PlayIcon);
+
+export const PanelLeftClose = Lucide.PanelLeftClose;
+export const PanelLeftOpen = Lucide.PanelLeftOpen;
+export const PanelRightClose = Lucide.PanelRightClose;
+export const PanelRightOpen = Lucide.PanelRightOpen;

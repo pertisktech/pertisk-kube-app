@@ -139,10 +139,12 @@ export const getStatusColor = (
     lower === 'exposed' ||
     lower === 'internal' ||
     lower === 'headless' ||
-    lower === 'externalname'
+    lower === 'externalname' ||
+    // Helm release
+    lower === 'deployed'
   )
     return 'green';
-  
+
   // Warning states (transient/initializing)
   if (
     lower === 'paused' ||
@@ -157,9 +159,15 @@ export const getStatusColor = (
     lower === 'terminating' ||
     lower === 'released' ||
     lower.startsWith('init:') ||
-    lower.includes('pending')
+    lower.includes('pending') ||
+    // Helm release
+    lower === 'uninstalling'
   )
     return 'yellow';
+
+  // Neutral/inactive Helm states
+  if (lower === 'superseded' || lower === 'uninstalled')
+    return 'gray';
   
   // Error states
   if (

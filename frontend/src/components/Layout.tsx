@@ -40,6 +40,8 @@ import {
   Layers,
   LayoutGrid,
   Share2,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from './Icons';
 import { cn } from '../utils';
 import { useTheme } from '../context/ThemeContext';
@@ -1452,6 +1454,15 @@ export const Layout = () => {
               className="md:hidden p-2 hover:bg-hover rounded"
             >
               <Menu size={20} />
+            </button>
+            {/* Desktop sidebar toggle */}
+            <button
+              onClick={() => setSidebarCollapsed((prev) => !prev)}
+              className="hidden md:inline-flex p-2 hover:bg-hover rounded text-text-secondary flex-shrink-0"
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
             </button>
             <nav className="text-sm text-text-secondary" aria-label="Breadcrumb">
               <ol className="flex items-center flex-wrap gap-2">

@@ -3,6 +3,7 @@ import type { IconComponent } from './Icons';
 import { X, ChevronDown, ChevronUp } from './Icons';
 import { ResizablePanel } from './ResizablePanel';
 import { DrawerTitle } from './drawer';
+import { StatusBadge } from './StatusBadge';
 import { useRealtimeEvents } from '../hooks/useRealtimeResources';
 import { timeAgo } from '../utils';
 
@@ -188,12 +189,7 @@ export const ResourceDetailPanelLayout = ({
               </h2>
               {status != null && status !== '' && (
                 <div className="mt-2">
-                  <span
-                    className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-[var(--color-icon-success)]/10 text-[var(--color-icon-success)]"
-                    style={{ border: '1px solid var(--color-icon-success)/30' }}
-                  >
-                    {status}
-                  </span>
+                  <StatusBadge status={status} />
                 </div>
               )}
             </div>
