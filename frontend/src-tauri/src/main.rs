@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::env;
 use std::process::{Child, Command, Stdio};
@@ -26,6 +26,7 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
 const CLUSTER_VERIFY_TIMEOUT: Duration = Duration::from_secs(40);
 const RESTART_BACKOFF: Duration = Duration::from_secs(2);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+const PORT_SCAN_LIMIT: u16 = 200;
 
 const SIDECAR_CONFIG_FILE: &str = "desktop-sidecar.json";
 
@@ -493,39 +494,57 @@ fn wait_for_cluster_verification(port: u16, timeout: Duration) -> bool {
     false
 }
 
-fn terminate_processes_on_port(port: u16) {
-    let output = Command::new("lsof")
-        .arg("-ti")
-        .arg(format!(":{port}"))
-        .output();
+fn is_port_bindable(port: u16) -> bool {
+    TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
 
-    let Ok(output) = output else {
-        return;
-    };
-
-    if !output.status.success() {
-        return;
+fn find_available_port(preferred: u16) -> Option<u16> {
+    if is_port_bindable(preferred) {
+        return Some(preferred);
     }
 
-    let pid_list = String::from_utf8_lossy(&output.stdout);
-    for pid in pid_list.lines().map(str::trim).filter(|line| !line.is_empty()) {
-        let _ = Command::new("kill").arg("-TERM").arg(pid).status();
+    for offset in 1..=PORT_SCAN_LIMIT {
+        if let Some(candidate) = preferred.checked_add(offset) {
+            if is_port_bindable(candidate) {
+                return Some(candidate);
+            }
+        }
     }
 
-    thread::sleep(Duration::from_millis(250));
-
-    for pid in pid_list.lines().map(str::trim).filter(|line| !line.is_empty()) {
-        let _ = Command::new("kill").arg("-KILL").arg(pid).status();
+    for offset in 1..=PORT_SCAN_LIMIT {
+        if let Some(candidate) = preferred.checked_sub(offset) {
+            if candidate > 0 && is_port_bindable(candidate) {
+                return Some(candidate);
+            }
+        }
     }
+
+    None
+}
+
+fn ensure_sidecar_port_available(cfg: &mut SidecarConfig) -> anyhow::Result<Option<(u16, u16)>> {
+    if is_port_bindable(cfg.port) {
+        return Ok(None);
+    }
+
+    let previous = cfg.port;
+    let next = find_available_port(previous).ok_or_else(|| {
+        anyhow::anyhow!(
+            "sidecar port {} is busy and no free fallback port was found nearby",
+            previous
+        )
+    })?;
+
+    cfg.port = next;
+    Ok(Some((previous, next)))
 }
 
 fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> {
-    if probe_backend_health(cfg.port) {
-        warn!(
-            "detected an existing process on {}; terminating stale listener before sidecar spawn",
-            backend_socket_addr(cfg.port)
-        );
-        terminate_processes_on_port(cfg.port);
+    if !is_port_bindable(cfg.port) {
+        return Err(anyhow::anyhow!(
+            "sidecar port {} is already in use; choose a different port in Desktop Settings",
+            cfg.port
+        ));
     }
 
     let candidates = candidate_backend_paths(app, cfg);
@@ -747,11 +766,22 @@ fn graceful_stop_child(child: &mut Child) {
 }
 
 fn restart_backend_sidecar(app: &AppHandle, state: &BackendState) -> anyhow::Result<()> {
-    let cfg = state
+    let mut cfg = state
         .config
         .lock()
         .map_err(|e| anyhow::anyhow!("sidecar config lock poisoned: {e}"))?
         .clone();
+
+    if let Some((previous, next)) = ensure_sidecar_port_available(&mut cfg)? {
+        warn!(
+            "sidecar port {} was busy; switched to available port {} to avoid conflicts",
+            previous, next
+        );
+        save_sidecar_config(app, &cfg)?;
+        if let Ok(mut current) = state.config.lock() {
+            *current = cfg.clone();
+        }
+    }
 
     {
         let mut guard = state
@@ -851,6 +881,20 @@ fn start_backend_monitor(
                     return;
                 }
             };
+
+            let mut cfg = cfg;
+            if let Ok(Some((previous, next))) = ensure_sidecar_port_available(&mut cfg) {
+                warn!(
+                    "monitor restart moved sidecar port from {} to {} because the original port was occupied",
+                    previous, next
+                );
+                if let Ok(mut locked) = config_ref.lock() {
+                    *locked = cfg.clone();
+                }
+                if let Err(e) = save_sidecar_config(&app_handle, &cfg) {
+                    warn!("failed to persist auto-selected sidecar port: {e}");
+                }
+            }
 
             match spawn_backend(&app_handle, &cfg) {
                 Ok(new_child) => {
@@ -1315,7 +1359,13 @@ fn main() {
             save_base64_file
         ])
         .setup(|app| {
-            let initial_config = load_sidecar_config(app.handle());
+            let mut initial_config = load_sidecar_config(app.handle());
+            if let Ok(Some((previous, next))) = ensure_sidecar_port_available(&mut initial_config) {
+                warn!(
+                    "startup moved sidecar port from {} to {} because the original port was occupied",
+                    previous, next
+                );
+            }
             let _ = save_sidecar_config(app.handle(), &initial_config);
 
             let initial_child = match spawn_backend(app.handle(), &initial_config) {

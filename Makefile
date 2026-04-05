@@ -78,8 +78,8 @@ build-desktop: build-backend frontend-install
 	else \
 		echo "ktail binary not auto-detected; build will continue without bundled ktail"; \
 	fi; \
-	TAURI_VERSION=$$(echo "$(VERSION)" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/'); \
-	if [ -z "$$TAURI_VERSION" ]; then TAURI_VERSION="0.1.0"; fi; \
+	TAURI_VERSION=$$(echo "$(VERSION)" | sed -E 's/^[vV]//; s/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/'); \
+	if ! echo "$$TAURI_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then TAURI_VERSION="0.1.0"; fi; \
 	cd frontend && KTAIL_BINARY_PATH="$$KTAIL_BIN" VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --config '{"version":"'"$$TAURI_VERSION"'"}'
 
 build-macos-dmg: frontend-install
@@ -119,8 +119,8 @@ build-macos-dmg: frontend-install
 	else \
 		echo "ktail binary not auto-detected; build will continue without bundled ktail"; \
 	fi; \
-	TAURI_VERSION=$$(echo "$(VERSION)" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/'); \
-	if [ -z "$$TAURI_VERSION" ]; then TAURI_VERSION="0.1.0"; fi; \
+	TAURI_VERSION=$$(echo "$(VERSION)" | sed -E 's/^[vV]//; s/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/'); \
+	if ! echo "$$TAURI_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then TAURI_VERSION="0.1.0"; fi; \
 	echo "Building macOS DMG v$$TAURI_VERSION (display $(VERSION))..."; \
 	cd frontend && KTAIL_BINARY_PATH="$$KTAIL_BIN" VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --bundles dmg --config '{"version":"'"$$TAURI_VERSION"'"}'
 	@echo ""

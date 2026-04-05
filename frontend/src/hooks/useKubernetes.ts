@@ -48,6 +48,7 @@ import type {
   PodFileItem,
 } from '../types';
 import { getAuthToken } from '../utils/auth';
+import { getDesktopBackendPort } from '../utils/desktopBridge';
 
 const API_BASE = '/api';
 const seenApiWarnings = new Set<string>();
@@ -1107,7 +1108,8 @@ export const getPodPathDownloadUrl = (
     }
 
     // In non-http origins (e.g. tauri://), use sidecar backend directly.
-    return `http://127.0.0.1:15222${API_BASE.startsWith('/') ? API_BASE : `/${API_BASE}`}`;
+    const desktopPort = getDesktopBackendPort();
+    return `http://127.0.0.1:${desktopPort}${API_BASE.startsWith('/') ? API_BASE : `/${API_BASE}`}`;
   };
 
   const params = new URLSearchParams();
