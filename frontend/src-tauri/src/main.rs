@@ -1310,10 +1310,23 @@ fn save_base64_file(default_file_name: String, base64_data: String) -> Result<Op
         default_file_name.trim().to_string()
     };
 
-    let dest = rfd::FileDialog::new()
-        .set_file_name(&suggested_name)
-        .add_filter("PNG image", &["png"])
-        .save_file();
+    let ext = Path::new(&suggested_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+
+    let dialog = rfd::FileDialog::new().set_file_name(&suggested_name);
+    let dialog = match ext.as_str() {
+        "png" => dialog.add_filter("PNG image", &["png"]),
+        "jpg" | "jpeg" => dialog.add_filter("JPEG image", &["jpg", "jpeg"]),
+        "yaml" | "yml" => dialog.add_filter("YAML file", &["yaml", "yml"]),
+        "json" => dialog.add_filter("JSON file", &["json"]),
+        "txt" => dialog.add_filter("Text file", &["txt"]),
+        _ => dialog,
+    };
+
+    let dest = dialog.save_file();
 
     let Some(dest) = dest else {
         return Ok(None);

@@ -6,6 +6,7 @@ import 'ace-builds/src-noconflict/mode-yaml';
 import 'ace-builds/src-noconflict/theme-github';
 import 'ace-builds/src-noconflict/theme-tomorrow_night';
 import {
+  ArrowDown,
   Circle,
   ChevronDown,
   ChevronUp,
@@ -30,6 +31,7 @@ import { Terminal as TerminalComponent } from './Terminal';
 import { PodFileTransfer } from './PodFileTransfer';
 import { getHelmChartReadme, getHelmChartValues, installHelmChart, useHelmChartVersions, useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
 import { getAuthToken } from '../utils/auth';
+import { isDesktopRuntime } from '../utils/desktopBridge';
 import { cn } from '../utils';
 import { Checkbox } from './Checkbox';
 
@@ -445,6 +447,45 @@ const splitYamlDocuments = (yamlText: string): string[] => {
     .filter(Boolean);
   return docs.length > 0 ? docs : [normalized];
 };
+
+const toFilenamePart = (value: string): string => {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'resource';
+};
+
+const inferYamlFilename = (yamlText: string, fallbackTitle?: string): string => {
+  const fallbackBase = toFilenamePart(fallbackTitle ?? 'manifest');
+
+  try {
+    const [firstDoc] = splitYamlDocuments(yamlText);
+    if (!firstDoc) return `${fallbackBase}.yaml`;
+
+    const parsed = YAML.parse(firstDoc) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== 'object') return `${fallbackBase}.yaml`;
+
+    const kind = typeof parsed.kind === 'string' ? toFilenamePart(parsed.kind) : '';
+    const metadata = parsed.metadata as Record<string, unknown> | undefined;
+    const name = typeof metadata?.name === 'string' ? toFilenamePart(metadata.name) : '';
+    const namespace = typeof metadata?.namespace === 'string' ? toFilenamePart(metadata.namespace) : '';
+
+    const base = [kind, name, namespace].filter(Boolean).join('_');
+    return `${base || fallbackBase}.yaml`;
+  } catch {
+    return `${fallbackBase}.yaml`;
+  }
+};
+
+const blobToDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read export data.'));
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.readAsDataURL(blob);
+  });
 
 const makeTabIdentity = (type: PanelTabType, opts?: Partial<OpenPanelTabOptions>): string | null => {
   if (type === 'yaml-editor') {
@@ -1531,6 +1572,85 @@ export const BottomPanel = () => {
     }
   };
 
+  const handleYamlExport = async () => {
+    if (activeTab?.type !== 'yaml-editor') return;
+    const content = (activeTab.yamlContent ?? '').trim();
+    if (!content) {
+      toast.error('YAML is empty.');
+      return;
+    }
+
+    const filename = inferYamlFilename(content, activeTab.title);
+    const blob = new Blob([content.endsWith('\n') ? content : `${content}\n`], {
+      type: 'application/yaml; charset=utf-8',
+    });
+
+    try {
+      if (isDesktopRuntime()) {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const dataUrl = await blobToDataUrl(blob);
+        const savedPath = await invoke<string | null>('save_base64_file', {
+          defaultFileName: filename,
+          base64Data: dataUrl,
+        });
+
+        if (!savedPath) {
+          toast.message('Export cancelled.');
+          return;
+        }
+
+        toast.success(`Exported to ${savedPath}`);
+        return;
+      }
+
+      const pickerHost = globalThis as typeof globalThis & {
+        showSaveFilePicker?: (options?: {
+          suggestedName?: string;
+          types?: Array<{ description?: string; accept: Record<string, string[]> }>;
+        }) => Promise<{
+          createWritable: () => Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }>;
+        }>;
+      };
+
+      if (typeof pickerHost.showSaveFilePicker === 'function') {
+        const handle = await pickerHost.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{
+            description: 'YAML files',
+            accept: { 'application/yaml': ['.yaml', '.yml'] },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        toast.success(`Exported ${filename}`);
+        return;
+      }
+
+      const url = globalThis.URL.createObjectURL(blob);
+      try {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        toast.success(`Exported ${filename}`);
+      } finally {
+        globalThis.URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      const maybeDomErr = err as { name?: string };
+      if (maybeDomErr?.name === 'AbortError') {
+        toast.message('Export cancelled.');
+        return;
+      }
+
+      const message = err instanceof Error ? err.message : 'Failed to export YAML.';
+      toast.error(message);
+    }
+  };
+
   const handleDragStart = (e: React.MouseEvent) => {
     e.preventDefault();
     const startY = e.clientY;
@@ -1634,6 +1754,19 @@ export const BottomPanel = () => {
         <div className="bottom-panel-controls flex-shrink-0 flex items-center gap-1 px-2">
           {isActiveYamlTab && (
             <>
+              <button
+                type="button"
+                onClick={() => { void handleYamlExport(); }}
+                disabled={!activeTab?.yamlContent?.trim()}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors border disabled:opacity-40',
+                  'bg-hover hover:bg-surface text-text border-border'
+                )}
+                title="Export YAML file"
+              >
+                <ArrowDown size={10} />
+                Export
+              </button>
               {yamlActionResult?.tabId === activeTab.id && (
                 <span
                   className={cn(
