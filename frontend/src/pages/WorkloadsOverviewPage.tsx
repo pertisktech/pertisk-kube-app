@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import {
   PieChart,
   Pie,
@@ -22,6 +25,7 @@ import {
 import {
   useRealtimePods,
 } from '../hooks/useRealtimePods';
+import { restartAllWorkloads } from '../hooks/useKubernetes';
 import {
   useRealtimeDeployments,
   useRealtimeStatefulSets,
@@ -379,6 +383,8 @@ function SummaryRow({
 
 export const WorkloadsOverviewPage = () => {
   const { selectedNamespaces } = useNamespace();
+  const [isRestartingAll, setIsRestartingAll] = useState(false);
+  const [restartDialogOpen, setRestartDialogOpen] = useState(false);
 
   // Realtime workload data (WebSocket)
   const { data: pods, isConnected: podsConnected } = useRealtimePods<Pod>();
@@ -412,6 +418,8 @@ export const WorkloadsOverviewPage = () => {
   const filteredReplicaSets = filterByNs(replicasets ?? []);
   const filteredJobs = filterByNs(jobs ?? []);
   const filteredCronJobs = filterByNs(cronjobs ?? []);
+  const restartableWorkloadsCount =
+    filteredDeployments.length + filteredStatefulSets.length + filteredDaemonSets.length;
 
   const totalWorkloads =
     filteredPods.length +
@@ -444,6 +452,43 @@ export const WorkloadsOverviewPage = () => {
         ? { color: 'var(--color-dashboard-warning)' }
         : { color: 'var(--color-dashboard-danger)' };
 
+  const handleRestartAllWorkloads = () => {
+    if (restartableWorkloadsCount === 0) {
+      toast.message('No restartable workloads found for the current namespace filter.');
+      return;
+    }
+
+    setRestartDialogOpen(true);
+  };
+
+  const confirmRestartAllWorkloads = async () => {
+    setRestartDialogOpen(false);
+    setIsRestartingAll(true);
+    try {
+      const result = await restartAllWorkloads(selectedNamespaces);
+      if (result.failed.length === 0) {
+        toast.success(`Restarted ${result.restarted.total} workload controllers.`);
+      } else if (result.restarted.total > 0) {
+        toast.warning(
+          `Restarted ${result.restarted.total} workload controllers with ${result.failed.length} failure(s).`
+        );
+      } else {
+        const firstFailure = result.failed[0];
+        if (firstFailure) {
+          toast.error(
+            `Failed to restart workloads: ${firstFailure.kind} ${firstFailure.namespace}/${firstFailure.name} - ${firstFailure.error}`
+          );
+        } else {
+          toast.error('Failed to restart workloads.');
+        }
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to restart workloads.');
+    } finally {
+      setIsRestartingAll(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header - same as pertisk-kube */}
@@ -467,6 +512,16 @@ export const WorkloadsOverviewPage = () => {
               Live
             </span>
           )}
+          <button
+            type="button"
+            onClick={handleRestartAllWorkloads}
+            disabled={isRestartingAll}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-surface text-text hover:bg-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            title="Restart all Deployments, StatefulSets, and DaemonSets"
+          >
+            <RefreshCw size={16} className={isRestartingAll ? 'animate-spin' : ''} />
+            {isRestartingAll ? 'Restarting All...' : 'Restart All Workloads'}
+          </button>
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-border">
             <span className="text-text-secondary">Total Workloads: </span>
             <span className="font-bold text-text tabular-nums">{totalWorkloads}</span>
@@ -647,6 +702,24 @@ export const WorkloadsOverviewPage = () => {
           </table>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={restartDialogOpen}
+        title="Restart all workloads"
+        description={`This will trigger rollout restarts for Deployments, StatefulSets, and DaemonSets ${
+          selectedNamespaces.length > 0
+            ? `in ${selectedNamespaces.length} selected namespace(s)`
+            : 'across all namespaces'
+        }.`}
+        confirmLabel="Restart All"
+        cancelLabel="Cancel"
+        destructive
+        isLoading={isRestartingAll}
+        onConfirm={confirmRestartAllWorkloads}
+        onCancel={() => {
+          if (!isRestartingAll) setRestartDialogOpen(false);
+        }}
+      />
     </div>
   );
 };

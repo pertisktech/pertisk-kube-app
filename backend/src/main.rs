@@ -154,6 +154,7 @@ async fn main() -> anyhow::Result<()> {
             "/deployments/:namespace/:name/restart",
             post(restart_deployment),
         )
+        .route("/workloads/restart-all", get(restart_all_workloads).post(restart_all_workloads))
         .route(
             "/deployments/:namespace/:name/image-tag",
             post(update_deployment_image_tag),

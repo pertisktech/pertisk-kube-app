@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import type {
   Namespace,
   Pod,
@@ -896,6 +897,242 @@ export const restartDeployment = async (namespace: string, name: string): Promis
   if (!res.ok) {
     throw new Error('Failed to restart deployment');
   }
+};
+
+export interface RestartAllWorkloadsResult {
+  success: boolean;
+  selectedNamespaces: string[];
+  restarted: {
+    deployments: number;
+    statefulsets: number;
+    daemonsets: number;
+    total: number;
+  };
+  failed: Array<{
+    kind: string;
+    namespace: string;
+    name: string;
+    error: string;
+  }>;
+}
+
+const restartStatefulSetViaYaml = async (
+  namespace: string,
+  name: string,
+  restartedAt: string,
+): Promise<void> => {
+  const yamlPath = `/statefulsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`;
+  const getRes = await apiFetch(yamlPath);
+  if (!getRes.ok) {
+    throw new Error(`Failed to load StatefulSet YAML ${namespace}/${name} (${getRes.status})`);
+  }
+
+  const currentYaml = await getRes.text();
+  const parsed = parseYaml(currentYaml) as Record<string, unknown> | null;
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error(`Invalid StatefulSet YAML for ${namespace}/${name}`);
+  }
+
+  const spec = (parsed.spec as Record<string, unknown> | undefined) ?? {};
+  parsed.spec = spec;
+  const template = (spec.template as Record<string, unknown> | undefined) ?? {};
+  spec.template = template;
+  const metadata = (template.metadata as Record<string, unknown> | undefined) ?? {};
+  template.metadata = metadata;
+  const annotations = (metadata.annotations as Record<string, unknown> | undefined) ?? {};
+  metadata.annotations = annotations;
+  annotations['kubectl.kubernetes.io/restartedAt'] = restartedAt;
+
+  const updateRes = await apiFetch(yamlPath, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/yaml' },
+    body: stringifyYaml(parsed),
+  });
+  if (!updateRes.ok) {
+    const body = (await updateRes.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message || `Failed to restart StatefulSet ${namespace}/${name} (${updateRes.status})`);
+  }
+};
+
+const restartDaemonSetViaYaml = async (
+  namespace: string,
+  name: string,
+  restartedAt: string,
+): Promise<void> => {
+  const yamlPath = `/daemonsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`;
+  const getRes = await apiFetch(yamlPath);
+  if (!getRes.ok) {
+    throw new Error(`Failed to load DaemonSet YAML ${namespace}/${name} (${getRes.status})`);
+  }
+
+  const currentYaml = await getRes.text();
+  const parsed = parseYaml(currentYaml) as Record<string, unknown> | null;
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error(`Invalid DaemonSet YAML for ${namespace}/${name}`);
+  }
+
+  const spec = (parsed.spec as Record<string, unknown> | undefined) ?? {};
+  parsed.spec = spec;
+  const template = (spec.template as Record<string, unknown> | undefined) ?? {};
+  spec.template = template;
+  const metadata = (template.metadata as Record<string, unknown> | undefined) ?? {};
+  template.metadata = metadata;
+  const annotations = (metadata.annotations as Record<string, unknown> | undefined) ?? {};
+  metadata.annotations = annotations;
+  annotations['kubectl.kubernetes.io/restartedAt'] = restartedAt;
+
+  const updateRes = await apiFetch(yamlPath, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/yaml' },
+    body: stringifyYaml(parsed),
+  });
+  if (!updateRes.ok) {
+    const body = (await updateRes.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message || `Failed to restart DaemonSet ${namespace}/${name} (${updateRes.status})`);
+  }
+};
+
+const legacyRestartAllWorkloads = async (namespaces: string[]): Promise<RestartAllWorkloadsResult> => {
+  const namespaceSet = new Set(namespaces.map((ns) => ns.trim()).filter(Boolean));
+  const filterByNamespace = <T extends { namespace?: string }>(items: T[]): T[] => {
+    if (namespaceSet.size === 0) return items;
+    return items.filter((item) => item.namespace && namespaceSet.has(item.namespace));
+  };
+
+  const restartedAt = new Date().toISOString();
+  const restarted = {
+    deployments: 0,
+    statefulsets: 0,
+    daemonsets: 0,
+    total: 0,
+  };
+  const failed: RestartAllWorkloadsResult['failed'] = [];
+
+  const [depRes, stsRes, dsRes] = await Promise.all([
+    apiFetch('/deployments'),
+    apiFetch('/statefulsets'),
+    apiFetch('/daemonsets'),
+  ]);
+
+  const depList = depRes.ok ? ((await depRes.json()) as ApiResponse<Deployment>).data : [];
+  const stsList = stsRes.ok ? ((await stsRes.json()) as ApiResponse<StatefulSet>).data : [];
+  const dsList = dsRes.ok ? ((await dsRes.json()) as ApiResponse<DaemonSet>).data : [];
+
+  if (!depRes.ok) {
+    failed.push({
+      kind: 'Deployment',
+      namespace: '*',
+      name: '*',
+      error: `Failed to list deployments (${depRes.status})`,
+    });
+  }
+  if (!stsRes.ok) {
+    failed.push({
+      kind: 'StatefulSet',
+      namespace: '*',
+      name: '*',
+      error: `Failed to list statefulsets (${stsRes.status})`,
+    });
+  }
+  if (!dsRes.ok) {
+    failed.push({
+      kind: 'DaemonSet',
+      namespace: '*',
+      name: '*',
+      error: `Failed to list daemonsets (${dsRes.status})`,
+    });
+  }
+
+  for (const dep of filterByNamespace(depList)) {
+    try {
+      await restartDeployment(dep.namespace, dep.name);
+      restarted.deployments += 1;
+    } catch (err) {
+      failed.push({
+        kind: 'Deployment',
+        namespace: dep.namespace,
+        name: dep.name,
+        error: err instanceof Error ? err.message : 'Unknown restart error',
+      });
+    }
+  }
+
+  for (const sts of filterByNamespace(stsList)) {
+    try {
+      await restartStatefulSetViaYaml(sts.namespace, sts.name, restartedAt);
+      restarted.statefulsets += 1;
+    } catch (err) {
+      failed.push({
+        kind: 'StatefulSet',
+        namespace: sts.namespace,
+        name: sts.name,
+        error: err instanceof Error ? err.message : 'Unknown restart error',
+      });
+    }
+  }
+
+  for (const ds of filterByNamespace(dsList)) {
+    try {
+      await restartDaemonSetViaYaml(ds.namespace, ds.name, restartedAt);
+      restarted.daemonsets += 1;
+    } catch (err) {
+      failed.push({
+        kind: 'DaemonSet',
+        namespace: ds.namespace,
+        name: ds.name,
+        error: err instanceof Error ? err.message : 'Unknown restart error',
+      });
+    }
+  }
+
+  restarted.total = restarted.deployments + restarted.statefulsets + restarted.daemonsets;
+
+  return {
+    success: failed.length === 0,
+    selectedNamespaces: namespaces,
+    restarted,
+    failed,
+  };
+};
+
+export const restartAllWorkloads = async (namespaces: string[] = []): Promise<RestartAllWorkloadsResult> => {
+  const params = new URLSearchParams();
+  if (namespaces.length > 0) {
+    params.set('namespaces', namespaces.join(','));
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  let res = await apiFetch(`/workloads/restart-all${suffix}`, {
+    method: 'POST',
+  });
+
+  if (res.status === 405) {
+    // Compatibility fallback for environments where this route is exposed as GET.
+    res = await apiFetch(`/workloads/restart-all${suffix}`, {
+      method: 'GET',
+    });
+  }
+
+  if (!res.ok) {
+    const statusLabel = `${res.status}${res.statusText ? ` ${res.statusText}` : ''}`;
+    if (res.status === 404) {
+      return legacyRestartAllWorkloads(namespaces);
+    }
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    const backendMessage = body?.message?.trim();
+    if (backendMessage) {
+      throw new Error(`Failed to restart workloads (${statusLabel}): ${backendMessage}`);
+    }
+
+    const textFallback = (await res.text().catch(() => '')).trim();
+    if (textFallback) {
+      throw new Error(`Failed to restart workloads (${statusLabel}): ${textFallback}`);
+    }
+
+    throw new Error(`Failed to restart workloads (${statusLabel})`);
+  }
+
+  return (await res.json()) as RestartAllWorkloadsResult;
 };
 
 export const quickUpdateDeploymentImageTag = async (

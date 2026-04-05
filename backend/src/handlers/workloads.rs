@@ -12,7 +12,7 @@ use kube::{
     core::{ApiResource, DynamicObject, GroupVersionKind},
     Api,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::{Component, Path as StdPath, PathBuf};
 use std::process::Stdio;
@@ -35,6 +35,12 @@ const WORKLOAD_METRIC_DEFAULT_DURATION_SECS: i64 = 3600; // 1 hour
 pub struct MetricSeriesQuery {
     /// Duration window in hours. Defaults to 1h.
     pub duration_hours: Option<f64>,
+}
+
+#[derive(Deserialize)]
+pub struct RestartAllWorkloadsQuery {
+    /// Optional comma-separated namespace filter. When omitted, all namespaces are targeted.
+    pub namespaces: Option<String>,
 }
 
 #[derive(Default)]
@@ -1125,6 +1131,319 @@ pub async fn restart_deployment(
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
+}
+
+pub async fn restart_all_workloads(
+    Query(query): Query<RestartAllWorkloadsQuery>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::apps::v1::{DaemonSet, Deployment, StatefulSet};
+
+    let namespace_filter: Option<HashSet<String>> = query.namespaces.as_ref().map(|raw| {
+        raw.split(',')
+            .map(str::trim)
+            .filter(|ns| !ns.is_empty())
+            .map(ToString::to_string)
+            .collect()
+    });
+    let restarted_at = Utc::now().to_rfc3339();
+    let patch_params = PatchParams::default();
+
+    let should_restart = |namespace: &str| {
+        namespace_filter
+            .as_ref()
+            .map(|set| set.contains(namespace))
+            .unwrap_or(true)
+    };
+
+    let restart_patch = || {
+        serde_json::json!({
+            "spec": {
+                "template": {
+                    "metadata": {
+                        "annotations": {
+                            "kubectl.kubernetes.io/restartedAt": restarted_at
+                        }
+                    }
+                }
+            }
+        })
+    };
+
+    let client = state.client;
+
+    let mut restarted_deployments = 0usize;
+    let mut restarted_statefulsets = 0usize;
+    let mut restarted_daemonsets = 0usize;
+    let mut failed: Vec<serde_json::Value> = Vec::new();
+
+    let selected_namespace_list = namespace_filter
+        .as_ref()
+        .map(|set| set.iter().cloned().collect::<Vec<String>>())
+        .unwrap_or_default();
+
+    if selected_namespace_list.is_empty() {
+        let deployments_api: Api<Deployment> = Api::all(client.clone());
+        let statefulsets_api: Api<StatefulSet> = Api::all(client.clone());
+        let daemonsets_api: Api<DaemonSet> = Api::all(client.clone());
+
+        match deployments_api.list(&ListParams::default()).await {
+            Ok(list) => {
+                for deployment in list.items {
+                    let namespace = deployment
+                        .metadata
+                        .namespace
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string());
+                    let Some(name) = deployment.metadata.name.clone() else {
+                        continue;
+                    };
+
+                    if !should_restart(&namespace) {
+                        continue;
+                    }
+
+                    let ns_api: Api<Deployment> = Api::namespaced(client.clone(), &namespace);
+                    let patch = restart_patch();
+                    match ns_api
+                        .patch(&name, &patch_params, &Patch::Merge(&patch))
+                        .await
+                    {
+                        Ok(_) => restarted_deployments += 1,
+                        Err(err) => failed.push(serde_json::json!({
+                            "kind": "Deployment",
+                            "namespace": namespace,
+                            "name": name,
+                            "error": err.to_string()
+                        })),
+                    }
+                }
+            }
+            Err(err) => {
+                error!("Error listing deployments for bulk restart: {:?}", err);
+                failed.push(serde_json::json!({
+                    "kind": "Deployment",
+                    "namespace": "*",
+                    "name": "*",
+                    "error": format!("Failed to list deployments: {}", err)
+                }));
+            }
+        }
+
+        match statefulsets_api.list(&ListParams::default()).await {
+            Ok(list) => {
+                for statefulset in list.items {
+                    let namespace = statefulset
+                        .metadata
+                        .namespace
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string());
+                    let Some(name) = statefulset.metadata.name.clone() else {
+                        continue;
+                    };
+
+                    if !should_restart(&namespace) {
+                        continue;
+                    }
+
+                    let ns_api: Api<StatefulSet> = Api::namespaced(client.clone(), &namespace);
+                    let patch = restart_patch();
+                    match ns_api
+                        .patch(&name, &patch_params, &Patch::Merge(&patch))
+                        .await
+                    {
+                        Ok(_) => restarted_statefulsets += 1,
+                        Err(err) => failed.push(serde_json::json!({
+                            "kind": "StatefulSet",
+                            "namespace": namespace,
+                            "name": name,
+                            "error": err.to_string()
+                        })),
+                    }
+                }
+            }
+            Err(err) => {
+                error!("Error listing statefulsets for bulk restart: {:?}", err);
+                failed.push(serde_json::json!({
+                    "kind": "StatefulSet",
+                    "namespace": "*",
+                    "name": "*",
+                    "error": format!("Failed to list statefulsets: {}", err)
+                }));
+            }
+        }
+
+        match daemonsets_api.list(&ListParams::default()).await {
+            Ok(list) => {
+                for daemonset in list.items {
+                    let namespace = daemonset
+                        .metadata
+                        .namespace
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string());
+                    let Some(name) = daemonset.metadata.name.clone() else {
+                        continue;
+                    };
+
+                    if !should_restart(&namespace) {
+                        continue;
+                    }
+
+                    let ns_api: Api<DaemonSet> = Api::namespaced(client.clone(), &namespace);
+                    let patch = restart_patch();
+                    match ns_api
+                        .patch(&name, &patch_params, &Patch::Merge(&patch))
+                        .await
+                    {
+                        Ok(_) => restarted_daemonsets += 1,
+                        Err(err) => failed.push(serde_json::json!({
+                            "kind": "DaemonSet",
+                            "namespace": namespace,
+                            "name": name,
+                            "error": err.to_string()
+                        })),
+                    }
+                }
+            }
+            Err(err) => {
+                error!("Error listing daemonsets for bulk restart: {:?}", err);
+                failed.push(serde_json::json!({
+                    "kind": "DaemonSet",
+                    "namespace": "*",
+                    "name": "*",
+                    "error": format!("Failed to list daemonsets: {}", err)
+                }));
+            }
+        }
+    } else {
+        for namespace in &selected_namespace_list {
+            let deployments_api: Api<Deployment> = Api::namespaced(client.clone(), namespace);
+            match deployments_api.list(&ListParams::default()).await {
+                Ok(list) => {
+                    for deployment in list.items {
+                        let Some(name) = deployment.metadata.name.clone() else {
+                            continue;
+                        };
+                        let patch = restart_patch();
+                        match deployments_api
+                            .patch(&name, &patch_params, &Patch::Merge(&patch))
+                            .await
+                        {
+                            Ok(_) => restarted_deployments += 1,
+                            Err(err) => failed.push(serde_json::json!({
+                                "kind": "Deployment",
+                                "namespace": namespace,
+                                "name": name,
+                                "error": err.to_string()
+                            })),
+                        }
+                    }
+                }
+                Err(err) => {
+                    error!("Error listing deployments in namespace {}: {:?}", namespace, err);
+                    failed.push(serde_json::json!({
+                        "kind": "Deployment",
+                        "namespace": namespace,
+                        "name": "*",
+                        "error": format!("Failed to list deployments: {}", err)
+                    }));
+                }
+            }
+
+            let statefulsets_api: Api<StatefulSet> = Api::namespaced(client.clone(), namespace);
+            match statefulsets_api.list(&ListParams::default()).await {
+                Ok(list) => {
+                    for statefulset in list.items {
+                        let Some(name) = statefulset.metadata.name.clone() else {
+                            continue;
+                        };
+                        let patch = restart_patch();
+                        match statefulsets_api
+                            .patch(&name, &patch_params, &Patch::Merge(&patch))
+                            .await
+                        {
+                            Ok(_) => restarted_statefulsets += 1,
+                            Err(err) => failed.push(serde_json::json!({
+                                "kind": "StatefulSet",
+                                "namespace": namespace,
+                                "name": name,
+                                "error": err.to_string()
+                            })),
+                        }
+                    }
+                }
+                Err(err) => {
+                    error!("Error listing statefulsets in namespace {}: {:?}", namespace, err);
+                    failed.push(serde_json::json!({
+                        "kind": "StatefulSet",
+                        "namespace": namespace,
+                        "name": "*",
+                        "error": format!("Failed to list statefulsets: {}", err)
+                    }));
+                }
+            }
+
+            let daemonsets_api: Api<DaemonSet> = Api::namespaced(client.clone(), namespace);
+            match daemonsets_api.list(&ListParams::default()).await {
+                Ok(list) => {
+                    for daemonset in list.items {
+                        let Some(name) = daemonset.metadata.name.clone() else {
+                            continue;
+                        };
+                        let patch = restart_patch();
+                        match daemonsets_api
+                            .patch(&name, &patch_params, &Patch::Merge(&patch))
+                            .await
+                        {
+                            Ok(_) => restarted_daemonsets += 1,
+                            Err(err) => failed.push(serde_json::json!({
+                                "kind": "DaemonSet",
+                                "namespace": namespace,
+                                "name": name,
+                                "error": err.to_string()
+                            })),
+                        }
+                    }
+                }
+                Err(err) => {
+                    error!("Error listing daemonsets in namespace {}: {:?}", namespace, err);
+                    failed.push(serde_json::json!({
+                        "kind": "DaemonSet",
+                        "namespace": namespace,
+                        "name": "*",
+                        "error": format!("Failed to list daemonsets: {}", err)
+                    }));
+                }
+            }
+        }
+    }
+
+    let total_restarted = restarted_deployments + restarted_statefulsets + restarted_daemonsets;
+    let selected_namespaces = selected_namespace_list;
+
+    info!(
+        restarted_deployments,
+        restarted_statefulsets,
+        restarted_daemonsets,
+        failed = failed.len(),
+        "Completed bulk restart for workloads"
+    );
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": failed.is_empty(),
+            "selectedNamespaces": selected_namespaces,
+            "restarted": {
+                "deployments": restarted_deployments,
+                "statefulsets": restarted_statefulsets,
+                "daemonsets": restarted_daemonsets,
+                "total": total_restarted
+            },
+            "failed": failed
+        })),
+    )
+        .into_response()
 }
 
 fn replace_image_tag(image: &str, new_tag: &str) -> String {
