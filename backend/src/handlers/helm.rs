@@ -700,6 +700,7 @@ pub async fn upgrade_helm_release(
         .arg("--namespace")
         .arg(&namespace)
         .arg("--install")
+        .arg("--create-namespace")
         .arg("--values")
         .arg("-")
         .stdin(Stdio::piped())
