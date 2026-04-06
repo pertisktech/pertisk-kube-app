@@ -398,7 +398,8 @@ fn candidate_backend_paths(app: &AppHandle, cfg: &SidecarConfig) -> Vec<PathBuf>
     // Check workspace backend binary from user's home
     if let Ok(home) = std::env::var("HOME") {
         let workspace_candidates = vec![
-            "projects/pertisktech/pertisk-kube-app/backend/target/release/pertisk-kube-backend",
+            "projects/pertisk-tech/pertisk-kube-app/target/release/pertisk-kube-backend",
+            "projects/pertisk-tech/pertisk-kube-app/backend/target/release/pertisk-kube-backend",
             ".pertisk-kube-app-backend/pertisk-kube-backend",
         ];
         for candidate in workspace_candidates {
