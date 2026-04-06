@@ -1462,6 +1462,7 @@ export const BottomPanel = () => {
     setTabs((prev) => {
       const next = prev.filter((t) => t.id !== id);
       if (activeTabId === id) setActiveTabId(next.length > 0 ? next[next.length - 1].id : null);
+      if (next.length === 0) setFullScreen(false);
       return next;
     });
   };
@@ -1695,17 +1696,23 @@ export const BottomPanel = () => {
     });
   };
 
+  const desktopMode = isDesktopRuntime();
+
   const effectiveHeight = fullScreen
-    ? '100vh'
+    ? (desktopMode ? 'calc(100vh - 36px)' : '100vh')
     : needsHeight
       ? (!collapsed && tabs.length > 0) ? panelHeight : Math.max(panelHeight, ADD_OPTIONS.length * MENU_ITEM_HEIGHT + 40)
       : undefined;
+
+
 
   return (
     <div
       className={cn(
         'bottom-panel-shell flex flex-col rounded-xl overflow-hidden border border-border',
-        fullScreen ? 'fixed inset-0 z-[100] rounded-none' : 'relative flex-shrink-0 mx-2 mb-2'
+        fullScreen
+          ? cn('fixed inset-x-0 bottom-0 z-[100] rounded-none', desktopMode ? 'top-9' : 'top-0')
+          : 'relative flex-shrink-0 mx-2 mb-2'
       )}
       style={{
         boxShadow: '0 -4px 24px rgba(0,0,0,0.25)',
