@@ -14,6 +14,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, RunEvent, State};
 use tracing::{error, info, warn};
 
+#[cfg(target_os = "macos")]
+use tauri::menu::{Menu, MenuItem};
+
 struct BackendState {
     child: Arc<Mutex<Option<Child>>>,
     shutting_down: Arc<Mutex<bool>>,
@@ -1373,6 +1376,22 @@ fn main() {
             save_base64_file
         ])
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            {
+                let menu = Menu::default(app.handle())?;
+                let settings_item = MenuItem::with_id(app, "open_settings", "Settings...", true, Some("CmdOrCtrl+,"))?;
+                if let Some(app_submenu) = menu.items()?.into_iter().find_map(|item| item.as_submenu().cloned()) {
+                    let _ = app_submenu.insert(&settings_item, 2);
+                }
+                app.set_menu(menu)?;
+
+                if let Some(icon) = app.default_window_icon().cloned() {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.set_icon(icon);
+                    }
+                }
+            }
+
             let mut initial_config = load_sidecar_config(app.handle());
             if let Ok(Some((previous, next))) = ensure_sidecar_port_available(&mut initial_config) {
                 warn!(
@@ -1430,18 +1449,29 @@ fn main() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
-        if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
-            if let Some(state) = app_handle.try_state::<BackendState>() {
-                if let Ok(mut shutting_down) = state.shutting_down.lock() {
-                    *shutting_down = true;
-                }
-
-                if let Ok(mut guard) = state.child.lock() {
-                    if let Some(mut child) = guard.take() {
-                        graceful_stop_child(&mut child);
+        match event {
+            RunEvent::MenuEvent(menu_event) => {
+                if menu_event.id().as_ref() == "open_settings" {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.eval("window.dispatchEvent(new CustomEvent('ptkublet-open-settings'));");
+                        let _ = window.set_focus();
                     }
                 }
             }
+            RunEvent::Exit | RunEvent::ExitRequested { .. } => {
+                if let Some(state) = app_handle.try_state::<BackendState>() {
+                    if let Ok(mut shutting_down) = state.shutting_down.lock() {
+                        *shutting_down = true;
+                    }
+
+                    if let Ok(mut guard) = state.child.lock() {
+                        if let Some(mut child) = guard.take() {
+                            graceful_stop_child(&mut child);
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     });
 }

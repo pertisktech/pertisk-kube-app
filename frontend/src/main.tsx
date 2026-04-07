@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from './context/ThemeContext';
+import { FeatureSettingsProvider } from './context/FeatureSettingsContext';
 import { App } from './App';
 import { installDesktopBridge } from './utils/desktopBridge';
 import './index.css';
@@ -29,10 +30,12 @@ if (typeof window !== 'undefined') {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
-    </ThemeProvider>
+    <FeatureSettingsProvider>
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <App />
+        </QueryClientProvider>
+      </ThemeProvider>
+    </FeatureSettingsProvider>
   </React.StrictMode>
 );

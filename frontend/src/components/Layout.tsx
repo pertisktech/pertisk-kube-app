@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useNamespace } from '../context/NamespaceContext';
 import { useRealtimeNamespaces, useRealtimeCrds } from '../hooks/useRealtimeResources';
@@ -61,6 +61,7 @@ import {
 import { isDesktopRuntime } from '../utils/desktopBridge';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { APP_VERSION } from '../utils/version';
+import { DesktopSettingsPage } from '../pages/DesktopSettingsPage';
 
 const appWindow = getCurrentWindow();
 
@@ -217,6 +218,8 @@ export const Layout = () => {
   const resizeStartWidthRef = useRef(0);
 
   const location = useLocation();
+  const navigate = useNavigate();
+  const isAppSettingsOpen = location.pathname === '/desktop/settings';
   const { data: crds, isLoading: crdsLoading, hasFetched: crdsHasFetched, emptyListConfirmed: crdsEmptyListConfirmed } = useRealtimeCrds();
 
   const crdGroups = useMemo(() => {
@@ -260,6 +263,24 @@ export const Layout = () => {
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    const openSettings = () => {
+      navigate('/desktop/settings');
+      setSidebarOpen(false);
+    };
+
+    window.addEventListener('ptkublet-open-settings', openSettings as EventListener);
+    return () => window.removeEventListener('ptkublet-open-settings', openSettings as EventListener);
+  }, [navigate]);
+
+  const closeAppSettings = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/');
+    }
+  };
 
   useEffect(() => {
     if (!desktopMode) return;
@@ -1424,6 +1445,24 @@ export const Layout = () => {
 
           </nav>
         </div>
+
+        <div className="border-t border-border p-2">
+          <Link
+            to="/desktop/settings"
+            onClick={() => setSidebarOpen(false)}
+            className={cn(
+              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+              sidebarCollapsed && 'justify-center px-2',
+              isActive('/desktop/settings')
+                ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                : 'text-text-secondary hover:bg-hover hover:text-text'
+            )}
+            title="Settings"
+          >
+            <Settings size={18} className="flex-shrink-0" />
+            {!sidebarCollapsed && <span>Settings</span>}
+          </Link>
+        </div>
       </aside>
 
       {/* Resize handle - between sidebar and main, desktop only when expanded */}
@@ -1622,7 +1661,7 @@ export const Layout = () => {
               </div>
             </div>
             <Link
-              to="/config/desktop-settings"
+              to="/desktop/settings"
               className="flex-shrink-0 rounded-md bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-600 transition-colors"
             >
               Configure
@@ -1664,6 +1703,37 @@ export const Layout = () => {
         </main>
         {/* Bottom panel — VS Code style tabs for shells, logs, YAML */}
         <BottomPanel />
+
+        {isAppSettingsOpen && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4" onClick={closeAppSettings}>
+            <div
+              className="relative flex h-[min(88vh,900px)] w-[min(96vw,1100px)] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Settings"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-border px-5 py-3">
+                <h2 className="inline-flex items-center gap-2 text-base font-semibold text-text">
+                  <Settings size={18} className="text-text-secondary" />
+                  <span>Settings</span>
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeAppSettings}
+                  className="inline-flex rounded-md border border-border bg-surface-elevated p-2 text-text-secondary hover:bg-hover"
+                  aria-label="Close settings"
+                  title="Close"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto">
+                <DesktopSettingsPage />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {desktopMode && showKubeconfigModal && clusterSelectionDialog}

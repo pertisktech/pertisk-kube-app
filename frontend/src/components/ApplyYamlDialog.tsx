@@ -5,6 +5,7 @@ import 'ace-builds/src-noconflict/theme-github';
 import 'ace-builds/src-noconflict/theme-tomorrow_night';
 import { X } from './Icons';
 import { useTheme } from '../context/ThemeContext';
+import { useFeatureSettings } from '../context/FeatureSettingsContext';
 import { getAuthToken } from '../utils/auth';
 
 const DEFAULT_YAML = `apiVersion: apps/v1
@@ -47,6 +48,7 @@ const splitYamlDocuments = (yamlText: string): string[] => {
 
 export const ApplyYamlDialog = ({ onClose }: ApplyYamlDialogProps) => {
   const theme = useTheme();
+  const { settings } = useFeatureSettings();
   const [yaml, setYaml] = useState(DEFAULT_YAML);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,13 +137,13 @@ export const ApplyYamlDialog = ({ onClose }: ApplyYamlDialogProps) => {
         <div className="yaml-editor-pane flex-1 overflow-hidden">
           <AceEditor
             mode="yaml"
-            theme={theme?.isDark ? 'tomorrow_night' : 'github'}
+            theme={(settings.yamlEditor.theme === 'auto' ? !!theme?.isDark : settings.yamlEditor.theme === 'dark') ? 'tomorrow_night' : 'github'}
             name="apply-yaml-editor"
             value={yaml}
             onChange={setYaml}
             width="100%"
             height="100%"
-            fontSize={13}
+            fontSize={settings.yamlEditor.fontSize}
             showPrintMargin={false}
             setOptions={{
               useWorker: false,
@@ -150,6 +152,7 @@ export const ApplyYamlDialog = ({ onClose }: ApplyYamlDialogProps) => {
               showLineNumbers: true,
             }}
             editorProps={{ $blockScrolling: true }}
+            style={{ fontFamily: settings.yamlEditor.fontName }}
           />
         </div>
 

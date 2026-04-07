@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useTheme } from '../context/ThemeContext';
+import { useFeatureSettings } from '../context/FeatureSettingsContext';
 
 interface TerminalProps {
   podName: string;
@@ -21,6 +22,7 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
   const lastSentDimensionsRef = useRef<{ cols: number; rows: number } | null>(null);
   const resizeTimeoutRef = useRef<number | null>(null);
   const theme = useTheme();
+  const { settings } = useFeatureSettings();
 
   const sendResize = () => {
     const ws = wsRef.current;
@@ -73,12 +75,18 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
     const surfaceElevated = computedStyle.getPropertyValue('--color-surface-elevated').trim() || (theme?.isDark ? '#15161e' : '#f5f5f5');
     const textColor = computedStyle.getPropertyValue('--color-text').trim() || (theme?.isDark ? '#e8e8e9' : '#1a1a1a');
 
+    const terminalThemeDark = settings.terminal.theme === 'auto'
+      ? !!theme?.isDark
+      : settings.terminal.theme === 'dark';
+
+    const terminalFont = settings.terminal.fontName.trim() || 'JetBrains Mono';
+
     // Create terminal instance
     const xterm = new XTerm({
       cursorBlink: true,
-      fontSize: 13,
+      fontSize: settings.terminal.fontSize,
       fontFamily:
-        '"JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        `"${terminalFont}", "JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`,
       allowProposedApi: true,
       convertEol: true,
       rows: 30,
@@ -90,20 +98,20 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
         cursor: textColor,
         black: '#000000',
         red: '#cd3131',
-        green: theme?.isDark ? '#0dbc79' : '#00bc00',
-        yellow: theme?.isDark ? '#e5e510' : '#949800',
-        blue: theme?.isDark ? '#2472c8' : '#0451a5',
-        magenta: theme?.isDark ? '#bc3fbc' : '#bc05bc',
-        cyan: theme?.isDark ? '#11a8cd' : '#0598bc',
-        white: theme?.isDark ? '#e5e5e5' : '#555555',
+        green: terminalThemeDark ? '#0dbc79' : '#00bc00',
+        yellow: terminalThemeDark ? '#e5e510' : '#949800',
+        blue: terminalThemeDark ? '#2472c8' : '#0451a5',
+        magenta: terminalThemeDark ? '#bc3fbc' : '#bc05bc',
+        cyan: terminalThemeDark ? '#11a8cd' : '#0598bc',
+        white: terminalThemeDark ? '#e5e5e5' : '#555555',
         brightBlack: '#666666',
-        brightRed: theme?.isDark ? '#f14c4c' : '#cd3131',
-        brightGreen: theme?.isDark ? '#23d18b' : '#14ce14',
-        brightYellow: theme?.isDark ? '#f5f543' : '#b5ba00',
-        brightBlue: theme?.isDark ? '#3b8eea' : '#0451a5',
-        brightMagenta: theme?.isDark ? '#d670d6' : '#bc05bc',
-        brightCyan: theme?.isDark ? '#29b8db' : '#0598bc',
-        brightWhite: theme?.isDark ? '#ffffff' : '#a5a5a5',
+        brightRed: terminalThemeDark ? '#f14c4c' : '#cd3131',
+        brightGreen: terminalThemeDark ? '#23d18b' : '#14ce14',
+        brightYellow: terminalThemeDark ? '#f5f543' : '#b5ba00',
+        brightBlue: terminalThemeDark ? '#3b8eea' : '#0451a5',
+        brightMagenta: terminalThemeDark ? '#d670d6' : '#bc05bc',
+        brightCyan: terminalThemeDark ? '#29b8db' : '#0598bc',
+        brightWhite: terminalThemeDark ? '#ffffff' : '#a5a5a5',
       },
     });
 
@@ -246,7 +254,16 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       ws.close();
       xterm.dispose();
     };
-  }, [podName, namespace, containerName, initialCommand, theme?.isDark]);
+  }, [
+    podName,
+    namespace,
+    containerName,
+    initialCommand,
+    theme?.isDark,
+    settings.terminal.fontName,
+    settings.terminal.fontSize,
+    settings.terminal.theme,
+  ]);
 
   return (
     <div

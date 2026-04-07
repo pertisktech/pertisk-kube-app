@@ -1,5 +1,5 @@
 [package]
-name = "ptkublet-desktop"
+name = "PTKublet"
 version = "0.1.0"
 description = "PTKublet desktop shell"
 authors = ["Pertisk Tech"]

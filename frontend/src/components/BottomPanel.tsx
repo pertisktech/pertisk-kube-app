@@ -34,6 +34,8 @@ import { getAuthToken } from '../utils/auth';
 import { isDesktopRuntime } from '../utils/desktopBridge';
 import { cn } from '../utils';
 import { Checkbox } from './Checkbox';
+import { useTheme } from '../context/ThemeContext';
+import { useFeatureSettings } from '../context/FeatureSettingsContext';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -665,9 +667,12 @@ const InstallChartTabContent = ({
   chart: { name: string; repository: string; version: string; repository_url: string };
   onInstallSuccess?: () => void;
 }) => {
+  const theme = useTheme();
+  const { settings } = useFeatureSettings();
   const queryClient = useQueryClient();
   const { data: namespaces } = useNamespaces();
-  const { data: versionsList = [], isLoading: versionsLoading } = useHelmChartVersions(chart.repository_url, chart.name);
+  const effectiveRepoUrl = settings.helmRepoUrl.trim() || chart.repository_url;
+  const { data: versionsList = [], isLoading: versionsLoading } = useHelmChartVersions(effectiveRepoUrl, chart.name);
   const versions = versionsList.length > 0 ? versionsList : [chart.version];
   const [selectedVersion, setSelectedVersion] = useState(chart.version);
   const [namespace, setNamespace] = useState('default');
@@ -680,7 +685,7 @@ const InstallChartTabContent = ({
 
   useEffect(() => {
     setSelectedVersion(chart.version);
-  }, [chart.repository_url, chart.name, chart.version]);
+  }, [chart.repository_url, chart.name, chart.version, effectiveRepoUrl]);
 
   useEffect(() => {
     if (versions.length > 0 && !versions.includes(selectedVersion)) {
@@ -693,22 +698,22 @@ const InstallChartTabContent = ({
   }, [selectedVersion]);
 
   const { data: fetchedValues, isLoading: valuesLoading, isError: valuesFetchFailed, error: valuesFetchError, refetch: refetchValues } = useQuery({
-    queryKey: ['helm-chart-values', chart.repository_url, chart.name, selectedVersion],
-    queryFn: () => getHelmChartValues(chart.repository_url, chart.name, selectedVersion),
-    enabled: !!chart.repository_url?.trim() && !!selectedVersion,
+    queryKey: ['helm-chart-values', effectiveRepoUrl, chart.name, selectedVersion],
+    queryFn: () => getHelmChartValues(effectiveRepoUrl, chart.name, selectedVersion),
+    enabled: !!effectiveRepoUrl?.trim() && !!selectedVersion,
     staleTime: 5 * 60 * 1000,
   });
 
   const { data: readmeContent, isLoading: readmeLoading, isError: readmeError, error: readmeFetchError, refetch: refetchReadme } = useQuery({
-    queryKey: ['helm-chart-readme', chart.repository_url, chart.name, selectedVersion],
-    queryFn: () => getHelmChartReadme(chart.repository_url, chart.name, selectedVersion),
-    enabled: !!chart.repository_url?.trim() && !!selectedVersion && subTab === 'readme',
+    queryKey: ['helm-chart-readme', effectiveRepoUrl, chart.name, selectedVersion],
+    queryFn: () => getHelmChartReadme(effectiveRepoUrl, chart.name, selectedVersion),
+    enabled: !!effectiveRepoUrl?.trim() && !!selectedVersion && subTab === 'readme',
     staleTime: 5 * 60 * 1000,
   });
 
   useEffect(() => {
     setSubTab('values');
-  }, [chart.repository_url, chart.name, selectedVersion]);
+  }, [chart.repository_url, chart.name, selectedVersion, effectiveRepoUrl]);
 
   useEffect(() => {
     if (fetchedValues != null && fetchedValues.trim() && !valuesFetchedRef.current) {
@@ -744,7 +749,7 @@ const InstallChartTabContent = ({
       await installHelmChart({
         namespace,
         release_name: installRelease,
-        repo_url: chart.repository_url,
+        repo_url: effectiveRepoUrl,
         chart: chart.name,
         version: selectedVersion,
         values_yaml: valuesYaml.trim() || '{}',
@@ -831,6 +836,9 @@ const InstallChartTabContent = ({
         {valuesError && (
           <p className="text-red-500 text-xs" role="alert">Values: {valuesError}</p>
         )}
+        <p className="text-xs text-text-secondary break-all">
+          Effective Helm repo: {effectiveRepoUrl || 'Unavailable'}
+        </p>
       </div>
       {/* Sub-tabs: Values | README */}
       <div className="flex-shrink-0 flex border-b border-border bg-surface-elevated px-4 gap-1">
@@ -897,7 +905,7 @@ const InstallChartTabContent = ({
           >
             <AceEditor
               mode="yaml"
-              theme="tomorrow_night"
+              theme={(settings.yamlEditor.theme === 'auto' ? !!theme?.isDark : settings.yamlEditor.theme === 'dark') ? 'tomorrow_night' : 'github'}
               value={valuesYaml}
               onChange={(value) => handleValuesChange(value)}
               readOnly={valuesLoading}
@@ -906,7 +914,11 @@ const InstallChartTabContent = ({
               showPrintMargin={false}
               setOptions={{ useWorker: false, tabSize: 2 }}
               editorProps={{ $blockScrolling: true }}
-              style={{ fontSize: 12, minHeight: 200 }}
+              style={{
+                fontSize: settings.yamlEditor.fontSize,
+                fontFamily: settings.yamlEditor.fontName,
+                minHeight: 200,
+              }}
             />
           </div>
         </div>
@@ -1056,6 +1068,8 @@ const YamlEditorTab = ({
   title?: string;
   onContentChange: (content: string) => void;
 }) => {
+  const theme = useTheme();
+  const { settings } = useFeatureSettings();
   const [yaml, setYaml] = useState(initialContent);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [selectedKinds, setSelectedKinds] = useState<string[]>(['Deployment']);
@@ -1175,7 +1189,7 @@ const YamlEditorTab = ({
       <div className="flex-1 overflow-hidden">
         <AceEditor
           mode="yaml"
-          theme="tomorrow_night"
+          theme={(settings.yamlEditor.theme === 'auto' ? !!theme?.isDark : settings.yamlEditor.theme === 'dark') ? 'tomorrow_night' : 'github'}
           value={yaml}
           onChange={handleChange}
           width="100%"
@@ -1183,7 +1197,10 @@ const YamlEditorTab = ({
           showPrintMargin={false}
           setOptions={{ useWorker: false, tabSize: 2 }}
           editorProps={{ $blockScrolling: true }}
-          style={{ fontSize: 12 }}
+          style={{
+            fontSize: settings.yamlEditor.fontSize,
+            fontFamily: settings.yamlEditor.fontName,
+          }}
         />
       </div>
     </div>
