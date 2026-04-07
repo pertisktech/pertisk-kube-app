@@ -715,6 +715,66 @@ pub async fn get_helm_release_yaml(
     }
 }
 
+// ── Helm Release Values (user-supplied config only) ──────────────────────────
+
+/// GET /helm/releases/:namespace/:name/values — returns only the user-supplied values (config).
+pub async fn get_helm_release_values(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let client = state.client.clone();
+    let api: Api<Secret> = Api::namespaced(client, &namespace);
+    let lp = ListParams::default().labels(&format!("owner=helm,name={}", name));
+
+    match api.list(&lp).await {
+        Ok(list) => {
+            // Find highest-revision deployed secret
+            let best = list
+                .items
+                .iter()
+                .filter_map(|s| {
+                    let rev: i64 = s
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| l.get("version"))
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    Some((rev, s))
+                })
+                .max_by_key(|(rev, _)| *rev)
+                .map(|(_, s)| s);
+
+            match best {
+                Some(secret) => {
+                    // Extract the full release JSON
+                    if let Some(release_json) = decode_helm_release_json(secret) {
+                        // Get only the "config" field which contains user-supplied values
+                        let config = release_json.get("config").cloned().unwrap_or(serde_json::json!({}));
+                        
+                        // Convert config to YAML string
+                        let yaml_text = if config.is_null() || (config.is_object() && config.as_object().map_or(true, |o| o.is_empty())) {
+                            "# No custom values configured\n{}".to_string()
+                        } else {
+                            serde_yaml::to_string(&config)
+                                .unwrap_or_else(|_| "{}".to_string())
+                        };
+
+                        (StatusCode::OK, yaml_text).into_response()
+                    } else {
+                        (StatusCode::NOT_FOUND, "Release data not decodable").into_response()
+                    }
+                }
+                None => (StatusCode::NOT_FOUND, "Release not found").into_response(),
+            }
+        }
+        Err(err) => {
+            error!("Failed to get helm release values: {}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
 // ── Helm Release History (helm history -o json) ───────────────────────────────
 
 #[derive(Serialize, Deserialize)]

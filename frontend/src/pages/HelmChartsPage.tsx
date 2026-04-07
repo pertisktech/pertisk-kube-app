@@ -39,23 +39,46 @@ export const HelmChartsPage = () => {
   const [selectedChart, setSelectedChart] = useState<HelmChart | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
-  /** Chart names that have at least one release installed (release.chart === chart name). */
+  /** Chart names that have at least one release installed (release.chart === chart name). Keys are lowercase for case-insensitive matching. */
   const installedChartNames = useMemo(() => {
     const set = new Set<string>();
     releases?.forEach((r) => {
-      if (r.chart && r.chart !== '-') set.add(r.chart);
+      if (r.chart && r.chart !== '-') set.add(r.chart.toLowerCase());
     });
     return set;
   }, [releases]);
 
-  /** For each chart name, count how many releases use it (e.g. same chart in multiple namespaces). */
+  /** For each chart name, count how many releases use it (e.g. same chart in multiple namespaces). Keys are lowercase for case-insensitive matching. */
   const installedChartCount = useMemo(() => {
     const map = new Map<string, number>();
     releases?.forEach((r) => {
-      if (r.chart && r.chart !== '-') map.set(r.chart, (map.get(r.chart) ?? 0) + 1);
+      if (r.chart && r.chart !== '-') {
+        const key = r.chart.toLowerCase();
+        map.set(key, (map.get(key) ?? 0) + 1);
+      }
     });
     return map;
   }, [releases]);
+
+  /** Map chart name (lowercase) to its first installed release (for upgrade flow). */
+  const installedChartRelease = useMemo(() => {
+    const map = new Map<string, { namespace: string; releaseName: string }>();
+    releases?.forEach((r) => {
+      if (r.chart && r.chart !== '-') {
+        // Store both original and lowercase for flexible matching
+        const key = r.chart.toLowerCase();
+        if (!map.has(key)) {
+          map.set(key, { namespace: r.namespace, releaseName: r.name });
+        }
+      }
+    });
+    return map;
+  }, [releases]);
+
+  /** Find installed release for a chart name (case-insensitive). */
+  const findInstalledRelease = (chartName: string) => {
+    return installedChartRelease.get(chartName.toLowerCase());
+  };
 
   const columns = [
     {
@@ -86,8 +109,8 @@ export const HelmChartsPage = () => {
     {
       header: 'Status',
       accessor: (row: HelmChart) => {
-        const installed = installedChartNames.has(row.name);
-        const count = installedChartCount.get(row.name) ?? 0;
+        const installed = installedChartNames.has(row.name.toLowerCase());
+        const count = installedChartCount.get(row.name.toLowerCase()) ?? 0;
         if (!installed) return <span className="text-text-muted">—</span>;
         return (
           <span
@@ -208,8 +231,8 @@ export const HelmChartsPage = () => {
         case 'repository':
           return compareText(a.repository, b.repository) * factor;
         case 'installed': {
-          const aInstalled = installedChartNames.has(a.name) ? 1 : 0;
-          const bInstalled = installedChartNames.has(b.name) ? 1 : 0;
+          const aInstalled = installedChartNames.has(a.name.toLowerCase()) ? 1 : 0;
+          const bInstalled = installedChartNames.has(b.name.toLowerCase()) ? 1 : 0;
           const diff = aInstalled - bInstalled;
           return (diff !== 0 ? diff : compareText(a.name, b.name)) * factor;
         }
@@ -303,7 +326,9 @@ export const HelmChartsPage = () => {
           <HelmChartDetailPanel
             chart={selectedChart}
             onClose={() => setPanelOpen(false)}
+            installedRelease={findInstalledRelease(selectedChart.name)}
             onInstall={(c) => {
+              const existingRelease = findInstalledRelease(c.name);
               openPanelTab({
                 type: 'install-chart',
                 installChart: {
@@ -311,6 +336,7 @@ export const HelmChartsPage = () => {
                   repository: c.repository,
                   version: c.version,
                   repository_url: c.repository_url,
+                  existingRelease,
                 },
               });
               setPanelOpen(false);

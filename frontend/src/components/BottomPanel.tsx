@@ -29,7 +29,7 @@ import YAML from 'yaml';
 import { toast } from 'sonner';
 import { Terminal as TerminalComponent } from './Terminal';
 import { PodFileTransfer } from './PodFileTransfer';
-import { getHelmChartReadme, getHelmChartValues, installHelmChart, useHelmChartVersions, useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
+import { getHelmChartReadme, getHelmChartValues, getHelmReleaseValues, installHelmChart, useHelmChartVersions, useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
 import { getAuthToken } from '../utils/auth';
 import { isDesktopRuntime } from '../utils/desktopBridge';
 import { cn } from '../utils';
@@ -53,7 +53,14 @@ export interface OpenPanelTabOptions {
   helmReleaseName?: string;
   helmReleaseNamespace?: string;
   /** For type 'install-chart': chart to install (opens bottom tab like Freelens) */
-  installChart?: { name: string; repository: string; version: string; repository_url: string };
+  installChart?: {
+    name: string;
+    repository: string;
+    version: string;
+    repository_url: string;
+    /** Existing release info for upgrade flow (pre-fills namespace/releaseName/values) */
+    existingRelease?: { namespace: string; releaseName: string };
+  };
 }
 
 /** Open a tab in the bottom panel from anywhere in the app */
@@ -81,7 +88,13 @@ interface PanelTab {
   yamlActionLabel?: 'Apply' | 'Upgrade';
   helmReleaseName?: string;
   helmReleaseNamespace?: string;
-  installChart?: { name: string; repository: string; version: string; repository_url: string };
+  installChart?: {
+    name: string;
+    repository: string;
+    version: string;
+    repository_url: string;
+    existingRelease?: { namespace: string; releaseName: string };
+  };
 }
 
 /** Default Values content for Helm install tab — loaded so user can edit before install */
@@ -664,7 +677,13 @@ const InstallChartTabContent = ({
   chart,
   onInstallSuccess,
 }: {
-  chart: { name: string; repository: string; version: string; repository_url: string };
+  chart: {
+    name: string;
+    repository: string;
+    version: string;
+    repository_url: string;
+    existingRelease?: { namespace: string; releaseName: string };
+  };
   onInstallSuccess?: () => void;
 }) => {
   const theme = useTheme();
@@ -675,13 +694,31 @@ const InstallChartTabContent = ({
   const { data: versionsList = [], isLoading: versionsLoading } = useHelmChartVersions(effectiveRepoUrl, chart.name);
   const versions = versionsList.length > 0 ? versionsList : [chart.version];
   const [selectedVersion, setSelectedVersion] = useState(chart.version);
-  const [namespace, setNamespace] = useState('default');
-  const [releaseName, setReleaseName] = useState('');
+  const [namespace, setNamespace] = useState(chart.existingRelease?.namespace ?? 'default');
+  const [releaseName, setReleaseName] = useState(chart.existingRelease?.releaseName ?? '');
   const [valuesYaml, setValuesYaml] = useState(HELM_DEFAULT_VALUES);
   const valuesFetchedRef = useRef(false);
+  const existingValuesFetchedRef = useRef(false);
   const [valuesError, setValuesError] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
   const [subTab, setSubTab] = useState<InstallChartSubTab>('values');
+  const isUpgrade = !!chart.existingRelease;
+
+  // Fetch existing release values for upgrade flow
+  const { data: existingReleaseValues, isLoading: existingValuesLoading } = useQuery({
+    queryKey: ['helm-release-values', chart.existingRelease?.namespace, chart.existingRelease?.releaseName],
+    queryFn: () => getHelmReleaseValues(chart.existingRelease!.namespace, chart.existingRelease!.releaseName),
+    enabled: !!chart.existingRelease,
+    staleTime: 0,
+  });
+
+  // Load existing release values when available (for upgrade)
+  useEffect(() => {
+    if (existingReleaseValues && !existingValuesFetchedRef.current) {
+      existingValuesFetchedRef.current = true;
+      setValuesYaml(existingReleaseValues);
+    }
+  }, [existingReleaseValues]);
 
   useEffect(() => {
     setSelectedVersion(chart.version);
@@ -715,12 +752,13 @@ const InstallChartTabContent = ({
     setSubTab('values');
   }, [chart.repository_url, chart.name, selectedVersion, effectiveRepoUrl]);
 
+  // Load chart default values only if not in upgrade mode (existing release takes precedence)
   useEffect(() => {
-    if (fetchedValues != null && fetchedValues.trim() && !valuesFetchedRef.current) {
+    if (fetchedValues != null && fetchedValues.trim() && !valuesFetchedRef.current && !isUpgrade) {
       valuesFetchedRef.current = true;
       setValuesYaml(fetchedValues);
     }
-  }, [fetchedValues]);
+  }, [fetchedValues, isUpgrade]);
 
   useEffect(() => {
     if (valuesFetchFailed && valuesFetchError) {
@@ -796,6 +834,12 @@ const InstallChartTabContent = ({
               versions
             </span>
           )}
+          {existingValuesLoading && (
+            <span className="inline-flex items-center gap-1 text-text-secondary">
+              <Loader size={12} className="animate-spin flex-shrink-0" />
+              loading values
+            </span>
+          )}
           <span className="text-text-secondary">Namespace</span>
           <input
             type="text"
@@ -827,10 +871,10 @@ const InstallChartTabContent = ({
           <button
             type="button"
             onClick={() => void handleInstall()}
-            disabled={installing}
+            disabled={installing || (isUpgrade && existingValuesLoading)}
             className="px-4 py-1.5 rounded font-medium bg-primary text-white hover:opacity-90 disabled:opacity-50"
           >
-            {installing ? 'Installing…' : 'Install'}
+            {installing ? (isUpgrade ? 'Upgrading…' : 'Installing…') : (isUpgrade ? 'Upgrade' : 'Install')}
           </button>
         </div>
         {valuesError && (
@@ -1402,7 +1446,9 @@ export const BottomPanel = () => {
         : type === 'yaml-editor'
           ? LABEL_MAP[type]
         : type === 'install-chart' && opts?.installChart
-          ? `Helm Install: ${opts.installChart.repository}/${opts.installChart.name}`
+          ? opts.installChart.existingRelease
+            ? `Helm Upgrade: ${opts.installChart.repository}/${opts.installChart.name}`
+            : `Helm Install: ${opts.installChart.repository}/${opts.installChart.name}`
           : (opts?.podName ?? LABEL_MAP[type]);
     setTabs((prev) => [
       ...prev,

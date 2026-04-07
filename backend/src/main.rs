@@ -336,6 +336,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/helm/charts/readme", get(get_helm_chart_readme))
         .route("/helm/charts/install", post(install_helm_chart))
         .route("/helm/releases/:namespace/:name/yaml", get(get_helm_release_yaml))
+        .route("/helm/releases/:namespace/:name/values", get(get_helm_release_values))
         .route("/helm/releases/:namespace/:name/history", get(get_helm_release_history))
         .route("/helm/releases/:namespace/:name/resources", get(get_helm_release_resources))
         .route("/helm/releases/:namespace/:name/rollback", post(rollback_helm_release))

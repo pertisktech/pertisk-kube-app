@@ -1650,6 +1650,21 @@ export const getHelmReleaseYaml = async (namespace: string, name: string): Promi
   return res.text();
 };
 
+/** Fetches only the user-supplied values (config) for a release. */
+export const getHelmReleaseValues = async (namespace: string, name: string): Promise<string> => {
+  const token = getAuthToken();
+  const res = await fetch(
+    `${API_BASE}/helm/releases/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/values`,
+    { headers: token ? { Authorization: token } : undefined },
+  );
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) throw new Error(`Failed to load values (${res.status})`);
+  return res.text();
+};
+
 /** Fetches release revision history (helm history -o json). */
 export const getHelmReleaseHistory = async (
   namespace: string,
