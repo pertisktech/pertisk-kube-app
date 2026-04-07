@@ -671,7 +671,7 @@ const InstallChartTabContent = ({
   const { settings } = useFeatureSettings();
   const queryClient = useQueryClient();
   const { data: namespaces } = useNamespaces();
-  const effectiveRepoUrl = settings.helmRepoUrl.trim() || chart.repository_url;
+  const effectiveRepoUrl = chart.repository_url.trim() || settings.helmRepoUrl.trim();
   const { data: versionsList = [], isLoading: versionsLoading } = useHelmChartVersions(effectiveRepoUrl, chart.name);
   const versions = versionsList.length > 0 ? versionsList : [chart.version];
   const [selectedVersion, setSelectedVersion] = useState(chart.version);
