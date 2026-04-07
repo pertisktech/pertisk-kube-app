@@ -979,7 +979,8 @@ function createRealtimeHook<T>(
                     const existingIndex = prev.findIndex((p) => getKey(p) === itemKey);
 
                     if (existingIndex >= 0) {
-                      // Update existing item
+                      // Skip update if nothing actually changed (avoids unnecessary re-renders / chart flicker)
+                      if (JSON.stringify(prev[existingIndex]) === JSON.stringify(item)) return prev;
                       const updated = [...prev];
                       updated[existingIndex] = item;
                       return updated;
@@ -1337,6 +1338,7 @@ export function useRealtimeCustomResources(crdName: string | null): {
                 setData((prev) => {
                   const idx = prev.findIndex((p) => getCustomResourceKey(p) === itemKey);
                   if (idx >= 0) {
+                    if (JSON.stringify(prev[idx]) === JSON.stringify(item)) return prev;
                     const next = [...prev];
                     next[idx] = item;
                     return next;

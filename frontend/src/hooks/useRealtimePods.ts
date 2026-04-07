@@ -581,6 +581,10 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
                       controlled_by: transformedPod.controlled_by !== '-' ? transformedPod.controlled_by : (existingPod.controlled_by || '-'),
                       qos: transformedPod.qos !== '-' ? transformedPod.qos : (existingPod.qos || '-'),
                     };
+
+                    // Skip update if nothing actually changed (avoids unnecessary re-renders / chart flicker)
+                    if (JSON.stringify(existingPod) === JSON.stringify(mergedPod)) return prevData;
+
                     updated[foundIndex] = mergedPod as T;
                     
                     // Log status transitions (dev only)

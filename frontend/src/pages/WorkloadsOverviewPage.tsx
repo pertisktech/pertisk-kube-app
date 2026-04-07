@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, memo } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -204,7 +204,7 @@ interface ChartCardProps {
   isLoading: boolean;
 }
 
-function ChartCard({ title, icon: Icon, data, total, linkTo, isLoading }: ChartCardProps) {
+const ChartCard = memo(function ChartCard({ title, icon: Icon, data, total, linkTo, isLoading }: ChartCardProps) {
   const hasData = data.length > 0 && total > 0;
 
   return (
@@ -248,6 +248,7 @@ function ChartCard({ title, icon: Icon, data, total, linkTo, isLoading }: ChartC
                 outerRadius={70}
                 paddingAngle={2}
                 dataKey="value"
+                isAnimationActive={false}
                 label={({ name, percent }) =>
                   (percent ?? 0) > 0.05 ? `${name ?? ''} (${((percent ?? 0) * 100).toFixed(0)}%)` : ''
                 }
@@ -298,7 +299,7 @@ function ChartCard({ title, icon: Icon, data, total, linkTo, isLoading }: ChartC
       )}
     </div>
   );
-}
+});
 
 interface SummaryRowProps {
   name: string;
@@ -310,7 +311,7 @@ interface SummaryRowProps {
   linkTo: string;
 }
 
-function SummaryRow({
+const SummaryRow = memo(function SummaryRow({
   name,
   icon: Icon,
   total,
@@ -379,7 +380,7 @@ function SummaryRow({
       </td>
     </tr>
   );
-}
+});
 
 export const WorkloadsOverviewPage = () => {
   const { selectedNamespaces } = useNamespace();
@@ -405,42 +406,55 @@ export const WorkloadsOverviewPage = () => {
     !jobsLoading &&
     !cronjobsLoading;
 
-  const filterByNs = <T extends { namespace?: string }>(list: T[] | undefined): T[] => {
+  const filterByNs = useMemo(() => <T extends { namespace?: string }>(list: T[] | undefined): T[] => {
     if (!list) return [];
     if (selectedNamespaces.length === 0) return list;
     return list.filter((x) => selectedNamespaces.includes(x.namespace ?? ''));
-  };
+  }, [selectedNamespaces]);
 
-  const filteredPods = filterByNs(pods ?? []);
-  const filteredDeployments = filterByNs(deployments ?? []);
-  const filteredStatefulSets = filterByNs(statefulsets ?? []);
-  const filteredDaemonSets = filterByNs(daemonsets ?? []);
-  const filteredReplicaSets = filterByNs(replicasets ?? []);
-  const filteredJobs = filterByNs(jobs ?? []);
-  const filteredCronJobs = filterByNs(cronjobs ?? []);
-  const restartableWorkloadsCount =
-    filteredDeployments.length + filteredStatefulSets.length + filteredDaemonSets.length;
+  const filteredPods = useMemo(() => filterByNs(pods ?? []), [filterByNs, pods]);
+  const filteredDeployments = useMemo(() => filterByNs(deployments ?? []), [filterByNs, deployments]);
+  const filteredStatefulSets = useMemo(() => filterByNs(statefulsets ?? []), [filterByNs, statefulsets]);
+  const filteredDaemonSets = useMemo(() => filterByNs(daemonsets ?? []), [filterByNs, daemonsets]);
+  const filteredReplicaSets = useMemo(() => filterByNs(replicasets ?? []), [filterByNs, replicasets]);
+  const filteredJobs = useMemo(() => filterByNs(jobs ?? []), [filterByNs, jobs]);
+  const filteredCronJobs = useMemo(() => filterByNs(cronjobs ?? []), [filterByNs, cronjobs]);
 
-  const totalWorkloads =
-    filteredPods.length +
-    filteredDeployments.length +
-    filteredStatefulSets.length +
-    filteredDaemonSets.length +
-    filteredReplicaSets.length +
-    filteredJobs.length +
-    filteredCronJobs.length;
+  const restartableWorkloadsCount = useMemo(
+    () => filteredDeployments.length + filteredStatefulSets.length + filteredDaemonSets.length,
+    [filteredDeployments, filteredStatefulSets, filteredDaemonSets]
+  );
 
-  const healthyCount =
-    filteredPods.filter((p) => (p.status || p.phase || '').toLowerCase() === 'running').length +
-    filteredDeployments.filter((d) => {
-      const [ready, total] = parseReady(d.ready);
-      return total > 0 && ready === total;
-    }).length +
-    filteredDaemonSets.filter((ds) => ds.desired > 0 && ds.ready === ds.desired).length +
-    filteredStatefulSets.filter((sts) => {
-      const [ready, total] = parseReady(sts.ready);
-      return total > 0 && ready === total;
-    }).length;
+  const podStatusData = useMemo(() => getPodStatusData(filteredPods), [filteredPods]);
+  const deploymentStatusData = useMemo(() => getDeploymentStatusData(filteredDeployments), [filteredDeployments]);
+  const daemonSetStatusData = useMemo(() => getDaemonSetStatusData(filteredDaemonSets), [filteredDaemonSets]);
+  const statefulSetStatusData = useMemo(() => getStatefulSetStatusData(filteredStatefulSets), [filteredStatefulSets]);
+  const replicaSetStatusData = useMemo(() => getReplicaSetStatusData(filteredReplicaSets), [filteredReplicaSets]);
+  const jobStatusData = useMemo(() => getJobStatusData(filteredJobs), [filteredJobs]);
+  const cronJobStatusData = useMemo(() => getCronJobStatusData(filteredCronJobs), [filteredCronJobs]);
+
+  const { totalWorkloads, healthyCount } = useMemo(() => {
+    const total =
+      filteredPods.length +
+      filteredDeployments.length +
+      filteredStatefulSets.length +
+      filteredDaemonSets.length +
+      filteredReplicaSets.length +
+      filteredJobs.length +
+      filteredCronJobs.length;
+    const healthy =
+      filteredPods.filter((p) => (p.status || p.phase || '').toLowerCase() === 'running').length +
+      filteredDeployments.filter((d) => {
+        const [ready, t] = parseReady(d.ready);
+        return t > 0 && ready === t;
+      }).length +
+      filteredDaemonSets.filter((ds) => ds.desired > 0 && ds.ready === ds.desired).length +
+      filteredStatefulSets.filter((sts) => {
+        const [ready, t] = parseReady(sts.ready);
+        return t > 0 && ready === t;
+      }).length;
+    return { totalWorkloads: total, healthyCount: healthy };
+  }, [filteredPods, filteredDeployments, filteredStatefulSets, filteredDaemonSets, filteredReplicaSets, filteredJobs, filteredCronJobs]);
 
   const healthPercentage =
     totalWorkloads > 0 ? ((healthyCount / totalWorkloads) * 100).toFixed(1) : '0';
@@ -537,7 +551,7 @@ export const WorkloadsOverviewPage = () => {
         <ChartCard
           title="Pods"
           icon={Box}
-          data={getPodStatusData(filteredPods)}
+          data={podStatusData}
           total={filteredPods.length}
           linkTo="/pods"
           isLoading={podsLoading}
@@ -545,7 +559,7 @@ export const WorkloadsOverviewPage = () => {
         <ChartCard
           title="Deployments"
           icon={Layers}
-          data={getDeploymentStatusData(filteredDeployments)}
+          data={deploymentStatusData}
           total={filteredDeployments.length}
           linkTo="/deployments"
           isLoading={deploymentsLoading}
@@ -553,7 +567,7 @@ export const WorkloadsOverviewPage = () => {
         <ChartCard
           title="DaemonSets"
           icon={Layers}
-          data={getDaemonSetStatusData(filteredDaemonSets)}
+          data={daemonSetStatusData}
           total={filteredDaemonSets.length}
           linkTo="/daemonsets"
           isLoading={daemonsetsLoading}
@@ -561,7 +575,7 @@ export const WorkloadsOverviewPage = () => {
         <ChartCard
           title="StatefulSets"
           icon={Database}
-          data={getStatefulSetStatusData(filteredStatefulSets)}
+          data={statefulSetStatusData}
           total={filteredStatefulSets.length}
           linkTo="/statefulsets"
           isLoading={statefulsetsLoading}
@@ -569,7 +583,7 @@ export const WorkloadsOverviewPage = () => {
         <ChartCard
           title="ReplicaSets"
           icon={Copy}
-          data={getReplicaSetStatusData(filteredReplicaSets)}
+          data={replicaSetStatusData}
           total={filteredReplicaSets.length}
           linkTo="/replicasets"
           isLoading={replicasetsLoading}
@@ -577,7 +591,7 @@ export const WorkloadsOverviewPage = () => {
         <ChartCard
           title="Jobs"
           icon={Briefcase}
-          data={getJobStatusData(filteredJobs)}
+          data={jobStatusData}
           total={filteredJobs.length}
           linkTo="/jobs"
           isLoading={jobsLoading}
@@ -585,7 +599,7 @@ export const WorkloadsOverviewPage = () => {
         <ChartCard
           title="CronJobs"
           icon={Clock}
-          data={getCronJobStatusData(filteredCronJobs)}
+          data={cronJobStatusData}
           total={filteredCronJobs.length}
           linkTo="/cronjobs"
           isLoading={cronjobsLoading}
