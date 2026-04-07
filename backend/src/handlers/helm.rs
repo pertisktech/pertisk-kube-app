@@ -44,6 +44,7 @@ pub struct HelmChartItem {
     pub app_version: String,
     pub repository: String,
     pub repository_url: String,
+    pub artifact_hub_url: String,
     pub stars: u64,
 }
 
@@ -137,6 +138,48 @@ fn repo_alias_from_url(url: &str) -> String {
         "repo".to_string()
     } else {
         out
+    }
+}
+
+/// Map known Helm repository URLs to their Artifact Hub repository name for deep linking.
+fn artifact_hub_repo_name(url: &str) -> Option<&'static str> {
+    let url_lower = url.to_lowercase();
+    if url_lower.contains("charts.bitnami.com/bitnami") {
+        Some("bitnami")
+    } else if url_lower.contains("prometheus-community.github.io/helm-charts") {
+        Some("prometheus-community")
+    } else if url_lower.contains("kubernetes.github.io/ingress-nginx") {
+        Some("ingress-nginx")
+    } else if url_lower.contains("grafana.github.io/helm-charts") {
+        Some("grafana")
+    } else if url_lower.contains("jetstack.io") || url_lower.contains("cert-manager") {
+        Some("cert-manager")
+    } else if url_lower.contains("kubernetes-sigs.github.io/metrics-server") {
+        Some("metrics-server")
+    } else if url_lower.contains("argoproj.github.io/argo-helm") {
+        Some("argo")
+    } else if url_lower.contains("helm.elastic.co") {
+        Some("elastic")
+    } else if url_lower.contains("charts.jetstack.io") {
+        Some("jetstack")
+    } else if url_lower.contains("kubernetes-sigs.github.io/external-dns") {
+        Some("external-dns")
+    } else if url_lower.contains("aquasecurity.github.io") {
+        Some("aqua")
+    } else if url_lower.contains("charts.gitlab.io") {
+        Some("gitlab")
+    } else if url_lower.contains("hashicorp") {
+        Some("hashicorp")
+    } else if url_lower.contains("codecentric.github.io/helm-charts") {
+        Some("codecentric")
+    } else if url_lower.contains("jenkinsci.github.io/helm-charts") {
+        Some("jenkins")
+    } else if url_lower.contains("kedacore.github.io/charts") {
+        Some("kedacore")
+    } else if url_lower.contains("kubernetes.github.io/dashboard") {
+        Some("k8s-dashboard")
+    } else {
+        None
     }
 }
 
@@ -378,8 +421,18 @@ pub async fn list_helm_charts(
                         .into_iter()
                         .map(|p| {
                             let repo = p.repository;
+                            let repo_name = repo
+                                .as_ref()
+                                .and_then(|r| r.name.clone())
+                                .unwrap_or_default();
+                            let chart_name = p.name.clone().unwrap_or_else(|| "-".to_string());
+                            let artifact_hub_url = if !repo_name.is_empty() && chart_name != "-" {
+                                format!("https://artifacthub.io/packages/helm/{}/{}", repo_name, chart_name)
+                            } else {
+                                String::new()
+                            };
                             HelmChartItem {
-                                name: p.name.unwrap_or_else(|| "-".to_string()),
+                                name: chart_name,
                                 description: p.description.unwrap_or_default(),
                                 version: p.version.unwrap_or_else(|| "-".to_string()),
                                 app_version: p.app_version.unwrap_or_else(|| "-".to_string()),
@@ -391,6 +444,7 @@ pub async fn list_helm_charts(
                                     .as_ref()
                                     .and_then(|r| r.url.clone())
                                     .unwrap_or_default(),
+                                artifact_hub_url,
                                 stars: p.stars.unwrap_or(0),
                             }
                         })
@@ -475,12 +529,16 @@ async fn fetch_helm_charts_from_repositories(repo_urls: Vec<String>) -> (Vec<Hel
                         Err(err) => return Err(format!("{}: failed to parse index.yaml ({})", repo_url, err)),
                     };
 
+                    let ah_repo = artifact_hub_repo_name(&repo_url);
                     let items = index
                         .entries
                         .unwrap_or_default()
                         .into_iter()
                         .filter_map(|(chart_name, versions)| {
                             let latest = versions.into_iter().next()?;
+                            let artifact_hub_url = ah_repo
+                                .map(|r| format!("https://artifacthub.io/packages/helm/{}/{}", r, chart_name))
+                                .unwrap_or_default();
                             Some(HelmChartItem {
                                 name: chart_name,
                                 description: latest.description.unwrap_or_default(),
@@ -488,6 +546,7 @@ async fn fetch_helm_charts_from_repositories(repo_urls: Vec<String>) -> (Vec<Hel
                                 app_version: latest.appVersion.unwrap_or_else(|| "-".to_string()),
                                 repository: display_repo_name.clone(),
                                 repository_url: repo_url.clone(),
+                                artifact_hub_url,
                                 stars: 0,
                             })
                         })
@@ -543,8 +602,18 @@ async fn fetch_helm_charts_from_repositories(repo_urls: Vec<String>) -> (Vec<Hel
                         .into_iter()
                         .map(|p| {
                             let repo = p.repository;
+                            let repo_name = repo
+                                .as_ref()
+                                .and_then(|r| r.name.clone())
+                                .unwrap_or_default();
+                            let chart_name = p.name.clone().unwrap_or_else(|| "-".to_string());
+                            let artifact_hub_url = if !repo_name.is_empty() && chart_name != "-" {
+                                format!("https://artifacthub.io/packages/helm/{}/{}", repo_name, chart_name)
+                            } else {
+                                String::new()
+                            };
                             HelmChartItem {
-                                name: p.name.unwrap_or_else(|| "-".to_string()),
+                                name: chart_name,
                                 description: p.description.unwrap_or_default(),
                                 version: p.version.unwrap_or_else(|| "-".to_string()),
                                 app_version: p.app_version.unwrap_or_else(|| "-".to_string()),
@@ -556,6 +625,7 @@ async fn fetch_helm_charts_from_repositories(repo_urls: Vec<String>) -> (Vec<Hel
                                     .as_ref()
                                     .and_then(|r| r.url.clone())
                                     .unwrap_or_default(),
+                                artifact_hub_url,
                                 stars: p.stars.unwrap_or(0),
                             }
                         })

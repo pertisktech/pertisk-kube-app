@@ -43,6 +43,7 @@ export interface HelmChart {
   app_version: string;
   repository: string;
   repository_url: string;
+  artifact_hub_url: string;
   stars: number;
 }
 

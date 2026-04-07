@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
 import { checkHelmRepository } from '../hooks/useKubernetes';
 import { type IconComponent, Settings, Terminal, FileCode, Archive, Plus, Pencil, Trash2 } from '../components/Icons';
@@ -44,13 +45,10 @@ export const DesktopSettingsPage = () => {
   const [helmRepositories, setHelmRepositories] = useState(settings.helmRepositories);
   const [helmRepoNameInput, setHelmRepoNameInput] = useState('');
   const [helmRepoUrlInput, setHelmRepoUrlInput] = useState('');
-  const [helmRepoFavoriteInput, setHelmRepoFavoriteInput] = useState(false);
   const [helmRepoEnabledInput, setHelmRepoEnabledInput] = useState(true);
   const [editingRepoId, setEditingRepoId] = useState<string | null>(null);
   const [checkingRepoId, setCheckingRepoId] = useState<string | null>(null);
-  const [repoCheckStatus, setRepoCheckStatus] = useState<string | null>(null);
   const [featureSaving, setFeatureSaving] = useState(false);
-  const [featureStatus, setFeatureStatus] = useState<string | null>(null);
 
   useEffect(() => {
     setTerminalFontName(settings.terminal.fontName);
@@ -69,7 +67,6 @@ export const DesktopSettingsPage = () => {
 
   const onSaveFeatureSettings = () => {
     setFeatureSaving(true);
-    setFeatureStatus(null);
     try {
       setSettings({
         ...settings,
@@ -86,9 +83,9 @@ export const DesktopSettingsPage = () => {
         helmRepoUrl: helmRepositories.find((repo) => repo.enabled)?.url ?? '',
         helmRepositories,
       });
-      setFeatureStatus('Terminal, YAML editor, and Helm repository settings saved.');
+      toast.success('Settings saved successfully.');
     } catch (err) {
-      setFeatureStatus(err instanceof Error ? err.message : 'Failed to save feature settings.');
+      toast.error(err instanceof Error ? err.message : 'Failed to save settings.');
     } finally {
       setFeatureSaving(false);
     }
@@ -100,7 +97,6 @@ export const DesktopSettingsPage = () => {
     setEditingRepoId(null);
     setHelmRepoNameInput('');
     setHelmRepoUrlInput('');
-    setHelmRepoFavoriteInput(false);
     setHelmRepoEnabledInput(true);
   };
 
@@ -108,17 +104,17 @@ export const DesktopSettingsPage = () => {
     const url = helmRepoUrlInput.trim();
     const name = helmRepoNameInput.trim();
     if (!url) {
-      setFeatureStatus('Repository URL is required.');
+      toast.error('Repository URL is required.');
       return;
     }
 
     if (editingRepoId) {
       setHelmRepositories((prev) => prev.map((repo) => (
         repo.id === editingRepoId
-          ? { ...repo, name: name || repo.name, url, favorite: helmRepoFavoriteInput, enabled: helmRepoEnabledInput }
+          ? { ...repo, name: name || repo.name, url, enabled: helmRepoEnabledInput }
           : repo
       )));
-      setFeatureStatus('Helm repository updated. Save Settings to persist.');
+      toast.info('Repository updated. Save Settings to persist.');
     } else {
       const parsedHostname = (() => {
         try {
@@ -131,11 +127,10 @@ export const DesktopSettingsPage = () => {
         id: `repo-${Date.now()}`,
         name: name || parsedHostname || 'Custom Repository',
         url,
-        favorite: helmRepoFavoriteInput,
         enabled: helmRepoEnabledInput,
       };
       setHelmRepositories((prev) => [...prev, newRepo]);
-      setFeatureStatus('Helm repository added. Save Settings to persist.');
+      toast.info('Repository added. Save Settings to persist.');
     }
 
     resetRepoEditor();
@@ -147,25 +142,22 @@ export const DesktopSettingsPage = () => {
     setEditingRepoId(repo.id);
     setHelmRepoNameInput(repo.name);
     setHelmRepoUrlInput(repo.url);
-    setHelmRepoFavoriteInput(repo.favorite);
     setHelmRepoEnabledInput(repo.enabled);
-    setRepoCheckStatus(null);
   };
 
   const deleteRepo = (repoId: string) => {
     setHelmRepositories((prev) => prev.filter((repo) => repo.id !== repoId));
     if (editingRepoId === repoId) resetRepoEditor();
-    setFeatureStatus('Helm repository removed. Save Settings to persist.');
+    toast.info('Repository removed. Save Settings to persist.');
   };
 
   const runRepoCheck = async (repoId: string, repoUrl: string) => {
     setCheckingRepoId(repoId);
-    setRepoCheckStatus(null);
     try {
       const result = await checkHelmRepository(repoUrl);
-      setRepoCheckStatus(result.message || 'Repository check succeeded.');
+      toast.success(result.message || 'Repository check succeeded.');
     } catch (err) {
-      setRepoCheckStatus(err instanceof Error ? err.message : 'Repository check failed.');
+      toast.error(err instanceof Error ? err.message : 'Repository check failed.');
     } finally {
       setCheckingRepoId(null);
     }
@@ -346,14 +338,6 @@ export const DesktopSettingsPage = () => {
                       />
                       <span>Enabled</span>
                     </label>
-                    <label className="inline-flex items-center gap-2 text-sm text-text-secondary">
-                      <input
-                        type="checkbox"
-                        checked={helmRepoFavoriteInput}
-                        onChange={(e) => setHelmRepoFavoriteInput(e.target.checked)}
-                      />
-                      <span>Favorite</span>
-                    </label>
                     <div className="md:col-span-2 flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -391,7 +375,7 @@ export const DesktopSettingsPage = () => {
                             <td className="px-3 py-2 text-text">{repo.name}</td>
                             <td className="px-3 py-2 text-text-secondary truncate max-w-[420px]">{repo.url}</td>
                             <td className="px-3 py-2 text-text-secondary">
-                              {repo.enabled ? 'Enabled' : 'Disabled'}{repo.favorite ? ' • Favorite' : ''}
+                              {repo.enabled ? 'Enabled' : 'Disabled'}
                             </td>
                             <td className="px-3 py-2">
                               <div className="flex justify-end gap-2">
@@ -425,12 +409,8 @@ export const DesktopSettingsPage = () => {
                     </table>
                   </div>
 
-                  {repoCheckStatus && (
-                    <p className="text-xs text-text-secondary">{repoCheckStatus}</p>
-                  )}
-
                   <p className="text-xs text-text-secondary">
-                    Helm Charts page loads from enabled repositories in this list. Favorite repositories are auto-initialized.
+                    Helm Charts page loads from enabled repositories in this list.
                   </p>
                 </div>
               )}
@@ -446,7 +426,6 @@ export const DesktopSettingsPage = () => {
               >
                 {featureSaving ? 'Saving...' : 'Save Settings'}
               </button>
-              {featureStatus && <p className="text-sm text-text-secondary">{featureStatus}</p>}
             </div>
           </footer>
         </section>

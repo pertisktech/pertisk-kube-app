@@ -1,7 +1,8 @@
-import { Cable, Layers, Upload } from './Icons';
+import { ExternalLink, Layers, Upload } from './Icons';
 import type { HelmChart } from '../types';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle } from './drawer';
+import { openExternalUrl } from '../utils/openExternalUrl';
 
 interface HelmChartDetailPanelProps {
   chart: HelmChart;
@@ -37,21 +38,23 @@ export const HelmChartDetailPanel = ({ chart, onClose, onInstall }: HelmChartDet
     <DrawerItem name="Version">{chart.version}</DrawerItem>
     <DrawerItem name="App Version">{chart.app_version ?? '—'}</DrawerItem>
     <DrawerItem name="Repository">
-      {chart.repository_url ? (
-        <a
-          href={chart.repository_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 break-all"
-          style={{ color: 'var(--color-primary)' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {chart.repository}
-          <Cable size={12} className="flex-shrink-0" />
-        </a>
-      ) : (
-        chart.repository
-      )}
+      <span title={chart.repository_url || undefined}>{chart.repository}</span>
+    </DrawerItem>
+    <DrawerItem name="Artifact Hub">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 cursor-pointer underline hover:no-underline text-right"
+        style={{ color: 'var(--color-primary)' }}
+        onClick={(e) => {
+          e.stopPropagation();
+          void openExternalUrl(
+            chart.artifact_hub_url || `https://artifacthub.io/packages/search?ts_query_web=${encodeURIComponent(chart.name)}&kind=0`
+          );
+        }}
+      >
+        {chart.artifact_hub_url ? 'View on Artifact Hub' : 'Search on Artifact Hub'}
+        <ExternalLink size={12} className="flex-shrink-0" />
+      </button>
     </DrawerItem>
     <DrawerItem name="Stars">
       {chart.stars >= 1000 ? `${(chart.stars / 1000).toFixed(1)}k` : String(chart.stars)}

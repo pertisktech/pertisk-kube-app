@@ -22,7 +22,6 @@ export interface HelmRepository {
   name: string;
   url: string;
   enabled: boolean;
-  favorite: boolean;
 }
 
 interface FeatureSettingsContextValue {
@@ -48,21 +47,18 @@ const DEFAULT_SETTINGS: FeatureSettings = {
       name: 'Bitnami',
       url: 'https://charts.bitnami.com/bitnami',
       enabled: true,
-      favorite: true,
     },
     {
       id: 'prometheus-community',
       name: 'Prometheus Community',
       url: 'https://prometheus-community.github.io/helm-charts',
       enabled: true,
-      favorite: true,
     },
     {
       id: 'ingress-nginx',
       name: 'ingress-nginx',
       url: 'https://kubernetes.github.io/ingress-nginx',
       enabled: true,
-      favorite: true,
     },
   ],
 };
@@ -111,7 +107,6 @@ function normalizeSettings(value: unknown): FeatureSettings {
           name: name || `Repo ${index + 1}`,
           url,
           enabled: item.enabled !== false,
-          favorite: item.favorite === true,
         } satisfies HelmRepository;
       })
       .filter((repo): repo is HelmRepository => Boolean(repo))
@@ -124,7 +119,6 @@ function normalizeSettings(value: unknown): FeatureSettings {
       name: 'Custom Repository',
       url: legacyHelmRepoUrl,
       enabled: true,
-      favorite: false,
     });
   }
 

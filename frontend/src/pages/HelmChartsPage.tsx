@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Cable, Star } from '../components/Icons';
+import { ExternalLink, Star } from '../components/Icons';
 import { useHelmCharts, useHelmReleases } from '../hooks/useKubernetes';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
 import { DataTable } from '../components/DataTable';
 import { HelmChartDetailPanel } from '../components/HelmChartDetailPanel';
 import { openPanelTab } from '../components/BottomPanel';
+import { openExternalUrl } from '../utils/openExternalUrl';
 import type { HelmChart } from '../types';
 
 type ChartSortKey = 'name' | 'version' | 'app_version' | 'repository' | 'stars' | 'installed';
@@ -30,6 +31,7 @@ export const HelmChartsPage = () => {
   const chartsRefreshing = chartResponse?.refreshing === true;
   const { data: releases } = useHelmReleases();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedRepository, setSelectedRepository] = useState<string>('all');
   const [sortState, setSortState] = useState<{ key: ChartSortKey; direction: 'asc' | 'desc' }>({
     key: 'stars',
     direction: 'desc',
@@ -58,9 +60,25 @@ export const HelmChartsPage = () => {
   const columns = [
     {
       header: 'Name',
-      accessor: (row: HelmChart) => (
-        <span className="font-medium text-text">{row.name}</span>
-      ),
+      accessor: (row: HelmChart) => {
+        const hubUrl = row.artifact_hub_url || `https://artifacthub.io/packages/search?ts_query_web=${encodeURIComponent(row.name)}&kind=0`;
+        return (
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="font-medium text-text truncate">{row.name}</span>
+            <button
+              type="button"
+              className="flex-shrink-0 text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] transition-colors cursor-pointer"
+              title={row.artifact_hub_url ? 'View on Artifact Hub' : 'Search on Artifact Hub'}
+              onClick={(e) => {
+                e.stopPropagation();
+                void openExternalUrl(hubUrl);
+              }}
+            >
+              <ExternalLink size={12} />
+            </button>
+          </div>
+        );
+      },
       width: '14%',
       sortable: true,
       sortKey: 'name',
@@ -114,21 +132,9 @@ export const HelmChartsPage = () => {
     {
       header: 'Repository',
       accessor: (row: HelmChart) => (
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-text-muted truncate">{row.repository}</span>
-          {row.repository_url && (
-            <a
-              href={row.repository_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="flex-shrink-0 text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] transition-colors"
-              title={row.repository_url}
-            >
-              <Cable size={12} />
-            </a>
-          )}
-        </div>
+        <span className="text-text-muted truncate" title={row.repository_url}>
+          {row.repository}
+        </span>
       ),
       width: '22%',
       sortable: true,
@@ -158,8 +164,24 @@ export const HelmChartsPage = () => {
     [data, repoNameByUrl],
   );
 
+  /** Unique repository names for the filter dropdown */
+  const uniqueRepositories = useMemo(() => {
+    const repos = new Set<string>();
+    displayCharts.forEach((c) => {
+      if (c.repository) repos.add(c.repository);
+    });
+    return Array.from(repos).sort((a, b) => a.localeCompare(b));
+  }, [displayCharts]);
+
   const filteredAndSortedCharts = useMemo(() => {
     let source = [...displayCharts];
+
+    // Filter by repository
+    if (selectedRepository !== 'all') {
+      source = source.filter((c) => c.repository === selectedRepository);
+    }
+
+    // Filter by search query
     const q = searchQuery.trim().toLowerCase();
     if (q) {
       source = source.filter(
@@ -195,7 +217,7 @@ export const HelmChartsPage = () => {
           return compareText(a.name, b.name) * factor;
       }
     });
-  }, [displayCharts, sortState, installedChartNames, searchQuery]);
+  }, [displayCharts, sortState, installedChartNames, searchQuery, selectedRepository]);
 
   return (
     <div className="space-y-4">
@@ -220,44 +242,44 @@ export const HelmChartsPage = () => {
             )}
           </span>
         </h1>
-        <input
-          type="text"
-          placeholder="Search charts..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-56 px-3 py-1.5 rounded-lg border border-border bg-surface text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-          aria-label="Search charts by name, description, repository, version"
-        />
+        <div className="flex items-center gap-2">
+          {uniqueRepositories.length > 1 && (
+            <select
+              value={selectedRepository}
+              onChange={(e) => setSelectedRepository(e.target.value)}
+              className="px-3 py-1.5 rounded-lg border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              aria-label="Filter by repository"
+            >
+              <option value="all">All Repositories</option>
+              {uniqueRepositories.map((repo) => (
+                <option key={repo} value={repo}>
+                  {repo}
+                </option>
+              ))}
+            </select>
+          )}
+          <input
+            type="text"
+            placeholder="Search charts..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-56 px-3 py-1.5 rounded-lg border border-border bg-surface text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            aria-label="Search charts by name, description, repository, version"
+          />
+        </div>
       </div>
 
-      {enabledRepos.length > 0 && (
-        <div className="rounded-lg border border-border bg-surface px-3 py-2">
-          <p className="text-xs font-medium text-text-secondary">Active Repositories From Settings</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {enabledRepos.map((repo) => (
-              <span
-                key={repo.id}
-                className="inline-flex items-center rounded-full border border-border bg-surface-elevated px-2.5 py-1 text-xs text-text-secondary"
-                title={repo.url}
-              >
-                {repo.name}
-                {repo.favorite ? ' ★' : ''}
-              </span>
-            ))}
-          </div>
-          {chartsRefreshing && (
-            <p className="mt-2 text-xs text-text-secondary">Refreshing repository indexes...</p>
-          )}
-          {!chartsRefreshing && chartWarnings.length > 0 && (
-            <p className="mt-2 text-xs text-amber-600">{chartWarnings[0]}</p>
-          )}
-        </div>
+      {chartsRefreshing && (
+        <p className="text-xs text-text-secondary">Refreshing repository indexes...</p>
+      )}
+      {!chartsRefreshing && chartWarnings.length > 0 && (
+        <p className="text-xs text-amber-600">{chartWarnings[0]}</p>
       )}
 
       <DataTable
         columns={columns}
         data={filteredAndSortedCharts}
-        isLoading={isLoading}
+        isLoading={isLoading || (chartsRefreshing && filteredAndSortedCharts.length === 0)}
         error={error?.message ?? null}
         autoFitContent={false}
         rowKey={chartRowKey}
