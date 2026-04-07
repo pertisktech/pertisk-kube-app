@@ -15,7 +15,7 @@ use tauri::{AppHandle, Manager, RunEvent, State};
 use tracing::{error, info, warn};
 
 #[cfg(target_os = "macos")]
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem};
 
 struct BackendState {
     child: Arc<Mutex<Option<Child>>>,
@@ -1381,7 +1381,21 @@ fn main() {
                 let menu = Menu::default(app.handle())?;
                 let settings_item = MenuItem::with_id(app, "open_settings", "Settings...", true, Some("CmdOrCtrl+,"))?;
                 if let Some(app_submenu) = menu.items()?.into_iter().find_map(|item| item.as_submenu().cloned()) {
-                    let _ = app_submenu.insert(&settings_item, 2);
+                    let pkg_info = app.package_info();
+                    let config = app.config();
+                    let about_metadata = AboutMetadata {
+                        name: Some(pkg_info.name.clone()),
+                        version: Some(pkg_info.version.to_string()),
+                        copyright: config.bundle.copyright.clone(),
+                        authors: config.bundle.publisher.clone().map(|p| vec![p]),
+                        icon: app.default_window_icon().cloned(),
+                        ..Default::default()
+                    };
+                    let about_item = PredefinedMenuItem::about(app, None, Some(about_metadata))?;
+
+                    let _ = app_submenu.remove_at(0);
+                    let _ = app_submenu.insert(&about_item, 0);
+                    let _ = app_submenu.insert(&settings_item, 1);
                 }
                 app.set_menu(menu)?;
 

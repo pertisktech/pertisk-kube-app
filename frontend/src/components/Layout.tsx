@@ -1734,6 +1734,7 @@ export const Layout = () => {
             </div>
           </div>
         )}
+
       </div>
 
       {desktopMode && showKubeconfigModal && clusterSelectionDialog}
