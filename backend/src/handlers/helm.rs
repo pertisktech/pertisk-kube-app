@@ -5,16 +5,17 @@ use axum::{
     Json,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use flate2::read::GzDecoder;
 use k8s_openapi::api::core::v1::Secret;
 use kube::{api::ListParams, Api};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path as FsPath;
 use std::process::Stdio;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tracing::error;
@@ -35,7 +36,7 @@ pub struct HelmReleaseItem {
     pub updated: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct HelmChartItem {
     pub name: String,
     pub description: String,
@@ -44,6 +45,19 @@ pub struct HelmChartItem {
     pub repository: String,
     pub repository_url: String,
     pub stars: u64,
+}
+
+#[derive(Clone, Default)]
+pub struct HelmChartsCacheEntry {
+    pub data: Vec<HelmChartItem>,
+    pub warnings: Vec<String>,
+    pub last_updated: Option<Instant>,
+    pub refreshing: bool,
+}
+
+#[derive(Default)]
+pub struct HelmChartsCache {
+    pub entries: HashMap<String, HelmChartsCacheEntry>,
 }
 
 // ── Artifact Hub API deserialization ──────────────────────────────────────────
@@ -68,6 +82,90 @@ struct ArtifactHubRepo {
     display_name: Option<String>,
     name: Option<String>,
     url: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct HelmChartsQuery {
+    pub repo_urls: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct HelmRepositoryIndex {
+    entries: Option<HashMap<String, Vec<HelmRepositoryIndexEntry>>>,
+}
+
+#[derive(Deserialize)]
+struct HelmRepositoryIndexEntry {
+    version: Option<String>,
+    #[serde(rename = "appVersion")]
+    appVersion: Option<String>,
+    description: Option<String>,
+}
+
+const HELM_CHART_CACHE_TTL: Duration = Duration::from_secs(30);
+
+fn parse_repo_urls(csv: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    csv.split(',')
+        .filter_map(|raw| {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            if seen.insert(trimmed.to_string()) {
+                Some(trimmed.to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn repo_alias_from_url(url: &str) -> String {
+    let mut out = String::new();
+    for c in url.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else if c == '-' || c == '_' {
+            out.push(c);
+        }
+        if out.len() >= 24 {
+            break;
+        }
+    }
+    if out.is_empty() {
+        "repo".to_string()
+    } else {
+        out
+    }
+}
+
+fn cache_key_for_repo_urls(repo_urls: &[String]) -> String {
+    let mut parts = repo_urls.to_vec();
+    parts.sort();
+    parts.join(",")
+}
+
+fn cache_is_fresh(entry: &HelmChartsCacheEntry) -> bool {
+    entry
+        .last_updated
+        .map(|instant| instant.elapsed() <= HELM_CHART_CACHE_TTL)
+        .unwrap_or(false)
+}
+
+fn helm_chart_response(data: Vec<HelmChartItem>, warnings: Vec<String>, refreshing: bool) -> axum::response::Response {
+    let warnings = if warnings.is_empty() { None } else { Some(warnings) };
+    let total = data.len();
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "data": data,
+            "total": total,
+            "warnings": warnings,
+            "refreshing": refreshing
+        })),
+    )
+        .into_response()
 }
 
 // ── Helm Releases ─────────────────────────────────────────────────────────────
@@ -200,7 +298,51 @@ fn decode_helm_release_data(secret: &Secret) -> Option<(String, String, String, 
 
 // ── Helm Charts — proxy to Artifact Hub ───────────────────────────────────────
 
-pub async fn list_helm_charts(_state: State<AppState>) -> impl IntoResponse {
+pub async fn list_helm_charts(
+    Query(q): Query<HelmChartsQuery>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let configured_repo_urls = q
+        .repo_urls
+        .as_deref()
+        .map(parse_repo_urls)
+        .unwrap_or_default();
+
+    if !configured_repo_urls.is_empty() {
+        let cache_key = cache_key_for_repo_urls(&configured_repo_urls);
+
+        {
+            let cache = state.helm_charts_cache.read().await;
+            if let Some(entry) = cache.entries.get(&cache_key) {
+                if cache_is_fresh(entry) || entry.refreshing {
+                    return helm_chart_response(entry.data.clone(), entry.warnings.clone(), entry.refreshing);
+                }
+            }
+        }
+
+        let mut should_spawn_refresh = false;
+        let response = {
+            let mut cache = state.helm_charts_cache.write().await;
+            let entry = cache.entries.entry(cache_key.clone()).or_default();
+            if !entry.refreshing {
+                entry.refreshing = true;
+                should_spawn_refresh = true;
+            }
+            helm_chart_response(entry.data.clone(), entry.warnings.clone(), true)
+        };
+
+        if should_spawn_refresh {
+            let app_state = state.clone();
+            let refresh_key = cache_key.clone();
+            let refresh_urls = configured_repo_urls.clone();
+            tokio::spawn(async move {
+                refresh_helm_chart_cache(app_state, refresh_key, refresh_urls).await;
+            });
+        }
+
+        return response;
+    }
+
     let http = match reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .user_agent("pertisk-kube-dashboard/1.0")
@@ -287,6 +429,158 @@ pub async fn list_helm_charts(_state: State<AppState>) -> impl IntoResponse {
                 .into_response()
         }
     }
+}
+
+async fn fetch_helm_charts_from_repositories(repo_urls: Vec<String>) -> (Vec<HelmChartItem>, Vec<String>) {
+    let mut all_items: Vec<HelmChartItem> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+    let http = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .user_agent("pertisk-kube-dashboard/1.0")
+        .build()
+    {
+        Ok(c) => c,
+        Err(err) => {
+            error!("Failed to build HTTP client for repository indexes: {}", err);
+            return (Vec::new(), vec![err.to_string()]);
+        }
+    };
+
+    let mut tasks = FuturesUnordered::new();
+    for repo_url in repo_urls {
+        let client = http.clone();
+        tasks.push(async move {
+            let display_repo_name = repo_alias_from_url(&repo_url);
+            let index_url = if repo_url.ends_with('/') {
+                format!("{}index.yaml", repo_url)
+            } else {
+                format!("{}/index.yaml", repo_url)
+            };
+
+            let response = client
+                .get(&index_url)
+                .header("Accept", "application/x-yaml,text/yaml,text/plain,application/octet-stream")
+                .send()
+                .await;
+
+            match response {
+                Ok(resp) if resp.status().is_success() => {
+                    let body = match resp.text().await {
+                        Ok(text) => text,
+                        Err(err) => return Err(format!("{}: {}", repo_url, err)),
+                    };
+
+                    let index = match serde_yaml::from_str::<HelmRepositoryIndex>(&body) {
+                        Ok(index) => index,
+                        Err(err) => return Err(format!("{}: failed to parse index.yaml ({})", repo_url, err)),
+                    };
+
+                    let items = index
+                        .entries
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter_map(|(chart_name, versions)| {
+                            let latest = versions.into_iter().next()?;
+                            Some(HelmChartItem {
+                                name: chart_name,
+                                description: latest.description.unwrap_or_default(),
+                                version: latest.version.unwrap_or_else(|| "-".to_string()),
+                                app_version: latest.appVersion.unwrap_or_else(|| "-".to_string()),
+                                repository: display_repo_name.clone(),
+                                repository_url: repo_url.clone(),
+                                stars: 0,
+                            })
+                        })
+                        .collect::<Vec<_>>();
+
+                    Ok(items)
+                }
+                Ok(resp) => Err(format!("{}: returned HTTP {}", repo_url, resp.status())),
+                Err(err) => Err(format!("{}: {}", repo_url, err)),
+            }
+        });
+    }
+
+    while let Some(result) = tasks.next().await {
+        match result {
+            Ok(mut items) => all_items.append(&mut items),
+            Err(warning) => warnings.push(warning),
+        }
+    }
+
+    all_items.sort_by(|a, b| a.repository.cmp(&b.repository).then(a.name.cmp(&b.name)));
+
+    if all_items.is_empty() {
+        warnings.push("Configured repositories returned no charts. Falling back to Artifact Hub.".to_string());
+
+        let http = match reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .user_agent("pertisk-kube-dashboard/1.0")
+            .build()
+        {
+            Ok(c) => c,
+            Err(err) => {
+                error!("Failed to build HTTP client for fallback: {}", err);
+                return (Vec::new(), warnings);
+            }
+        };
+
+        let url =
+            "https://artifacthub.io/api/v1/packages/search?kind=0&limit=30&sort=relevance&page=0";
+
+        let result = http
+            .get(url)
+            .header("Accept", "application/json")
+            .send()
+            .await;
+
+        if let Ok(resp) = result {
+            if resp.status().is_success() {
+                if let Ok(hub) = resp.json::<ArtifactHubSearchResponse>().await {
+                    all_items = hub
+                        .packages
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|p| {
+                            let repo = p.repository;
+                            HelmChartItem {
+                                name: p.name.unwrap_or_else(|| "-".to_string()),
+                                description: p.description.unwrap_or_default(),
+                                version: p.version.unwrap_or_else(|| "-".to_string()),
+                                app_version: p.app_version.unwrap_or_else(|| "-".to_string()),
+                                repository: repo
+                                    .as_ref()
+                                    .and_then(|r| r.display_name.clone().or_else(|| r.name.clone()))
+                                    .unwrap_or_else(|| "artifact-hub".to_string()),
+                                repository_url: repo
+                                    .as_ref()
+                                    .and_then(|r| r.url.clone())
+                                    .unwrap_or_default(),
+                                stars: p.stars.unwrap_or(0),
+                            }
+                        })
+                        .collect();
+                }
+            }
+        }
+    }
+
+    (all_items, warnings)
+}
+
+async fn refresh_helm_chart_cache(state: AppState, cache_key: String, repo_urls: Vec<String>) {
+    let (data, warnings) = fetch_helm_charts_from_repositories(repo_urls).await;
+
+    let mut cache = state.helm_charts_cache.write().await;
+    cache.entries.insert(
+        cache_key,
+        HelmChartsCacheEntry {
+            data,
+            warnings,
+            last_updated: Some(Instant::now()),
+            refreshing: false,
+        },
+    );
 }
 
 // ── Helm Release YAML (values + metadata) ────────────────────────────────────
@@ -820,6 +1114,11 @@ pub struct ChartVersionsQuery {
     pub chart: String,
 }
 
+#[derive(Deserialize)]
+pub struct HelmRepositoryCheckQuery {
+    pub repo_url: String,
+}
+
 /// Fetches the chart's default values.yaml by running `helm repo add` + `helm show values`.
 pub async fn get_helm_chart_values(
     Query(q): Query<ChartValuesQuery>,
@@ -1120,6 +1419,99 @@ pub async fn get_helm_chart_versions(
             )
                 .into_response()
         }
+    }
+}
+
+pub async fn check_helm_repository(
+    Query(q): Query<HelmRepositoryCheckQuery>,
+    _state: State<AppState>,
+) -> impl IntoResponse {
+    let repo_url = q.repo_url.trim();
+    if repo_url.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "success": false, "message": "Missing repo_url" })),
+        )
+            .into_response();
+    }
+
+    let repo_name = format!(
+        "check_{}_{}",
+        repo_alias_from_url(repo_url),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
+
+    let add_out = Command::new("helm")
+        .args(["repo", "add", &repo_name, repo_url])
+        .output()
+        .await;
+
+    let add_ok = match &add_out {
+        Ok(o) => o.status.success(),
+        Err(e) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "success": false, "message": format!("Helm not available: {}", e) })),
+            )
+                .into_response();
+        }
+    };
+
+    if !add_ok {
+        let stderr = add_out
+            .as_ref()
+            .map(|o| String::from_utf8_lossy(&o.stderr).trim().to_string())
+            .unwrap_or_else(|_| "Failed to add repository".to_string());
+        let _ = Command::new("helm").args(["repo", "remove", &repo_name]).output().await;
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "success": false, "message": stderr })),
+        )
+            .into_response();
+    }
+
+    let search_out = Command::new("helm")
+        .args(["search", "repo", &format!("{}/", repo_name), "--output", "json"])
+        .output()
+        .await;
+
+    let _ = Command::new("helm")
+        .args(["repo", "remove", &repo_name])
+        .output()
+        .await;
+
+    match search_out {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout).to_string();
+            let chart_count = serde_json::from_str::<Vec<serde_json::Value>>(&stdout)
+                .map(|rows| rows.len())
+                .unwrap_or(0);
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "success": true,
+                    "message": format!("Repository is reachable. {} chart(s) discovered.", chart_count),
+                    "chart_count": chart_count
+                })),
+            )
+                .into_response()
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr).trim().to_string();
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "success": false, "message": stderr })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "success": false, "message": format!("Helm not available: {}", e) })),
+        )
+            .into_response(),
     }
 }
 

@@ -1546,17 +1546,47 @@ export const useHelmReleases = () => {
   });
 };
 
-export const useHelmCharts = () => {
+export const useHelmCharts = (repoUrls?: string[]) => {
+  const normalizedRepoUrls = (repoUrls ?? [])
+    .map((repo) => repo.trim())
+    .filter(Boolean);
+
   return useQuery({
-    queryKey: ['helm-charts'],
-    queryFn: async () => {
-      const res = await apiFetch('/helm/charts');
+    queryKey: ['helm-charts', normalizedRepoUrls.join(',')],
+    queryFn: async (): Promise<{ charts: HelmChart[]; warnings: string[]; refreshing: boolean }> => {
+      const params = new URLSearchParams();
+      if (normalizedRepoUrls.length > 0) {
+        params.set('repo_urls', normalizedRepoUrls.join(','));
+      }
+      const suffix = params.toString() ? `?${params.toString()}` : '';
+      const res = await apiFetch(`/helm/charts${suffix}`);
       if (!res.ok) throw new Error('Failed to fetch Helm charts');
-      const data = (await res.json()) as ApiResponse<HelmChart>;
-      return data.data;
+      const data = (await res.json()) as ApiResponse<HelmChart> & { warnings?: string[]; refreshing?: boolean };
+      return {
+        charts: data.data,
+        warnings: Array.isArray(data.warnings) ? data.warnings : [],
+        refreshing: data.refreshing === true,
+      };
     },
-    staleTime: 10 * 60 * 1000, // cache 10 min — Artifact Hub data changes slowly
+    staleTime: normalizedRepoUrls.length > 0 ? 0 : 10 * 60 * 1000,
+    refetchInterval: (query) => (query.state.data?.refreshing ? 1000 : false),
   });
+};
+
+export interface HelmRepositoryCheckResult {
+  success: boolean;
+  message: string;
+  chart_count?: number;
+}
+
+export const checkHelmRepository = async (repoUrl: string): Promise<HelmRepositoryCheckResult> => {
+  const params = new URLSearchParams({ repo_url: repoUrl.trim() });
+  const res = await apiFetch(`/helm/repositories/check?${params.toString()}`);
+  const data = (await res.json().catch(() => ({}))) as HelmRepositoryCheckResult;
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || `Failed to check repository (${res.status})`);
+  }
+  return data;
 };
 
 /** Fetches available versions for a chart (repo_url + chart name). */

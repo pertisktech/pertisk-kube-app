@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Cable, Star } from '../components/Icons';
 import { useHelmCharts, useHelmReleases } from '../hooks/useKubernetes';
+import { useFeatureSettings } from '../context/FeatureSettingsContext';
 import { DataTable } from '../components/DataTable';
 import { HelmChartDetailPanel } from '../components/HelmChartDetailPanel';
 import { openPanelTab } from '../components/BottomPanel';
@@ -13,7 +14,20 @@ function chartRowKey(chart: HelmChart): string {
 }
 
 export const HelmChartsPage = () => {
-  const { data, isLoading, error } = useHelmCharts();
+  const { settings } = useFeatureSettings();
+  const enabledRepos = useMemo(
+    () => settings.helmRepositories.filter((repo) => repo.enabled),
+    [settings.helmRepositories],
+  );
+  const enabledRepoUrls = useMemo(() => enabledRepos.map((repo) => repo.url), [enabledRepos]);
+  const repoNameByUrl = useMemo(
+    () => new Map(enabledRepos.map((repo) => [repo.url, repo.name])),
+    [enabledRepos],
+  );
+  const { data: chartResponse, isLoading, error } = useHelmCharts(enabledRepoUrls);
+  const data = chartResponse?.charts ?? [];
+  const chartWarnings = chartResponse?.warnings ?? [];
+  const chartsRefreshing = chartResponse?.refreshing === true;
   const { data: releases } = useHelmReleases();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortState, setSortState] = useState<{ key: ChartSortKey; direction: 'asc' | 'desc' }>({
@@ -136,8 +150,16 @@ export const HelmChartsPage = () => {
     },
   ];
 
+  const displayCharts = useMemo(
+    () => (data || []).map((chart) => ({
+      ...chart,
+      repository: repoNameByUrl.get(chart.repository_url) ?? chart.repository,
+    })),
+    [data, repoNameByUrl],
+  );
+
   const filteredAndSortedCharts = useMemo(() => {
-    let source = [...(data || [])];
+    let source = [...displayCharts];
     const q = searchQuery.trim().toLowerCase();
     if (q) {
       source = source.filter(
@@ -173,7 +195,7 @@ export const HelmChartsPage = () => {
           return compareText(a.name, b.name) * factor;
       }
     });
-  }, [data, sortState, installedChartNames, searchQuery]);
+  }, [displayCharts, sortState, installedChartNames, searchQuery]);
 
   return (
     <div className="space-y-4">
@@ -181,15 +203,21 @@ export const HelmChartsPage = () => {
         <h1 className="text-xl font-semibold text-text">
           Charts{' '}
           <span className="text-base font-normal text-text-secondary">
-            — popular Helm charts from{' '}
-            <a
-              href="https://artifacthub.io"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[var(--color-primary)] hover:underline"
-            >
-              Artifact Hub
-            </a>
+            — {enabledRepos.length > 0 ? 'loaded from Helm Settings repositories' : 'popular Helm charts from Artifact Hub'}
+            {enabledRepos.length === 0 && (
+              <>
+                {' '}(
+                <a
+                  href="https://artifacthub.io"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[var(--color-primary)] hover:underline"
+                >
+                  Artifact Hub
+                </a>
+                )
+              </>
+            )}
           </span>
         </h1>
         <input
@@ -201,6 +229,30 @@ export const HelmChartsPage = () => {
           aria-label="Search charts by name, description, repository, version"
         />
       </div>
+
+      {enabledRepos.length > 0 && (
+        <div className="rounded-lg border border-border bg-surface px-3 py-2">
+          <p className="text-xs font-medium text-text-secondary">Active Repositories From Settings</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {enabledRepos.map((repo) => (
+              <span
+                key={repo.id}
+                className="inline-flex items-center rounded-full border border-border bg-surface-elevated px-2.5 py-1 text-xs text-text-secondary"
+                title={repo.url}
+              >
+                {repo.name}
+                {repo.favorite ? ' ★' : ''}
+              </span>
+            ))}
+          </div>
+          {chartsRefreshing && (
+            <p className="mt-2 text-xs text-text-secondary">Refreshing repository indexes...</p>
+          )}
+          {!chartsRefreshing && chartWarnings.length > 0 && (
+            <p className="mt-2 text-xs text-amber-600">{chartWarnings[0]}</p>
+          )}
+        </div>
+      )}
 
       <DataTable
         columns={columns}

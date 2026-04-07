@@ -50,6 +50,7 @@ pub struct AppState {
     pub jwt_secret: String,
     pub port_forward_state: Option<Arc<handlers::portforward::PortForwardState>>,
     pub workload_metric_history: Arc<RwLock<Vec<WorkloadMetricSnapshot>>>,
+    pub helm_charts_cache: Arc<RwLock<handlers::helm::HelmChartsCache>>,
     /// True when the kube client is a placeholder (exec credential failed at startup).
     /// Used by the frontend to surface a "Login Required" banner.
     pub auth_placeholder: bool,
@@ -91,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
         jwt_secret,
         port_forward_state,
         workload_metric_history: Arc::new(RwLock::new(Vec::new())),
+        helm_charts_cache: Arc::new(RwLock::new(handlers::helm::HelmChartsCache::default())),
         auth_placeholder: kube_status.is_placeholder,
         auth_message: kube_status.user_message,
     };
@@ -328,6 +330,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/crds/:crd_name/resources/:name", delete(delete_custom_resource))
         .route("/helm/releases", get(list_helm_releases))
         .route("/helm/charts", get(list_helm_charts))
+        .route("/helm/repositories/check", get(check_helm_repository))
         .route("/helm/charts/versions", get(get_helm_chart_versions))
         .route("/helm/charts/values", get(get_helm_chart_values))
         .route("/helm/charts/readme", get(get_helm_chart_readme))

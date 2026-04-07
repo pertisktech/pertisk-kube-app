@@ -14,6 +14,15 @@ export interface FeatureSettings {
   terminal: EditorVisualSettings;
   yamlEditor: EditorVisualSettings;
   helmRepoUrl: string;
+  helmRepositories: HelmRepository[];
+}
+
+export interface HelmRepository {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  favorite: boolean;
 }
 
 interface FeatureSettingsContextValue {
@@ -33,6 +42,29 @@ const DEFAULT_SETTINGS: FeatureSettings = {
     theme: 'auto',
   },
   helmRepoUrl: '',
+  helmRepositories: [
+    {
+      id: 'bitnami',
+      name: 'Bitnami',
+      url: 'https://charts.bitnami.com/bitnami',
+      enabled: true,
+      favorite: true,
+    },
+    {
+      id: 'prometheus-community',
+      name: 'Prometheus Community',
+      url: 'https://prometheus-community.github.io/helm-charts',
+      enabled: true,
+      favorite: true,
+    },
+    {
+      id: 'ingress-nginx',
+      name: 'ingress-nginx',
+      url: 'https://kubernetes.github.io/ingress-nginx',
+      enabled: true,
+      favorite: true,
+    },
+  ],
 };
 
 const FeatureSettingsContext = createContext<FeatureSettingsContextValue | null>(null);
@@ -66,10 +98,43 @@ function normalizeSettings(value: unknown): FeatureSettings {
   if (!value || typeof value !== 'object') return DEFAULT_SETTINGS;
   const source = value as Partial<FeatureSettings>;
 
+  const repos = Array.isArray(source.helmRepositories)
+    ? source.helmRepositories
+      .map((repo, index) => {
+        if (!repo || typeof repo !== 'object') return null;
+        const item = repo as Partial<HelmRepository>;
+        const name = typeof item.name === 'string' ? item.name.trim() : '';
+        const url = typeof item.url === 'string' ? item.url.trim() : '';
+        if (!url) return null;
+        return {
+          id: typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `repo-${index + 1}`,
+          name: name || `Repo ${index + 1}`,
+          url,
+          enabled: item.enabled !== false,
+          favorite: item.favorite === true,
+        } satisfies HelmRepository;
+      })
+      .filter((repo): repo is HelmRepository => Boolean(repo))
+    : [];
+
+  const legacyHelmRepoUrl = typeof source.helmRepoUrl === 'string' ? source.helmRepoUrl.trim() : '';
+  if (repos.length === 0 && legacyHelmRepoUrl) {
+    repos.push({
+      id: 'legacy-repo',
+      name: 'Custom Repository',
+      url: legacyHelmRepoUrl,
+      enabled: true,
+      favorite: false,
+    });
+  }
+
+  const normalizedRepos = repos.length > 0 ? repos : DEFAULT_SETTINGS.helmRepositories;
+
   return {
     terminal: normalizeVisualSettings(source.terminal, DEFAULT_SETTINGS.terminal),
     yamlEditor: normalizeVisualSettings(source.yamlEditor, DEFAULT_SETTINGS.yamlEditor),
-    helmRepoUrl: typeof source.helmRepoUrl === 'string' ? source.helmRepoUrl.trim() : '',
+    helmRepoUrl: legacyHelmRepoUrl,
+    helmRepositories: normalizedRepos,
   };
 }
 

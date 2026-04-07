@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
-import { type IconComponent, Settings, Terminal, FileCode, Archive } from '../components/Icons';
+import { checkHelmRepository } from '../hooks/useKubernetes';
+import { type IconComponent, Settings, Terminal, FileCode, Archive, Plus, Pencil, Trash2 } from '../components/Icons';
 
 type SettingsTab = 'general' | 'terminal' | 'yaml' | 'helm';
 
@@ -40,7 +41,14 @@ export const DesktopSettingsPage = () => {
   const [yamlFontName, setYamlFontName] = useState(settings.yamlEditor.fontName);
   const [yamlFontSize, setYamlFontSize] = useState(settings.yamlEditor.fontSize);
   const [yamlTheme, setYamlTheme] = useState(settings.yamlEditor.theme);
-  const [helmRepoUrl, setHelmRepoUrl] = useState(settings.helmRepoUrl);
+  const [helmRepositories, setHelmRepositories] = useState(settings.helmRepositories);
+  const [helmRepoNameInput, setHelmRepoNameInput] = useState('');
+  const [helmRepoUrlInput, setHelmRepoUrlInput] = useState('');
+  const [helmRepoFavoriteInput, setHelmRepoFavoriteInput] = useState(false);
+  const [helmRepoEnabledInput, setHelmRepoEnabledInput] = useState(true);
+  const [editingRepoId, setEditingRepoId] = useState<string | null>(null);
+  const [checkingRepoId, setCheckingRepoId] = useState<string | null>(null);
+  const [repoCheckStatus, setRepoCheckStatus] = useState<string | null>(null);
   const [featureSaving, setFeatureSaving] = useState(false);
   const [featureStatus, setFeatureStatus] = useState<string | null>(null);
 
@@ -51,7 +59,7 @@ export const DesktopSettingsPage = () => {
     setYamlFontName(settings.yamlEditor.fontName);
     setYamlFontSize(settings.yamlEditor.fontSize);
     setYamlTheme(settings.yamlEditor.theme);
-    setHelmRepoUrl(settings.helmRepoUrl);
+    setHelmRepositories(settings.helmRepositories);
   }, [settings]);
 
   const clampFontSize = (value: number, fallback: number) => {
@@ -75,9 +83,10 @@ export const DesktopSettingsPage = () => {
           fontSize: clampFontSize(yamlFontSize, 13),
           theme: yamlTheme,
         },
-        helmRepoUrl: helmRepoUrl.trim(),
+        helmRepoUrl: helmRepositories.find((repo) => repo.enabled)?.url ?? '',
+        helmRepositories,
       });
-      setFeatureStatus('Terminal, YAML editor, and Helm repo settings saved.');
+      setFeatureStatus('Terminal, YAML editor, and Helm repository settings saved.');
     } catch (err) {
       setFeatureStatus(err instanceof Error ? err.message : 'Failed to save feature settings.');
     } finally {
@@ -86,6 +95,81 @@ export const DesktopSettingsPage = () => {
   };
 
   const activeTabMeta = SETTINGS_TABS.find((tab) => tab.id === activeTab) ?? SETTINGS_TABS[0];
+
+  const resetRepoEditor = () => {
+    setEditingRepoId(null);
+    setHelmRepoNameInput('');
+    setHelmRepoUrlInput('');
+    setHelmRepoFavoriteInput(false);
+    setHelmRepoEnabledInput(true);
+  };
+
+  const submitRepoEditor = () => {
+    const url = helmRepoUrlInput.trim();
+    const name = helmRepoNameInput.trim();
+    if (!url) {
+      setFeatureStatus('Repository URL is required.');
+      return;
+    }
+
+    if (editingRepoId) {
+      setHelmRepositories((prev) => prev.map((repo) => (
+        repo.id === editingRepoId
+          ? { ...repo, name: name || repo.name, url, favorite: helmRepoFavoriteInput, enabled: helmRepoEnabledInput }
+          : repo
+      )));
+      setFeatureStatus('Helm repository updated. Save Settings to persist.');
+    } else {
+      const parsedHostname = (() => {
+        try {
+          return new URL(url).hostname;
+        } catch {
+          return '';
+        }
+      })();
+      const newRepo = {
+        id: `repo-${Date.now()}`,
+        name: name || parsedHostname || 'Custom Repository',
+        url,
+        favorite: helmRepoFavoriteInput,
+        enabled: helmRepoEnabledInput,
+      };
+      setHelmRepositories((prev) => [...prev, newRepo]);
+      setFeatureStatus('Helm repository added. Save Settings to persist.');
+    }
+
+    resetRepoEditor();
+  };
+
+  const beginEditRepo = (repoId: string) => {
+    const repo = helmRepositories.find((item) => item.id === repoId);
+    if (!repo) return;
+    setEditingRepoId(repo.id);
+    setHelmRepoNameInput(repo.name);
+    setHelmRepoUrlInput(repo.url);
+    setHelmRepoFavoriteInput(repo.favorite);
+    setHelmRepoEnabledInput(repo.enabled);
+    setRepoCheckStatus(null);
+  };
+
+  const deleteRepo = (repoId: string) => {
+    setHelmRepositories((prev) => prev.filter((repo) => repo.id !== repoId));
+    if (editingRepoId === repoId) resetRepoEditor();
+    setFeatureStatus('Helm repository removed. Save Settings to persist.');
+  };
+
+  const runRepoCheck = async (repoId: string, repoUrl: string) => {
+    setCheckingRepoId(repoId);
+    setRepoCheckStatus(null);
+    try {
+      const result = await checkHelmRepository(repoUrl);
+      setRepoCheckStatus(result.message || 'Repository check succeeded.');
+    } catch (err) {
+      setRepoCheckStatus(err instanceof Error ? err.message : 'Repository check failed.');
+    } finally {
+      setCheckingRepoId(null);
+    }
+  };
 
   return (
     <div className="h-full">
@@ -228,19 +312,125 @@ export const DesktopSettingsPage = () => {
               )}
 
               {activeTab === 'helm' && (
-                <div className="space-y-2">
-                  <label htmlFor="helm-repo-url" className="block text-sm font-medium text-text-secondary">
-                    Helm Management Repo URL (affects chart values/readme/install)
-                  </label>
-                  <input
-                    id="helm-repo-url"
-                    value={helmRepoUrl}
-                    onChange={(e) => setHelmRepoUrl(e.target.value)}
-                    placeholder="https://charts.bitnami.com/bitnami"
-                    className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-                  />
+                <div className="space-y-5">
+                  <div className="grid gap-4 rounded-lg border border-border bg-surface p-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label htmlFor="helm-repo-name" className="block text-sm font-medium text-text-secondary">
+                        Repository Name
+                      </label>
+                      <input
+                        id="helm-repo-name"
+                        value={helmRepoNameInput}
+                        onChange={(e) => setHelmRepoNameInput(e.target.value)}
+                        placeholder="Bitnami"
+                        className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label htmlFor="helm-repo-url" className="block text-sm font-medium text-text-secondary">
+                        Repository URL
+                      </label>
+                      <input
+                        id="helm-repo-url"
+                        value={helmRepoUrlInput}
+                        onChange={(e) => setHelmRepoUrlInput(e.target.value)}
+                        placeholder="https://charts.bitnami.com/bitnami"
+                        className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <label className="inline-flex items-center gap-2 text-sm text-text-secondary">
+                      <input
+                        type="checkbox"
+                        checked={helmRepoEnabledInput}
+                        onChange={(e) => setHelmRepoEnabledInput(e.target.checked)}
+                      />
+                      <span>Enabled</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm text-text-secondary">
+                      <input
+                        type="checkbox"
+                        checked={helmRepoFavoriteInput}
+                        onChange={(e) => setHelmRepoFavoriteInput(e.target.checked)}
+                      />
+                      <span>Favorite</span>
+                    </label>
+                    <div className="md:col-span-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={submitRepoEditor}
+                        className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white"
+                      >
+                        <Plus size={14} />
+                        {editingRepoId ? 'Update Repository' : 'Add Repository'}
+                      </button>
+                      {editingRepoId && (
+                        <button
+                          type="button"
+                          onClick={resetRepoEditor}
+                          className="rounded-md border border-border px-3 py-2 text-sm"
+                        >
+                          Cancel Edit
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="overflow-hidden rounded-lg border border-border">
+                    <table className="w-full text-sm">
+                      <thead className="bg-surface-elevated text-text-secondary">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium">Name</th>
+                          <th className="px-3 py-2 text-left font-medium">URL</th>
+                          <th className="px-3 py-2 text-left font-medium">Flags</th>
+                          <th className="px-3 py-2 text-right font-medium">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {helmRepositories.map((repo) => (
+                          <tr key={repo.id} className="border-t border-border">
+                            <td className="px-3 py-2 text-text">{repo.name}</td>
+                            <td className="px-3 py-2 text-text-secondary truncate max-w-[420px]">{repo.url}</td>
+                            <td className="px-3 py-2 text-text-secondary">
+                              {repo.enabled ? 'Enabled' : 'Disabled'}{repo.favorite ? ' • Favorite' : ''}
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void runRepoCheck(repo.id, repo.url)}
+                                  disabled={checkingRepoId === repo.id}
+                                  className="rounded-md border border-border px-2 py-1 text-xs"
+                                >
+                                  {checkingRepoId === repo.id ? 'Checking...' : 'Check'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => beginEditRepo(repo.id)}
+                                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs"
+                                >
+                                  <Pencil size={12} /> Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteRepo(repo.id)}
+                                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-red-600"
+                                >
+                                  <Trash2 size={12} /> Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {repoCheckStatus && (
+                    <p className="text-xs text-text-secondary">{repoCheckStatus}</p>
+                  )}
+
                   <p className="text-xs text-text-secondary">
-                    Leave empty to use each selected chart's original repository from chart search results.
+                    Helm Charts page loads from enabled repositories in this list. Favorite repositories are auto-initialized.
                   </p>
                 </div>
               )}
