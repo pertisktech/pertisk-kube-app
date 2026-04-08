@@ -508,36 +508,22 @@ const makeTabIdentity = (type: PanelTabType, opts?: Partial<OpenPanelTabOptions>
     return null;
   }
 
-  if (type === 'pod-exec' || type === 'pod-files' || type === 'logs') {
+  if (type === 'host-shell' || type === 'pod-exec' || type === 'node-exec') {
+    // Terminal sessions should always open as new tabs so users can keep
+    // multiple concurrent shells to the same target.
+    return null;
+  }
+
+  if (type === 'pod-files' || type === 'logs') {
     const ns = opts?.namespace ?? 'default';
     const pod = opts?.podName ?? '';
     if (!pod) return null;
     return `${type}:${ns}:${pod}:${opts?.containerName ?? ''}`;
   }
 
-  if (type === 'node-exec') {
-    const node = opts?.podName ?? '';
-    if (!node) return null;
-    return `${type}:${node}`;
-  }
-
   if (type === 'install-chart' && opts?.installChart) {
     const c = opts.installChart;
     return `${type}:${c.repository_url}:${c.name}:${c.version}`;
-  }
-
-  if (type === 'host-shell') {
-    const command = opts?.initialCommand?.trim();
-    if (command) {
-      return `${type}:${command}`;
-    }
-
-    const title = opts?.title?.trim();
-    if (title) {
-      return `${type}:${title}`;
-    }
-
-    return type;
   }
 
   return null;

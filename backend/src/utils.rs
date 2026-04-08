@@ -12,7 +12,10 @@ use kube::{
 };
 use std::collections::HashMap;
 use std::env;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::warn;
+
+static NODE_DISK_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
 
 #[derive(Clone, Debug, Default)]
 pub struct KubeClientStatus {
@@ -491,40 +494,77 @@ pub async fn fetch_node_disk_metrics(
     client: Client,
     node_names: &[String],
 ) -> HashMap<String, NodeDiskMetrics> {
-    let responses = join_all(node_names.iter().cloned().map(|name| {
+    if node_names.is_empty() || !NODE_DISK_METRICS_SUPPORTED.load(Ordering::Relaxed) {
+        return HashMap::new();
+    }
+
+    let Some(first_name) = node_names.first().cloned() else {
+        return HashMap::new();
+    };
+
+    let fetch_summary = |client: Client, name: String| async move {
+        let request = match Request::get(format!("/api/v1/nodes/{name}/proxy/stats/summary"))
+            .body(Vec::new())
+        {
+            Ok(request) => request,
+            Err(_) => return Ok(None),
+        };
+
+        let summary = match client.request::<serde_json::Value>(request).await {
+            Ok(summary) => summary,
+            Err(kube::Error::Api(api_err)) if api_err.code == 403 || api_err.code == 404 => {
+                NODE_DISK_METRICS_SUPPORTED.store(false, Ordering::Relaxed);
+                warn!(
+                    "Disabling node disk metrics collection because kubelet stats proxy is unavailable (HTTP {}): {}",
+                    api_err.code,
+                    api_err.message
+                );
+                return Err(());
+            }
+            Err(_) => return Ok(None),
+        };
+
+        let fs = match summary.get("node").and_then(|node| node.get("fs")) {
+            Some(fs) => fs,
+            None => return Ok(None),
+        };
+        let used_bytes = match fs
+            .get("usedBytes")
+            .and_then(|value| value.as_f64().or_else(|| value.as_u64().map(|value| value as f64)))
+        {
+            Some(value) => value,
+            None => return Ok(None),
+        };
+        let capacity_bytes = fs
+            .get("capacityBytes")
+            .and_then(|value| value.as_f64().or_else(|| value.as_u64().map(|value| value as f64)))
+            .unwrap_or(0.0);
+
+        Ok(Some((
+            name,
+            NodeDiskMetrics {
+                used_bytes,
+                capacity_bytes,
+            },
+        )))
+    };
+
+    let first_result = match fetch_summary(client.clone(), first_name).await {
+        Ok(result) => result,
+        Err(()) => return HashMap::new(),
+    };
+
+    let mut responses = Vec::new();
+    if let Some(item) = first_result {
+        responses.push(item);
+    }
+
+    let remaining_responses = join_all(node_names.iter().skip(1).cloned().map(|name| {
         let client = client.clone();
-        async move {
-            let request = match Request::get(format!("/api/v1/nodes/{name}/proxy/stats/summary"))
-                .body(Vec::new())
-            {
-                Ok(request) => request,
-                Err(_) => return None,
-            };
-
-            let summary = match client.request::<serde_json::Value>(request).await {
-                Ok(summary) => summary,
-                Err(_) => return None,
-            };
-
-            let fs = summary.get("node").and_then(|node| node.get("fs"))?;
-            let used_bytes = fs
-                .get("usedBytes")
-                .and_then(|value| value.as_f64().or_else(|| value.as_u64().map(|value| value as f64)))?;
-            let capacity_bytes = fs
-                .get("capacityBytes")
-                .and_then(|value| value.as_f64().or_else(|| value.as_u64().map(|value| value as f64)))
-                .unwrap_or(0.0);
-
-            Some((
-                name,
-                NodeDiskMetrics {
-                    used_bytes,
-                    capacity_bytes,
-                },
-            ))
-        }
+        async move { fetch_summary(client, name).await.ok().flatten() }
     }))
     .await;
 
-    responses.into_iter().flatten().collect()
+    responses.extend(remaining_responses.into_iter().flatten());
+    responses.into_iter().collect()
 }
