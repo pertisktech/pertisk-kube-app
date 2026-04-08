@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X } from '../components/Icons';
 import { useRealtimeNodes, useRealtimeEvents } from '../hooks/useRealtimeResources';
-import { useNodes } from '../hooks/useKubernetes';
-import { deleteNode, cordonNode, uncordonNode, drainNode } from '../hooks/useKubernetes';
+import { useNodes, deleteNode, cordonNode, uncordonNode, drainNode } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -71,32 +70,47 @@ function getRoleBadgeStyle(role: string): { bg: string; color: string; border: s
 
 export const NodesPage = () => {
   const { data: realtimeNodes, isLoading, error } = useRealtimeNodes();
-  const { data: apiNodes } = useNodes({ refetchInterval: 30_000 }); // REST: metrics from metrics.k8s.io (like kubectl top nodes), poll every 30s
+  const { data: apiNodes } = useNodes({ refetchInterval: 5_000 }); // REST safety-net for clusters where watch is unavailable or unstable
   const { data: eventsData } = useRealtimeEvents();
   const [selectedNode, setSelectedNode] = useState<K8sNode | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
-  // Merge metrics (cpu/memory used + %) from REST into realtime node list
+  // Merge realtime + REST data.
+  // Realtime remains primary, while REST polling fills gaps when watch events are missing.
   const data = useMemo(() => {
-    if (!realtimeNodes?.length) return realtimeNodes ?? [];
-    const byName = new Map((apiNodes ?? []).map((n) => [n.name, n]));
-    return realtimeNodes.map((node) => {
-      const fromApi = byName.get(node.name);
-      if (!fromApi) return node;
+    const realtime = realtimeNodes ?? [];
+    const api = apiNodes ?? [];
+
+    if (realtime.length === 0) return api;
+    if (api.length === 0) return realtime;
+
+    const realtimeByName = new Map(realtime.map((n) => [n.name, n]));
+    const merged = api.map((node) => {
+      const fromRealtime = realtimeByName.get(node.name);
+      if (!fromRealtime) return node;
       return {
-        ...node,
-        cpu: fromApi.cpu ?? node.cpu,
-        memory: fromApi.memory ?? node.memory,
-        ephemeral_storage: fromApi.ephemeral_storage ?? node.ephemeral_storage,
-        cpu_used: fromApi.cpu_used ?? node.cpu_used,
-        memory_used: fromApi.memory_used ?? node.memory_used,
-        ephemeral_storage_used: fromApi.ephemeral_storage_used ?? node.ephemeral_storage_used,
-        cpu_usage_percent: fromApi.cpu_usage_percent ?? node.cpu_usage_percent,
-        memory_usage_percent: fromApi.memory_usage_percent ?? node.memory_usage_percent,
+        ...fromRealtime,
+        cpu: node.cpu ?? fromRealtime.cpu,
+        memory: node.memory ?? fromRealtime.memory,
+        ephemeral_storage: node.ephemeral_storage ?? fromRealtime.ephemeral_storage,
+        cpu_used: node.cpu_used ?? fromRealtime.cpu_used,
+        memory_used: node.memory_used ?? fromRealtime.memory_used,
+        ephemeral_storage_used: node.ephemeral_storage_used ?? fromRealtime.ephemeral_storage_used,
+        cpu_usage_percent: node.cpu_usage_percent ?? fromRealtime.cpu_usage_percent,
+        memory_usage_percent: node.memory_usage_percent ?? fromRealtime.memory_usage_percent,
         ephemeral_storage_usage_percent:
-          fromApi.ephemeral_storage_usage_percent ?? node.ephemeral_storage_usage_percent,
+          node.ephemeral_storage_usage_percent ?? fromRealtime.ephemeral_storage_usage_percent,
       };
     });
+
+    // Include just-seen realtime nodes until the next REST poll catches up.
+    for (const node of realtime) {
+      if (!merged.some((item) => item.name === node.name)) {
+        merged.push(node);
+      }
+    }
+
+    return merged;
   }, [realtimeNodes, apiNodes]);
 
   // Confirm dialog for delete/drain

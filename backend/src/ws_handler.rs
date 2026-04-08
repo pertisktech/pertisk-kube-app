@@ -1103,62 +1103,76 @@ macro_rules! create_watch_fn {
                 }
             }
 
-            // Now watch for changes
-            info!("Starting {} watch stream...", $resource_name);
-            let stream = watcher(api, Default::default());
-            tokio::pin!(stream);
+            // Now watch for changes. If the watch stream drops due to transient network
+            // issues, restart it so realtime updates keep flowing without page refresh.
+            let mut retry_attempt: u32 = 0;
+            loop {
+                info!("Starting {} watch stream...", $resource_name);
+                let mut stream = std::pin::Pin::from(Box::new(watcher(api.clone(), Default::default())));
 
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(event) => {
-                        use kube::runtime::watcher::Event;
-                        
-                        let (action, item_opt) = match event {
-                            Event::Applied(item) => ("MODIFIED", Some(item)),
-                            Event::Deleted(item) => ("DELETED", Some(item)),
-                            Event::Restarted(items) => {
-                                for item in items {
-                                    let item_data = serde_json::to_value(&item).unwrap_or_default();
-                                    let msg = ServerMessage::ResourceUpdate {
-                                        resource: $resource_name.to_string(),
-                                        action: "MODIFIED".to_string(),
-                                        data: item_data,
-                                    };
-                                    if tx.send(msg).await.is_err() {
-                                        return;
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(event) => {
+                            retry_attempt = 0;
+                            use kube::runtime::watcher::Event;
+
+                            let (action, item_opt) = match event {
+                                Event::Applied(item) => ("MODIFIED", Some(item)),
+                                Event::Deleted(item) => ("DELETED", Some(item)),
+                                Event::Restarted(items) => {
+                                    for item in items {
+                                        let item_data = serde_json::to_value(&item).unwrap_or_default();
+                                        let msg = ServerMessage::ResourceUpdate {
+                                            resource: $resource_name.to_string(),
+                                            action: "MODIFIED".to_string(),
+                                            data: item_data,
+                                        };
+                                        if tx.send(msg).await.is_err() {
+                                            return;
+                                        }
                                     }
+                                    continue;
                                 }
-                                continue;
-                            }
-                        };
-
-                        if let Some(item) = item_opt {
-                            let item_data = serde_json::to_value(&item).unwrap_or_default();
-                            
-                            let msg = ServerMessage::ResourceUpdate {
-                                resource: $resource_name.to_string(),
-                                action: action.to_string(),
-                                data: item_data,
                             };
 
-                            if tx.send(msg).await.is_err() {
-                                break; // Client disconnected
+                            if let Some(item) = item_opt {
+                                let item_data = serde_json::to_value(&item).unwrap_or_default();
+
+                                let msg = ServerMessage::ResourceUpdate {
+                                    resource: $resource_name.to_string(),
+                                    action: action.to_string(),
+                                    data: item_data,
+                                };
+
+                                if tx.send(msg).await.is_err() {
+                                    return;
+                                }
                             }
                         }
-                    }
-                    Err(e) => {
-                        if is_forbidden_or_missing_watch_api(&e) {
-                            warn!("Stopping {} watch due to unavailable/forbidden API: {}", $resource_name, e);
+                        Err(e) => {
+                            if is_forbidden_or_missing_watch_api(&e) {
+                                warn!("Stopping {} watch due to unavailable/forbidden API: {}", $resource_name, e);
+                                return;
+                            }
+                            error!("Watch error for {}: {}", $resource_name, e);
+                            let msg = ServerMessage::Error {
+                                message: format!("Watch error: {}", e),
+                            };
+                            let _ = tx.send(msg).await;
                             break;
                         }
-                        error!("Watch error for {}: {}", $resource_name, e);
-                        let msg = ServerMessage::Error {
-                            message: format!("Watch error: {}", e),
-                        };
-                        let _ = tx.send(msg).await;
-                        break;
                     }
                 }
+
+                retry_attempt = retry_attempt.saturating_add(1);
+                let backoff_secs = std::cmp::min(10, retry_attempt);
+                warn!(
+                    "{} watch stream ended; reconnecting in {}s (attempt {})",
+                    $resource_name,
+                    backoff_secs,
+                    retry_attempt
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(backoff_secs as u64)).await;
             }
         }
     };
