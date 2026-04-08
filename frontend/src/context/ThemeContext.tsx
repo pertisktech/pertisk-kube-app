@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 const THEME_KEY = 'pertisk_theme';
 
@@ -8,6 +8,7 @@ type ThemeContextValue = {
   theme: Theme;
   isDark: boolean;
   toggleTheme: () => void;
+  setTheme: (theme: Theme) => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -25,7 +26,7 @@ function applyTheme(theme: Theme) {
   root.classList.add(theme);
 }
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
+export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [theme, setTheme] = useState<Theme>(() => getStoredTheme());
 
   useEffect(() => {
@@ -43,13 +44,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
   }
 
+  const value = useMemo<ThemeContextValue>(() => ({
+    theme,
+    isDark: theme === 'dark',
+    toggleTheme,
+    setTheme,
+  }), [theme]);
+
   return (
     <ThemeContext.Provider
-      value={{
-        theme,
-        isDark: theme === 'dark',
-        toggleTheme,
-      }}
+      value={value}
     >
       {children}
     </ThemeContext.Provider>

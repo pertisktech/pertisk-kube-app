@@ -11,6 +11,7 @@ export interface EditorVisualSettings {
 }
 
 export interface FeatureSettings {
+  general: EditorVisualSettings;
   terminal: EditorVisualSettings;
   yamlEditor: EditorVisualSettings;
   helmRepoUrl: string;
@@ -30,6 +31,11 @@ interface FeatureSettingsContextValue {
 }
 
 const DEFAULT_SETTINGS: FeatureSettings = {
+  general: {
+    fontName: 'Inter',
+    fontSize: 15,
+    theme: 'dark',
+  },
   terminal: {
     fontName: 'JetBrains Mono',
     fontSize: 13,
@@ -125,6 +131,7 @@ function normalizeSettings(value: unknown): FeatureSettings {
   const normalizedRepos = repos.length > 0 ? repos : DEFAULT_SETTINGS.helmRepositories;
 
   return {
+    general: normalizeVisualSettings(source.general, DEFAULT_SETTINGS.general),
     terminal: normalizeVisualSettings(source.terminal, DEFAULT_SETTINGS.terminal),
     yamlEditor: normalizeVisualSettings(source.yamlEditor, DEFAULT_SETTINGS.yamlEditor),
     helmRepoUrl: legacyHelmRepoUrl,
@@ -132,11 +139,18 @@ function normalizeSettings(value: unknown): FeatureSettings {
   };
 }
 
+function toFontFamily(fontName: string): string {
+  const cleaned = fontName.trim().replace(/"/g, '');
+  return cleaned
+    ? `"${cleaned}", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`
+    : '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+}
+
 function readStoredSettings(): FeatureSettings {
-  if (typeof window === 'undefined') return DEFAULT_SETTINGS;
+  if (globalThis.window === undefined) return DEFAULT_SETTINGS;
 
   try {
-    const raw = window.localStorage.getItem(FEATURE_SETTINGS_KEY);
+    const raw = globalThis.window.localStorage.getItem(FEATURE_SETTINGS_KEY);
     if (!raw) return DEFAULT_SETTINGS;
     return normalizeSettings(JSON.parse(raw));
   } catch {
@@ -144,17 +158,24 @@ function readStoredSettings(): FeatureSettings {
   }
 }
 
-export function FeatureSettingsProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettingsState] = useState<FeatureSettings>(() => readStoredSettings());
+export function FeatureSettingsProvider({ children }: Readonly<{ children: React.ReactNode }>) {
+  const [settings, setSettings] = useState(readStoredSettings);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(FEATURE_SETTINGS_KEY, JSON.stringify(settings));
+    if (globalThis.window === undefined) return;
+    globalThis.window.localStorage.setItem(FEATURE_SETTINGS_KEY, JSON.stringify(settings));
   }, [settings]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    root.style.setProperty('--font-sans', toFontFamily(settings.general.fontName));
+    root.style.fontSize = `${clampFontSize(settings.general.fontSize, DEFAULT_SETTINGS.general.fontSize)}px`;
+  }, [settings.general.fontName, settings.general.fontSize]);
 
   const value = useMemo<FeatureSettingsContextValue>(() => ({
     settings,
-    setSettings: (next) => setSettingsState(normalizeSettings(next)),
+    setSettings: (next) => setSettings(normalizeSettings(next)),
   }), [settings]);
 
   return (

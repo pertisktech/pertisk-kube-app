@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
+import { useTheme } from '../context/ThemeContext';
 import { checkHelmRepository } from '../hooks/useKubernetes';
-import { type IconComponent, Settings, Terminal, FileCode, Archive, Plus, Pencil, Trash2 } from '../components/Icons';
+import { type IconComponent, Settings, Terminal, FileCode, Archive, Plus, Pencil, Trash2, ChevronDown } from '../components/Icons';
 
 type SettingsTab = 'general' | 'terminal' | 'yaml' | 'helm';
+type SettingsThemePreference = 'auto' | 'light' | 'dark';
 
 const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; description: string; icon: IconComponent }> = [
   {
@@ -33,9 +35,47 @@ const SETTINGS_TABS: Array<{ id: SettingsTab; label: string; description: string
   },
 ];
 
+const MODERN_MONO_FONT_OPTIONS = [
+  'JetBrains Mono',
+  'Fira Code',
+  'Cascadia Code',
+  'IBM Plex Mono',
+  'Source Code Pro',
+  'SF Mono',
+  'Menlo',
+  'Consolas',
+];
+
+const MODERN_UI_FONT_OPTIONS = [
+  'Inter',
+  'Manrope',
+  'Plus Jakarta Sans',
+  'Outfit',
+  'Sora',
+  'Segoe UI',
+  'SF Pro Text',
+  'Roboto',
+];
+
+const buildFontOptions = (currentValue: string) => (
+  MODERN_MONO_FONT_OPTIONS.includes(currentValue)
+    ? MODERN_MONO_FONT_OPTIONS
+    : [currentValue, ...MODERN_MONO_FONT_OPTIONS]
+);
+
+const buildUiFontOptions = (currentValue: string) => (
+  MODERN_UI_FONT_OPTIONS.includes(currentValue)
+    ? MODERN_UI_FONT_OPTIONS
+    : [currentValue, ...MODERN_UI_FONT_OPTIONS]
+);
+
 export const DesktopSettingsPage = () => {
   const { settings, setSettings } = useFeatureSettings();
+  const theme = useTheme();
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [generalFontName, setGeneralFontName] = useState(settings.general.fontName);
+  const [generalFontSize, setGeneralFontSize] = useState(settings.general.fontSize);
+  const [generalTheme, setGeneralTheme] = useState(settings.general.theme);
   const [terminalFontName, setTerminalFontName] = useState(settings.terminal.fontName);
   const [terminalFontSize, setTerminalFontSize] = useState(settings.terminal.fontSize);
   const [terminalTheme, setTerminalTheme] = useState(settings.terminal.theme);
@@ -51,6 +91,9 @@ export const DesktopSettingsPage = () => {
   const [featureSaving, setFeatureSaving] = useState(false);
 
   useEffect(() => {
+    setGeneralFontName(settings.general.fontName);
+    setGeneralFontSize(settings.general.fontSize);
+    setGeneralTheme(settings.general.theme);
     setTerminalFontName(settings.terminal.fontName);
     setTerminalFontSize(settings.terminal.fontSize);
     setTerminalTheme(settings.terminal.theme);
@@ -65,11 +108,24 @@ export const DesktopSettingsPage = () => {
     return Math.min(32, Math.max(10, Math.round(value)));
   };
 
+  const resolveThemePreference = (preference: SettingsThemePreference): 'light' | 'dark' => {
+    if (preference === 'light' || preference === 'dark') return preference;
+    if (globalThis.window?.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+    return 'light';
+  };
+
   const onSaveFeatureSettings = () => {
     setFeatureSaving(true);
     try {
       setSettings({
         ...settings,
+        general: {
+          fontName: generalFontName.trim() || 'Inter',
+          fontSize: clampFontSize(generalFontSize, 15),
+          theme: generalTheme,
+        },
         terminal: {
           fontName: terminalFontName.trim() || 'JetBrains Mono',
           fontSize: clampFontSize(terminalFontSize, 13),
@@ -83,6 +139,7 @@ export const DesktopSettingsPage = () => {
         helmRepoUrl: helmRepositories.find((repo) => repo.enabled)?.url ?? '',
         helmRepositories,
       });
+      theme?.setTheme(resolveThemePreference(generalTheme));
       toast.success('Settings saved successfully.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save settings.');
@@ -92,6 +149,9 @@ export const DesktopSettingsPage = () => {
   };
 
   const activeTabMeta = SETTINGS_TABS.find((tab) => tab.id === activeTab) ?? SETTINGS_TABS[0];
+  const generalFontOptions = buildUiFontOptions(generalFontName);
+  const terminalFontOptions = buildFontOptions(terminalFontName);
+  const yamlFontOptions = buildFontOptions(yamlFontName);
 
   const resetRepoEditor = () => {
     setEditingRepoId(null);
@@ -195,14 +255,72 @@ export const DesktopSettingsPage = () => {
 
           <div className="flex-1 overflow-auto p-6 space-y-6">
               {activeTab === 'general' && (
-                <div className="space-y-3 rounded-lg border border-border bg-surface p-4 text-sm text-text-secondary">
-                  <p>
-                    Cluster connection and context switching are handled in the dedicated switch-cluster workflow.
-                  </p>
-                  <p>
-                    Use Terminal, Yaml Editor, and Helm tabs to customize client behavior.
-                  </p>
-                </div>
+                <>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="space-y-2 md:col-span-2">
+                      <label htmlFor="general-font-name" className="block text-sm font-medium text-text-secondary">
+                        App Font Name
+                      </label>
+                      <div className="relative">
+                        <select
+                          id="general-font-name"
+                          value={generalFontName}
+                          onChange={(e) => setGeneralFontName(e.target.value)}
+                          className="w-full appearance-none rounded-md border border-border bg-surface px-3 py-2 pr-9 text-sm"
+                        >
+                          {generalFontOptions.map((fontName) => (
+                            <option key={fontName} value={fontName}>
+                              {fontName}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label htmlFor="general-font-size" className="block text-sm font-medium text-text-secondary">
+                        App Font Size
+                      </label>
+                      <input
+                        id="general-font-size"
+                        type="number"
+                        min={10}
+                        max={32}
+                        value={generalFontSize}
+                        onChange={(e) => setGeneralFontSize(Number.parseInt(e.target.value || '15', 10))}
+                        className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="general-theme" className="block text-sm font-medium text-text-secondary">
+                      App Theme
+                    </label>
+                    <select
+                      id="general-theme"
+                      value={generalTheme}
+                      onChange={(e) => setGeneralTheme(e.target.value as SettingsThemePreference)}
+                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                    >
+                      <option value="auto">Auto (follow system theme)</option>
+                      <option value="dark">Dark</option>
+                      <option value="light">Light</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-3 rounded-lg border border-border bg-surface p-4 text-sm text-text-secondary">
+                    <p>
+                      These settings apply to the overall app UI.
+                    </p>
+                    <p>
+                      Use Terminal, Yaml Editor, and Helm tabs to customize tool-specific behavior.
+                    </p>
+                  </div>
+                </>
               )}
 
               {activeTab === 'terminal' && (
@@ -212,13 +330,24 @@ export const DesktopSettingsPage = () => {
                       <label htmlFor="terminal-font-name" className="block text-sm font-medium text-text-secondary">
                         Terminal Font Name
                       </label>
-                      <input
-                        id="terminal-font-name"
-                        value={terminalFontName}
-                        onChange={(e) => setTerminalFontName(e.target.value)}
-                        placeholder="JetBrains Mono"
-                        className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-                      />
+                      <div className="relative">
+                        <select
+                          id="terminal-font-name"
+                          value={terminalFontName}
+                          onChange={(e) => setTerminalFontName(e.target.value)}
+                          className="w-full appearance-none rounded-md border border-border bg-surface px-3 py-2 pr-9 text-sm"
+                        >
+                          {terminalFontOptions.map((fontName) => (
+                            <option key={fontName} value={fontName}>
+                              {fontName}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary"
+                        />
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <label htmlFor="terminal-font-size" className="block text-sm font-medium text-text-secondary">
@@ -261,13 +390,24 @@ export const DesktopSettingsPage = () => {
                       <label htmlFor="yaml-font-name" className="block text-sm font-medium text-text-secondary">
                         YAML Editor Font Name
                       </label>
-                      <input
-                        id="yaml-font-name"
-                        value={yamlFontName}
-                        onChange={(e) => setYamlFontName(e.target.value)}
-                        placeholder="JetBrains Mono"
-                        className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-                      />
+                      <div className="relative">
+                        <select
+                          id="yaml-font-name"
+                          value={yamlFontName}
+                          onChange={(e) => setYamlFontName(e.target.value)}
+                          className="w-full appearance-none rounded-md border border-border bg-surface px-3 py-2 pr-9 text-sm"
+                        >
+                          {yamlFontOptions.map((fontName) => (
+                            <option key={fontName} value={fontName}>
+                              {fontName}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary"
+                        />
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <label htmlFor="yaml-font-size" className="block text-sm font-medium text-text-secondary">
