@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Star } from '../components/Icons';
 import { useHelmCharts, useHelmReleases } from '../hooks/useKubernetes';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
@@ -14,6 +14,10 @@ function chartRowKey(chart: HelmChart): string {
   return `${chart.repository}/${chart.name}`;
 }
 
+function normalizeRepositoryUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '').toLowerCase();
+}
+
 export const HelmChartsPage = () => {
   const { settings } = useFeatureSettings();
   const enabledRepos = useMemo(
@@ -22,7 +26,7 @@ export const HelmChartsPage = () => {
   );
   const enabledRepoUrls = useMemo(() => enabledRepos.map((repo) => repo.url), [enabledRepos]);
   const repoNameByUrl = useMemo(
-    () => new Map(enabledRepos.map((repo) => [repo.url, repo.name])),
+    () => new Map(enabledRepos.map((repo) => [normalizeRepositoryUrl(repo.url), repo.name])),
     [enabledRepos],
   );
   const { data: chartResponse, isLoading, error } = useHelmCharts(enabledRepoUrls);
@@ -182,19 +186,32 @@ export const HelmChartsPage = () => {
   const displayCharts = useMemo(
     () => (data || []).map((chart) => ({
       ...chart,
-      repository: repoNameByUrl.get(chart.repository_url) ?? chart.repository,
+      repository: repoNameByUrl.get(normalizeRepositoryUrl(chart.repository_url)) ?? chart.repository,
     })),
     [data, repoNameByUrl],
   );
 
-  /** Unique repository names for the filter dropdown */
-  const uniqueRepositories = useMemo(() => {
+  /** Repository names shown in filter dropdown (prefer configured enabled repos, include chart-derived fallbacks). */
+  const filterRepositories = useMemo(() => {
     const repos = new Set<string>();
+
+    enabledRepos.forEach((repo) => {
+      const label = repo.name?.trim();
+      if (label) repos.add(label);
+    });
+
     displayCharts.forEach((c) => {
       if (c.repository) repos.add(c.repository);
     });
+
     return Array.from(repos).sort((a, b) => a.localeCompare(b));
-  }, [displayCharts]);
+  }, [enabledRepos, displayCharts]);
+
+  useEffect(() => {
+    if (selectedRepository !== 'all' && !filterRepositories.includes(selectedRepository)) {
+      setSelectedRepository('all');
+    }
+  }, [filterRepositories, selectedRepository]);
 
   const filteredAndSortedCharts = useMemo(() => {
     let source = [...displayCharts];
@@ -266,7 +283,7 @@ export const HelmChartsPage = () => {
           </span>
         </h1>
         <div className="flex items-center gap-2">
-          {uniqueRepositories.length > 1 && (
+          {filterRepositories.length > 1 && (
             <select
               value={selectedRepository}
               onChange={(e) => setSelectedRepository(e.target.value)}
@@ -274,7 +291,7 @@ export const HelmChartsPage = () => {
               aria-label="Filter by repository"
             >
               <option value="all">All Repositories</option>
-              {uniqueRepositories.map((repo) => (
+              {filterRepositories.map((repo) => (
                 <option key={repo} value={repo}>
                   {repo}
                 </option>
