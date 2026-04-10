@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import CronExpressionParser from 'cron-parser';
 import { sortNodeRoles } from '../utils/nodeRoles';
+import { getDesktopWebSocketBase, isDesktopRuntime } from '../utils/desktopBridge';
 import {
   Namespace,
   Deployment,
@@ -924,10 +925,9 @@ function createRealtimeHook<T>(
 
       const connect = () => {
         try {
-          // WebSocket URL construction
-          const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-          const host = window.location.host;
-          const wsUrl = `${protocol}://${host}/ws`;
+          const wsUrl = isDesktopRuntime()
+            ? `${getDesktopWebSocketBase()}/ws`
+            : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
 
           ws = new WebSocket(wsUrl);
 
@@ -1314,9 +1314,9 @@ export function useRealtimeCustomResources(crdName: string | null): {
     let disposed = false;
     const connect = () => {
       try {
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const host = window.location.host;
-        const wsUrl = `${protocol}://${host}/ws`;
+        const wsUrl = isDesktopRuntime()
+          ? `${getDesktopWebSocketBase()}/ws`
+          : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
         ws = new WebSocket(wsUrl);
         ws.onopen = () => {
           setError(null);

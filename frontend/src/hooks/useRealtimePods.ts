@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { getAuthToken } from '../utils/auth';
+import { getDesktopWebSocketBase, isDesktopRuntime } from '../utils/desktopBridge';
 
 export type ResourceType = 'pods' | 'deployments' | 'services' | 'nodes';
 
@@ -458,10 +459,9 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   const connect = useCallback(() => {
     if (!enabled) return;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    const port = window.location.port ? `:${window.location.port}` : '';
-    const wsUrl = `${protocol}//${host}${port}/ws`;
+    const wsUrl = isDesktopRuntime()
+      ? `${getDesktopWebSocketBase()}/ws`
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}${window.location.port ? `:${window.location.port}` : ''}/ws`;
 
     try {
       intentionalCloseRef.current = false;

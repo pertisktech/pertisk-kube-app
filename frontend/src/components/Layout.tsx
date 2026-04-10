@@ -46,17 +46,15 @@ import {
 import { cn } from '../utils';
 import { useTheme } from '../context/ThemeContext';
 import {
+  type DesktopAuthStatus,
   type DesktopKubeconfigCluster,
+  getDesktopAuthStatus,
   getDesktopSidecarConfig,
   listDesktopKubeconfigClusters,
   listDesktopKubeconfigCandidates,
   saveDesktopSidecarConfig,
-  waitDesktopClusterSwitchResult,
-} from '../utils/tauriDesktop';
-import {
-  type DesktopAuthStatus,
-  getDesktopAuthStatus,
   triggerKubeBrowserLogin,
+  waitDesktopClusterSwitchResult,
 } from '../utils/tauriDesktop';
 import { isDesktopRuntime } from '../utils/desktopBridge';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -444,6 +442,10 @@ export const Layout = () => {
       if (!switchResult.success) {
         throw new Error(switchResult.message || 'Cluster switch failed. Previous cluster was restored.');
       }
+
+      // Sidecar restart may auto-select a different free port; re-read effective config
+      // so desktop HTTP/WebSocket calls target the live backend immediately.
+      await getDesktopSidecarConfig();
 
       const candidates = await listDesktopKubeconfigCandidates();
       const merged = new Set(candidates);

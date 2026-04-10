@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useTheme } from '../context/ThemeContext';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
+import { getDesktopWebSocketBase, isDesktopRuntime } from '../utils/desktopBridge';
 
 interface TerminalProps {
   podName: string;
@@ -143,8 +144,10 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
     xterm.focus();
 
     // Connect WebSocket for shell
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/exec?namespace=${encodeURIComponent(
+    const wsBase = isDesktopRuntime()
+      ? getDesktopWebSocketBase()
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
+    const wsUrl = `${wsBase}/api/exec?namespace=${encodeURIComponent(
       namespace
     )}&pod=${encodeURIComponent(podName)}${containerName ? `&container=${encodeURIComponent(containerName)}` : ''}`;
 

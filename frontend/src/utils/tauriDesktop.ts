@@ -1,4 +1,4 @@
-import { getDesktopBackendPort, isDesktopRuntime, setDesktopBackendPort } from './desktopBridge';
+import { getDesktopBackendOrigin, getDesktopBackendPort, isDesktopRuntime, setDesktopBackendPort } from './desktopBridge';
 
 export interface DesktopSidecarConfig {
   backendBin: string | null;
@@ -88,7 +88,10 @@ export interface DesktopAuthStatus {
 
 export async function getDesktopAuthStatus(): Promise<DesktopAuthStatus> {
   try {
-    const res = await fetch('/api/auth-status');
+    const url = isDesktopRuntime()
+      ? `${getDesktopBackendOrigin()}/api/auth-status`
+      : '/api/auth-status';
+    const res = await fetch(url);
     if (!res.ok) return { ok: true, placeholder: false, message: null };
     return await res.json() as DesktopAuthStatus;
   } catch {

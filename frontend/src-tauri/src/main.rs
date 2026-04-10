@@ -22,9 +22,11 @@ struct BackendState {
     shutting_down: Arc<Mutex<bool>>,
     config: Arc<Mutex<SidecarConfig>>,
     switch_status: Arc<Mutex<ClusterSwitchStatus>>,
+    restart_in_progress: Arc<Mutex<bool>>,
 }
 
 const DEFAULT_PORT: u16 = 15222;
+const DEFAULT_GRPC_PORT: u16 = 50051;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
 const CLUSTER_VERIFY_TIMEOUT: Duration = Duration::from_secs(40);
 const RESTART_BACKOFF: Duration = Duration::from_secs(2);
@@ -499,7 +501,38 @@ fn wait_for_cluster_verification(port: u16, timeout: Duration) -> bool {
 }
 
 fn is_port_bindable(port: u16) -> bool {
-    TcpListener::bind(("127.0.0.1", port)).is_ok()
+    TcpListener::bind(("0.0.0.0", port)).is_ok()
+}
+
+fn wait_for_port_bindable(port: u16, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if is_port_bindable(port) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    false
+}
+
+fn try_begin_restart(restart_in_progress: &Arc<Mutex<bool>>) -> bool {
+    let mut restarting = match restart_in_progress.lock() {
+        Ok(guard) => guard,
+        Err(_) => return false,
+    };
+
+    if *restarting {
+        return false;
+    }
+
+    *restarting = true;
+    true
+}
+
+fn end_restart(restart_in_progress: &Arc<Mutex<bool>>) {
+    if let Ok(mut restarting) = restart_in_progress.lock() {
+        *restarting = false;
+    }
 }
 
 fn find_available_port(preferred: u16) -> Option<u16> {
@@ -551,6 +584,24 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
         ));
     }
 
+    let preferred_grpc_port = std::env::var("GRPC_PORT")
+        .ok()
+        .and_then(|raw| raw.parse::<u16>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_GRPC_PORT);
+    let grpc_port = find_available_port(preferred_grpc_port).ok_or_else(|| {
+        anyhow::anyhow!(
+            "gRPC port {} is busy and no free fallback port was found nearby",
+            preferred_grpc_port
+        )
+    })?;
+    if grpc_port != preferred_grpc_port {
+        warn!(
+            "gRPC port {} was busy; using {} for sidecar startup",
+            preferred_grpc_port, grpc_port
+        );
+    }
+
     let candidates = candidate_backend_paths(app, cfg);
 
     let backend_bin = first_existing_path(&candidates).ok_or_else(|| {
@@ -577,6 +628,7 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
         .current_dir(backend_dir.clone())
         .env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
         .env("PORT", cfg.port.to_string())
+        .env("GRPC_PORT", grpc_port.to_string())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
@@ -616,15 +668,17 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
     thread::sleep(Duration::from_millis(250));
     if let Some(status) = child.try_wait()? {
         return Err(anyhow::anyhow!(
-            "backend sidecar exited immediately with status {status}; check port {} and backend binary path",
-            cfg.port
+            "backend sidecar exited immediately with status {status}; check ports {} (http) / {} (grpc) and backend binary path",
+            cfg.port,
+            grpc_port
         ));
     }
 
     info!(
-        "spawned backend sidecar from {} on {} (cwd: {})",
+        "spawned backend sidecar from {} on {} (grpc: {}) (cwd: {})",
         backend_bin.display(),
         backend_socket_addr(cfg.port),
+        grpc_port,
         backend_dir.display()
     );
 
@@ -770,66 +824,91 @@ fn graceful_stop_child(child: &mut Child) {
 }
 
 fn restart_backend_sidecar(app: &AppHandle, state: &BackendState) -> anyhow::Result<()> {
-    let mut cfg = state
-        .config
-        .lock()
-        .map_err(|e| anyhow::anyhow!("sidecar config lock poisoned: {e}"))?
-        .clone();
-
-    if let Some((previous, next)) = ensure_sidecar_port_available(&mut cfg)? {
-        warn!(
-            "sidecar port {} was busy; switched to available port {} to avoid conflicts",
-            previous, next
-        );
-        save_sidecar_config(app, &cfg)?;
-        if let Ok(mut current) = state.config.lock() {
-            *current = cfg.clone();
-        }
-    }
-
-    {
-        let mut guard = state
-            .child
-            .lock()
-            .map_err(|e| anyhow::anyhow!("sidecar child lock poisoned: {e}"))?;
-        if let Some(mut child) = guard.take() {
-            graceful_stop_child(&mut child);
-        }
-    }
-
-    let child = spawn_backend(app, &cfg)?;
-    if !wait_for_backend_ready(cfg.port, STARTUP_TIMEOUT) {
-        let mut child_to_stop = child;
-        graceful_stop_child(&mut child_to_stop);
+    if !try_begin_restart(&state.restart_in_progress) {
         return Err(anyhow::anyhow!(
-            "sidecar failed to start for selected cluster/context on {}",
-            backend_socket_addr(cfg.port)
+            "sidecar restart already in progress; retry in a moment"
         ));
     }
 
-    // Cluster verification is best-effort: exec-credential plugins (omnictl for Talos Omni,
-    // aws eks get-token, kubelogin, gke-gcloud-auth-plugin) run lazily on the first request
-    // and may take 10–30 s on their first call. If verification times out we keep the new
-    // sidecar running — the cluster will become reachable once credentials are ready.
-    if wait_for_cluster_verification(cfg.port, CLUSTER_VERIFY_TIMEOUT) {
-        info!(
-            "backend sidecar restarted and cluster verification passed on {}",
-            backend_socket_addr(cfg.port)
-        );
-    } else {
-        warn!(
-            "cluster verification timed out on {} — exec-credential plugin may still be initialising; \
-             keeping sidecar running",
-            backend_socket_addr(cfg.port)
-        );
-    }
+    let result = (|| -> anyhow::Result<()> {
+        let mut cfg = state
+            .config
+            .lock()
+            .map_err(|e| anyhow::anyhow!("sidecar config lock poisoned: {e}"))?
+            .clone();
 
-    let mut guard = state
-        .child
-        .lock()
-        .map_err(|e| anyhow::anyhow!("sidecar child lock poisoned after restart: {e}"))?;
-    *guard = Some(child);
-    Ok(())
+        if let Some((previous, next)) = ensure_sidecar_port_available(&mut cfg)? {
+            warn!(
+                "sidecar port {} was busy; switched to available port {} to avoid conflicts",
+                previous, next
+            );
+            save_sidecar_config(app, &cfg)?;
+            if let Ok(mut current) = state.config.lock() {
+                *current = cfg.clone();
+            }
+        }
+
+        {
+            let mut guard = state
+                .child
+                .lock()
+                .map_err(|e| anyhow::anyhow!("sidecar child lock poisoned: {e}"))?;
+            if let Some(mut child) = guard.take() {
+                graceful_stop_child(&mut child);
+            }
+        }
+
+        if !wait_for_port_bindable(cfg.port, Duration::from_secs(3)) {
+            if let Some((previous, next)) = ensure_sidecar_port_available(&mut cfg)? {
+                warn!(
+                    "sidecar port {} remained busy after shutdown; switched to {}",
+                    previous, next
+                );
+                save_sidecar_config(app, &cfg)?;
+                if let Ok(mut current) = state.config.lock() {
+                    *current = cfg.clone();
+                }
+            }
+        }
+
+        let child = spawn_backend(app, &cfg)?;
+        if !wait_for_backend_ready(cfg.port, STARTUP_TIMEOUT) {
+            let mut child_to_stop = child;
+            graceful_stop_child(&mut child_to_stop);
+            return Err(anyhow::anyhow!(
+                "sidecar failed to start for selected cluster/context on {}",
+                backend_socket_addr(cfg.port)
+            ));
+        }
+
+        // Cluster verification is best-effort: exec-credential plugins (omnictl for Talos Omni,
+        // aws eks get-token, kubelogin, gke-gcloud-auth-plugin) run lazily on the first request
+        // and may take 10–30 s on their first call. If verification times out we keep the new
+        // sidecar running — the cluster will become reachable once credentials are ready.
+        if wait_for_cluster_verification(cfg.port, CLUSTER_VERIFY_TIMEOUT) {
+            info!(
+                "backend sidecar restarted and cluster verification passed on {}",
+                backend_socket_addr(cfg.port)
+            );
+        } else {
+            warn!(
+                "cluster verification timed out on {} — exec-credential plugin may still be initialising; \
+                 keeping sidecar running",
+                backend_socket_addr(cfg.port)
+            );
+        }
+
+        let mut guard = state
+            .child
+            .lock()
+            .map_err(|e| anyhow::anyhow!("sidecar child lock poisoned after restart: {e}"))?;
+        *guard = Some(child);
+        Ok(())
+    })();
+
+    end_restart(&state.restart_in_progress);
+
+    result
 }
 
 fn start_backend_monitor(
@@ -837,6 +916,7 @@ fn start_backend_monitor(
     child_ref: Arc<Mutex<Option<Child>>>,
     shutting_down: Arc<Mutex<bool>>,
     config_ref: Arc<Mutex<SidecarConfig>>,
+    restart_in_progress: Arc<Mutex<bool>>,
 ) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_secs(2));
@@ -847,6 +927,14 @@ fn start_backend_monitor(
             .unwrap_or(true);
         if should_stop {
             return;
+        }
+
+        let is_restarting = restart_in_progress
+            .lock()
+            .map(|v| *v)
+            .unwrap_or(false);
+        if is_restarting {
+            continue;
         }
 
         let exited = {
@@ -878,9 +966,15 @@ fn start_backend_monitor(
 
         if exited {
             thread::sleep(RESTART_BACKOFF);
+
+            if !try_begin_restart(&restart_in_progress) {
+                continue;
+            }
+
             let cfg = match config_ref.lock() {
                 Ok(c) => c.clone(),
                 Err(e) => {
+                    end_restart(&restart_in_progress);
                     error!("sidecar config mutex poisoned: {e}");
                     return;
                 }
@@ -906,6 +1000,7 @@ fn start_backend_monitor(
                     let mut guard = match child_ref.lock() {
                         Ok(g) => g,
                         Err(e) => {
+                            end_restart(&restart_in_progress);
                             error!("backend child mutex poisoned after restart: {e}");
                             return;
                         }
@@ -928,6 +1023,8 @@ fn start_backend_monitor(
                     warn!("failed to restart backend sidecar: {e}");
                 }
             }
+
+            end_restart(&restart_in_progress);
         }
     });
 }
@@ -982,6 +1079,7 @@ fn set_sidecar_config(
     let config_ref = Arc::clone(&state.config);
     let shutting_down = Arc::clone(&state.shutting_down);
     let switch_status_ref = Arc::clone(&state.switch_status);
+    let restart_in_progress_ref = Arc::clone(&state.restart_in_progress);
 
     // Restart sidecar in background so the command returns immediately and UI stays responsive.
     tauri::async_runtime::spawn(async move {
@@ -990,6 +1088,7 @@ fn set_sidecar_config(
             shutting_down,
             config: config_ref,
             switch_status: switch_status_ref,
+            restart_in_progress: restart_in_progress_ref,
         };
 
         match restart_backend_sidecar(&app_handle, &restart_state) {
@@ -1443,12 +1542,14 @@ fn main() {
             let child_ref = Arc::new(Mutex::new(initial_child));
             let shutting_down = Arc::new(Mutex::new(false));
             let config_ref = Arc::new(Mutex::new(initial_config));
+            let restart_in_progress = Arc::new(Mutex::new(false));
 
             start_backend_monitor(
                 app.handle().clone(),
                 Arc::clone(&child_ref),
                 Arc::clone(&shutting_down),
                 Arc::clone(&config_ref),
+                Arc::clone(&restart_in_progress),
             );
 
             app.manage(BackendState {
@@ -1456,6 +1557,7 @@ fn main() {
                 shutting_down,
                 config: config_ref,
                 switch_status: Arc::new(Mutex::new(ClusterSwitchStatus::default())),
+                restart_in_progress,
             });
             Ok(())
         })

@@ -1,5 +1,6 @@
 type WindowWithTauri = Window & {
   __TAURI_INTERNALS__?: unknown;
+  __TAURI__?: unknown;
 };
 
 const DESKTOP_PORT_STORAGE_KEY = "pertisk-desktop-backend-port";
@@ -22,6 +23,16 @@ function buildBackendOrigin(port: number): string {
   return `http://127.0.0.1:${port}`;
 }
 
+export function getDesktopBackendOrigin(): string {
+  return desktopBackendOrigin;
+}
+
+export function getDesktopWebSocketBase(): string {
+  const backend = new URL(desktopBackendOrigin);
+  const protocol = backend.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${backend.host}`;
+}
+
 export function getDesktopBackendPort(): number {
   const parsed = new URL(desktopBackendOrigin).port;
   const port = Number.parseInt(parsed, 10);
@@ -40,7 +51,14 @@ export function setDesktopBackendPort(port: number): void {
 
 export function isDesktopRuntime(): boolean {
   const w = window as WindowWithTauri;
-  return Boolean(w.__TAURI_INTERNALS__) || window.location.protocol === "tauri:";
+  const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  return (
+    Boolean(w.__TAURI_INTERNALS__) ||
+    Boolean(w.__TAURI__) ||
+    userAgent.includes('Tauri') ||
+    window.location.protocol === 'tauri:' ||
+    window.location.hostname === 'tauri.localhost'
+  );
 }
 
 function rewriteHttpUrl(rawUrl: string): string {
@@ -74,6 +92,19 @@ export function installDesktopBridge(): void {
   if (!isDesktopRuntime()) {
     return;
   }
+
+  // Refresh from native sidecar config early so stale persisted ports don't keep
+  // WebSocket/API calls pointed at an old backend instance.
+  void import('@tauri-apps/api/core')
+    .then(({ invoke }) => invoke<{ port?: number }>('get_sidecar_config'))
+    .then((cfg) => {
+      if (cfg && typeof cfg.port === 'number' && Number.isFinite(cfg.port) && cfg.port > 0) {
+        setDesktopBackendPort(cfg.port);
+      }
+    })
+    .catch(() => {
+      // Ignore lookup failures; fallback remains localStorage/default port.
+    });
 
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
