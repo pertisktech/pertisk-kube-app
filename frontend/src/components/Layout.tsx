@@ -873,10 +873,47 @@ export const Layout = () => {
       {desktopMode && (
         <div
           data-tauri-drag-region
-          className="h-9 min-h-[36px] border-b border-border bg-surface select-none flex items-center justify-end"
+          className="h-9 min-h-[36px] border-b border-border bg-surface select-none flex items-center justify-between"
           onMouseDown={handleDesktopTitleBarMouseDown}
         >
-          <div data-tauri-drag-region className="flex items-center gap-2.5 px-4">
+          <div data-tauri-drag-region className="flex items-center gap-3 pl-20 pr-4">
+            <button
+              type="button"
+              onClick={() => {
+                setKubeconfigInput(kubeconfigPath);
+                setSelectedClusterContext(kubeContext);
+                setClusterSearch('');
+                setKubeconfigError(null);
+                void refreshClustersForKubeconfig(kubeconfigPath);
+                setShowKubeconfigModal(true);
+              }}
+              disabled={kubeconfigSwitching}
+              className={cn(
+                'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-sm hover:bg-hover',
+                showKubeconfigModal ? 'bg-hover' : 'bg-surface',
+                kubeconfigSwitching && 'opacity-60 cursor-not-allowed'
+              )}
+              title={kubeContext || kubeconfigPath || 'Select cluster'}
+            >
+              <Server size={14} className="flex-shrink-0" />
+              <span>
+                {kubeContext || `Cluster (${kubeconfigDisplayName(kubeconfigPath)})`}
+              </span>
+              <ChevronDown size={14} className="text-text-secondary" />
+            </button>
+          </div>
+          <div data-tauri-drag-region className="flex items-center gap-3 px-4">
+            {theme && (
+              <button
+                type="button"
+                onClick={theme.toggleTheme}
+                title={theme.isDark ? 'Light mode' : 'Dark mode'}
+                aria-label={theme.isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                className="inline-flex items-center justify-center p-1.5 rounded-md hover:bg-hover text-text-secondary"
+              >
+                {theme.isDark ? <Sun size={14} /> : <Moon size={14} />}
+              </button>
+            )}
             <span className="text-[13px] font-medium tracking-wide text-text-secondary whitespace-nowrap">
               {topRightTitle}
             </span>
@@ -1638,33 +1675,8 @@ export const Layout = () => {
                 )}
               </div>
             )}
-            {desktopMode && (
-              <button
-                type="button"
-                onClick={() => {
-                  setKubeconfigInput(kubeconfigPath);
-                  setSelectedClusterContext(kubeContext);
-                  setClusterSearch('');
-                  setKubeconfigError(null);
-                  void refreshClustersForKubeconfig(kubeconfigPath);
-                  setShowKubeconfigModal(true);
-                }}
-                disabled={kubeconfigSwitching}
-                className={cn(
-                  'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-sm hover:bg-hover',
-                  showKubeconfigModal ? 'bg-hover' : 'bg-surface',
-                  kubeconfigSwitching && 'opacity-60 cursor-not-allowed'
-                )}
-                title={kubeContext || kubeconfigPath || 'Select cluster'}
-              >
-                <Database size={14} className="flex-shrink-0" />
-                <span className="max-w-52 truncate">
-                  {kubeContext || `Cluster (${kubeconfigDisplayName(kubeconfigPath)})`}
-                </span>
-                <ChevronDown size={14} className="text-text-secondary" />
-              </button>
-            )}
-            {theme && (
+
+            {!desktopMode && theme && (
               <button
                 type="button"
                 onClick={theme.toggleTheme}
