@@ -1398,7 +1398,7 @@ export const BottomPanel = () => {
   const [tabs, setTabs] = useState<PanelTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
-  const [panelHeight, setPanelHeight] = useState(MIN_PANEL_HEIGHT);
+  const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
   const [fullScreen, setFullScreen] = useState(false);
   const savedBeforeFullScreen = useRef<{ height: number; collapsed: boolean } | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);

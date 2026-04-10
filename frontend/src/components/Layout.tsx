@@ -73,8 +73,11 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
-  { label: 'Cluster', path: '/cluster', icon: Server },
   { label: 'Nodes', path: '/nodes', icon: Network },
+];
+
+const BOTTOM_NAV_ITEMS: NavItem[] = [
+  { label: 'Cluster', path: '/cluster', icon: Server },
   { label: 'Resource Map', path: '/resource-map', icon: Share2 },
 ];
 
@@ -610,7 +613,7 @@ export const Layout = () => {
       return [{ label: EVENTS_ITEM.label, path: EVENTS_ITEM.path, icon: EVENTS_ITEM.icon }] as BreadcrumbItem[];
     }
 
-    const navItem = NAV_ITEMS.find(
+    const navItem = [...NAV_ITEMS, ...BOTTOM_NAV_ITEMS].find(
       (item) => item.path !== '/' && (pathname === item.path || pathname.startsWith(`${item.path}/`))
     );
     if (navItem) {
@@ -1442,6 +1445,30 @@ export const Layout = () => {
                   </div>
                 )}
               </div>
+
+            {BOTTOM_NAV_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(item.path);
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  onClick={() => setSidebarOpen(false)}
+                  className={cn(
+                    'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                    'order-11',
+                    sidebarCollapsed && 'justify-center px-2',
+                    active
+                      ? 'bg-hover text-[var(--color-primary)] font-semibold'
+                      : 'text-text-secondary hover:bg-hover hover:text-text'
+                  )}
+                  title={item.label}
+                >
+                  <Icon size={18} className="flex-shrink-0" />
+                  {!sidebarCollapsed && <span>{item.label}</span>}
+                </Link>
+              );
+            })}
 
           </nav>
         </div>
