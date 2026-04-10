@@ -972,80 +972,93 @@ async fn watch_pods(
         }
     }
 
-    // Now watch for changes
-    info!("Starting pod watch stream...");
-    let stream = watcher(api, Default::default());
-    tokio::pin!(stream);
+    // Now watch for changes. If the watch stream drops due to transient network
+    // issues, restart it so realtime pod updates keep flowing without page refresh.
+    let mut retry_attempt: u32 = 0;
+    loop {
+        info!("Starting pod watch stream...");
+        let mut stream = std::pin::Pin::from(Box::new(watcher(api.clone(), Default::default())));
 
-    while let Some(result) = stream.next().await {
-        match result {
-            Ok(event) => {
-                use kube::runtime::watcher::Event;
-                
-                let (action, pod_opt) = match event {
-                    Event::Applied(pod) => {
-                        // Send terminating pods as MODIFIED so they show "Terminating" status
-                        // They'll be removed by the DELETED event
-                        ("MODIFIED", Some(pod))
-                    },
-                    Event::Deleted(pod) => ("DELETED", Some(pod)),
-                    Event::Restarted(pods) => {
-                        // Watcher restarted, send all active pods (skip terminating ones)
-                        for pod in pods {
-                            // Skip pods marked for deletion
-                            if pod.metadata.deletion_timestamp.is_some() {
-                                continue;
-                            }
-                            let pod_data = serde_json::to_value(&pod).unwrap_or_default();
-                            let msg = ServerMessage::ResourceUpdate {
-                                resource: "pods".to_string(),
-                                action: "MODIFIED".to_string(),
-                                data: pod_data,
-                            };
-                            if tx.send(msg).await.is_err() {
-                                return;
-                            }
-                        }
-                        continue;
-                    }
-                };
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(event) => {
+                    retry_attempt = 0;
+                    use kube::runtime::watcher::Event;
 
-                if let Some(pod) = pod_opt {
-                    let pod_data = serde_json::to_value(&pod).unwrap_or_default();
-                    
-                    // Log deletions for debugging
-                    if action == "DELETED" {
-                        if let Some(metadata) = pod_data.get("metadata") {
-                            let name = metadata.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
-                            let namespace = metadata.get("namespace").and_then(|v| v.as_str()).unwrap_or("unknown");
-                            info!("Sending DELETED event for pod: {}/{}", namespace, name);
+                    let (action, pod_opt) = match event {
+                        Event::Applied(pod) => {
+                            // Send terminating pods as MODIFIED so they show "Terminating" status
+                            // They'll be removed by the DELETED event
+                            ("MODIFIED", Some(pod))
                         }
-                    }
-                    
-                    let msg = ServerMessage::ResourceUpdate {
-                        resource: "pods".to_string(),
-                        action: action.to_string(),
-                        data: pod_data,
+                        Event::Deleted(pod) => ("DELETED", Some(pod)),
+                        Event::Restarted(pods) => {
+                            // Watcher restarted, send all active pods (skip terminating ones)
+                            for pod in pods {
+                                // Skip pods marked for deletion
+                                if pod.metadata.deletion_timestamp.is_some() {
+                                    continue;
+                                }
+                                let pod_data = serde_json::to_value(&pod).unwrap_or_default();
+                                let msg = ServerMessage::ResourceUpdate {
+                                    resource: "pods".to_string(),
+                                    action: "MODIFIED".to_string(),
+                                    data: pod_data,
+                                };
+                                if tx.send(msg).await.is_err() {
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
                     };
 
-                    if tx.send(msg).await.is_err() {
-                        break; // Client disconnected
+                    if let Some(pod) = pod_opt {
+                        let pod_data = serde_json::to_value(&pod).unwrap_or_default();
+
+                        // Log deletions for debugging
+                        if action == "DELETED" {
+                            if let Some(metadata) = pod_data.get("metadata") {
+                                let name = metadata.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                let namespace = metadata.get("namespace").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                info!("Sending DELETED event for pod: {}/{}", namespace, name);
+                            }
+                        }
+
+                        let msg = ServerMessage::ResourceUpdate {
+                            resource: "pods".to_string(),
+                            action: action.to_string(),
+                            data: pod_data,
+                        };
+
+                        if tx.send(msg).await.is_err() {
+                            return;
+                        }
                     }
                 }
-            }
-            Err(e) => {
-                if is_forbidden_or_missing_watch_api(&e) {
-                    warn!("Stopping pod watch due to unavailable/forbidden API: {}", e);
+                Err(e) => {
+                    if is_forbidden_or_missing_watch_api(&e) {
+                        warn!("Stopping pod watch due to unavailable/forbidden API: {}", e);
+                        return;
+                    }
+                    error!("Watch error: {}", e);
+                    let msg = ServerMessage::Error {
+                        message: format!("Watch error: {}", e),
+                    };
+                    let _ = tx.send(msg).await;
                     break;
                 }
-                error!("Watch error: {}", e);
-                let msg = ServerMessage::Error {
-                    message: format!("Watch error: {}", e),
-                };
-                let _ = tx.send(msg).await;
-                break;
             }
         }
+
+        retry_attempt = retry_attempt.saturating_add(1);
+        let backoff_secs = std::cmp::min(10, retry_attempt);
+        warn!(
+            "pods watch stream ended; reconnecting in {}s (attempt {})",
+            backoff_secs,
+            retry_attempt
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(backoff_secs as u64)).await;
     }
 }
 
