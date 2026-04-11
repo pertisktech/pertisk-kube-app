@@ -266,8 +266,11 @@ export function formatMemoryUsedAlloc(used: string | undefined | null, alloc: st
   const usedGB = parseK8sMemoryToGB(used);
   const allocGB = parseK8sMemoryToGB(alloc);
   if (allocGB === 0 && usedGB === 0) return '-';
-  const fmt = (gb: number) => (gb === 0 ? '-' : gb % 1 === 0 ? `${gb} GB` : `${gb.toFixed(2)} GB`);
-  return `${fmt(usedGB)} / ${fmt(allocGB)}`;
+  const fmt = (gb: number, showDashForZero = false) => {
+    if (gb === 0) return showDashForZero ? '-' : '0 GB';
+    return gb % 1 === 0 ? `${gb} GB` : `${gb.toFixed(2)} GB`;
+  };
+  return `${fmt(usedGB)} / ${fmt(allocGB, true)}`;
 }
 
 export function formatK8sQuantityUsedAlloc(used: string | undefined | null, alloc: string | undefined | null): string {

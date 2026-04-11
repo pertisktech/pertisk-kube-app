@@ -415,10 +415,6 @@ fn candidate_backend_paths(app: &AppHandle, cfg: &SidecarConfig) -> Vec<PathBuf>
     paths
 }
 
-fn first_existing_path(paths: &[PathBuf]) -> Option<PathBuf> {
-    paths.iter().find(|p| p.exists()).cloned()
-}
-
 fn probe_backend_health(port: u16) -> bool {
     let addr = backend_socket_addr(port);
     let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(400)) {
@@ -576,6 +572,14 @@ fn ensure_sidecar_port_available(cfg: &mut SidecarConfig) -> anyhow::Result<Opti
     Ok(Some((previous, next)))
 }
 
+fn is_bad_cpu_type_error(error: &std::io::Error) -> bool {
+    error.raw_os_error() == Some(86)
+        || error
+            .to_string()
+            .to_ascii_lowercase()
+            .contains("bad cpu type in executable")
+}
+
 fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> {
     if !is_port_bindable(cfg.port) {
         return Err(anyhow::anyhow!(
@@ -603,8 +607,13 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
     }
 
     let candidates = candidate_backend_paths(app, cfg);
+    let existing_candidates = candidates
+        .iter()
+        .filter(|path| path.exists())
+        .cloned()
+        .collect::<Vec<_>>();
 
-    let backend_bin = first_existing_path(&candidates).ok_or_else(|| {
+    if existing_candidates.is_empty() {
         let error_msg = format!(
             "Could not locate backend binary. Looked in: {}",
             candidates
@@ -615,24 +624,8 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
         );
         eprintln!("{}", error_msg);
         warn!("{}", error_msg);
-        anyhow::anyhow!(error_msg)
-    })?;
-
-    let backend_dir = backend_bin
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-
-    let mut command = Command::new(&backend_bin);
-    command
-        .current_dir(backend_dir.clone())
-        .env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
-        .env("PORT", cfg.port.to_string())
-        .env("GRPC_PORT", grpc_port.to_string())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
-
-    configure_sidecar_environment(&mut command);
+        return Err(anyhow::anyhow!(error_msg));
+    }
 
     let bundled_dirs = bundled_bin_dirs(app)
         .into_iter()
@@ -640,49 +633,96 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
         .filter_map(|path| path.to_str().map(str::to_string))
         .collect::<Vec<_>>();
 
-    if !bundled_dirs.is_empty() {
-        command.env("PERTISK_BUNDLED_BIN_DIRS", bundled_dirs.join(":"));
-    }
+    let embedded_tool_dir = prepare_embedded_ktail(app)
+        .and_then(|tool_dir| tool_dir.to_str().map(str::to_string));
 
-    if let Some(tool_dir) = prepare_embedded_ktail(app) {
-        if let Some(tool_dir_str) = tool_dir.to_str() {
+    let mut startup_errors = Vec::<String>::new();
+
+    for backend_bin in existing_candidates {
+        let backend_dir = backend_bin
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+
+        let mut command = Command::new(&backend_bin);
+        command
+            .current_dir(backend_dir.clone())
+            .env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
+            .env("PORT", cfg.port.to_string())
+            .env("GRPC_PORT", grpc_port.to_string())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+
+        configure_sidecar_environment(&mut command);
+
+        if !bundled_dirs.is_empty() {
+            command.env("PERTISK_BUNDLED_BIN_DIRS", bundled_dirs.join(":"));
+        }
+
+        if let Some(tool_dir_str) = embedded_tool_dir.as_deref() {
             command.env("PERTISK_TOOL_BIN_DIR", tool_dir_str);
         }
-    }
 
-    if let Some(kubeconfig_path) = cfg.kubeconfig_path.as_deref() {
-        if !kubeconfig_path.trim().is_empty() {
-            command.env("KUBECONFIG", kubeconfig_path);
+        if let Some(kubeconfig_path) = cfg.kubeconfig_path.as_deref() {
+            if !kubeconfig_path.trim().is_empty() {
+                command.env("KUBECONFIG", kubeconfig_path);
+            }
+        }
+
+        if let Some(kube_context) = cfg.kube_context.as_deref() {
+            if !kube_context.trim().is_empty() {
+                command.env("KUBE_CONTEXT", kube_context);
+            }
+        }
+
+        match command.spawn() {
+            Ok(mut child) => {
+                // If the process exits immediately (common when port is already occupied), fail fast.
+                thread::sleep(Duration::from_millis(250));
+                if let Some(status) = child.try_wait()? {
+                    let message = format!(
+                        "{} exited immediately with status {status}",
+                        backend_bin.display()
+                    );
+                    warn!("{message}");
+                    startup_errors.push(message);
+                    continue;
+                }
+
+                info!(
+                    "spawned backend sidecar from {} on {} (grpc: {}) (cwd: {})",
+                    backend_bin.display(),
+                    backend_socket_addr(cfg.port),
+                    grpc_port,
+                    backend_dir.display()
+                );
+                return Ok(child);
+            }
+            Err(error) => {
+                if is_bad_cpu_type_error(&error) {
+                    let message = format!(
+                        "skipping backend binary {} due to architecture mismatch ({error})",
+                        backend_bin.display()
+                    );
+                    warn!("{message}");
+                    startup_errors.push(message);
+                    continue;
+                }
+
+                return Err(anyhow::anyhow!(
+                    "failed to spawn backend sidecar from {}: {}",
+                    backend_bin.display(),
+                    error
+                ));
+            }
         }
     }
 
-    if let Some(kube_context) = cfg.kube_context.as_deref() {
-        if !kube_context.trim().is_empty() {
-            command.env("KUBE_CONTEXT", kube_context);
-        }
-    }
-
-    let mut child = command.spawn()?;
-
-    // If the process exits immediately (common when port is already occupied), fail fast.
-    thread::sleep(Duration::from_millis(250));
-    if let Some(status) = child.try_wait()? {
-        return Err(anyhow::anyhow!(
-            "backend sidecar exited immediately with status {status}; check ports {} (http) / {} (grpc) and backend binary path",
-            cfg.port,
-            grpc_port
-        ));
-    }
-
-    info!(
-        "spawned backend sidecar from {} on {} (grpc: {}) (cwd: {})",
-        backend_bin.display(),
-        backend_socket_addr(cfg.port),
-        grpc_port,
-        backend_dir.display()
-    );
-
-    Ok(child)
+    Err(anyhow::anyhow!(
+        "no compatible backend binary could be started. checked {} candidate(s). details: {}",
+        startup_errors.len(),
+        startup_errors.join(" | ")
+    ))
 }
 
 fn discover_kubeconfig_candidates() -> Vec<String> {
