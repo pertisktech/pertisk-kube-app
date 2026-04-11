@@ -1,13 +1,13 @@
 import { Terminal, Trash2, Loader, FileText, Lock, Unlock, Droplet } from './Icons';
 import { StatusBadge } from './StatusBadge';
-import { usePods } from '../hooks/useKubernetes';
+import { useRealtimePods } from '../hooks/useRealtimePods';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 import { NodeMetricGraphs } from './NodeMetricGraphs';
 import { formatMemoryUsedAlloc, formatCpuRange, formatCpuCores, parseCpuToCores, formatK8sQuantity, formatK8sQuantityUsedAlloc } from '../utils';
 import { sortNodeRoles } from '../utils/nodeRoles';
-import type { K8sNode } from '../types';
+import type { K8sNode, Pod } from '../types';
 
 function getRoleBadgeStyle(role: string): { bg: string; color: string; border: string } {
   const r = role.toLowerCase();
@@ -97,12 +97,12 @@ const NodeDetailsResources = ({
 };
 
 export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpenShell, onCordonToggle, onDrain, onDelete, cordonLoading }: NodeDetailPanelProps) => {
-  const { data: allPods } = usePods();
+  const { data: allPods = [] } = useRealtimePods<Pod>();
 
   const status = String(node.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady';
   const taints = node.taints?.length ? node.taints : [];
 
-  const nodePods = (allPods || []).filter((pod) => pod.node === node.name);
+  const nodePods = allPods.filter((pod) => pod.node === node.name);
 
   const labelCount = node.labels ? Object.keys(node.labels).length : 0;
   const annotationCount = node.annotations ? Object.keys(node.annotations).length : 0;

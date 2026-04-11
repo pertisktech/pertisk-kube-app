@@ -1,21 +1,21 @@
-import { 
-  useDeployments, 
-  useStatefulSets, 
-  useDaemonSets, 
-  useJobs, 
-  useCronJobs,
-  useReplicaSets 
-} from '../hooks/useKubernetes';
+import {
+  useRealtimeDeployments,
+  useRealtimeStatefulSets,
+  useRealtimeDaemonSets,
+  useRealtimeJobs,
+  useRealtimeCronJobs,
+  useRealtimeReplicaSets,
+} from '../hooks/useRealtimeResources';
 import { Card } from './Card';
 import { LoadingState } from './LoadingState';
 
 export const WorkloadSummary = () => {
-  const { data: deployments, isLoading: deploymentsLoading } = useDeployments();
-  const { data: statefulsets, isLoading: statefulsetsLoading } = useStatefulSets();
-  const { data: daemonsets, isLoading: daemonsetsLoading } = useDaemonSets();
-  const { data: jobs, isLoading: jobsLoading } = useJobs();
-  const { data: cronjobs, isLoading: cronjobsLoading } = useCronJobs();
-  const { data: replicas, isLoading: replicasLoading } = useReplicaSets();
+  const { data: deployments, isLoading: deploymentsLoading } = useRealtimeDeployments();
+  const { data: statefulsets, isLoading: statefulsetsLoading } = useRealtimeStatefulSets();
+  const { data: daemonsets, isLoading: daemonsetsLoading } = useRealtimeDaemonSets();
+  const { data: jobs, isLoading: jobsLoading } = useRealtimeJobs();
+  const { data: cronjobs, isLoading: cronjobsLoading } = useRealtimeCronJobs();
+  const { data: replicas, isLoading: replicasLoading } = useRealtimeReplicaSets();
 
   const isLoading = deploymentsLoading || statefulsetsLoading || daemonsetsLoading || jobsLoading || cronjobsLoading || replicasLoading;
 

@@ -17,6 +17,22 @@ use tracing::warn;
 
 static NODE_DISK_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
 
+fn is_kubelet_stats_proxy_unavailable(err: &kube::Error) -> bool {
+    match err {
+        kube::Error::Api(api_err) => api_err.code == 403 || api_err.code == 404,
+        _ => {
+            // Some clusters/proxies return plain-text 404 responses ("404 page not found")
+            // that kube-rs cannot parse into an API error payload.
+            let normalized = err.to_string().to_lowercase();
+            normalized.contains("404 page not found")
+                || normalized.contains("status code 404")
+                || normalized.contains("status code: 404")
+                || normalized.contains("status code 403")
+                || normalized.contains("status code: 403")
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct KubeClientStatus {
     pub is_placeholder: bool,
@@ -512,12 +528,11 @@ pub async fn fetch_node_disk_metrics(
 
         let summary = match client.request::<serde_json::Value>(request).await {
             Ok(summary) => summary,
-            Err(kube::Error::Api(api_err)) if api_err.code == 403 || api_err.code == 404 => {
+            Err(err) if is_kubelet_stats_proxy_unavailable(&err) => {
                 NODE_DISK_METRICS_SUPPORTED.store(false, Ordering::Relaxed);
                 warn!(
-                    "Disabling node disk metrics collection because kubelet stats proxy is unavailable (HTTP {}): {}",
-                    api_err.code,
-                    api_err.message
+                    "Disabling node disk metrics collection because kubelet stats proxy is unavailable: {}",
+                    err
                 );
                 return Err(());
             }

@@ -7,7 +7,7 @@ import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 import { WorkloadMetricGraphs } from './WorkloadMetricGraphs';
 import { useRealtimeReplicaSets, useRealtimeEvents } from '../hooks/useRealtimeResources';
-import { usePods } from '../hooks/useKubernetes';
+import { useRealtimePods } from '../hooks/useRealtimePods';
 
 interface DeploymentDetailPanelProps {
   deployment: Deployment;
@@ -195,7 +195,7 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
   const annotations = deployment.annotations ?? {};
 
   const { data: allReplicaSets = [] } = useRealtimeReplicaSets();
-  const { data: allPods = [] } = usePods();
+  const { data: allPods = [] } = useRealtimePods<Pod>();
   const { data: eventsData = [] } = useRealtimeEvents();
 
   const deploymentReplicaSets = useMemo(() => {
