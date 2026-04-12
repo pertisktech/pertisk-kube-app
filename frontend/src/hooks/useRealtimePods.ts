@@ -26,6 +26,20 @@ const keepMetric = (nextVal: unknown, prevVal: unknown): unknown => {
   return '-';
 };
 
+const keepField = (nextVal: unknown, prevVal: unknown): unknown => {
+  if (hasValue(nextVal)) return nextVal;
+  return prevVal;
+};
+
+const normalizeWatchAction = (action: unknown): 'ADDED' | 'MODIFIED' | 'DELETED' | null => {
+  if (typeof action !== 'string') return null;
+  const normalized = action.trim().toUpperCase();
+  if (normalized === 'ADDED') return 'ADDED';
+  if (normalized === 'MODIFIED' || normalized === 'APPLIED') return 'MODIFIED';
+  if (normalized === 'DELETED') return 'DELETED';
+  return null;
+};
+
 // Transform raw Kubernetes pod to frontend Pod type
 const transformPod = (rawPod: any): any => {
   const metadata = rawPod.metadata || {};
@@ -446,6 +460,16 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
 
           return [{
             ...item,
+            // Keep pod lifecycle fields fresh even when a websocket update is delayed/missed.
+            status: keepField(apiItem.status, item.status),
+            phase: keepField(apiItem.phase, item.phase),
+            ready: keepField(apiItem.ready, item.ready),
+            restarts: keepField(apiItem.restarts, item.restarts),
+            node: keepField(apiItem.node, item.node),
+            pod_ip: keepField(apiItem.pod_ip, item.pod_ip),
+            age: keepField(apiItem.age, item.age),
+            labels: keepField(apiItem.labels, item.labels),
+            annotations: keepField(apiItem.annotations, item.annotations),
             cpu: keepMetric(apiItem.cpu, item.cpu),
             memory: keepMetric(apiItem.memory, item.memory),
             cpu_capacity: keepMetric(apiItem.cpu_capacity, item.cpu_capacity),
@@ -544,6 +568,10 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
             setIsLoading(false);
             setEmptyListConfirmed(false);
             const { action, data: rawPodData } = message;
+            const normalizedAction = normalizeWatchAction(action);
+            if (!normalizedAction) {
+              return;
+            }
             const transformedPod = transformPod(rawPodData);
             
             // Debug log for status changes (dev only)
@@ -554,7 +582,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
             }
 
             setData((prevData) => {
-              switch (action) {
+              switch (normalizedAction) {
                 case 'ADDED':
                   const podKey = `${transformedPod.namespace}/${transformedPod.name}`;
                   
