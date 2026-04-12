@@ -95,6 +95,7 @@ const SIDEBAR_WIDTH_DEFAULT = 256; // 16rem
 const SIDEBAR_WIDTH_MIN = 200;
 const SIDEBAR_WIDTH_MAX = 420;
 const SIDEBAR_WIDTH_STORAGE_KEY = 'pertisk-kube-sidebar-width';
+const NEXT_STARTUP_CLUSTER_SWITCH_NOTICE_KEY = 'pertisk-kube-next-startup-cluster-switch';
 
 const HELM_ITEMS: NavItem[] = [
   { label: 'Charts', path: '/helm/charts', icon: Archive },
@@ -326,6 +327,11 @@ export const Layout = () => {
         if (!currentContext) {
           const currentCluster = clusters.find((item) => item.isCurrent)?.context ?? '';
           setSelectedClusterContext(currentCluster);
+          if (currentCluster.trim()) {
+            // current-context in kubeconfig is a valid selected cluster,
+            // even when sidecar config does not persist kubeContext explicitly.
+            setStartupClusterSelectionDone(true);
+          }
         }
       } catch (err) {
         if (cancelled) return;
@@ -358,6 +364,17 @@ export const Layout = () => {
     return () => {
       cancelled = true;
     };
+  }, [desktopMode]);
+
+  useEffect(() => {
+    if (!desktopMode || typeof window === 'undefined') return;
+
+    const pendingContext = window.localStorage.getItem(NEXT_STARTUP_CLUSTER_SWITCH_NOTICE_KEY);
+    if (!pendingContext) return;
+
+    window.localStorage.removeItem(NEXT_STARTUP_CLUSTER_SWITCH_NOTICE_KEY);
+    const label = pendingContext.trim() || 'selected cluster';
+    toast.success(`Cluster switched to ${label}.`);
   }, [desktopMode]);
 
   // Poll /api/auth-status every 5s so we can show the browser-login CTA when
@@ -459,6 +476,9 @@ export const Layout = () => {
       await refreshClustersForKubeconfig(nextPath);
       setShowKubeconfigModal(false);
       setStartupClusterSelectionDone(true);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(NEXT_STARTUP_CLUSTER_SWITCH_NOTICE_KEY, nextContext);
+      }
       toast.success('Cluster selection applied and sidecar restarted.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to apply cluster selection.');
@@ -476,11 +496,17 @@ export const Layout = () => {
     });
   }, [clusterSearch, kubeClusters]);
 
+  const hasConfiguredClusterContext = kubeContext.trim().length > 0 || selectedClusterContext.trim().length > 0;
+  const hasKubeconfigSource = kubeconfigPath.trim().length > 0 || kubeconfigCandidates.length > 0;
+
   const mustSelectCluster =
     desktopMode &&
     kubeconfigInitialized &&
-    (!kubeContext.trim() || kubeClusters.length === 0) &&
-    !startupClusterSelectionDone;
+    !kubeconfigLoading &&
+    hasKubeconfigSource &&
+    !hasConfiguredClusterContext &&
+    !startupClusterSelectionDone &&
+    kubeClusters.length > 0;
 
   useEffect(() => {
     if (mustSelectCluster) {

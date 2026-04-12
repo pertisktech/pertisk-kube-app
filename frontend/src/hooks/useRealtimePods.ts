@@ -31,6 +31,10 @@ const keepField = (nextVal: unknown, prevVal: unknown): unknown => {
   return prevVal;
 };
 
+const isTransientPodSyncFailureStatus = (status: number): boolean => {
+  return status === 500 || status === 502 || status === 503 || status === 504;
+};
+
 const normalizeWatchAction = (action: unknown): 'ADDED' | 'MODIFIED' | 'DELETED' | null => {
   if (typeof action !== 'string') return null;
   const normalized = action.trim().toUpperCase();
@@ -419,10 +423,16 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       }
 
       if (!response.ok) {
+        if (isTransientPodSyncFailureStatus(response.status)) {
+          // Keep retrying quietly while cluster/API connectivity recovers.
+          setError(null);
+          setIsLoading(false);
+          return;
+        }
         setError(`Failed to sync pod metrics (${response.status})`);
+        setIsLoading(false);
         return;
       }
-
       const payload = await response.json();
       const apiPods: any[] = Array.isArray(payload?.data) ? (payload.data as any[]) : [];
 
@@ -504,7 +514,10 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       });
     } catch (syncError) {
       console.error('[useRealtimePods] Failed to sync pod details:', syncError);
-      setError('Failed to sync pod details');
+      // Network interruptions are transient; keep background retry active
+      // without surfacing hard table errors.
+      setError(null);
+      setIsLoading(false);
     }
   }, []);
 

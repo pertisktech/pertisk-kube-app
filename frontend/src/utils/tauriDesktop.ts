@@ -99,6 +99,18 @@ export async function getDesktopAuthStatus(): Promise<DesktopAuthStatus> {
   }
 }
 
+export async function isDesktopClusterReady(): Promise<boolean> {
+  try {
+    const url = isDesktopRuntime()
+      ? `${getDesktopBackendOrigin()}/api/ready`
+      : '/api/ready';
+    const res = await fetch(url, { cache: 'no-store' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function listDesktopKubeconfigCandidates(): Promise<string[]> {
   if (!isDesktopRuntime()) {
     return [];

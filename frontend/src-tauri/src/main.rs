@@ -863,7 +863,11 @@ fn graceful_stop_child(child: &mut Child) {
     }
 }
 
-fn restart_backend_sidecar(app: &AppHandle, state: &BackendState) -> anyhow::Result<()> {
+fn restart_backend_sidecar_with_options(
+    app: &AppHandle,
+    state: &BackendState,
+    require_cluster_verification: bool,
+) -> anyhow::Result<()> {
     if !try_begin_restart(&state.restart_in_progress) {
         return Err(anyhow::anyhow!(
             "sidecar restart already in progress; retry in a moment"
@@ -921,21 +925,35 @@ fn restart_backend_sidecar(app: &AppHandle, state: &BackendState) -> anyhow::Res
             ));
         }
 
-        // Cluster verification is best-effort: exec-credential plugins (omnictl for Talos Omni,
-        // aws eks get-token, kubelogin, gke-gcloud-auth-plugin) run lazily on the first request
-        // and may take 10–30 s on their first call. If verification times out we keep the new
-        // sidecar running — the cluster will become reachable once credentials are ready.
-        if wait_for_cluster_verification(cfg.port, CLUSTER_VERIFY_TIMEOUT) {
+        let verified = wait_for_cluster_verification(cfg.port, CLUSTER_VERIFY_TIMEOUT);
+        if verified {
             info!(
                 "backend sidecar restarted and cluster verification passed on {}",
                 backend_socket_addr(cfg.port)
             );
         } else {
+            let mut child_to_stop = child;
+            if require_cluster_verification {
+                graceful_stop_child(&mut child_to_stop);
+                return Err(anyhow::anyhow!(
+                    "selected cluster/context did not become reachable on {} within {:?}",
+                    backend_socket_addr(cfg.port),
+                    CLUSTER_VERIFY_TIMEOUT
+                ));
+            }
+
             warn!(
                 "cluster verification timed out on {} — exec-credential plugin may still be initialising; \
                  keeping sidecar running",
                 backend_socket_addr(cfg.port)
             );
+
+            let mut guard = state
+                .child
+                .lock()
+                .map_err(|e| anyhow::anyhow!("sidecar child lock poisoned after restart: {e}"))?;
+            *guard = Some(child_to_stop);
+            return Ok(());
         }
 
         let mut guard = state
@@ -949,6 +967,10 @@ fn restart_backend_sidecar(app: &AppHandle, state: &BackendState) -> anyhow::Res
     end_restart(&state.restart_in_progress);
 
     result
+}
+
+fn restart_backend_sidecar(app: &AppHandle, state: &BackendState) -> anyhow::Result<()> {
+    restart_backend_sidecar_with_options(app, state, false)
 }
 
 fn start_backend_monitor(
@@ -1131,7 +1153,7 @@ fn set_sidecar_config(
             restart_in_progress: restart_in_progress_ref,
         };
 
-        match restart_backend_sidecar(&app_handle, &restart_state) {
+        match restart_backend_sidecar_with_options(&app_handle, &restart_state, true) {
             Ok(()) => {
                 if let Ok(mut status) = restart_state.switch_status.lock() {
                     status.in_progress = false;

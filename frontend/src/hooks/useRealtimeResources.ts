@@ -59,6 +59,17 @@ const shouldIgnoreRealtimeError = (message?: string): boolean => {
   return normalized.includes('watch stream failed') && normalized.includes('forbidden');
 };
 
+const isTransientRealtimeConnectivityError = (message?: string): boolean => {
+  if (!message) return false;
+  const normalized = message.toLowerCase();
+  return normalized.includes('client error (connect)')
+    || normalized.includes('connecterror')
+    || normalized.includes('network is unreachable')
+    || normalized.includes('timedout')
+    || normalized.includes('timed out')
+    || normalized.includes('failed to fetch initial');
+};
+
 // Transformation functions to convert raw K8s objects to frontend format
 function transformNamespace(raw: any): Namespace {
   const metadata = raw.metadata || {};
@@ -1032,6 +1043,13 @@ function createRealtimeHook<T>(
                   }
                   return;
                 }
+                if (isTransientRealtimeConnectivityError(message.message)) {
+                  if (isRealtimeDebug()) {
+                    console.warn(`Transient realtime connectivity issue for ${displayName}; retrying in background:`, message.message);
+                  }
+                  setError(null);
+                  return;
+                }
                 console.error(`WebSocket error for ${displayName}:`, message.message);
                 setError(message.message || 'Unknown error');
               }
@@ -1395,6 +1413,13 @@ export function useRealtimeCustomResources(crdName: string | null): {
                 if (isRealtimeDebug()) {
                   console.warn('Ignoring realtime permission error for custom resource:', message.message);
                 }
+                return;
+              }
+              if (isTransientRealtimeConnectivityError(message.message)) {
+                if (isRealtimeDebug()) {
+                  console.warn('Transient custom resource connectivity issue; retrying in background:', message.message);
+                }
+                setError(null);
                 return;
               }
               setError(message.message || 'Unknown error');
