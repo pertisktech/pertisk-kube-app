@@ -1,4 +1,6 @@
+import { useMemo } from 'react';
 import { useNodes } from '../hooks/useKubernetes';
+import { useRealtimeNodes } from '../hooks/useRealtimeResources';
 import { Card } from './Card';
 import { LoadingState } from './LoadingState';
 import { compareNodeRoleSets, sortNodeRoles } from '../utils/nodeRoles';
@@ -13,7 +15,16 @@ interface NodeGroupInfo {
 }
 
 export const NodeGroups = () => {
-  const { data: nodes, isLoading } = useNodes();
+  const { data: apiNodes, isLoading: apiNodesLoading } = useNodes();
+  const { data: realtimeNodes, isLoading: realtimeNodesLoading } = useRealtimeNodes();
+
+  const nodes = useMemo(() => {
+    const realtime = realtimeNodes ?? [];
+    const api = apiNodes ?? [];
+    return realtime.length > 0 ? realtime : api;
+  }, [realtimeNodes, apiNodes]);
+
+  const isLoading = realtimeNodesLoading && apiNodesLoading;
 
   if (isLoading) {
     return (

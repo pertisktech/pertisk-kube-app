@@ -1062,6 +1062,137 @@ async fn watch_pods(
     }
 }
 
+async fn watch_nodes(
+    state: AppState,
+    tx: tokio::sync::mpsc::Sender<ServerMessage>,
+) {
+    use k8s_openapi::api::core::v1::Node;
+    use kube::api::ListParams;
+
+    if let Some(message) = placeholder_error_message(&state) {
+        let _ = tx.send(ServerMessage::Error { message }).await;
+        return;
+    }
+
+    let client = state.client.clone();
+    let api: Api<Node> = Api::all(client);
+
+    info!("Fetching initial node list...");
+    match api.list(&ListParams::default()).await {
+        Ok(list) => {
+            let active_nodes: Vec<_> = list
+                .items
+                .into_iter()
+                .filter(|node| node.metadata.deletion_timestamp.is_none())
+                .collect();
+
+            for node in active_nodes {
+                let item_data = serde_json::to_value(&node).unwrap_or_default();
+                let msg = ServerMessage::ResourceUpdate {
+                    resource: "nodes".to_string(),
+                    action: "ADDED".to_string(),
+                    data: item_data,
+                };
+
+                if tx.send(msg).await.is_err() {
+                    return;
+                }
+            }
+        }
+        Err(e) => {
+            if is_forbidden_or_missing_api(&e) {
+                warn!("Skipping nodes watch initialization due to unavailable/forbidden API: {}", e);
+                return;
+            }
+            error!("Failed to fetch initial nodes list: {}", e);
+            let msg = ServerMessage::Error {
+                message: format!("Failed to fetch initial nodes: {}", e),
+            };
+            let _ = tx.send(msg).await;
+            return;
+        }
+    }
+
+    let mut retry_attempt: u32 = 0;
+    loop {
+        info!("Starting nodes watch stream...");
+        let mut stream = std::pin::Pin::from(Box::new(watcher(api.clone(), Default::default())));
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(event) => {
+                    retry_attempt = 0;
+                    use kube::runtime::watcher::Event;
+
+                    let (action, node_opt) = match event {
+                        Event::Applied(node) => {
+                            // Treat deleting nodes as deleted so UI removes immediately.
+                            let action = if node.metadata.deletion_timestamp.is_some() {
+                                "DELETED"
+                            } else {
+                                "MODIFIED"
+                            };
+                            (action, Some(node))
+                        }
+                        Event::Deleted(node) => ("DELETED", Some(node)),
+                        Event::Restarted(nodes) => {
+                            for node in nodes {
+                                if node.metadata.deletion_timestamp.is_some() {
+                                    continue;
+                                }
+                                let item_data = serde_json::to_value(&node).unwrap_or_default();
+                                let msg = ServerMessage::ResourceUpdate {
+                                    resource: "nodes".to_string(),
+                                    action: "MODIFIED".to_string(),
+                                    data: item_data,
+                                };
+                                if tx.send(msg).await.is_err() {
+                                    return;
+                                }
+                            }
+                            continue;
+                        }
+                    };
+
+                    if let Some(node) = node_opt {
+                        let item_data = serde_json::to_value(&node).unwrap_or_default();
+                        let msg = ServerMessage::ResourceUpdate {
+                            resource: "nodes".to_string(),
+                            action: action.to_string(),
+                            data: item_data,
+                        };
+
+                        if tx.send(msg).await.is_err() {
+                            return;
+                        }
+                    }
+                }
+                Err(e) => {
+                    if is_forbidden_or_missing_watch_api(&e) {
+                        warn!("Stopping nodes watch due to unavailable/forbidden API: {}", e);
+                        return;
+                    }
+                    error!("Watch error for nodes: {}", e);
+                    let msg = ServerMessage::Error {
+                        message: format!("Watch error: {}", e),
+                    };
+                    let _ = tx.send(msg).await;
+                    break;
+                }
+            }
+        }
+
+        retry_attempt = retry_attempt.saturating_add(1);
+        let backoff_secs = std::cmp::min(10, retry_attempt);
+        warn!(
+            "nodes watch stream ended; reconnecting in {}s (attempt {})",
+            backoff_secs,
+            retry_attempt
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(backoff_secs as u64)).await;
+    }
+}
+
 // Generic macro to create watch functions for any K8s resource type
 macro_rules! create_watch_fn {
     ($fn_name:ident, $resource_type:ty, $resource_name:expr) => {
@@ -1200,7 +1331,6 @@ create_watch_fn!(watch_jobs, k8s_openapi::api::batch::v1::Job, "jobs");
 create_watch_fn!(watch_cronjobs, k8s_openapi::api::batch::v1::CronJob, "cronjobs");
 create_watch_fn!(watch_events, k8s_openapi::api::core::v1::Event, "events");
 create_watch_fn!(watch_namespaces, k8s_openapi::api::core::v1::Namespace, "namespaces");
-create_watch_fn!(watch_nodes, k8s_openapi::api::core::v1::Node, "nodes");
 create_watch_fn!(watch_services, k8s_openapi::api::core::v1::Service, "services");
 create_watch_fn!(watch_configmaps, k8s_openapi::api::core::v1::ConfigMap, "configmaps");
 create_watch_fn!(watch_secrets, k8s_openapi::api::core::v1::Secret, "secrets");

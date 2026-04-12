@@ -504,8 +504,13 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
     let api: Api<Node> = Api::all(client.clone());
     match api.list(&ListParams::default()).await {
         Ok(list) => {
-            let node_names: Vec<String> = list
+            let active_nodes: Vec<Node> = list
                 .items
+                .into_iter()
+                .filter(|node| node.metadata.deletion_timestamp.is_none())
+                .collect();
+
+            let node_names: Vec<String> = active_nodes
                 .iter()
                 .filter_map(|node| node.metadata.name.clone())
                 .collect();
@@ -513,8 +518,7 @@ pub async fn list_nodes(State(state): State<AppState>) -> impl IntoResponse {
                 fetch_node_metrics(client.clone()),
                 fetch_node_disk_metrics(client, &node_names),
             );
-            let items: Vec<NodeItem> = list
-                .items
+            let items: Vec<NodeItem> = active_nodes
                 .into_iter()
                 .map(|node| {
                     let name = node.metadata.name.unwrap_or_default();

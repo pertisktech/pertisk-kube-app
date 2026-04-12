@@ -8,6 +8,7 @@ import {
   usePods,
 } from '../hooks/useKubernetes';
 import { useRealtimePods } from '../hooks/useRealtimePods';
+import { useRealtimeNodes } from '../hooks/useRealtimeResources';
 import { NodeMetricGraphs } from '../components/NodeMetricGraphs';
 import {
   AlertCircle,
@@ -88,9 +89,62 @@ const formatRuntime = (runtime?: string) => {
 export const ClusterPage = () => {
   const [activeNodeRoleTab, setActiveNodeRoleTab] = useState<'master' | 'worker'>('master');
   const { data: dashboard, isLoading: dashboardLoading, error: dashboardError } = useDashboard();
-  const { data: nodes, isLoading: nodesLoading, error: nodesError } = useNodes({ refetchInterval: 30_000 });
-  const { data: pods, isLoading: podsLoading } = usePods();
-  const { data: realtimePods = [] } = useRealtimePods<Pod>();
+  const { data: apiNodes, isLoading: apiNodesLoading, error: nodesError } = useNodes({ refetchInterval: 30_000 });
+  const { data: apiPods, isLoading: apiPodsLoading } = usePods();
+  const { data: realtimePods = [], isLoading: realtimePodsLoading } = useRealtimePods<Pod>();
+  const { data: realtimeNodes = [], isLoading: realtimeNodesLoading } = useRealtimeNodes();
+
+  const nodes = useMemo(() => {
+    if (realtimeNodes.length === 0) return apiNodes || [];
+    if (!apiNodes || apiNodes.length === 0) return realtimeNodes;
+
+    const apiByName = new Map(apiNodes.map((node) => [node.name, node]));
+    return realtimeNodes.map((node) => {
+      const fromApi = apiByName.get(node.name);
+      if (!fromApi) return node;
+
+      return {
+        ...node,
+        cpu: fromApi.cpu ?? node.cpu,
+        memory: fromApi.memory ?? node.memory,
+        ephemeral_storage: fromApi.ephemeral_storage ?? node.ephemeral_storage,
+        pods: fromApi.pods ?? node.pods,
+        cpu_used: fromApi.cpu_used ?? node.cpu_used,
+        memory_used: fromApi.memory_used ?? node.memory_used,
+        ephemeral_storage_used: fromApi.ephemeral_storage_used ?? node.ephemeral_storage_used,
+        cpu_usage_percent: fromApi.cpu_usage_percent ?? node.cpu_usage_percent,
+        memory_usage_percent: fromApi.memory_usage_percent ?? node.memory_usage_percent,
+        ephemeral_storage_usage_percent:
+          fromApi.ephemeral_storage_usage_percent ?? node.ephemeral_storage_usage_percent,
+      };
+    });
+  }, [realtimeNodes, apiNodes]);
+
+  const pods = useMemo(() => {
+    if (realtimePods.length === 0) return apiPods || [];
+    if (!apiPods || apiPods.length === 0) return realtimePods;
+
+    const keyOf = (pod: Pod) => `${pod.namespace}/${pod.name}`;
+    const apiByKey = new Map(apiPods.map((pod) => [keyOf(pod), pod]));
+
+    return realtimePods.map((pod) => {
+      const fromApi = apiByKey.get(keyOf(pod));
+      if (!fromApi) return pod;
+
+      return {
+        ...pod,
+        cpu: fromApi.cpu ?? pod.cpu,
+        memory: fromApi.memory ?? pod.memory,
+        cpu_capacity: fromApi.cpu_capacity ?? pod.cpu_capacity,
+        memory_capacity: fromApi.memory_capacity ?? pod.memory_capacity,
+        cpu_usage_percent: fromApi.cpu_usage_percent ?? pod.cpu_usage_percent,
+        memory_usage_percent: fromApi.memory_usage_percent ?? pod.memory_usage_percent,
+      };
+    });
+  }, [realtimePods, apiPods]);
+
+  const nodesLoading = realtimeNodesLoading && apiNodesLoading;
+  const podsLoading = realtimePodsLoading && apiPodsLoading;
 
   const isLoading = dashboardLoading || nodesLoading || podsLoading;
   const errorMessage = (dashboardError as Error | undefined)?.message || (nodesError as Error | undefined)?.message || null;
@@ -183,10 +237,10 @@ export const ClusterPage = () => {
     return (pods || []).filter((pod) => pod.node && nodeNames.has(pod.node));
   }, [pods, roleTabNodes]);
 
-  const roleTabRealtimePods = useMemo(() => {
+  const roleTabPodsForResources = useMemo(() => {
     const nodeNames = new Set(roleTabNodes.map((node) => node.name));
-    return realtimePods.filter((pod) => pod.node && nodeNames.has(pod.node));
-  }, [realtimePods, roleTabNodes]);
+    return pods.filter((pod) => pod.node && nodeNames.has(pod.node));
+  }, [pods, roleTabNodes]);
 
   const roleTabCapacitySummary = useMemo(() => {
     let totalCPU = 0;
@@ -208,7 +262,7 @@ export const ClusterPage = () => {
     let memoryRequests = 0;
     let memoryLimits = 0;
 
-    roleTabRealtimePods.forEach((pod) => {
+    roleTabPodsForResources.forEach((pod) => {
       (pod.containers || []).forEach((container) => {
         const cpuRequestRaw = readResourceValue(container.requests, 'cpu');
         const cpuLimitRaw = readResourceValue(container.limits, 'cpu');
@@ -236,7 +290,7 @@ export const ClusterPage = () => {
       memoryLimits,
       podCount,
     };
-  }, [roleTabNodes, roleTabRealtimePods, roleTabPods]);
+  }, [roleTabNodes, roleTabPodsForResources, roleTabPods]);
 
   if (isLoading) {
     return (

@@ -121,7 +121,8 @@ export const Dashboard = () => {
   const { data: pods = [], isLoading: podsLoading } = useRealtimePods<Pod>({ enabled: true });
 
   const nodes = useMemo(() => {
-    if (!realtimeNodes?.length) return realtimeNodes ?? [];
+    if (!realtimeNodes?.length) return apiNodes ?? [];
+    if (!apiNodes?.length) return realtimeNodes;
     const byName = new Map((apiNodes ?? []).map((n) => [n.name, n]));
     return realtimeNodes.map((node) => {
       const fromApi = byName.get(node.name);

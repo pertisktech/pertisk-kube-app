@@ -359,11 +359,14 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number>();
   const reconnectAttemptsRef = useRef(0);
+  const lastMessageAtRef = useRef<number>(Date.now());
   const intentionalCloseRef = useRef(false);
   const emptyListTimeoutRef = useRef<number>();
-  const maxReconnectAttempts = 10;
+  const heartbeatIntervalRef = useRef<number>();
+  const staleWatchdogRef = useRef<number>();
   const deletionTimeoutsRef = useRef<Map<string, number>>(new Map()); // Track deletion timeouts
   const deletedPodsRef = useRef<Set<string>>(new Set()); // Track deleted pods to prevent re-adding
+  const apiMissCountsRef = useRef<Map<string, number>>(new Map()); // Track pods missing from REST across syncs
   const [clusterSwitchVersion, setClusterSwitchVersion] = useState(0);
 
   useEffect(() => {
@@ -375,7 +378,9 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       setHasFetched(false);
       setEmptyListConfirmed(false);
       reconnectAttemptsRef.current = 0;
+      lastMessageAtRef.current = Date.now();
       deletedPodsRef.current.clear();
+      apiMissCountsRef.current.clear();
       deletionTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
       deletionTimeoutsRef.current.clear();
       setClusterSwitchVersion((v) => v + 1);
@@ -418,26 +423,40 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       setData((prevData) => {
         const keyOf = (item: any) => `${item.namespace}/${item.name}`;
         const apiByKey = new Map<string, any>(apiPods.map((item: any) => [keyOf(item), item]));
+        const nextMissCounts = new Map<string, number>();
 
-        // Use API response as source of truth for existence, so deleted pods are
-        // removed even if a websocket DELETED event is missed.
-        const merged = prevData
-          .filter((item: any) => apiByKey.has(keyOf(item)))
-          .map((item: any) => {
-            const apiItem = apiByKey.get(keyOf(item));
+        // Keep all WS-driven pods; only inject metrics from REST so that pods
+        // arriving via WebSocket are never removed by a single stale polling snapshot.
+        const merged = prevData.flatMap((item: any) => {
+          const apiItem = apiByKey.get(keyOf(item));
+          if (!apiItem) {
+            const key = keyOf(item);
+            const missCount = (apiMissCountsRef.current.get(key) ?? 0) + 1;
+            nextMissCounts.set(key, missCount);
 
-            return {
-              ...item,
-              cpu: keepMetric(apiItem.cpu, item.cpu),
-              memory: keepMetric(apiItem.memory, item.memory),
-              cpu_capacity: keepMetric(apiItem.cpu_capacity, item.cpu_capacity),
-              memory_capacity: keepMetric(apiItem.memory_capacity, item.memory_capacity),
-              cpu_usage_percent: apiItem.cpu_usage_percent ?? item.cpu_usage_percent,
-              memory_usage_percent: apiItem.memory_usage_percent ?? item.memory_usage_percent,
-              controlled_by: apiItem.controlled_by ?? item.controlled_by,
-              qos: apiItem.qos ?? item.qos,
-            };
-          });
+            // Keep pod for one full sync window when API lags behind WS.
+            // If missing for 2+ consecutive syncs, treat as deleted/missed and remove.
+            if (missCount >= 2 && !deletedPodsRef.current.has(key)) {
+              return [];
+            }
+            return [item];
+          }
+
+          nextMissCounts.delete(keyOf(item));
+
+          return [{
+            ...item,
+            cpu: keepMetric(apiItem.cpu, item.cpu),
+            memory: keepMetric(apiItem.memory, item.memory),
+            cpu_capacity: keepMetric(apiItem.cpu_capacity, item.cpu_capacity),
+            memory_capacity: keepMetric(apiItem.memory_capacity, item.memory_capacity),
+            cpu_usage_percent: apiItem.cpu_usage_percent ?? item.cpu_usage_percent,
+            memory_usage_percent: apiItem.memory_usage_percent ?? item.memory_usage_percent,
+            // WS wins for controlled_by/qos when it has a real value
+            controlled_by: item.controlled_by !== '-' ? item.controlled_by : (apiItem.controlled_by ?? item.controlled_by),
+            qos: item.qos !== '-' ? item.qos : (apiItem.qos ?? item.qos),
+          }];
+        });
 
         const existingKeys = new Set(merged.map((item: any) => keyOf(item)));
         for (const apiItem of apiPods) {
@@ -447,6 +466,15 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
             merged.push(apiItem as T);
           }
         }
+
+        // Persist miss counters only for pods currently tracked in state.
+        for (const item of merged as any[]) {
+          const key = keyOf(item);
+          if (!nextMissCounts.has(key) && apiByKey.has(key)) {
+            nextMissCounts.set(key, 0);
+          }
+        }
+        apiMissCountsRef.current = nextMissCounts;
 
         return merged as T[];
       });
@@ -472,6 +500,25 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
         setIsConnected(true);
         setError(null);
         reconnectAttemptsRef.current = 0;
+        lastMessageAtRef.current = Date.now();
+
+        if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = window.setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, 15000);
+
+        if (staleWatchdogRef.current) clearInterval(staleWatchdogRef.current);
+        staleWatchdogRef.current = window.setInterval(() => {
+          const staleForMs = Date.now() - lastMessageAtRef.current;
+          if (ws.readyState === WebSocket.OPEN && staleForMs > 45000) {
+            if (isRealtimeDebug()) {
+              console.warn(`[useRealtimePods] No messages for ${staleForMs}ms, reconnecting stale socket`);
+            }
+            ws.close();
+          }
+        }, 10000);
 
         // Subscribe to pods
         ws.send(JSON.stringify({
@@ -484,6 +531,7 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       };
 
       ws.onmessage = (event) => {
+        lastMessageAtRef.current = Date.now();
         try {
           const message = JSON.parse(event.data);
 
@@ -699,24 +747,27 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
           if (isRealtimeDebug()) console.log('[useRealtimePods] WebSocket closed intentionally');
           return;
         }
+        if (heartbeatIntervalRef.current) {
+          clearInterval(heartbeatIntervalRef.current);
+          heartbeatIntervalRef.current = undefined;
+        }
+        if (staleWatchdogRef.current) {
+          clearInterval(staleWatchdogRef.current);
+          staleWatchdogRef.current = undefined;
+        }
         if (isRealtimeDebug()) console.log('[useRealtimePods] WebSocket closed');
         setIsConnected(false);
         wsRef.current = null;
 
         // Attempt reconnection
-        if (
-          enabled &&
-          reconnectAttemptsRef.current < maxReconnectAttempts
-        ) {
+        if (enabled) {
           reconnectAttemptsRef.current += 1;
           if (isRealtimeDebug()) console.log(
-            `[useRealtimePods] Reconnecting... (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`
+            `[useRealtimePods] Reconnecting... (attempt ${reconnectAttemptsRef.current})`
           );
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
           }, reconnectInterval);
-        } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-          setError('Max reconnection attempts reached');
         }
       };
 
@@ -729,6 +780,14 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
 
   const disconnect = useCallback(() => {
     intentionalCloseRef.current = true;
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = undefined;
+    }
+    if (staleWatchdogRef.current) {
+      clearInterval(staleWatchdogRef.current);
+      staleWatchdogRef.current = undefined;
+    }
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;

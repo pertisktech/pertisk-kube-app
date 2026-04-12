@@ -70,10 +70,11 @@ function getRoleBadgeStyle(role: string): { bg: string; color: string; border: s
 
 export const NodesPage = () => {
   const { data: realtimeNodes, isLoading, error } = useRealtimeNodes();
-  const { data: apiNodes } = useNodes({ refetchInterval: 5_000 }); // REST safety-net for clusters where watch is unavailable or unstable
+  const { data: apiNodes } = useNodes({ refetchInterval: 2_000 }); // REST safety-net for clusters where watch is unavailable or unstable
   const { data: eventsData } = useRealtimeEvents();
   const [selectedNode, setSelectedNode] = useState<K8sNode | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [suppressedDeletedNodes, setSuppressedDeletedNodes] = useState<string[]>([]);
 
   // Merge realtime + REST data.
   // Realtime remains primary, while REST polling fills gaps when watch events are missing.
@@ -90,6 +91,10 @@ export const NodesPage = () => {
       if (!fromRealtime) return node;
       return {
         ...fromRealtime,
+        // Keep critical node state fresh from API in case websocket stream stalls.
+        ready: node.ready ?? fromRealtime.ready,
+        unschedulable: node.unschedulable ?? fromRealtime.unschedulable,
+        taints: node.taints ?? fromRealtime.taints,
         cpu: node.cpu ?? fromRealtime.cpu,
         memory: node.memory ?? fromRealtime.memory,
         ephemeral_storage: node.ephemeral_storage ?? fromRealtime.ephemeral_storage,
@@ -110,8 +115,19 @@ export const NodesPage = () => {
       }
     }
 
-    return merged;
-  }, [realtimeNodes, apiNodes]);
+    return merged.filter((node) => !suppressedDeletedNodes.includes(node.name));
+  }, [realtimeNodes, apiNodes, suppressedDeletedNodes]);
+
+  useEffect(() => {
+    if (suppressedDeletedNodes.length === 0) return;
+
+    // Keep suppression briefly so stale watch/REST snapshots can't re-show deleted rows.
+    const timeout = window.setTimeout(() => {
+      setSuppressedDeletedNodes([]);
+    }, 60000);
+
+    return () => clearTimeout(timeout);
+  }, [suppressedDeletedNodes]);
 
   // Confirm dialog for delete/drain
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'drain'; name: string } | null>(null);
@@ -183,6 +199,12 @@ export const NodesPage = () => {
 
   const handleConfirmAction = async () => {
     if (!confirmAction) return;
+    const deletedNodeName = confirmAction.type === 'delete' ? confirmAction.name : null;
+
+    if (deletedNodeName) {
+      setSuppressedDeletedNodes((prev) => (prev.includes(deletedNodeName) ? prev : [...prev, deletedNodeName]));
+    }
+
     setNodeActionLoading(true);
     setNodeActionError(null);
     try {
@@ -195,6 +217,9 @@ export const NodesPage = () => {
       }
       setConfirmAction(null);
     } catch (err) {
+      if (deletedNodeName) {
+        setSuppressedDeletedNodes((prev) => prev.filter((name) => name !== deletedNodeName));
+      }
       setNodeActionError(err instanceof Error ? err.message : 'Unknown error');
       setConfirmAction(null);
     } finally {

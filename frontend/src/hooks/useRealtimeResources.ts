@@ -919,6 +919,9 @@ function createRealtimeHook<T>(
       let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
       let connectTimeout: ReturnType<typeof setTimeout> | null = null;
       let emptyListTimeout: ReturnType<typeof setTimeout> | null = null;
+      let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+      let staleWatchdogInterval: ReturnType<typeof setInterval> | null = null;
+      let lastMessageAt = Date.now();
       let messageQueue: WebSocketMessage[] = [];
       let closingIntentional = false;
       let disposed = false;
@@ -934,6 +937,25 @@ function createRealtimeHook<T>(
           ws.onopen = () => {
             if (isRealtimeDebug()) console.log(`WebSocket connected for ${displayName}`);
             setError(null);
+            lastMessageAt = Date.now();
+
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            heartbeatInterval = setInterval(() => {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ping' }));
+              }
+            }, 15000);
+
+            if (staleWatchdogInterval) clearInterval(staleWatchdogInterval);
+            staleWatchdogInterval = setInterval(() => {
+              const staleForMs = Date.now() - lastMessageAt;
+              if (ws && ws.readyState === WebSocket.OPEN && staleForMs > 45000) {
+                if (isRealtimeDebug()) {
+                  console.warn(`No ${displayName} messages for ${staleForMs}ms, reconnecting stale socket`);
+                }
+                ws.close();
+              }
+            }, 10000);
 
             // Subscribe to resource
             ws!.send(
@@ -954,6 +976,7 @@ function createRealtimeHook<T>(
           };
 
           ws.onmessage = (event) => {
+            lastMessageAt = Date.now();
             try {
               const message: WebSocketMessage = JSON.parse(event.data);
 
@@ -1026,6 +1049,14 @@ function createRealtimeHook<T>(
             if (disposed || closingIntentional) {
               return;
             }
+            if (heartbeatInterval) {
+              clearInterval(heartbeatInterval);
+              heartbeatInterval = null;
+            }
+            if (staleWatchdogInterval) {
+              clearInterval(staleWatchdogInterval);
+              staleWatchdogInterval = null;
+            }
             if (isRealtimeDebug()) console.log(`WebSocket disconnected for ${displayName}`);
 
             // Attempt to reconnect after 3 seconds
@@ -1064,6 +1095,12 @@ function createRealtimeHook<T>(
         }
         if (emptyListTimeout) {
           clearTimeout(emptyListTimeout);
+        }
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+        }
+        if (staleWatchdogInterval) {
+          clearInterval(staleWatchdogInterval);
         }
         if (ws) {
           ws.close();

@@ -1,4 +1,8 @@
+import { useMemo } from 'react';
 import { usePods, useNodes } from '../hooks/useKubernetes';
+import { useRealtimePods } from '../hooks/useRealtimePods';
+import { useRealtimeNodes } from '../hooks/useRealtimeResources';
+import type { Pod, K8sNode } from '../types';
 import { Card } from './Card';
 import { CheckCircle, AlertCircle, XCircle } from './Icons';
 import { LoadingState } from './LoadingState';
@@ -14,10 +18,24 @@ interface ClusterHealth {
 }
 
 export const ClusterHealthCard = () => {
-  const { data: pods, isLoading: podsLoading } = usePods();
-  const { data: nodes, isLoading: nodesLoading } = useNodes();
+  const { data: apiPods, isLoading: apiPodsLoading } = usePods();
+  const { data: apiNodes, isLoading: apiNodesLoading } = useNodes();
+  const { data: realtimePods, isLoading: realtimePodsLoading } = useRealtimePods<Pod>({ enabled: true });
+  const { data: realtimeNodes, isLoading: realtimeNodesLoading } = useRealtimeNodes();
 
-  const isLoading = podsLoading || nodesLoading;
+  const pods = useMemo(() => {
+    const realtime = realtimePods ?? [];
+    const api = apiPods ?? [];
+    return realtime.length > 0 ? realtime : api;
+  }, [realtimePods, apiPods]);
+
+  const nodes = useMemo(() => {
+    const realtime = realtimeNodes ?? [];
+    const api = apiNodes ?? [];
+    return realtime.length > 0 ? realtime : api;
+  }, [realtimeNodes, apiNodes]);
+
+  const isLoading = (realtimePodsLoading && apiPodsLoading) || (realtimeNodesLoading && apiNodesLoading);
 
   if (isLoading) {
     return (
