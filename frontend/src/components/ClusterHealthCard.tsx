@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { usePods, useNodes } from '../hooks/useKubernetes';
 import { useRealtimePods } from '../hooks/useRealtimePods';
 import { useRealtimeNodes } from '../hooks/useRealtimeResources';
-import type { Pod, K8sNode } from '../types';
+import type { Pod } from '../types';
 import { Card } from './Card';
 import { CheckCircle, AlertCircle, XCircle } from './Icons';
 import { LoadingState } from './LoadingState';
