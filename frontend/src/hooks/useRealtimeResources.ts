@@ -346,6 +346,13 @@ function transformNode(raw: any): K8sNode {
   const conditions = status.conditions || [];
   const readyCondition = conditions.find((c: any) => c.type === 'Ready');
   const ready = readyCondition ? readyCondition.status === 'True' : false;
+  const normalizedConditions = conditions.map((condition: any) => ({
+    type: condition?.type || '-',
+    status: condition?.status || '-',
+    reason: condition?.reason,
+    message: condition?.message,
+    last_transition_time: condition?.lastTransitionTime,
+  }));
   const addresses = status.addresses || [];
   const internalIp = addresses.find((a: any) => a.type === 'InternalIP')?.address;
   const externalIp = addresses.find((a: any) => a.type === 'ExternalIP')?.address;
@@ -381,6 +388,7 @@ function transformNode(raw: any): K8sNode {
   return {
     name: metadata.name || '',
     ready,
+    conditions: normalizedConditions,
     roles: sortNodeRoles(roles),
     ip: ipv4 || internalIp || externalIp || ipv6,
     ipv4: ipv4 || undefined,

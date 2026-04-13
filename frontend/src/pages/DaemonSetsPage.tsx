@@ -8,7 +8,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import type { DaemonSet } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
-import { deleteDaemonSet } from '../hooks/useKubernetes';
+import { deleteDaemonSet, useDaemonSets } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
 type DaemonSetSortKey =
@@ -56,7 +56,8 @@ const sanitizeDaemonSetYamlForEdit = (yamlText: string) => {
 };
 
 export const DaemonSetsPage = () => {
-  const { data, isLoading, error } = useRealtimeDaemonSets();
+  const { data: realtimeDaemonSets, isLoading: realtimeLoading, error: realtimeError } = useRealtimeDaemonSets();
+  const { data: apiDaemonSets } = useDaemonSets({ refetchInterval: 2_000 });
   const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedDaemonSet, setSelectedDaemonSet] = useState<DaemonSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -67,6 +68,44 @@ export const DaemonSetsPage = () => {
     key: 'age',
     direction: 'desc',
   });
+
+  // Merge realtime + REST so replica counters stay fresh when watch stream lags.
+  const data = useMemo(() => {
+    const realtime = realtimeDaemonSets ?? [];
+    const api = apiDaemonSets ?? [];
+
+    if (realtime.length === 0) return api;
+    if (api.length === 0) return realtime;
+
+    const realtimeByKey = new Map(realtime.map((item) => [`${item.namespace}/${item.name}`, item]));
+    const merged = api.map((item) => {
+      const key = `${item.namespace}/${item.name}`;
+      const fromRealtime = realtimeByKey.get(key);
+      if (!fromRealtime) return item;
+
+      return {
+        ...fromRealtime,
+        status: item.status ?? fromRealtime.status,
+        desired: item.desired ?? fromRealtime.desired,
+        current: item.current ?? fromRealtime.current,
+        ready: item.ready ?? fromRealtime.ready,
+        available: item.available ?? fromRealtime.available,
+        node_selector: item.node_selector ?? fromRealtime.node_selector,
+      };
+    });
+
+    for (const item of realtime) {
+      const key = `${item.namespace}/${item.name}`;
+      if (!merged.some((existing) => `${existing.namespace}/${existing.name}` === key)) {
+        merged.push(item);
+      }
+    }
+
+    return merged;
+  }, [realtimeDaemonSets, apiDaemonSets]);
+
+  const isLoading = realtimeLoading && apiDaemonSets == null;
+  const error = realtimeError && (!apiDaemonSets || apiDaemonSets.length === 0) ? realtimeError : null;
 
   useEffect(() => {
     if (!data || data.length === 0) {

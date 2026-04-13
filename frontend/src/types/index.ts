@@ -263,6 +263,13 @@ export interface KubernetesEvent {
 export interface K8sNode {
   name: string;
   ready: boolean | string;
+  conditions?: Array<{
+    type: string;
+    status: string;
+    reason?: string;
+    message?: string;
+    last_transition_time?: string;
+  }>;
   roles: string[];
   ip?: string;
   ipv4?: string;

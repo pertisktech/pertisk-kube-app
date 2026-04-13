@@ -8,7 +8,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import type { ReplicaSet } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
-import { deleteReplicaSet } from '../hooks/useKubernetes';
+import { deleteReplicaSet, useReplicaSets } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
 type ReplicaSetSortKey =
@@ -55,7 +55,8 @@ const sanitizeReplicaSetYamlForEdit = (yamlText: string) => {
 };
 
 export const ReplicaSetsPage = () => {
-  const { data, isLoading, error } = useRealtimeReplicaSets();
+  const { data: realtimeReplicaSets, isLoading: realtimeLoading, error: realtimeError } = useRealtimeReplicaSets();
+  const { data: apiReplicaSets } = useReplicaSets({ refetchInterval: 2_000 });
   const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedReplicaSet, setSelectedReplicaSet] = useState<ReplicaSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -66,6 +67,43 @@ export const ReplicaSetsPage = () => {
     key: 'age',
     direction: 'desc',
   });
+
+  // Merge realtime + REST so replica counters stay up to date even if watch stream lags.
+  const data = useMemo(() => {
+    const realtime = realtimeReplicaSets ?? [];
+    const api = apiReplicaSets ?? [];
+
+    if (realtime.length === 0) return api;
+    if (api.length === 0) return realtime;
+
+    const realtimeByKey = new Map(realtime.map((item) => [`${item.namespace}/${item.name}`, item]));
+    const merged = api.map((item) => {
+      const key = `${item.namespace}/${item.name}`;
+      const fromRealtime = realtimeByKey.get(key);
+      if (!fromRealtime) return item;
+
+      return {
+        ...fromRealtime,
+        status: item.status ?? fromRealtime.status,
+        desired: item.desired ?? fromRealtime.desired,
+        current: item.current ?? fromRealtime.current,
+        ready: item.ready ?? fromRealtime.ready,
+        available: item.available ?? fromRealtime.available,
+      };
+    });
+
+    for (const item of realtime) {
+      const key = `${item.namespace}/${item.name}`;
+      if (!merged.some((existing) => `${existing.namespace}/${existing.name}` === key)) {
+        merged.push(item);
+      }
+    }
+
+    return merged;
+  }, [realtimeReplicaSets, apiReplicaSets]);
+
+  const isLoading = realtimeLoading && apiReplicaSets == null;
+  const error = realtimeError && (!apiReplicaSets || apiReplicaSets.length === 0) ? realtimeError : null;
 
   useEffect(() => {
     if (!data || data.length === 0) {

@@ -8,7 +8,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import type { StatefulSet } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
-import { deleteStatefulSet } from '../hooks/useKubernetes';
+import { deleteStatefulSet, useStatefulSets } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
 type StatefulSetSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'current' | 'updated' | 'age';
@@ -47,7 +47,8 @@ const sanitizeStatefulSetYamlForEdit = (yamlText: string) => {
 };
 
 export const StatefulSetsPage = () => {
-  const { data, isLoading, error } = useRealtimeStatefulSets();
+  const { data: realtimeStatefulSets, isLoading: realtimeLoading, error: realtimeError } = useRealtimeStatefulSets();
+  const { data: apiStatefulSets } = useStatefulSets({ refetchInterval: 2_000 });
   const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedStatefulSet, setSelectedStatefulSet] = useState<StatefulSet | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -58,6 +59,43 @@ export const StatefulSetsPage = () => {
     key: 'age',
     direction: 'desc',
   });
+
+  // Merge realtime + REST so replica counters stay fresh when watch stream lags.
+  const data = useMemo(() => {
+    const realtime = realtimeStatefulSets ?? [];
+    const api = apiStatefulSets ?? [];
+
+    if (realtime.length === 0) return api;
+    if (api.length === 0) return realtime;
+
+    const realtimeByKey = new Map(realtime.map((item) => [`${item.namespace}/${item.name}`, item]));
+    const merged = api.map((item) => {
+      const key = `${item.namespace}/${item.name}`;
+      const fromRealtime = realtimeByKey.get(key);
+      if (!fromRealtime) return item;
+
+      return {
+        ...fromRealtime,
+        status: item.status ?? fromRealtime.status,
+        ready: item.ready ?? fromRealtime.ready,
+        current: item.current ?? fromRealtime.current,
+        updated: item.updated ?? fromRealtime.updated,
+        images: item.images ?? fromRealtime.images,
+      };
+    });
+
+    for (const item of realtime) {
+      const key = `${item.namespace}/${item.name}`;
+      if (!merged.some((existing) => `${existing.namespace}/${existing.name}` === key)) {
+        merged.push(item);
+      }
+    }
+
+    return merged;
+  }, [realtimeStatefulSets, apiStatefulSets]);
+
+  const isLoading = realtimeLoading && apiStatefulSets == null;
+  const error = realtimeError && (!apiStatefulSets || apiStatefulSets.length === 0) ? realtimeError : null;
 
   useEffect(() => {
     if (!data || data.length === 0) {

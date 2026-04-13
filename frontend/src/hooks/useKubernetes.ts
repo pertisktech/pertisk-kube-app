@@ -147,7 +147,7 @@ export const useWorkloadMetricSeries = (durationHours: number = 1) => {
   });
 };
 
-export const useDeployments = () => {
+export const useDeployments = (options?: { refetchInterval?: number }) => {
   return useQuery({
     queryKey: ['deployments'],
     queryFn: async () => {
@@ -156,10 +156,11 @@ export const useDeployments = () => {
       const data = (await res.json()) as ApiResponse<Deployment>;
       return data.data;
     },
+    refetchInterval: options?.refetchInterval,
   });
 };
 
-export const useStatefulSets = () => {
+export const useStatefulSets = (options?: { refetchInterval?: number }) => {
   return useQuery({
     queryKey: ['statefulsets'],
     queryFn: async () => {
@@ -168,10 +169,11 @@ export const useStatefulSets = () => {
       const data = (await res.json()) as ApiResponse<StatefulSet>;
       return data.data;
     },
+    refetchInterval: options?.refetchInterval,
   });
 };
 
-export const useDaemonSets = () => {
+export const useDaemonSets = (options?: { refetchInterval?: number }) => {
   return useQuery({
     queryKey: ['daemonsets'],
     queryFn: async () => {
@@ -180,10 +182,11 @@ export const useDaemonSets = () => {
       const data = (await res.json()) as ApiResponse<DaemonSet>;
       return data.data;
     },
+    refetchInterval: options?.refetchInterval,
   });
 };
 
-export const useReplicaSets = () => {
+export const useReplicaSets = (options?: { refetchInterval?: number }) => {
   return useQuery({
     queryKey: ['replicasets'],
     queryFn: async () => {
@@ -192,10 +195,11 @@ export const useReplicaSets = () => {
       const data = (await res.json()) as ApiResponse<ReplicaSet>;
       return data.data;
     },
+    refetchInterval: options?.refetchInterval,
   });
 };
 
-export const useJobs = () => {
+export const useJobs = (options?: { refetchInterval?: number }) => {
   return useQuery({
     queryKey: ['jobs'],
     queryFn: async () => {
@@ -204,10 +208,11 @@ export const useJobs = () => {
       const data = (await res.json()) as ApiResponse<Job>;
       return data.data;
     },
+    refetchInterval: options?.refetchInterval,
   });
 };
 
-export const useCronJobs = () => {
+export const useCronJobs = (options?: { refetchInterval?: number }) => {
   return useQuery({
     queryKey: ['cronjobs'],
     queryFn: async () => {
@@ -216,6 +221,7 @@ export const useCronJobs = () => {
       const data = (await res.json()) as ApiResponse<CronJob>;
       return data.data;
     },
+    refetchInterval: options?.refetchInterval,
   });
 };
 

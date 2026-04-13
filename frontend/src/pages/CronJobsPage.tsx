@@ -7,7 +7,7 @@ import { CronJobDetailPanel, DataTable, ConfirmDialog } from '../components';
 import type { CronJob } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, timeFromNow, matchesResourceNameFilter } from '../utils';
-import { deleteCronJob } from '../hooks/useKubernetes';
+import { deleteCronJob, useCronJobs } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
 type CronJobSortKey =
@@ -55,7 +55,8 @@ const sanitizeCronJobYamlForEdit = (yamlText: string) => {
 };
 
 export const CronJobsPage = () => {
-  const { data, isLoading, error } = useRealtimeCronJobs();
+  const { data: realtimeCronJobs, isLoading: realtimeLoading, error: realtimeError } = useRealtimeCronJobs();
+  const { data: apiCronJobs } = useCronJobs({ refetchInterval: 2_000 });
   const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedCronJob, setSelectedCronJob] = useState<CronJob | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -66,6 +67,44 @@ export const CronJobsPage = () => {
     key: 'age',
     direction: 'desc',
   });
+
+  // Merge realtime + REST so schedule/active counters stay fresh when watch stream lags.
+  const data = useMemo(() => {
+    const realtime = realtimeCronJobs ?? [];
+    const api = apiCronJobs ?? [];
+
+    if (realtime.length === 0) return api;
+    if (api.length === 0) return realtime;
+
+    const realtimeByKey = new Map(realtime.map((item) => [`${item.namespace}/${item.name}`, item]));
+    const merged = api.map((item) => {
+      const key = `${item.namespace}/${item.name}`;
+      const fromRealtime = realtimeByKey.get(key);
+      if (!fromRealtime) return item;
+
+      return {
+        ...fromRealtime,
+        schedule: item.schedule ?? fromRealtime.schedule,
+        suspend: item.suspend ?? fromRealtime.suspend,
+        active: item.active ?? fromRealtime.active,
+        last_schedule: item.last_schedule ?? fromRealtime.last_schedule,
+        next_execution: item.next_execution ?? fromRealtime.next_execution,
+        time_zone: item.time_zone ?? fromRealtime.time_zone,
+      };
+    });
+
+    for (const item of realtime) {
+      const key = `${item.namespace}/${item.name}`;
+      if (!merged.some((existing) => `${existing.namespace}/${existing.name}` === key)) {
+        merged.push(item);
+      }
+    }
+
+    return merged;
+  }, [realtimeCronJobs, apiCronJobs]);
+
+  const isLoading = realtimeLoading && apiCronJobs == null;
+  const error = realtimeError && (!apiCronJobs || apiCronJobs.length === 0) ? realtimeError : null;
 
   useEffect(() => {
     if (!data || data.length === 0) {

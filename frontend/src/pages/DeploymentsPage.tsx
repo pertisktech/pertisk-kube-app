@@ -9,7 +9,13 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { StatusBadge } from '../components/StatusBadge';
 import type { Deployment } from '../types';
 import { getAuthToken } from '../utils/auth';
-import { restartDeployment, scaleDeployment, deleteDeployment, quickUpdateDeploymentImageTag } from '../hooks/useKubernetes';
+import {
+  restartDeployment,
+  scaleDeployment,
+  deleteDeployment,
+  quickUpdateDeploymentImageTag,
+  useDeployments,
+} from '../hooks/useKubernetes';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 
@@ -115,7 +121,8 @@ const buildDeploymentKtailCommand = (deployment: Deployment): string => {
 };
 
 export const DeploymentsPage = () => {
-  const { data, isLoading, error } = useRealtimeDeployments();
+  const { data: realtimeDeployments, isLoading: realtimeLoading, error: realtimeError } = useRealtimeDeployments();
+  const { data: apiDeployments } = useDeployments({ refetchInterval: 2_000 });
   const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedDeployment, setSelectedDeployment] = useState<Deployment | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -126,6 +133,43 @@ export const DeploymentsPage = () => {
     key: 'age',
     direction: 'desc',
   });
+
+  // Merge realtime + REST so table values stay fresh when watch events lag.
+  const data = useMemo(() => {
+    const realtime = realtimeDeployments ?? [];
+    const api = apiDeployments ?? [];
+
+    if (realtime.length === 0) return api;
+    if (api.length === 0) return realtime;
+
+    const realtimeByKey = new Map(realtime.map((item) => [`${item.namespace}/${item.name}`, item]));
+    const merged = api.map((item) => {
+      const key = `${item.namespace}/${item.name}`;
+      const fromRealtime = realtimeByKey.get(key);
+      if (!fromRealtime) return item;
+
+      return {
+        ...fromRealtime,
+        status: item.status ?? fromRealtime.status,
+        ready: item.ready ?? fromRealtime.ready,
+        updated: item.updated ?? fromRealtime.updated,
+        available: item.available ?? fromRealtime.available,
+        images: item.images ?? fromRealtime.images,
+      };
+    });
+
+    for (const item of realtime) {
+      const key = `${item.namespace}/${item.name}`;
+      if (!merged.some((existing) => `${existing.namespace}/${existing.name}` === key)) {
+        merged.push(item);
+      }
+    }
+
+    return merged;
+  }, [realtimeDeployments, apiDeployments]);
+
+  const isLoading = realtimeLoading && apiDeployments == null;
+  const error = realtimeError && (!apiDeployments || apiDeployments.length === 0) ? realtimeError : null;
 
   useEffect(() => {
     if (!data || data.length === 0) {

@@ -9,7 +9,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import type { Job, Pod } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
-import { deleteJob } from '../hooks/useKubernetes';
+import { deleteJob, useJobs } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
 type JobSortKey = 'name' | 'namespace' | 'status' | 'completions' | 'duration' | 'age';
@@ -48,7 +48,8 @@ const sanitizeJobYamlForEdit = (yamlText: string) => {
 };
 
 export const JobsPage = () => {
-  const { data, isLoading, error } = useRealtimeJobs();
+  const { data: realtimeJobs, isLoading: realtimeLoading, error: realtimeError } = useRealtimeJobs();
+  const { data: apiJobs } = useJobs({ refetchInterval: 2_000 });
   const { data: pods } = useRealtimePods<Pod>({ enabled: true });
   const { selectedNamespaces, resourceNameFilter } = useNamespace();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -60,6 +61,41 @@ export const JobsPage = () => {
     key: 'age',
     direction: 'desc',
   });
+
+  // Merge realtime + REST so job status/completions stay fresh when watch stream lags.
+  const data = useMemo(() => {
+    const realtime = realtimeJobs ?? [];
+    const api = apiJobs ?? [];
+
+    if (realtime.length === 0) return api;
+    if (api.length === 0) return realtime;
+
+    const realtimeByKey = new Map(realtime.map((item) => [`${item.namespace}/${item.name}`, item]));
+    const merged = api.map((item) => {
+      const key = `${item.namespace}/${item.name}`;
+      const fromRealtime = realtimeByKey.get(key);
+      if (!fromRealtime) return item;
+
+      return {
+        ...fromRealtime,
+        status: item.status ?? fromRealtime.status,
+        completions: item.completions ?? fromRealtime.completions,
+        duration: item.duration ?? fromRealtime.duration,
+      };
+    });
+
+    for (const item of realtime) {
+      const key = `${item.namespace}/${item.name}`;
+      if (!merged.some((existing) => `${existing.namespace}/${existing.name}` === key)) {
+        merged.push(item);
+      }
+    }
+
+    return merged;
+  }, [realtimeJobs, apiJobs]);
+
+  const isLoading = realtimeLoading && apiJobs == null;
+  const error = realtimeError && (!apiJobs || apiJobs.length === 0) ? realtimeError : null;
 
   useEffect(() => {
     if (!data || data.length === 0) {

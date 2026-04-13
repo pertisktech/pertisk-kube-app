@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { X } from '../components/Icons';
 import { useRealtimeNodes, useRealtimeEvents } from '../hooks/useRealtimeResources';
 import { useNodes, deleteNode, cordonNode, uncordonNode, drainNode } from '../hooks/useKubernetes';
@@ -14,9 +14,8 @@ import type { K8sNode } from '../types';
 type NodeSortKey =
   | 'name'
   | 'roles'
-  | 'status'
   | 'ip'
-  | 'ipv6'
+  | 'conditions'
   | 'taints'
   | 'runtime'
   | 'os_image'
@@ -37,6 +36,25 @@ const toPercent = (value?: number) => {
   if (value == null || Number.isNaN(value)) return 0;
   return Math.max(0, Math.min(100, value));
 };
+
+const getNodeConditionLabel = (node: K8sNode) => {
+  const hasSchedulingDisabled = Boolean(node.unschedulable)
+    || (node.conditions || []).some(
+      (condition) => condition.type === 'SchedulingDisabled' && String(condition.status).toLowerCase() === 'true'
+    );
+
+  if (hasSchedulingDisabled) {
+    return 'SchedulingDisabled';
+  }
+
+  const readyCondition = (node.conditions || []).find((condition) => condition.type === 'Ready');
+  const isReady = readyCondition
+    ? String(readyCondition.status).toLowerCase() === 'true'
+    : String(node.ready).toLowerCase() === 'true';
+  return isReady ? 'Ready' : 'NotReady';
+};
+
+const getNodeConditionText = (node: K8sNode) => getNodeConditionLabel(node);
 
 function getRoleBadgeStyle(role: string): { bg: string; color: string; border: string } {
   const r = role.toLowerCase();
@@ -69,15 +87,44 @@ function getRoleBadgeStyle(role: string): { bg: string; color: string; border: s
 }
 
 export const NodesPage = () => {
-  const { data: realtimeNodes, isLoading, error } = useRealtimeNodes();
+  const {
+    data: realtimeNodes,
+    isLoading,
+    error,
+    hasFetched: realtimeHasFetched,
+  } = useRealtimeNodes();
   const { data: apiNodes } = useNodes({ refetchInterval: 2_000 }); // REST safety-net for clusters where watch is unavailable or unstable
   const { data: eventsData } = useRealtimeEvents();
   const [selectedNode, setSelectedNode] = useState<K8sNode | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [suppressedDeletedNodes, setSuppressedDeletedNodes] = useState<string[]>([]);
+  const previousRealtimeNodeNamesRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    if (!realtimeHasFetched) return;
+
+    const currentNames = (realtimeNodes || []).map((node) => node.name);
+    const previousNames = previousRealtimeNodeNamesRef.current;
+
+    if (previousNames.length > 0) {
+      const removed = previousNames.filter((name) => !currentNames.includes(name));
+      if (removed.length > 0) {
+        setSuppressedDeletedNodes((prev) => {
+          const merged = [...prev];
+          for (const name of removed) {
+            if (!merged.includes(name)) merged.push(name);
+          }
+          return merged;
+        });
+      }
+    }
+
+    previousRealtimeNodeNamesRef.current = currentNames;
+  }, [realtimeNodes, realtimeHasFetched]);
 
   // Merge realtime + REST data.
-  // Realtime remains primary, while REST polling fills gaps when watch events are missing.
+  // Use union membership so API can surface newly added nodes if watch lags,
+  // while suppression prevents recently removed realtime nodes from lingering.
   const data = useMemo(() => {
     const realtime = realtimeNodes ?? [];
     const api = apiNodes ?? [];
@@ -91,10 +138,11 @@ export const NodesPage = () => {
       if (!fromRealtime) return node;
       return {
         ...fromRealtime,
-        // Keep critical node state fresh from API in case websocket stream stalls.
-        ready: node.ready ?? fromRealtime.ready,
-        unschedulable: node.unschedulable ?? fromRealtime.unschedulable,
-        taints: node.taints ?? fromRealtime.taints,
+        // Prefer realtime state for live conditions; API remains fallback when watch misses fields.
+        ready: fromRealtime.ready ?? node.ready,
+        conditions: fromRealtime.conditions ?? node.conditions,
+        unschedulable: fromRealtime.unschedulable ?? node.unschedulable,
+        taints: fromRealtime.taints ?? node.taints,
         cpu: node.cpu ?? fromRealtime.cpu,
         memory: node.memory ?? fromRealtime.memory,
         ephemeral_storage: node.ephemeral_storage ?? fromRealtime.ephemeral_storage,
@@ -238,27 +286,6 @@ export const NodesPage = () => {
       sortKey: 'name',
     },
     {
-      header: 'Status',
-      accessor: (row: K8sNode) => {
-        const isReady = String(row.ready).toLowerCase() === 'true';
-        return (
-          <span
-            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
-            style={{
-              background: isReady ? 'var(--color-status-ready-bg)' : 'var(--color-dashboard-danger-bg)',
-              color: isReady ? 'var(--color-status-ready)' : 'var(--color-dashboard-danger)',
-            }}
-          >
-            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: 'currentColor' }} />
-            {isReady ? 'Ready' : 'Not Ready'}
-          </span>
-        );
-      },
-      width: '7%',
-      sortable: true,
-      sortKey: 'status',
-    },
-    {
       header: 'IP',
       accessor: (row: K8sNode) => row.ip || '-',
       width: '12%',
@@ -266,11 +293,29 @@ export const NodesPage = () => {
       sortKey: 'ip',
     },
     {
-      header: 'IPv6',
-      accessor: (row: K8sNode) => row.ipv6 || '-',
+      header: 'Conditions',
+      accessor: (row: K8sNode) => {
+        const label = getNodeConditionLabel(row);
+        const isReady = label.startsWith('Ready');
+
+        return (
+          <span
+            className="inline-flex px-2 py-0.5 rounded text-xs font-medium border whitespace-nowrap"
+            style={{
+              backgroundColor: isReady ? 'var(--color-status-ready-bg)' : 'var(--color-dashboard-danger-bg)',
+              color: isReady ? 'var(--color-status-ready)' : 'var(--color-dashboard-danger)',
+              borderColor: isReady
+                ? 'color-mix(in srgb, var(--color-status-ready) 35%, transparent)'
+                : 'color-mix(in srgb, var(--color-dashboard-danger) 40%, transparent)',
+            }}
+          >
+            {label}
+          </span>
+        );
+      },
       width: '14%',
       sortable: true,
-      sortKey: 'ipv6',
+      sortKey: 'conditions',
     },
     {
       header: 'Roles',
@@ -459,17 +504,14 @@ export const NodesPage = () => {
 
     return source.sort((first, second) => {
       const compareNames = () => first.name.localeCompare(second.name) * factor;
-      const firstStatus = String(first.ready).toLowerCase() === 'true' ? 'ready' : 'notready';
-      const secondStatus = String(second.ready).toLowerCase() === 'true' ? 'ready' : 'notready';
 
       if (sortState.key === 'name') return compareNames();
       if (sortState.key === 'roles') {
         const comparison = compareNodeRoleSets(first.roles, second.roles);
         return comparison !== 0 ? comparison * factor : compareNames();
       }
-      if (sortState.key === 'status') return firstStatus.localeCompare(secondStatus) * factor;
       if (sortState.key === 'ip') return (first.ip || '').localeCompare(second.ip || '') * factor;
-      if (sortState.key === 'ipv6') return (first.ipv6 || '').localeCompare(second.ipv6 || '') * factor;
+      if (sortState.key === 'conditions') return getNodeConditionText(first).localeCompare(getNodeConditionText(second)) * factor;
       if (sortState.key === 'cpu_used') {
         return (first.cpu_used || first.cpu || '').localeCompare(second.cpu_used || second.cpu || '', undefined, {
           numeric: true,
