@@ -8,6 +8,10 @@ import { useTheme } from '../context/ThemeContext';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
 import { getAuthToken } from '../utils/auth';
 
+const dispatchResourcesRefresh = () => {
+  window.dispatchEvent(new CustomEvent('resources:refresh'));
+};
+
 const DEFAULT_YAML = `apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -97,6 +101,7 @@ export const ApplyYamlDialog = ({ onClose }: ApplyYamlDialogProps) => {
       }
 
       setSuccess(docs.length > 1 ? `Applied ${docs.length} YAML documents successfully.` : lastMessage);
+      dispatchResourcesRefresh();
     } catch (err) {
       setError((err as Error).message);
     } finally {

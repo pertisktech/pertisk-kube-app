@@ -68,6 +68,10 @@ export const openPanelTab = (opts: OpenPanelTabOptions) => {
   window.dispatchEvent(new CustomEvent('panel:open', { detail: opts }));
 };
 
+const dispatchResourcesRefresh = () => {
+  window.dispatchEvent(new CustomEvent('resources:refresh'));
+};
+
 interface TabTarget {
   namespace: string;
   podName: string;
@@ -1395,6 +1399,7 @@ const MIN_PANEL_HEIGHT = 280;
 const DEFAULT_PANEL_HEIGHT = () => Math.round(window.innerHeight * 0.5);
 
 export const BottomPanel = () => {
+  const queryClient = useQueryClient();
   const [tabs, setTabs] = useState<PanelTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
@@ -1622,6 +1627,9 @@ export const BottomPanel = () => {
           )
         );
       }
+
+      await queryClient.invalidateQueries();
+      dispatchResourcesRefresh();
 
       setYamlActionResult({ ok: true, tabId: activeTab.id });
     } catch (err) {

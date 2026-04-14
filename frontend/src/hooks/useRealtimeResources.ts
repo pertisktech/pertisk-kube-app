@@ -927,9 +927,19 @@ function createRealtimeHook<T>(
         setClusterSwitchVersion((v) => v + 1);
       };
 
+      const handleResourcesRefresh = () => {
+        setError(null);
+        setIsLoading(true);
+        setHasFetched(false);
+        setEmptyListConfirmed(false);
+        setClusterSwitchVersion((v) => v + 1);
+      };
+
       window.addEventListener('cluster:switched', handleClusterSwitched);
+      window.addEventListener('resources:refresh', handleResourcesRefresh);
       return () => {
         window.removeEventListener('cluster:switched', handleClusterSwitched);
+        window.removeEventListener('resources:refresh', handleResourcesRefresh);
       };
     }, []);
 
