@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
 import { checkHelmRepository } from '../hooks/useKubernetes';
 import { type IconComponent, Settings, Terminal, FileCode, Archive, Plus, Pencil, Trash2, ChevronDown } from '../components/Icons';
-import { TERMINAL_THEME_PRESETS } from '../utils/themePresets';
+import { APP_THEME_PRESETS, type AppThemePresetId } from '../utils/themePresets';
 
 type SettingsTab = 'general' | 'terminal' | 'yaml' | 'helm';
 
@@ -78,11 +78,9 @@ export const DesktopSettingsPage = () => {
   const [generalFontSize, setGeneralFontSize] = useState(settings.general.fontSize);
   const [terminalFontName, setTerminalFontName] = useState(settings.terminal.fontName);
   const [terminalFontSize, setTerminalFontSize] = useState(settings.terminal.fontSize);
-  const [terminalTheme, setTerminalTheme] = useState(settings.terminal.theme);
-  const [terminalThemePreset, setTerminalThemePreset] = useState(settings.terminalThemePreset);
+  const [generalThemePreset, setGeneralThemePreset] = useState<AppThemePresetId>(settings.generalThemePreset);
   const [yamlFontName, setYamlFontName] = useState(settings.yamlEditor.fontName);
   const [yamlFontSize, setYamlFontSize] = useState(settings.yamlEditor.fontSize);
-  const [yamlTheme, setYamlTheme] = useState(settings.yamlEditor.theme);
   const [helmRepositories, setHelmRepositories] = useState(settings.helmRepositories);
   const [helmRepoNameInput, setHelmRepoNameInput] = useState('');
   const [helmRepoUrlInput, setHelmRepoUrlInput] = useState('');
@@ -96,11 +94,9 @@ export const DesktopSettingsPage = () => {
     setGeneralFontSize(settings.general.fontSize);
     setTerminalFontName(settings.terminal.fontName);
     setTerminalFontSize(settings.terminal.fontSize);
-    setTerminalTheme(settings.terminal.theme);
-    setTerminalThemePreset(settings.terminalThemePreset);
+    setGeneralThemePreset(settings.generalThemePreset);
     setYamlFontName(settings.yamlEditor.fontName);
     setYamlFontSize(settings.yamlEditor.fontSize);
-    setYamlTheme(settings.yamlEditor.theme);
     setHelmRepositories(settings.helmRepositories);
   }, [settings]);
 
@@ -119,17 +115,17 @@ export const DesktopSettingsPage = () => {
           fontSize: clampFontSize(generalFontSize, 14),
           theme: settings.general.theme,
         },
-        generalThemePreset: settings.generalThemePreset,
+        generalThemePreset,
         terminal: {
           fontName: terminalFontName.trim() || 'Meslo Nerd Font',
           fontSize: clampFontSize(terminalFontSize, 13),
-          theme: terminalTheme,
+          theme: 'auto',
         },
-        terminalThemePreset,
+        terminalThemePreset: settings.terminalThemePreset,
         yamlEditor: {
           fontName: yamlFontName.trim() || 'JetBrains Mono',
           fontSize: clampFontSize(yamlFontSize, 13),
-          theme: yamlTheme,
+          theme: 'auto',
         },
         helmRepoUrl: helmRepositories.find((repo) => repo.enabled)?.url ?? '',
         helmRepositories,
@@ -297,11 +293,11 @@ export const DesktopSettingsPage = () => {
                     <div className="relative">
                       <select
                         id="general-theme-preset"
-                        value={terminalThemePreset}
-                        onChange={(e) => setTerminalThemePreset(e.target.value as typeof terminalThemePreset)}
+                        value={generalThemePreset}
+                        onChange={(e) => setGeneralThemePreset(e.target.value as AppThemePresetId)}
                         className="w-full appearance-none rounded-md border border-border bg-surface px-3 py-2 pr-9 text-sm"
                       >
-                        {TERMINAL_THEME_PRESETS.map((preset) => (
+                        {APP_THEME_PRESETS.map((preset) => (
                           <option key={preset.id} value={preset.id}>
                             {preset.label}
                           </option>
@@ -313,7 +309,7 @@ export const DesktopSettingsPage = () => {
                       />
                     </div>
                     <p className="text-xs text-text-secondary">
-                      {TERMINAL_THEME_PRESETS.find((preset) => preset.id === terminalThemePreset)?.description}
+                      {APP_THEME_PRESETS.find((preset) => preset.id === generalThemePreset)?.description}
                     </p>
                   </div>
 
@@ -370,46 +366,9 @@ export const DesktopSettingsPage = () => {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label htmlFor="terminal-theme" className="block text-sm font-medium text-text-secondary">
-                      Terminal Theme Mode
-                    </label>
-                    <select
-                      id="terminal-theme"
-                      value={terminalTheme}
-                      onChange={(e) => setTerminalTheme(e.target.value as 'auto' | 'light' | 'dark')}
-                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-                    >
-                      <option value="auto">Auto (follow app theme)</option>
-                      <option value="dark">Dark</option>
-                      <option value="light">Light</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label htmlFor="terminal-theme-preset" className="block text-sm font-medium text-text-secondary">
-                      Terminal Color Theme
-                    </label>
-                    <div className="relative">
-                      <select
-                        id="terminal-theme-preset"
-                        value={terminalThemePreset}
-                        onChange={(e) => setTerminalThemePreset(e.target.value as typeof terminalThemePreset)}
-                        className="w-full appearance-none rounded-md border border-border bg-surface px-3 py-2 pr-9 text-sm"
-                      >
-                        {TERMINAL_THEME_PRESETS.map((preset) => (
-                          <option key={preset.id} value={preset.id}>
-                            {preset.label}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        size={14}
-                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary"
-                      />
-                    </div>
-                    <p className="text-xs text-text-secondary">
-                      {TERMINAL_THEME_PRESETS.find((preset) => preset.id === terminalThemePreset)?.description}
+                  <div className="space-y-3 rounded-lg border border-border bg-surface p-4 text-sm text-text-secondary">
+                    <p>
+                      Terminal colors automatically follow the Color Theme selected in General settings.
                     </p>
                   </div>
                 </>
@@ -457,20 +416,10 @@ export const DesktopSettingsPage = () => {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label htmlFor="yaml-theme" className="block text-sm font-medium text-text-secondary">
-                      YAML Editor Theme
-                    </label>
-                    <select
-                      id="yaml-theme"
-                      value={yamlTheme}
-                      onChange={(e) => setYamlTheme(e.target.value as 'auto' | 'light' | 'dark')}
-                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-                    >
-                      <option value="auto">Auto (follow app theme)</option>
-                      <option value="dark">Dark</option>
-                      <option value="light">Light</option>
-                    </select>
+                  <div className="space-y-3 rounded-lg border border-border bg-surface p-4 text-sm text-text-secondary">
+                    <p>
+                      YAML Editor colors automatically follow the Color Theme selected in General settings.
+                    </p>
                   </div>
                 </>
               )}

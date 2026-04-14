@@ -1925,9 +1925,9 @@ export const BottomPanel = () => {
 
       {/* Content area — all tabs stay mounted; only active one is visible */}
       {tabs.length > 0 && !collapsed && (
-        <div className="flex-1 min-h-0 overflow-hidden bg-sidebar">
+        <div className="flex-1 min-h-0 overflow-hidden bg-bg">
           {tabs.map((tab) => (
-            <div key={tab.id} className="h-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
+            <div key={tab.id} className="h-full w-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
               <TabContent
                 tab={tab}
                 onConnect={(target) => connectTab(tab.id, target)}
