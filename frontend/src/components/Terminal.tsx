@@ -117,12 +117,9 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       theme: terminalPalette,
     });
 
-    // Add addons
+    // Add fit addon (can be loaded before open)
     const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon();
-
     xterm.loadAddon(fitAddon);
-    xterm.loadAddon(webLinksAddon);
 
     // Wait for container to have stable dimensions before opening terminal
     // This prevents the terminal from being sized to partial/zero width
@@ -149,6 +146,10 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       
       // Open terminal in DOM
       xterm.open(terminalRef.current);
+      
+      // Load WebLinksAddon AFTER open (it requires _linkifier2 which is created during open)
+      const webLinksAddon = new WebLinksAddon();
+      xterm.loadAddon(webLinksAddon);
       
       // Force viewport background to match theme (xterm doesn't always set this correctly)
       const viewport = terminalRef.current.querySelector('.xterm-viewport') as HTMLElement | null;

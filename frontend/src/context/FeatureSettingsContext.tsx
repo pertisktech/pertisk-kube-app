@@ -9,7 +9,8 @@ import {
 
 const FEATURE_SETTINGS_KEY = 'pertisk_feature_settings_v1';
 
-export type FeatureThemePreference = 'auto' | 'light' | 'dark';
+// Light theme disabled - app only supports dark mode
+export type FeatureThemePreference = 'auto' | 'dark';
 
 export interface EditorVisualSettings {
   fontName: string;
@@ -88,16 +89,18 @@ function clampFontSize(value: number, fallback: number): number {
 }
 
 function normalizeTheme(value: unknown): FeatureThemePreference {
-  if (value === 'light' || value === 'dark' || value === 'auto') return value;
+  // Light theme disabled - only allow 'auto' or 'dark'
+  if (value === 'dark' || value === 'auto') return value;
+  if (value === 'light') return 'dark'; // Convert light to dark
   return 'auto';
 }
 
 export function resolveFeatureTheme(
-  preference: FeatureThemePreference,
-  options?: { systemPrefersDark?: boolean },
-): 'light' | 'dark' {
-  if (preference === 'light' || preference === 'dark') return preference;
-  return options?.systemPrefersDark ? 'dark' : 'light';
+  _preference: FeatureThemePreference,
+  _options?: { systemPrefersDark?: boolean },
+): 'dark' {
+  // Light theme disabled - always return dark
+  return 'dark';
 }
 
 function normalizeVisualSettings(value: unknown, fallback: EditorVisualSettings): EditorVisualSettings {

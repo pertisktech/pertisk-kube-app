@@ -13,9 +13,7 @@ import {
   ChevronRight,
   ChevronLeft,
   Menu,
-  Moon,
   X,
-  Sun,
   LayoutDashboard,
   Server,
   Network,
@@ -44,7 +42,6 @@ import {
   PanelLeftOpen,
 } from './Icons';
 import { cn } from '../utils';
-import { useTheme } from '../context/ThemeContext';
 import {
   type DesktopAuthStatus,
   type DesktopKubeconfigCluster,
@@ -240,7 +237,6 @@ export const Layout = () => {
   }, [crds]);
 
   const namespaceMenuRef = useRef<HTMLDivElement>(null);
-  const theme = useTheme();
   const { selectedNamespaces, setSelectedNamespaces, toggleNamespace, clearNamespaces, namespaces, setNamespaces, resourceNameFilter, setResourceNameFilter } = useNamespace();
   const { data: realtimeNamespaces } = useRealtimeNamespaces();
   const { data: apiNamespaces } = useNamespaces();
@@ -929,17 +925,6 @@ export const Layout = () => {
             </button>
           </div>
           <div data-tauri-drag-region className="flex items-center gap-3 px-4">
-            {theme && (
-              <button
-                type="button"
-                onClick={theme.toggleTheme}
-                title={theme.isDark ? 'Light mode' : 'Dark mode'}
-                aria-label={theme.isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-                className="inline-flex items-center justify-center p-1.5 rounded-md hover:bg-hover text-text-secondary"
-              >
-                {theme.isDark ? <Sun size={14} /> : <Moon size={14} />}
-              </button>
-            )}
             <span className="text-[13px] font-medium tracking-wide text-text-secondary whitespace-nowrap">
               {topRightTitle}
             </span>
@@ -1700,18 +1685,6 @@ export const Layout = () => {
                   </div>
                 )}
               </div>
-            )}
-
-            {!desktopMode && theme && (
-              <button
-                type="button"
-                onClick={theme.toggleTheme}
-                title={theme.isDark ? 'Light mode' : 'Dark mode'}
-                aria-label={theme.isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-                className="inline-flex items-center justify-center p-2 rounded-lg hover:bg-hover text-text-secondary"
-              >
-                {theme.isDark ? <Sun size={16} /> : <Moon size={16} />}
-              </button>
             )}
 
           </div>

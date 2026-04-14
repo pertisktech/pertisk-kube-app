@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { resolveFeatureTheme, useFeatureSettings } from './FeatureSettingsContext';
+import { useFeatureSettings } from './FeatureSettingsContext';
 
-type Theme = 'light' | 'dark';
+type Theme = 'dark'; // Light theme disabled - app only supports dark mode
 
 type ThemeContextValue = {
   theme: Theme;
@@ -19,58 +19,28 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>) {
-  const { settings, setSettings } = useFeatureSettings();
-  const [systemPrefersDark, setSystemPrefersDark] = useState(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return true;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
+  const { settings } = useFeatureSettings();
+  const [systemPrefersDark] = useState(() => true); // Always dark
 
-  const theme = resolveFeatureTheme(settings.general.theme, { systemPrefersDark });
+  // Force dark theme - light mode disabled
+  const theme: Theme = 'dark';
 
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches);
-
-    setSystemPrefersDark(mediaQuery.matches);
-
-    if (typeof mediaQuery.addEventListener === 'function') {
-      mediaQuery.addEventListener('change', onChange);
-      return () => mediaQuery.removeEventListener('change', onChange);
-    }
-
-    mediaQuery.addListener(onChange);
-    return () => mediaQuery.removeListener(onChange);
-  }, []);
-
+  // No-op functions since theme is locked to dark
   function toggleTheme() {
-    setSettings({
-      ...settings,
-      general: {
-        ...settings.general,
-        theme: theme === 'dark' ? 'light' : 'dark',
-      },
-    });
+    // Light theme disabled
   }
 
-  function setTheme(nextTheme: Theme) {
-    setSettings({
-      ...settings,
-      general: {
-        ...settings.general,
-        theme: nextTheme,
-      },
-    });
+  function setTheme(_nextTheme: Theme) {
+    // Light theme disabled
   }
 
   const value = useMemo<ThemeContextValue>(() => ({
     theme,
-    isDark: theme === 'dark',
+    isDark: true,
     toggleTheme,
     setTheme,
   }), [theme]);
