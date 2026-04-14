@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css';
 import { useTheme } from '../context/ThemeContext';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
 import { getDesktopWebSocketBase, isDesktopRuntime } from '../utils/desktopBridge';
+import { resolveTerminalThemePreset } from '../utils/themePresets';
 
 interface TerminalProps {
   podName: string;
@@ -13,6 +14,17 @@ interface TerminalProps {
   containerName?: string;
   initialCommand?: string;
   onClose?: () => void;
+}
+
+function toTerminalFontFamily(fontName: string): string {
+  const normalized = fontName.trim();
+  if (!normalized || normalized === 'Meslo Nerd Font') {
+    return '"MesloLGM Nerd Font", "MesloLGL Nerd Font", "JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+  }
+  if (normalized === 'JetBrainsMono Nerd Font') {
+    return '"JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+  }
+  return `"${normalized}", "JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
 }
 
 export const Terminal = ({ podName, namespace, containerName, initialCommand }: TerminalProps) => {
@@ -71,49 +83,26 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
   useEffect(() => {
     if (!terminalRef.current) return;
 
-    // Get actual theme colors from CSS variables
-    const computedStyle = getComputedStyle(document.documentElement);
-    const surfaceElevated = computedStyle.getPropertyValue('--color-surface-elevated').trim() || (theme?.isDark ? '#15161e' : '#f5f5f5');
-    const textColor = computedStyle.getPropertyValue('--color-text').trim() || (theme?.isDark ? '#e8e8e9' : '#1a1a1a');
-
     const terminalThemeDark = settings.terminal.theme === 'auto'
       ? !!theme?.isDark
       : settings.terminal.theme === 'dark';
-
-    const terminalFont = settings.terminal.fontName.trim() || 'JetBrains Mono';
+    const terminalPalette = resolveTerminalThemePreset(
+      settings.terminalThemePreset,
+      terminalThemeDark ? 'dark' : 'light',
+    );
+    const terminalFontFamily = toTerminalFontFamily(settings.terminal.fontName);
 
     // Create terminal instance
     const xterm = new XTerm({
       cursorBlink: true,
       fontSize: settings.terminal.fontSize,
-      fontFamily:
-        `"${terminalFont}", "JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`,
+      fontFamily: terminalFontFamily,
       allowProposedApi: true,
       convertEol: true,
       rows: 30,
       cols: 120,
       scrollback: 1000,
-      theme: {
-        background: surfaceElevated,
-        foreground: textColor,
-        cursor: textColor,
-        black: '#000000',
-        red: '#cd3131',
-        green: terminalThemeDark ? '#0dbc79' : '#00bc00',
-        yellow: terminalThemeDark ? '#e5e510' : '#949800',
-        blue: terminalThemeDark ? '#2472c8' : '#0451a5',
-        magenta: terminalThemeDark ? '#bc3fbc' : '#bc05bc',
-        cyan: terminalThemeDark ? '#11a8cd' : '#0598bc',
-        white: terminalThemeDark ? '#e5e5e5' : '#555555',
-        brightBlack: '#666666',
-        brightRed: terminalThemeDark ? '#f14c4c' : '#cd3131',
-        brightGreen: terminalThemeDark ? '#23d18b' : '#14ce14',
-        brightYellow: terminalThemeDark ? '#f5f543' : '#b5ba00',
-        brightBlue: terminalThemeDark ? '#3b8eea' : '#0451a5',
-        brightMagenta: terminalThemeDark ? '#d670d6' : '#bc05bc',
-        brightCyan: terminalThemeDark ? '#29b8db' : '#0598bc',
-        brightWhite: terminalThemeDark ? '#ffffff' : '#a5a5a5',
-      },
+      theme: terminalPalette,
     });
 
     // Add addons
@@ -266,6 +255,7 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
     settings.terminal.fontName,
     settings.terminal.fontSize,
     settings.terminal.theme,
+    settings.terminalThemePreset,
   ]);
 
   return (
@@ -273,6 +263,10 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       ref={terminalRef}
       className="w-full h-full bg-surface-elevated rounded-md"
       style={{ 
+        background: resolveTerminalThemePreset(
+          settings.terminalThemePreset,
+          settings.terminal.theme === 'auto' ? (theme?.isDark ? 'dark' : 'light') : settings.terminal.theme,
+        ).background,
         minHeight: '200px',
         position: 'relative',
         overflow: 'hidden'

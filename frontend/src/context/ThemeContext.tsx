@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-
-const THEME_KEY = 'pertisk_theme';
+import { resolveFeatureTheme, useFeatureSettings } from './FeatureSettingsContext';
 
 type Theme = 'light' | 'dark';
 
@@ -13,13 +12,6 @@ type ThemeContextValue = {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function getStoredTheme(): Theme {
-  if (typeof document === 'undefined') return 'dark';
-  const stored = localStorage.getItem(THEME_KEY);
-  if (stored === 'dark' || stored === 'light') return stored;
-  return 'dark';
-}
-
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
   root.classList.remove('light', 'dark');
@@ -27,21 +19,53 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>) {
-  const [theme, setTheme] = useState<Theme>(() => getStoredTheme());
+  const { settings, setSettings } = useFeatureSettings();
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return true;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  const theme = resolveFeatureTheme(settings.general.theme, { systemPrefersDark });
 
   useEffect(() => {
     applyTheme(theme);
-    localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
   useEffect(() => {
-    const stored = getStoredTheme();
-    setTheme(stored);
-    applyTheme(stored);
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches);
+
+    setSystemPrefersDark(mediaQuery.matches);
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', onChange);
+      return () => mediaQuery.removeEventListener('change', onChange);
+    }
+
+    mediaQuery.addListener(onChange);
+    return () => mediaQuery.removeListener(onChange);
   }, []);
 
   function toggleTheme() {
-    setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+    setSettings({
+      ...settings,
+      general: {
+        ...settings.general,
+        theme: theme === 'dark' ? 'light' : 'dark',
+      },
+    });
+  }
+
+  function setTheme(nextTheme: Theme) {
+    setSettings({
+      ...settings,
+      general: {
+        ...settings.general,
+        theme: nextTheme,
+      },
+    });
   }
 
   const value = useMemo<ThemeContextValue>(() => ({

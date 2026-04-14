@@ -1,4 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  applyAppThemePreset,
+  normalizeAppThemePreset,
+  normalizeTerminalThemePreset,
+  type AppThemePresetId,
+  type TerminalThemePresetId,
+} from '../utils/themePresets';
 
 const FEATURE_SETTINGS_KEY = 'pertisk_feature_settings_v1';
 
@@ -14,6 +21,8 @@ export interface FeatureSettings {
   general: EditorVisualSettings;
   terminal: EditorVisualSettings;
   yamlEditor: EditorVisualSettings;
+  generalThemePreset: AppThemePresetId;
+  terminalThemePreset: TerminalThemePresetId;
   helmRepoUrl: string;
   helmRepositories: HelmRepository[];
 }
@@ -33,11 +42,11 @@ interface FeatureSettingsContextValue {
 const DEFAULT_SETTINGS: FeatureSettings = {
   general: {
     fontName: 'Inter',
-    fontSize: 15,
+    fontSize: 14,
     theme: 'dark',
   },
   terminal: {
-    fontName: 'JetBrains Mono',
+    fontName: 'Meslo Nerd Font',
     fontSize: 13,
     theme: 'auto',
   },
@@ -46,6 +55,8 @@ const DEFAULT_SETTINGS: FeatureSettings = {
     fontSize: 13,
     theme: 'auto',
   },
+  generalThemePreset: 'flux-violet',
+  terminalThemePreset: 'wild-cherry',
   helmRepoUrl: '',
   helmRepositories: [
     {
@@ -79,6 +90,14 @@ function clampFontSize(value: number, fallback: number): number {
 function normalizeTheme(value: unknown): FeatureThemePreference {
   if (value === 'light' || value === 'dark' || value === 'auto') return value;
   return 'auto';
+}
+
+export function resolveFeatureTheme(
+  preference: FeatureThemePreference,
+  options?: { systemPrefersDark?: boolean },
+): 'light' | 'dark' {
+  if (preference === 'light' || preference === 'dark') return preference;
+  return options?.systemPrefersDark ? 'dark' : 'light';
 }
 
 function normalizeVisualSettings(value: unknown, fallback: EditorVisualSettings): EditorVisualSettings {
@@ -134,6 +153,8 @@ function normalizeSettings(value: unknown): FeatureSettings {
     general: normalizeVisualSettings(source.general, DEFAULT_SETTINGS.general),
     terminal: normalizeVisualSettings(source.terminal, DEFAULT_SETTINGS.terminal),
     yamlEditor: normalizeVisualSettings(source.yamlEditor, DEFAULT_SETTINGS.yamlEditor),
+    generalThemePreset: normalizeAppThemePreset(source.generalThemePreset),
+    terminalThemePreset: normalizeTerminalThemePreset(source.terminalThemePreset),
     helmRepoUrl: legacyHelmRepoUrl,
     helmRepositories: normalizedRepos,
   };
@@ -172,6 +193,11 @@ export function FeatureSettingsProvider({ children }: Readonly<{ children: React
     root.style.setProperty('--font-sans', toFontFamily(settings.general.fontName));
     root.style.fontSize = `${clampFontSize(settings.general.fontSize, DEFAULT_SETTINGS.general.fontSize)}px`;
   }, [settings.general.fontName, settings.general.fontSize]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    applyAppThemePreset(document.documentElement, settings.generalThemePreset);
+  }, [settings.generalThemePreset]);
 
   const value = useMemo<FeatureSettingsContextValue>(() => ({
     settings,
