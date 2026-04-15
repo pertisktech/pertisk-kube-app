@@ -121,11 +121,17 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
     const fitAddon = new FitAddon();
     xterm.loadAddon(fitAddon);
 
-    // Wait for container to have stable dimensions before opening terminal
-    // This prevents the terminal from being sized to partial/zero width
+    // Wait for container to have stable dimensions before opening terminal.
+    // Guard with cancellation flags so stale rAF callbacks cannot open disposed terminals.
     let lastWidth = 0;
     let stableCount = 0;
+    let cancelled = false;
+    let opened = false;
+    let stableWidthRafId: number | null = null;
+
     const waitForStableWidth = () => {
+      if (cancelled || opened) return;
+
       const currentWidth = terminalRef.current?.offsetWidth || 0;
       if (currentWidth > 0 && currentWidth === lastWidth) {
         stableCount++;
@@ -138,18 +144,23 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
         stableCount = 0;
         lastWidth = currentWidth;
       }
-      requestAnimationFrame(waitForStableWidth);
+      stableWidthRafId = requestAnimationFrame(waitForStableWidth);
     };
 
     const openTerminal = () => {
-      if (!terminalRef.current) return;
+      if (cancelled || opened || !terminalRef.current) return;
+      opened = true;
       
       // Open terminal in DOM
       xterm.open(terminalRef.current);
       
-      // Load WebLinksAddon AFTER open (it requires _linkifier2 which is created during open)
-      const webLinksAddon = new WebLinksAddon();
-      xterm.loadAddon(webLinksAddon);
+      // Load web links addon after open; if addon internals mismatch, keep terminal usable.
+      try {
+        const webLinksAddon = new WebLinksAddon();
+        xterm.loadAddon(webLinksAddon);
+      } catch (error) {
+        console.warn('WebLinksAddon failed to load; continuing without clickable links.', error);
+      }
       
       // Force viewport background to match theme (xterm doesn't always set this correctly)
       const viewport = terminalRef.current.querySelector('.xterm-viewport') as HTMLElement | null;
@@ -308,6 +319,10 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
     window.addEventListener('resize', handleResize);
 
     return () => {
+      cancelled = true;
+      if (stableWidthRafId !== null) {
+        window.cancelAnimationFrame(stableWidthRafId);
+      }
       if (resizeTimeoutRef.current) {
         window.clearTimeout(resizeTimeoutRef.current);
       }

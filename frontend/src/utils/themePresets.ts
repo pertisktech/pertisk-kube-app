@@ -5,6 +5,7 @@ export type AppThemePresetId =
   | 'ocean-blue' 
   | 'forest-teal' 
   | 'ember-rose'
+  | 'wild-cherry'
   | 'midnight-cyan'
   | 'sunset-amber'
   | 'arctic-frost'
@@ -171,6 +172,38 @@ export const APP_THEME_PRESETS: readonly AppThemePreset[] = [
       '--color-dashboard-metric-secondary-bg': 'rgba(251, 113, 133, 0.14)',
       '--color-workload-accent': '#f59e0b',
       '--color-workload-accent-strong': '#b45309',
+    },
+  },
+  {
+    id: 'wild-cherry',
+    label: 'Wild Cherry',
+    description: 'Canonical Wild Cherry palette mapped from the iTerm2 scheme.',
+    tokens: {
+      '--color-primary-p1': '#E4FFFF',
+      '--color-primary-p2': '#DA6BAC',
+      '--color-primary-p3': '#D94085',
+      '--color-primary-p4': '#DD00FF',
+      '--color-primary-p5': '#AE636B',
+      '--color-primary-p6': '#000507',
+      '--color-primary': '#D94085',
+      '--color-primary-hover': '#DA6BAC',
+      '--color-sidebar': '#160F1B',
+      '--color-bg': '#1F1726',
+      '--color-surface': '#251C2D',
+      '--color-surface-elevated': '#2B2235',
+      '--color-hover': '#002831',
+      '--color-border': '#5B3A56',
+      '--color-card': '#2B2235',
+      '--color-text': '#DAFAFF',
+      '--color-text-secondary': '#C1B8B7',
+      '--color-muted': '#AE636B',
+      '--color-bg-gradient-start': '#1F1726',
+      '--color-bg-gradient-end': '#2B2235',
+      '--color-icon-primary': '#D94085',
+      '--color-dashboard-metric-secondary': '#FF919D',
+      '--color-dashboard-metric-secondary-bg': 'rgba(255, 145, 157, 0.16)',
+      '--color-workload-accent': '#009CC9',
+      '--color-workload-accent-strong': '#308CBA',
     },
   },
   {

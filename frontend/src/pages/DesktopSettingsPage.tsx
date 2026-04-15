@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
 import { checkHelmRepository } from '../hooks/useKubernetes';
 import { type IconComponent, Settings, Terminal, FileCode, Archive, Plus, Pencil, Trash2, ChevronDown } from '../components/Icons';
-import { APP_THEME_PRESETS, type AppThemePresetId } from '../utils/themePresets';
+import { APP_THEME_PRESETS, applyAppThemePreset, type AppThemePresetId } from '../utils/themePresets';
 
 type SettingsTab = 'general' | 'terminal' | 'yaml' | 'helm';
 
@@ -73,6 +73,7 @@ const buildUiFontOptions = (currentValue: string) => (
 
 export const DesktopSettingsPage = () => {
   const { settings, setSettings } = useFeatureSettings();
+  const persistedThemeRef = useRef(settings.generalThemePreset);
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [generalFontName, setGeneralFontName] = useState(settings.general.fontName);
   const [generalFontSize, setGeneralFontSize] = useState(settings.general.fontSize);
@@ -90,6 +91,10 @@ export const DesktopSettingsPage = () => {
   const [featureSaving, setFeatureSaving] = useState(false);
 
   useEffect(() => {
+    persistedThemeRef.current = settings.generalThemePreset;
+  }, [settings.generalThemePreset]);
+
+  useEffect(() => {
     setGeneralFontName(settings.general.fontName);
     setGeneralFontSize(settings.general.fontSize);
     setTerminalFontName(settings.terminal.fontName);
@@ -99,6 +104,18 @@ export const DesktopSettingsPage = () => {
     setYamlFontSize(settings.yamlEditor.fontSize);
     setHelmRepositories(settings.helmRepositories);
   }, [settings]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    applyAppThemePreset(document.documentElement, generalThemePreset);
+  }, [generalThemePreset]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof document === 'undefined') return;
+      applyAppThemePreset(document.documentElement, persistedThemeRef.current);
+    };
+  }, []);
 
   const clampFontSize = (value: number, fallback: number) => {
     if (!Number.isFinite(value)) return fallback;
@@ -310,6 +327,9 @@ export const DesktopSettingsPage = () => {
                     </div>
                     <p className="text-xs text-text-secondary">
                       {APP_THEME_PRESETS.find((preset) => preset.id === generalThemePreset)?.description}
+                    </p>
+                    <p className="text-xs text-text-secondary">
+                      Theme changes are previewed instantly. Click Save Settings to persist.
                     </p>
                   </div>
 
