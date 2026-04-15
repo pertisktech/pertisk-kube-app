@@ -1,5 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { useFeatureSettings } from './FeatureSettingsContext';
+import { createContext, useContext, useEffect, useMemo } from 'react';
 
 type Theme = 'dark'; // Light theme disabled - app only supports dark mode
 
@@ -19,9 +18,6 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>) {
-  const { settings } = useFeatureSettings();
-  const [systemPrefersDark] = useState(() => true); // Always dark
-
   // Force dark theme - light mode disabled
   const theme: Theme = 'dark';
 
