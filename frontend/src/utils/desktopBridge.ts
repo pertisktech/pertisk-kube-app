@@ -49,6 +49,25 @@ export function setDesktopBackendPort(port: number): void {
   }
 }
 
+export async function refreshDesktopBackendPortFromSidecar(): Promise<boolean> {
+  if (!isDesktopRuntime()) {
+    return false;
+  }
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const cfg = await invoke<{ port?: number }>('get_sidecar_config');
+    if (cfg && typeof cfg.port === 'number' && Number.isFinite(cfg.port) && cfg.port > 0) {
+      setDesktopBackendPort(cfg.port);
+      return true;
+    }
+  } catch {
+    // Ignore lookup failures; caller can continue with persisted/default port.
+  }
+
+  return false;
+}
+
 export function isDesktopRuntime(): boolean {
   const w = window as WindowWithTauri;
   const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
@@ -95,16 +114,7 @@ export function installDesktopBridge(): void {
 
   // Refresh from native sidecar config early so stale persisted ports don't keep
   // WebSocket/API calls pointed at an old backend instance.
-  void import('@tauri-apps/api/core')
-    .then(({ invoke }) => invoke<{ port?: number }>('get_sidecar_config'))
-    .then((cfg) => {
-      if (cfg && typeof cfg.port === 'number' && Number.isFinite(cfg.port) && cfg.port > 0) {
-        setDesktopBackendPort(cfg.port);
-      }
-    })
-    .catch(() => {
-      // Ignore lookup failures; fallback remains localStorage/default port.
-    });
+  void refreshDesktopBackendPortFromSidecar();
 
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {

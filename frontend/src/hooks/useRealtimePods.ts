@@ -9,6 +9,8 @@ const isRealtimeDebug = (): boolean =>
   typeof window !== 'undefined' &&
   (import.meta.env.DEV || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
+const isDesktopDevPollingMode = (): boolean => import.meta.env.DEV && isDesktopRuntime();
+
 interface UseRealtimePodsOptions {
   enabled?: boolean;
   reconnectInterval?: number;
@@ -522,6 +524,12 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   }, []);
 
   const connect = useCallback(() => {
+    if (isDesktopDevPollingMode()) {
+      if (isRealtimeDebug()) console.log('[useRealtimePods] Desktop dev polling mode enabled; skipping websocket connect');
+      setIsConnected(false);
+      return;
+    }
+
     if (!enabled) return;
 
     const wsUrl = isDesktopRuntime()
@@ -533,6 +541,11 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
+        if (intentionalCloseRef.current) {
+          ws.close();
+          return;
+        }
+
         if (isRealtimeDebug()) console.log('[useRealtimePods] WebSocket connected');
         setIsConnected(true);
         setError(null);
@@ -806,9 +819,11 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
           if (isRealtimeDebug()) console.log(
             `[useRealtimePods] Reconnecting... (attempt ${reconnectAttemptsRef.current})`
           );
+          const jitter = (reconnectAttemptsRef.current % 5) * 120;
+          const backoff = Math.min(5000, Math.max(0, reconnectAttemptsRef.current - 1) * 600);
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
-          }, reconnectInterval);
+          }, reconnectInterval + backoff + jitter);
         }
       };
 
@@ -830,7 +845,17 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       staleWatchdogRef.current = undefined;
     }
     if (wsRef.current) {
-      wsRef.current.close();
+      const ws = wsRef.current;
+      if (ws.readyState === WebSocket.CONNECTING) {
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        ws.onopen = () => {
+          ws.close();
+        };
+      } else if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CLOSING) {
+        ws.close();
+      }
       wsRef.current = null;
     }
     if (reconnectTimeoutRef.current) {
@@ -853,7 +878,12 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       setIsLoading(true);
       setHasFetched(false);
       setEmptyListConfirmed(false);
-      connect();
+      if (!isDesktopDevPollingMode()) {
+        // Stagger initial connect a bit to reduce websocket burst during route/hot updates.
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connect();
+        }, 180);
+      }
     }
 
     return () => {

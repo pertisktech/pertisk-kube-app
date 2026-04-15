@@ -5,7 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useTheme } from '../context/ThemeContext';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
-import { getDesktopWebSocketBase, isDesktopRuntime } from '../utils/desktopBridge';
+import { getDesktopWebSocketBase, isDesktopRuntime, refreshDesktopBackendPortFromSidecar } from '../utils/desktopBridge';
 import { getAppThemeTerminalPalette, resolveTerminalThemePreset } from '../utils/themePresets';
 
 interface TerminalProps {
@@ -195,98 +195,145 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       }
     };
 
-    // Connect WebSocket for shell
-    const wsBase = isDesktopRuntime()
-      ? getDesktopWebSocketBase()
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
-    const wsUrl = `${wsBase}/api/exec?namespace=${encodeURIComponent(
-      namespace
-    )}&pod=${encodeURIComponent(podName)}${containerName ? `&container=${encodeURIComponent(containerName)}` : ''}`;
-
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
     let sawShellOutput = false;
+    let connectionAttempt = 0;
+    let hasConnectedOnce = false;
+    let reconnectTimer: number | null = null;
+    let idlePromptTimer: number | null = null;
 
     const nudgePromptIfIdle = () => {
-      if (ws.readyState === WebSocket.OPEN && !sawShellOutput) {
-        ws.send('\n');
+      const currentWs = wsRef.current;
+      if (currentWs?.readyState === WebSocket.OPEN && !sawShellOutput) {
+        currentWs.send('\n');
       }
     };
 
-    const idlePromptTimer = window.setTimeout(() => {
-      nudgePromptIfIdle();
-    }, 1200);
+    const buildExecWsUrl = () => {
+      const wsBase = isDesktopRuntime()
+        ? getDesktopWebSocketBase()
+        : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
+      return `${wsBase}/api/exec?namespace=${encodeURIComponent(
+        namespace
+      )}&pod=${encodeURIComponent(podName)}${containerName ? `&container=${encodeURIComponent(containerName)}` : ''}`;
+    };
 
-    ws.onopen = () => {
-      xterm.writeln('\x1b[1;32m✓ Connected to pod shell\x1b[0m');
-      xterm.writeln(`\x1b[1;36mPod:\x1b[0m ${namespace}/${podName}`);
-      if (containerName) {
-        xterm.writeln(`\x1b[1;36mContainer:\x1b[0m ${containerName}`);
+    const connectSocket = async () => {
+      if (cancelled) return;
+
+      if (isDesktopRuntime()) {
+        await refreshDesktopBackendPortFromSidecar();
+        if (cancelled) return;
       }
-      xterm.writeln('');
-      // Auto-focus terminal after connection
-      xterm.focus();
-      
-      // Ensure terminal is properly sized before sending dimensions
-      doFit();
-      setTimeout(() => {
-        doFit();
-        sendResize();
-      }, 50);
-      setTimeout(() => {
-        doFit();
-        sendResize();
-      }, 150);
 
-      // Prompt can be delayed on some shells/containers until first input.
-      setTimeout(() => {
+      const ws = new WebSocket(buildExecWsUrl());
+      wsRef.current = ws;
+      let opened = false;
+      let connectionClosed = false;
+
+      if (idlePromptTimer !== null) {
+        window.clearTimeout(idlePromptTimer);
+      }
+      idlePromptTimer = window.setTimeout(() => {
         nudgePromptIfIdle();
-      }, 180);
+      }, 1200);
 
-      if (namespace === 'node') {
-        setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send('\n');
-          }
-        }, 180);
-      }
-
-      if (initialCommand && initialCommand.trim().length > 0) {
-        setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(`${initialCommand.trim()}\n`);
-          }
-        }, 220);
-      }
-    };
-
-    ws.onmessage = (event) => {
-      if (typeof event.data === 'string') {
-        if (event.data.length > 0) {
-          sawShellOutput = true;
+      ws.onopen = () => {
+        if (cancelled) {
+          ws.close();
+          return;
         }
-        xterm.write(event.data);
-      }
+
+        opened = true;
+        hasConnectedOnce = true;
+        connectionAttempt = 0;
+        xterm.writeln('\x1b[1;32m✓ Connected to pod shell\x1b[0m');
+        xterm.writeln(`\x1b[1;36mPod:\x1b[0m ${namespace}/${podName}`);
+        if (containerName) {
+          xterm.writeln(`\x1b[1;36mContainer:\x1b[0m ${containerName}`);
+        }
+        xterm.writeln('');
+        xterm.focus();
+
+        // Ensure terminal is properly sized before sending dimensions
+        doFit();
+        setTimeout(() => {
+          doFit();
+          sendResize();
+        }, 50);
+        setTimeout(() => {
+          doFit();
+          sendResize();
+        }, 150);
+
+        // Prompt can be delayed on some shells/containers until first input.
+        setTimeout(() => {
+          nudgePromptIfIdle();
+        }, 180);
+
+        if (namespace === 'node') {
+          setTimeout(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send('\n');
+            }
+          }, 180);
+        }
+
+        if (initialCommand && initialCommand.trim().length > 0) {
+          setTimeout(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(`${initialCommand.trim()}\n`);
+            }
+          }, 220);
+        }
+      };
+
+      ws.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          if (event.data.length > 0) {
+            sawShellOutput = true;
+          }
+          xterm.write(event.data);
+        }
+      };
+
+      ws.onerror = () => {
+        if (!connectionClosed) {
+          xterm.writeln('\x1b[1;31m✗ Connection error\x1b[0m');
+        }
+      };
+
+      ws.onclose = () => {
+        connectionClosed = true;
+        if (idlePromptTimer !== null) {
+          window.clearTimeout(idlePromptTimer);
+          idlePromptTimer = null;
+        }
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+        }
+
+        if (!cancelled && !opened && !hasConnectedOnce && connectionAttempt < 2) {
+          connectionAttempt += 1;
+          const retryDelayMs = connectionAttempt === 1 ? 250 : 700;
+          xterm.writeln(`\r\n\x1b[90m[Reconnecting terminal (${connectionAttempt}/2)...]\x1b[0m`);
+          reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = null;
+            void connectSocket();
+          }, retryDelayMs);
+          return;
+        }
+
+        xterm.writeln('\r\n\x1b[90m[Session ended]\x1b[0m');
+      };
     };
 
-    let connectionClosed = false;
-    
-    ws.onerror = () => {
-      if (!connectionClosed) {
-        xterm.writeln('\x1b[1;31m✗ Connection error\x1b[0m');
-      }
-    };
-
-    ws.onclose = () => {
-      connectionClosed = true;
-      window.clearTimeout(idlePromptTimer);
-      xterm.writeln('\r\n\x1b[90m[Session ended]\x1b[0m');
-    };
+    void connectSocket();
 
     // Send terminal input directly to shell (pass-through mode)
     xterm.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
+      const currentWs = wsRef.current;
+      if (currentWs?.readyState === WebSocket.OPEN) {
+        currentWs.send(data);
       }
     });
 
@@ -303,8 +350,19 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       nudgePromptIfIdle();
     };
 
+    const handlePanelTabActivated = () => {
+      // Activation event fires after tab visibility/layout changes.
+      window.setTimeout(() => {
+        if (!terminalRef.current || terminalRef.current.offsetWidth <= 0) return;
+        doFit();
+        sendResize();
+        nudgePromptIfIdle();
+      }, 0);
+    };
+
     terminalRef.current.addEventListener('mousedown', handleFocus);
     window.addEventListener('pointerdown', handleGlobalPointerDown, true);
+    window.addEventListener('panel:tab-activated', handlePanelTabActivated);
 
     // Observe container size changes for responsive terminal
     const resizeObserver = new ResizeObserver((entries) => {
@@ -356,13 +414,27 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       if (resizeTimeoutRef.current) {
         window.clearTimeout(resizeTimeoutRef.current);
       }
-      window.clearTimeout(idlePromptTimer);
+      if (idlePromptTimer !== null) {
+        window.clearTimeout(idlePromptTimer);
+      }
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+      }
       terminalRef.current?.removeEventListener('mousedown', handleFocus);
       window.removeEventListener('pointerdown', handleGlobalPointerDown, true);
+      window.removeEventListener('panel:tab-activated', handlePanelTabActivated);
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
       layoutTimers.forEach((timer) => window.clearTimeout(timer));
-      ws.close();
+
+      // Avoid browser warning: "WebSocket is closed before the connection is established".
+      // Never call close() while CONNECTING; onopen handles cancelled instances.
+      const currentWs = wsRef.current;
+      if (currentWs?.readyState === WebSocket.OPEN || currentWs?.readyState === WebSocket.CLOSING) {
+        currentWs.close();
+      }
+      wsRef.current = null;
+
       xterm.dispose();
     };
   // Only reconnect when connection params change, not when settings change

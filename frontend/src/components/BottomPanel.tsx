@@ -1483,6 +1483,14 @@ export const BottomPanel = () => {
     return () => window.removeEventListener('panel:open', handler);
   }, [doAddTab]);
 
+  useEffect(() => {
+    if (collapsed || !activeTabId) return;
+    const rafId = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent('panel:tab-activated'));
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [activeTabId, collapsed, panelHeight]);
+
   // ── Close add menu on outside click ───────────────────────────────────────
   useEffect(() => {
     if (!showAddMenu) return;
