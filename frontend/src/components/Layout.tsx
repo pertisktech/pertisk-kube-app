@@ -92,7 +92,6 @@ const SIDEBAR_WIDTH_DEFAULT = 256; // 16rem
 const SIDEBAR_WIDTH_MIN = 200;
 const SIDEBAR_WIDTH_MAX = 420;
 const SIDEBAR_WIDTH_STORAGE_KEY = 'pertisk-kube-sidebar-width';
-const NEXT_STARTUP_CLUSTER_SWITCH_NOTICE_KEY = 'pertisk-kube-next-startup-cluster-switch';
 
 const HELM_ITEMS: NavItem[] = [
   { label: 'Charts', path: '/helm/charts', icon: Archive },
@@ -362,17 +361,6 @@ export const Layout = () => {
     };
   }, [desktopMode]);
 
-  useEffect(() => {
-    if (!desktopMode || typeof window === 'undefined') return;
-
-    const pendingContext = window.localStorage.getItem(NEXT_STARTUP_CLUSTER_SWITCH_NOTICE_KEY);
-    if (!pendingContext) return;
-
-    window.localStorage.removeItem(NEXT_STARTUP_CLUSTER_SWITCH_NOTICE_KEY);
-    const label = pendingContext.trim() || 'selected cluster';
-    toast.success(`Cluster switched to ${label}.`);
-  }, [desktopMode]);
-
   // Poll /api/auth-status every 5s so we can show the browser-login CTA when
   // the sidecar starts with a placeholder (unauthenticated) kube client.
   useEffect(() => {
@@ -472,9 +460,6 @@ export const Layout = () => {
       await refreshClustersForKubeconfig(nextPath);
       setShowKubeconfigModal(false);
       setStartupClusterSelectionDone(true);
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(NEXT_STARTUP_CLUSTER_SWITCH_NOTICE_KEY, nextContext);
-      }
       toast.success('Cluster selection applied and sidecar restarted.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to apply cluster selection.');
