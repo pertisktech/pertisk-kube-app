@@ -205,6 +205,17 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
+    let sawShellOutput = false;
+
+    const nudgePromptIfIdle = () => {
+      if (ws.readyState === WebSocket.OPEN && !sawShellOutput) {
+        ws.send('\n');
+      }
+    };
+
+    const idlePromptTimer = window.setTimeout(() => {
+      nudgePromptIfIdle();
+    }, 1200);
 
     ws.onopen = () => {
       xterm.writeln('\x1b[1;32m✓ Connected to pod shell\x1b[0m');
@@ -227,6 +238,11 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
         sendResize();
       }, 150);
 
+      // Prompt can be delayed on some shells/containers until first input.
+      setTimeout(() => {
+        nudgePromptIfIdle();
+      }, 180);
+
       if (namespace === 'node') {
         setTimeout(() => {
           if (ws.readyState === WebSocket.OPEN) {
@@ -246,6 +262,9 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
 
     ws.onmessage = (event) => {
       if (typeof event.data === 'string') {
+        if (event.data.length > 0) {
+          sawShellOutput = true;
+        }
         xterm.write(event.data);
       }
     };
@@ -260,6 +279,7 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
 
     ws.onclose = () => {
       connectionClosed = true;
+      window.clearTimeout(idlePromptTimer);
       xterm.writeln('\r\n\x1b[90m[Session ended]\x1b[0m');
     };
 
@@ -272,9 +292,19 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
 
     const handleFocus = () => {
       xterm.focus();
+      doFit();
+      sendResize();
+      nudgePromptIfIdle();
+    };
+
+    const handleGlobalPointerDown = () => {
+      doFit();
+      sendResize();
+      nudgePromptIfIdle();
     };
 
     terminalRef.current.addEventListener('mousedown', handleFocus);
+    window.addEventListener('pointerdown', handleGlobalPointerDown, true);
 
     // Observe container size changes for responsive terminal
     const resizeObserver = new ResizeObserver((entries) => {
@@ -326,7 +356,9 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       if (resizeTimeoutRef.current) {
         window.clearTimeout(resizeTimeoutRef.current);
       }
+      window.clearTimeout(idlePromptTimer);
       terminalRef.current?.removeEventListener('mousedown', handleFocus);
+      window.removeEventListener('pointerdown', handleGlobalPointerDown, true);
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
       layoutTimers.forEach((timer) => window.clearTimeout(timer));
