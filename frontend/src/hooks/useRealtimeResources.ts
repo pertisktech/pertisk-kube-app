@@ -399,14 +399,16 @@ function transformDeployment(raw: any): Deployment {
   const spec = raw.spec || {};
   const status = raw.status || {};
   
-  const desired = spec.replicas || 1;
-  const ready = status.readyReplicas || 0;
-  const updated = status.updatedReplicas || 0;
-  const available = status.availableReplicas || 0;
+  const desired = spec.replicas ?? 1;
+  const ready = status.readyReplicas ?? 0;
+  const updated = status.updatedReplicas ?? 0;
+  const available = status.availableReplicas ?? 0;
   
   const images = spec.template?.spec?.containers
     ?.map((c: any) => c.image)
     .filter((img: string) => img) || [];
+  
+  const selectorLabels = spec.selector?.matchLabels as Record<string, string> | undefined;
   
   const statusText = desired === 0
     ? 'Stopped'
@@ -425,6 +427,7 @@ function transformDeployment(raw: any): Deployment {
     available,
     images,
     age: metadata.creationTimestamp || '',
+    selector_labels: selectorLabels,
     labels: (metadata.labels as Record<string, string> | undefined) ?? undefined,
     annotations: (metadata.annotations as Record<string, string> | undefined) ?? undefined,
   };

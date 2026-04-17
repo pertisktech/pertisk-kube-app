@@ -60,7 +60,8 @@ export const StatefulSetsPage = () => {
     direction: 'desc',
   });
 
-  // Merge realtime + REST so replica counters stay fresh when watch stream lags.
+  // Merge realtime + REST so replica counters stay fresh.
+  // Realtime data is preferred since it's more up-to-date.
   const data = useMemo(() => {
     const realtime = realtimeStatefulSets ?? [];
     const api = apiStatefulSets ?? [];
@@ -68,23 +69,24 @@ export const StatefulSetsPage = () => {
     if (realtime.length === 0) return api;
     if (api.length === 0) return realtime;
 
-    const realtimeByKey = new Map(realtime.map((item) => [`${item.namespace}/${item.name}`, item]));
-    const merged = api.map((item) => {
+    const apiByKey = new Map(api.map((item) => [`${item.namespace}/${item.name}`, item]));
+    const merged = realtime.map((item) => {
       const key = `${item.namespace}/${item.name}`;
-      const fromRealtime = realtimeByKey.get(key);
-      if (!fromRealtime) return item;
+      const fromApi = apiByKey.get(key);
+      if (!fromApi) return item;
 
       return {
-        ...fromRealtime,
-        status: item.status ?? fromRealtime.status,
-        ready: item.ready ?? fromRealtime.ready,
-        current: item.current ?? fromRealtime.current,
-        updated: item.updated ?? fromRealtime.updated,
-        images: item.images ?? fromRealtime.images,
+        ...fromApi,
+        ...item,
+        status: item.status ?? fromApi.status,
+        ready: item.ready ?? fromApi.ready,
+        current: item.current ?? fromApi.current,
+        updated: item.updated ?? fromApi.updated,
+        images: fromApi.images ?? item.images,
       };
     });
 
-    for (const item of realtime) {
+    for (const item of api) {
       const key = `${item.namespace}/${item.name}`;
       if (!merged.some((existing) => `${existing.namespace}/${existing.name}` === key)) {
         merged.push(item);

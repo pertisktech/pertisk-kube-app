@@ -135,6 +135,7 @@ export const DeploymentsPage = () => {
   });
 
   // Merge realtime + REST so table values stay fresh when watch events lag.
+  // Realtime data is preferred since it's more up-to-date.
   const data = useMemo(() => {
     const realtime = realtimeDeployments ?? [];
     const api = apiDeployments ?? [];
@@ -142,23 +143,28 @@ export const DeploymentsPage = () => {
     if (realtime.length === 0) return api;
     if (api.length === 0) return realtime;
 
-    const realtimeByKey = new Map(realtime.map((item) => [`${item.namespace}/${item.name}`, item]));
-    const merged = api.map((item) => {
+    const apiByKey = new Map(api.map((item) => [`${item.namespace}/${item.name}`, item]));
+    const merged = realtime.map((item) => {
       const key = `${item.namespace}/${item.name}`;
-      const fromRealtime = realtimeByKey.get(key);
-      if (!fromRealtime) return item;
+      const fromApi = apiByKey.get(key);
+      if (!fromApi) return item;
 
+      // Prefer realtime values, fall back to API for fields that might be missing
       return {
-        ...fromRealtime,
-        status: item.status ?? fromRealtime.status,
-        ready: item.ready ?? fromRealtime.ready,
-        updated: item.updated ?? fromRealtime.updated,
-        available: item.available ?? fromRealtime.available,
-        images: item.images ?? fromRealtime.images,
+        ...fromApi,
+        ...item,
+        // Use realtime values, they are more current
+        status: item.status ?? fromApi.status,
+        ready: item.ready ?? fromApi.ready,
+        updated: item.updated ?? fromApi.updated,
+        available: item.available ?? fromApi.available,
+        // Prefer API images because they include pod digests
+        images: fromApi.images ?? item.images,
       };
     });
 
-    for (const item of realtime) {
+    // Add any API-only items not in realtime yet
+    for (const item of api) {
       const key = `${item.namespace}/${item.name}`;
       if (!merged.some((existing) => `${existing.namespace}/${existing.name}` === key)) {
         merged.push(item);
