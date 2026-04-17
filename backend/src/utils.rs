@@ -13,13 +13,14 @@ use kube::{
 use std::collections::HashMap;
 use std::env;
 use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::time::{timeout, Duration};
 use tracing::warn;
 
 static NODE_DISK_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
 
 fn is_kubelet_stats_proxy_unavailable(err: &kube::Error) -> bool {
     match err {
-        kube::Error::Api(api_err) => api_err.code == 403 || api_err.code == 404,
+        kube::Error::Api(api_err) => api_err.code == 403 || api_err.code == 404 || api_err.code == 503,
         _ => {
             // Some clusters/proxies return plain-text 404 responses ("404 page not found")
             // that kube-rs cannot parse into an API error payload.
@@ -29,6 +30,9 @@ fn is_kubelet_stats_proxy_unavailable(err: &kube::Error) -> bool {
                 || normalized.contains("status code: 404")
                 || normalized.contains("status code 403")
                 || normalized.contains("status code: 403")
+                || normalized.contains("status code 503")
+                || normalized.contains("status code: 503")
+                || normalized.contains("service unavailable")
         }
     }
 }
@@ -526,9 +530,13 @@ pub async fn fetch_node_disk_metrics(
             Err(_) => return Ok(None),
         };
 
-        let summary = match client.request::<serde_json::Value>(request).await {
-            Ok(summary) => summary,
-            Err(err) if is_kubelet_stats_proxy_unavailable(&err) => {
+        // Timeout individual node requests to 2 seconds to prevent slow/unresponsive kubelets from blocking list
+        let summary = match timeout(
+            Duration::from_secs(2),
+            client.request::<serde_json::Value>(request)
+        ).await {
+            Ok(Ok(summary)) => summary,
+            Ok(Err(err)) if is_kubelet_stats_proxy_unavailable(&err) => {
                 NODE_DISK_METRICS_SUPPORTED.store(false, Ordering::Relaxed);
                 warn!(
                     "Disabling node disk metrics collection because kubelet stats proxy is unavailable: {}",
@@ -536,7 +544,8 @@ pub async fn fetch_node_disk_metrics(
                 );
                 return Err(());
             }
-            Err(_) => return Ok(None),
+            Ok(Err(_)) => return Ok(None),
+            Err(_) => return Ok(None), // Timeout — skip this node's disk metrics
         };
 
         let fs = match summary.get("node").and_then(|node| node.get("fs")) {

@@ -645,6 +645,28 @@ function transformEvent(raw: any): KubernetesEvent {
   };
 }
 
+/** Check if node has meaningfully changed, with explicit conditions/taints comparison */
+function nodeHasChanged(prev: K8sNode, current: K8sNode): boolean {
+  // Always update if ready status changed
+  if (prev.ready !== current.ready) return true;
+  
+  // Always update if unschedulable status changed
+  if (prev.unschedulable !== current.unschedulable) return true;
+  
+  // Check if taints changed (by comparing stringified array)
+  const prevTaints = (prev.taints || []).sort().join('|');
+  const currTaints = (current.taints || []).sort().join('|');
+  if (prevTaints !== currTaints) return true;
+  
+  // Check if conditions changed (by comparing stringified array)
+  const prevConditions = JSON.stringify((prev.conditions || []).sort((a, b) => a.type.localeCompare(b.type)));
+  const currConditions = JSON.stringify((current.conditions || []).sort((a, b) => a.type.localeCompare(b.type)));
+  if (prevConditions !== currConditions) return true;
+  
+  // For other fields, use full JSON comparison
+  return JSON.stringify(prev) !== JSON.stringify(current);
+}
+
 function transformNode(raw: any): K8sNode {
   const metadata = raw.metadata || {};
   const spec = raw.spec || {};
@@ -1251,6 +1273,7 @@ function createRealtimeHook<T>(
 
     useEffect(() => {
       let emptyListTimeout: ReturnType<typeof setTimeout> | null = null;
+      let reconcileInterval: ReturnType<typeof setInterval> | null = null;
       let aborted = false;
       let receivedRealtimeEvent = false;
       const abortController = new AbortController();
@@ -1276,6 +1299,28 @@ function createRealtimeHook<T>(
           }
         });
 
+      // Node watches can intermittently miss DELETED events when API watch is unstable.
+      // Periodically reconcile nodes from REST snapshot so removals are reflected quickly.
+      if (resourceType === 'nodes') {
+        reconcileInterval = setInterval(() => {
+          if (aborted) return;
+
+          const reconcileAbortController = new AbortController();
+          void fetchRealtimeResourceSnapshot(resourceType, transformFn, reconcileAbortController.signal)
+            .then((snapshot) => {
+              if (aborted) return;
+              setData((prev) => (JSON.stringify(prev) === JSON.stringify(snapshot) ? prev : snapshot));
+              setHasFetched(true);
+              setIsLoading(false);
+              setEmptyListConfirmed(snapshot.length === 0);
+              setError(null);
+            })
+            .catch(() => {
+              // Keep existing realtime state if reconcile snapshot fails.
+            });
+        }, 3000);
+      }
+
       const unsubscribe = subscribeRealtimeResource(resourceType, (message) => {
         if (message.type === 'resource_update' && message.resource === resourceType) {
           receivedRealtimeEvent = true;
@@ -1290,6 +1335,37 @@ function createRealtimeHook<T>(
           const rawItem = message.data;
           if (!rawItem) return;
 
+          if (resourceType === 'nodes' && (action === 'ADDED' || action === 'MODIFIED')) {
+            const deletingName = (rawItem as any)?.metadata?.deletionTimestamp
+              ? (rawItem as any)?.metadata?.name
+              : undefined;
+            if (deletingName) {
+              setData((prev) => prev.filter((p) => getKey(p) !== deletingName));
+              return;
+            }
+          }
+
+          if (action === 'DELETED') {
+            // For deletions, extract key directly from raw metadata to avoid transform errors
+            const itemKey = (() => {
+              if (resourceType === 'nodes') {
+                return (rawItem as any)?.metadata?.name;
+              } else if (resourceType === 'namespaces' || resourceType === 'events') {
+                return (resourceType === 'events') 
+                  ? `${(rawItem as any)?.metadata?.namespace}/${(rawItem as any)?.metadata?.name}`
+                  : (rawItem as any)?.metadata?.name;
+              } else {
+                // namespaced resources
+                return `${(rawItem as any)?.metadata?.namespace}/${(rawItem as any)?.metadata?.name}`;
+              }
+            })();
+            
+            if (itemKey) {
+              setData((prev) => prev.filter((p) => getKey(p) !== itemKey));
+            }
+            return;
+          }
+
           const item = transformFn(rawItem);
 
           if (action === 'ADDED' || action === 'MODIFIED') {
@@ -1297,16 +1373,20 @@ function createRealtimeHook<T>(
               const itemKey = getKey(item);
               const existingIndex = prev.findIndex((p) => getKey(p) === itemKey);
               if (existingIndex >= 0) {
-                if (JSON.stringify(prev[existingIndex]) === JSON.stringify(item)) return prev;
+                const prevItem = prev[existingIndex];
+                // For nodes, explicitly check conditions and taints to ensure changes are detected
+                const isNode = resourceType === 'nodes';
+                const hasChanged = isNode 
+                  ? nodeHasChanged(prevItem as any, item as any)
+                  : JSON.stringify(prevItem) !== JSON.stringify(item);
+                
+                if (!hasChanged) return prev;
                 const updated = [...prev];
                 updated[existingIndex] = item;
                 return updated;
               }
               return [...prev, item];
             });
-          } else if (action === 'DELETED') {
-            const itemKey = getKey(item);
-            setData((prev) => prev.filter((p) => getKey(p) !== itemKey));
           }
           return;
         }
@@ -1346,6 +1426,9 @@ function createRealtimeHook<T>(
         abortController.abort();
         if (emptyListTimeout) {
           clearTimeout(emptyListTimeout);
+        }
+        if (reconcileInterval) {
+          clearInterval(reconcileInterval);
         }
         unsubscribe();
       };

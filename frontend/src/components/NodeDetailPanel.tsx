@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import { Terminal, Trash2, Loader, FileText, Lock, Unlock, Droplet } from './Icons';
 import { StatusBadge } from './StatusBadge';
 import { useRealtimePods } from '../hooks/useRealtimePods';
+import { useRealtimeNodes } from '../hooks/useRealtimeResources';
 import { ResizablePanel } from './ResizablePanel';
 import { PanelActionButton, PanelCloseButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
@@ -98,17 +100,23 @@ const NodeDetailsResources = ({
 
 export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpenShell, onCordonToggle, onDrain, onDelete, cordonLoading }: NodeDetailPanelProps) => {
   const { data: allPods = [] } = useRealtimePods<Pod>();
+  const { data: allNodes = [] } = useRealtimeNodes();
 
-  const status = String(node.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady';
-  const taints = node.taints?.length ? node.taints : [];
+  // Use real-time node data to ensure panel updates when node state changes (scale, cordon, drain, etc.)
+  const currentNode = useMemo(() => {
+    const realtimeNode = allNodes.find((n) => n.name === node.name);
+    return realtimeNode || node;
+  }, [allNodes, node.name, node]);
 
-  const nodePods = allPods.filter((pod) => pod.node === node.name);
+  const status = String(currentNode.ready).toLowerCase() === 'true' ? 'Ready' : 'NotReady';
 
-  const labelCount = node.labels ? Object.keys(node.labels).length : 0;
-  const annotationCount = node.annotations ? Object.keys(node.annotations).length : 0;
+  const nodePods = allPods.filter((pod) => pod.node === currentNode.name);
 
-  const hasAddresses = node.internal_ip || node.external_ip || node.ipv4 || node.ipv6 || node.ip;
-  const orderedRoles = sortNodeRoles(node.roles);
+  const labelCount = currentNode.labels ? Object.keys(currentNode.labels).length : 0;
+  const annotationCount = currentNode.annotations ? Object.keys(currentNode.annotations).length : 0;
+
+  const hasAddresses = currentNode.internal_ip || currentNode.external_ip || currentNode.ipv4 || currentNode.ipv6 || currentNode.ip;
+  const orderedRoles = sortNodeRoles(currentNode.roles);
 
   return (
     <ResizablePanel>
@@ -117,7 +125,7 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
         <div className="bg-gradient-to-r from-surface to-surface-elevated border-b border-border px-5 py-4 flex-shrink-0">
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-bold truncate" style={{ color: 'var(--color-text)' }}>{node.name}</h2>
+              <h2 className="text-lg font-bold truncate" style={{ color: 'var(--color-text)' }}>{currentNode.name}</h2>
               <div className="mt-2">
                 <StatusBadge status={status} />
               </div>
@@ -126,21 +134,21 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
               className="flex items-center flex-shrink-0 rounded-lg border"
               style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
             >
-              {onEditYaml && <PanelActionButton icon={FileText} label="Edit YAML" onClick={() => onEditYaml(node)} />}
-              {onOpenShell && <PanelActionButton icon={Terminal} label="Node Shell" onClick={() => onOpenShell(node)} />}
+              {onEditYaml && <PanelActionButton icon={FileText} label="Edit YAML" onClick={() => onEditYaml(currentNode)} />}
+              {onOpenShell && <PanelActionButton icon={Terminal} label="Node Shell" onClick={() => onOpenShell(currentNode)} />}
               {onCordonToggle && (
                 <div className="group relative">
                   <button
                     type="button"
-                    onClick={() => onCordonToggle(node)}
+                    onClick={() => onCordonToggle(currentNode)}
                     disabled={cordonLoading}
                     className="p-2 rounded-md text-amber-400 hover:bg-amber-500/20 hover:text-amber-300 disabled:opacity-50 transition-colors"
-                    aria-label={node.unschedulable ? 'Uncordon' : 'Cordon'}
+                    aria-label={currentNode.unschedulable ? 'Uncordon' : 'Cordon'}
                   >
-                    {cordonLoading ? <Loader size={16} className="animate-spin" /> : node.unschedulable ? <Unlock size={16} /> : <Lock size={16} />}
+                    {cordonLoading ? <Loader size={16} className="animate-spin" /> : currentNode.unschedulable ? <Unlock size={16} /> : <Lock size={16} />}
                   </button>
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-sm" style={{ backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>
-                    {node.unschedulable ? 'Uncordon' : 'Cordon'}
+                    {currentNode.unschedulable ? 'Uncordon' : 'Cordon'}
                   </div>
                 </div>
               )}
@@ -148,11 +156,11 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
                 <PanelActionButton
                   icon={Droplet}
                   label="Drain"
-                  onClick={() => onDrain(node)}
+                  onClick={() => onDrain(currentNode)}
                   colorClass="text-amber-400 hover:bg-amber-500/20 hover:text-amber-300"
                 />
               )}
-              {onDelete && <PanelActionButton icon={Trash2} label="Delete node" danger onClick={() => onDelete(node)} />}
+              {onDelete && <PanelActionButton icon={Trash2} label="Delete node" danger onClick={() => onDelete(currentNode)} />}
               <PanelCloseButton
                 onClick={onClose}
                 borderLeft={onEditYaml || onOpenShell || onCordonToggle || onDrain || onDelete ? '1px solid var(--color-border)' : 'none'}
@@ -190,8 +198,8 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
             </div>
             <div className="flex-1">
               <p className="mb-1" style={{ color: 'var(--color-text-secondary)' }}>Status</p>
-              <p className={`font-medium ${node.unschedulable ? 'text-[var(--color-icon-warning)]' : 'text-[var(--color-icon-success)]'}`}>
-                {node.unschedulable ? 'Cordoned' : 'Schedulable'}
+              <p className={`font-medium ${currentNode.unschedulable ? 'text-[var(--color-icon-warning)]' : 'text-[var(--color-icon-success)]'}`}>
+                {currentNode.unschedulable ? 'Cordoned' : 'Schedulable'}
               </p>
             </div>
           </div>
@@ -201,34 +209,60 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
         <div className="flex-1 overflow-auto overflow-x-hidden text-xs drawer-content" style={{ padding: 'var(--drawer-content-spacing, 1.5rem)' }}>
           <DrawerTitle>Metrics</DrawerTitle>
           <div className="mb-4">
-            <NodeMetricGraphs nodes={[node]} pods={nodePods} />
+            <NodeMetricGraphs nodes={[currentNode]} pods={nodePods} />
           </div>
 
           <DrawerTitle>Property</DrawerTitle>
           {hasAddresses && (
             <DrawerItem name="Addresses">
               <div className="space-y-1">
-                {node.internal_ip && <p>{`InternalIP: ${node.internal_ip}`}</p>}
-                {node.external_ip && <p>{`ExternalIP: ${node.external_ip}`}</p>}
-                {node.ipv4 && <p>{`IPv4: ${node.ipv4}`}</p>}
-                {node.ipv6 && <p>{`IPv6: ${node.ipv6}`}</p>}
-                {node.ip && !node.internal_ip && !node.external_ip && <p>{node.ip}</p>}
+                {currentNode.internal_ip && <p>{`InternalIP: ${currentNode.internal_ip}`}</p>}
+                {currentNode.external_ip && <p>{`ExternalIP: ${currentNode.external_ip}`}</p>}
+                {currentNode.ipv4 && <p>{`IPv4: ${currentNode.ipv4}`}</p>}
+                {currentNode.ipv6 && <p>{`IPv6: ${currentNode.ipv6}`}</p>}
+                {currentNode.ip && !currentNode.internal_ip && !currentNode.external_ip && <p>{currentNode.ip}</p>}
               </div>
             </DrawerItem>
           )}
 
           <DrawerItem name="OS">
-            {node.operating_system ?? '-'} ({node.architecture ?? '-'})
+            {currentNode.operating_system ?? '-'} ({currentNode.architecture ?? '-'})
           </DrawerItem>
-          <DrawerItem name="OS Image">{node.os_image ?? '-'}</DrawerItem>
-          <DrawerItem name="Kernel version">{node.kernel_version ?? '-'}</DrawerItem>
-          <DrawerItem name="Container runtime">{node.runtime ?? '-'}</DrawerItem>
-          <DrawerItem name="Kubelet version">{node.kubelet_version ?? '-'}</DrawerItem>
+          <DrawerItem name="OS Image">{currentNode.os_image ?? '-'}</DrawerItem>
+          <DrawerItem name="Kernel version">{currentNode.kernel_version ?? '-'}</DrawerItem>
+          <DrawerItem name="Container runtime">{currentNode.runtime ?? '-'}</DrawerItem>
+          <DrawerItem name="Kubelet version">{currentNode.kubelet_version ?? '-'}</DrawerItem>
 
-          {taints.length > 0 && (
+          {currentNode.conditions && currentNode.conditions.length > 0 && (
+            <>
+              <DrawerTitle>Conditions</DrawerTitle>
+              {currentNode.conditions.map((cond, idx) => (
+                <div key={idx} className="mb-3 pb-3 border-b border-border last:border-b-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="font-medium" style={{ color: 'var(--color-text)' }}>{cond.type}</p>
+                    <span
+                      className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        cond.status === 'True'
+                          ? 'bg-[var(--color-icon-success)]/10 text-[var(--color-icon-success)]'
+                          : cond.status === 'False'
+                            ? 'bg-[var(--color-icon-danger)]/10 text-[var(--color-icon-danger)]'
+                            : 'bg-[var(--color-icon-warning)]/10 text-[var(--color-icon-warning)]'
+                      }`}
+                    >
+                      {cond.status}
+                    </span>
+                  </div>
+                  {cond.reason && <p className="text-xs mb-1" style={{ color: 'var(--color-text-secondary)' }}>Reason: {cond.reason}</p>}
+                  {cond.message && <p className="text-xs break-words" style={{ color: 'var(--color-text-secondary)' }}>Message: {cond.message}</p>}
+                </div>
+              ))}
+            </>
+          )}
+
+          {currentNode.taints && currentNode.taints.length > 0 && (
             <DrawerItem name="Taints" labelsOnly>
               <div className="flex flex-wrap gap-1.5">
-                {taints.map((t) => (
+                {currentNode.taints.map((t) => (
                   <span
                     key={t}
                     className="inline-flex px-2 py-0.5 rounded text-xs border border-border"
@@ -242,14 +276,14 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
           )}
 
           <DrawerTitle>Capacity</DrawerTitle>
-          <NodeDetailsResources type="capacity" node={node} />
+          <NodeDetailsResources type="capacity" node={currentNode} />
 
           <DrawerTitle>Allocatable</DrawerTitle>
-          <NodeDetailsResources type="allocatable" node={node} />
+          <NodeDetailsResources type="allocatable" node={currentNode} />
 
           {(labelCount > 0 || annotationCount > 0) && (
             <div className="mt-4">
-              <DrawerLabelsAnnotations labels={node.labels} annotations={node.annotations} />
+              <DrawerLabelsAnnotations labels={currentNode.labels} annotations={currentNode.annotations} />
             </div>
           )}
 
