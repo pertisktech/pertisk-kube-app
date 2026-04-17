@@ -1682,7 +1682,29 @@ export function useRealtimeCustomResources(crdName: string | null): {
 
     const loadSnapshot = async () => {
       try {
-        const snapshot = await fetchRealtimeResourceSnapshot(resourceType, transformCustomResource, new AbortController().signal);
+        // Custom resources use different REST endpoint: /api/crds/:crd_name/resources
+        const token = getAuthToken();
+        const response = await fetch(`/api/crds/${encodeURIComponent(crdName)}/resources`, {
+          cache: 'no-store',
+          headers: token ? { Authorization: token } : undefined,
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to fetch initial ${resourceType} snapshot`);
+        }
+        const payload = await response.json() as { data?: any[] };
+        const items = Array.isArray(payload?.data) ? payload.data : [];
+        const snapshot = items.map((raw) => {
+          const looksLikeRawK8sObject =
+            raw
+            && typeof raw === 'object'
+            && raw !== null
+            && typeof (raw as { metadata?: unknown }).metadata === 'object'
+            && (raw as { metadata?: unknown }).metadata !== null;
+          if (looksLikeRawK8sObject) {
+            return transformCustomResource(raw);
+          }
+          return raw as CustomResource;
+        });
         if (disposed || hasReceivedRealtime) {
           return;
         }

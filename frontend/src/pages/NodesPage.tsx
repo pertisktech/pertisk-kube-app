@@ -608,7 +608,7 @@ export const NodesPage = () => {
             node={selectedNode}
             events={selectedNodeEvents}
             onClose={() => setPanelOpen(false)}
-            onEditYaml={handleOpenYaml}
+            onOpenYamlEditor={handleOpenYaml}
             onOpenShell={handleOpenShell}
             onCordonToggle={handleCordonToggle}
             onDrain={(n) => setConfirmAction({ type: 'drain', name: n.name })}

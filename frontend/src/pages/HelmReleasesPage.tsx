@@ -423,7 +423,7 @@ export const HelmReleasesPage = () => {
           <HelmReleaseDetailPanel
             release={selectedRelease}
             onClose={() => setPanelOpen(false)}
-            onOpenYaml={handleOpenYaml}
+            onOpenYamlEditor={handleOpenYaml}
             onDelete={handleDeleteSingle}
           />
         </>

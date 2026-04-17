@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Terminal, Trash2, Loader, FileText, Lock, Unlock, Droplet } from './Icons';
+import { Terminal, Trash2, Loader, Pencil, Lock, Unlock, Droplet } from './Icons';
 import { StatusBadge } from './StatusBadge';
 import { useRealtimePods } from '../hooks/useRealtimePods';
 import { useRealtimeNodes } from '../hooks/useRealtimeResources';
@@ -51,7 +51,7 @@ interface NodeDetailPanelProps {
     age: string;
   }>;
   onClose: () => void;
-  onEditYaml?: (node: K8sNode) => void;
+  onOpenYamlEditor?: (node: K8sNode) => void;
   onOpenShell?: (node: K8sNode) => void;
   onCordonToggle?: (node: K8sNode) => void;
   onDrain?: (node: K8sNode) => void;
@@ -98,7 +98,7 @@ const NodeDetailsResources = ({
   );
 };
 
-export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpenShell, onCordonToggle, onDrain, onDelete, cordonLoading }: NodeDetailPanelProps) => {
+export const NodeDetailPanel = ({ node, events = [], onClose, onOpenYamlEditor, onOpenShell, onCordonToggle, onDrain, onDelete, cordonLoading }: NodeDetailPanelProps) => {
   const { data: allPods = [] } = useRealtimePods<Pod>();
   const { data: allNodes = [] } = useRealtimeNodes();
 
@@ -134,7 +134,7 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
               className="flex items-center flex-shrink-0 rounded-lg border"
               style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
             >
-              {onEditYaml && <PanelActionButton icon={FileText} label="Edit YAML" onClick={() => onEditYaml(currentNode)} />}
+              {onOpenYamlEditor && <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor(currentNode)} />}
               {onOpenShell && <PanelActionButton icon={Terminal} label="Node Shell" onClick={() => onOpenShell(currentNode)} />}
               {onCordonToggle && (
                 <div className="group relative">
@@ -163,7 +163,7 @@ export const NodeDetailPanel = ({ node, events = [], onClose, onEditYaml, onOpen
               {onDelete && <PanelActionButton icon={Trash2} label="Delete node" danger onClick={() => onDelete(currentNode)} />}
               <PanelCloseButton
                 onClick={onClose}
-                borderLeft={onEditYaml || onOpenShell || onCordonToggle || onDrain || onDelete ? '1px solid var(--color-border)' : 'none'}
+                borderLeft={onOpenYamlEditor || onOpenShell || onCordonToggle || onDrain || onDelete ? '1px solid var(--color-border)' : 'none'}
                 label="Close node panel"
               />
             </div>
