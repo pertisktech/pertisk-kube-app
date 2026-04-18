@@ -537,11 +537,13 @@ pub async fn fetch_node_disk_metrics(
         ).await {
             Ok(Ok(summary)) => summary,
             Ok(Err(err)) if is_kubelet_stats_proxy_unavailable(&err) => {
-                NODE_DISK_METRICS_SUPPORTED.store(false, Ordering::Relaxed);
-                warn!(
-                    "Disabling node disk metrics collection because kubelet stats proxy is unavailable: {}",
-                    err
-                );
+                let was_supported = NODE_DISK_METRICS_SUPPORTED.swap(false, Ordering::Relaxed);
+                if was_supported {
+                    warn!(
+                        "Disabling node disk metrics collection because kubelet stats proxy is unavailable: {}",
+                        err
+                    );
+                }
                 return Err(());
             }
             Ok(Err(_)) => return Ok(None),

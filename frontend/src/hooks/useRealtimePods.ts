@@ -523,9 +523,9 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
             const missCount = (apiMissCountsRef.current.get(key) ?? 0) + 1;
             nextMissCounts.set(key, missCount);
 
-            // Keep pod for one full sync window when API lags behind WS.
-            // If missing for 2+ consecutive syncs, treat as deleted/missed and remove.
-            if (missCount >= 2 && !deletedPodsRef.current.has(key)) {
+            // If a pod disappears from the authoritative REST list, remove it on the
+            // next reconciliation pass so stale redeploy pods don't linger in the table.
+            if (missCount >= 1 && !deletedPodsRef.current.has(key)) {
               return [];
             }
             return [item];
