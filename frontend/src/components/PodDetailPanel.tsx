@@ -73,7 +73,7 @@ export const PodDetailPanel = ({ pod, onClose, onOpenYamlEditor, onOpenShell, on
   );
 
   const [hiddenEnvVars, setHiddenEnvVars] = useState<Record<string, Set<string>>>({});
-  const status = pod.status || pod.phase || 'Unknown';
+  const status = pod.display_status || pod.status || pod.phase || 'Unknown';
   const hasCpuMetrics = pod.cpu_usage_percent != null;
   const hasMemoryMetrics = pod.memory_usage_percent != null;
   const cpuPercent = toPercent(pod.cpu_usage_percent);

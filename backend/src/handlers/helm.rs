@@ -99,7 +99,7 @@ struct HelmRepositoryIndex {
 struct HelmRepositoryIndexEntry {
     version: Option<String>,
     #[serde(rename = "appVersion")]
-    appVersion: Option<String>,
+    app_version: Option<String>,
     description: Option<String>,
 }
 
@@ -543,7 +543,7 @@ async fn fetch_helm_charts_from_repositories(repo_urls: Vec<String>) -> (Vec<Hel
                                 name: chart_name,
                                 description: latest.description.unwrap_or_default(),
                                 version: latest.version.unwrap_or_else(|| "-".to_string()),
-                                app_version: latest.appVersion.unwrap_or_else(|| "-".to_string()),
+                                app_version: latest.app_version.unwrap_or_else(|| "-".to_string()),
                                 repository: display_repo_name.clone(),
                                 repository_url: repo_url.clone(),
                                 artifact_hub_url,

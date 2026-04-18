@@ -253,10 +253,13 @@ export const PodsPage = () => {
     {
       header: 'Status',
       accessor: (row: Pod) => {
-        const podStatus = row.status || row.phase || 'Unknown';
+        const podStatus = row.display_status || row.status || row.phase || 'Unknown';
         const normalized = podStatus.toLowerCase();
-        const showWarning = normalized !== 'running' && normalized !== 'completed' && normalized !== 'succeeded';
-        const tooltip = row.last_error || podStatus;
+        const hasErrorDetails = Boolean((row.last_error || '').trim());
+        const showWarning = hasErrorDetails || (normalized !== 'running' && normalized !== 'completed' && normalized !== 'succeeded');
+        const tooltip = (row.last_error || '').trim() || (showWarning
+          ? `No error message available (status: ${podStatus}).`
+          : podStatus);
 
         return (
           <span className="whitespace-nowrap inline-flex items-center gap-1.5">
@@ -367,8 +370,8 @@ export const PodsPage = () => {
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
     return source.sort((first, second) => {
-      const firstStatus = first.status || first.phase || '';
-      const secondStatus = second.status || second.phase || '';
+      const firstStatus = first.display_status || first.status || first.phase || '';
+      const secondStatus = second.display_status || second.status || second.phase || '';
 
       if (sortState.key === 'name') return first.name.localeCompare(second.name) * factor;
       if (sortState.key === 'namespace') return first.namespace.localeCompare(second.namespace) * factor;
