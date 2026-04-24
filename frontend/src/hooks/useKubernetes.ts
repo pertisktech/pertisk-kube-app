@@ -1539,11 +1539,20 @@ export const deleteCustomResource = (crdName: string, name: string, namespace?: 
   return apiDelete(`/crds/${encodeURIComponent(crdName)}/resources/${encodeURIComponent(name)}${params}`);
 };
 
-export const useHelmReleases = () => {
+export const useHelmReleases = (namespaces?: string[]) => {
+  const normalizedNamespaces = (namespaces ?? [])
+    .map((ns) => ns.trim())
+    .filter(Boolean);
+
   return useQuery({
-    queryKey: ['helm-releases'],
+    queryKey: ['helm-releases', normalizedNamespaces.join(',')],
     queryFn: async () => {
-      const res = await apiFetch('/helm/releases');
+      const params = new URLSearchParams();
+      if (normalizedNamespaces.length > 0) {
+        params.set('namespaces', normalizedNamespaces.join(','));
+      }
+      const suffix = params.toString() ? `?${params.toString()}` : '';
+      const res = await apiFetch(`/helm/releases${suffix}`);
       if (!res.ok) throw new Error('Failed to fetch Helm releases');
       const data = (await res.json()) as ApiResponse<HelmRelease>;
       return data.data;
