@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import type {
   Namespace,
@@ -65,7 +65,7 @@ const emitApiWarnings = (payload: unknown) => {
     const normalized = warning.trim();
     if (!normalized || seenApiWarnings.has(normalized)) return;
     seenApiWarnings.add(normalized);
-    toast.warning(normalized);
+    toast.warn(normalized);
   });
 };
 

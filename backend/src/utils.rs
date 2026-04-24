@@ -10,8 +10,10 @@ use kube::{
     core::{ApiResource, DynamicObject, GroupVersionKind},
     Api, Client, Config,
 };
+use std::fs;
 use std::collections::HashMap;
 use std::env;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::time::{timeout, Duration};
 use tracing::warn;
@@ -77,6 +79,153 @@ fn default_placeholder_user_message() -> String {
 
     "Kubernetes credentials are not available. Check your kubeconfig/context and re-authenticate, then restart the app.".to_string()
 }
+
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+fn resolve_exec_command_path(command: &str) -> Option<String> {
+    let cmd = command.trim();
+    if cmd.is_empty() {
+        return None;
+    }
+
+    if cmd.contains('/') {
+        let p = PathBuf::from(cmd);
+        return is_executable_file(&p).then(|| p.to_string_lossy().to_string());
+    }
+
+    let mut search_paths: Vec<PathBuf> = env::var_os("PATH")
+        .map(|raw| env::split_paths(&raw).collect())
+        .unwrap_or_default();
+
+    for candidate in [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ] {
+        let p = PathBuf::from(candidate);
+        if !search_paths.iter().any(|existing| existing == &p) {
+            search_paths.push(p);
+        }
+    }
+
+    if let Ok(home) = env::var("HOME") {
+        let local = PathBuf::from(&home).join(".local/bin");
+        if !search_paths.iter().any(|existing| existing == &local) {
+            search_paths.push(local);
+        }
+        let gcloud = PathBuf::from(home).join("google-cloud-sdk/bin");
+        if !search_paths.iter().any(|existing| existing == &gcloud) {
+            search_paths.push(gcloud);
+        }
+    }
+
+    for dir in search_paths {
+        let candidate = dir.join(cmd);
+        if is_executable_file(&candidate) {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    if cmd == "kubectl" {
+        for candidate in [
+            "/usr/local/bin/kubectl",
+            "/opt/homebrew/bin/kubectl",
+            "/Applications/OrbStack.app/Contents/MacOS/xbin/kubectl",
+            "/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin/kubectl",
+            "/Applications/Docker.app/Contents/Resources/bin/kubectl",
+        ] {
+            let p = PathBuf::from(candidate);
+            if is_executable_file(&p) {
+                return Some(p.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn read_effective_kubeconfig() -> anyhow::Result<Kubeconfig> {
+    let configured_paths = env::var_os("KUBECONFIG")
+        .map(|raw| {
+            env::split_paths(&raw)
+                .filter(|p| p.exists())
+                .collect::<Vec<PathBuf>>()
+        })
+        .unwrap_or_default();
+
+    if let Some(path) = configured_paths.first() {
+        return Kubeconfig::read_from(path)
+            .or_else(|_| Kubeconfig::read())
+            .map_err(|e| anyhow::anyhow!("failed to read kubeconfig: {e}"));
+    }
+
+    Kubeconfig::read().map_err(|e| anyhow::anyhow!("failed to read default kubeconfig: {e}"))
+}
+
+fn rewrite_exec_command_to_absolute(kc: &mut Kubeconfig, context_name: Option<&str>) {
+    let user_name = {
+        let ctx_name = context_name.or_else(|| kc.current_context.as_deref());
+        ctx_name.and_then(|n| {
+            kc.contexts
+                .iter()
+                .find(|c| c.name == n)
+                .and_then(|c| c.context.as_ref())
+                .map(|c| c.user.clone())
+        })
+    };
+
+    if let Some(ref uname) = user_name {
+        for named_auth in &mut kc.auth_infos {
+            if named_auth.name == *uname {
+                if let Some(ref mut ai) = named_auth.auth_info {
+                    if let Some(ref mut exec) = ai.exec {
+                        if let Some(command) = exec.command.as_deref() {
+                            if let Some(resolved) = resolve_exec_command_path(command) {
+                                exec.command = Some(resolved);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn try_load_kube_config_with_resolved_exec(
+    options: &KubeConfigOptions,
+) -> anyhow::Result<Config> {
+    let mut kc = read_effective_kubeconfig()?;
+    rewrite_exec_command_to_absolute(&mut kc, options.context.as_deref());
+    Config::from_custom_kubeconfig(kc, options)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to load kubeconfig with resolved exec command: {e}"))
+}
+
+    fn is_missing_exec_error(message: &str) -> bool {
+        let err_text = message.to_lowercase();
+        err_text.contains("unable to run auth exec")
+        || err_text.contains("no such file or directory")
+        || (err_text.contains("auth exec") && err_text.contains("os error 2"))
+    }
 
 pub fn kube_list_warning_response(resource_name: &str, err: &kube::Error) -> Option<Response> {
     if let kube::Error::Api(api_err) = err {
@@ -152,19 +301,77 @@ pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, KubeClien
         {
             Ok(Ok(cfg)) => match Client::try_from(cfg) {
                 Ok(c) => return Ok((c, KubeClientStatus::default())),
-                Err(e) => warn!(
-                    "Kubernetes client build failed for context '{}': {}. \
-                     Starting with placeholder client.",
-                    ctx, e
-                ),
+                Err(e) => {
+                    if is_missing_exec_error(&e.to_string()) {
+                        match tokio::time::timeout(
+                            std::time::Duration::from_secs(8),
+                            try_load_kube_config_with_resolved_exec(&options),
+                        )
+                        .await
+                        {
+                            Ok(Ok(resolved_cfg)) => match Client::try_from(resolved_cfg) {
+                                Ok(c) => return Ok((c, KubeClientStatus::default())),
+                                Err(inner) => warn!(
+                                    "Resolved exec command for context '{}', but client build still failed: {}. \
+                                     Starting with placeholder client.",
+                                    ctx, inner
+                                ),
+                            },
+                            Ok(Err(inner)) => warn!(
+                                "Kubeconfig fallback with resolved exec command failed for context '{}': {}",
+                                ctx, inner
+                            ),
+                            Err(_) => warn!(
+                                "Kubeconfig fallback with resolved exec command timed out for context '{}'.",
+                                ctx
+                            ),
+                        }
+                    }
+
+                    warn!(
+                        "Kubernetes client build failed for context '{}': {}. \
+                         Starting with placeholder client.",
+                        ctx, e
+                    )
+                }
             },
-            Ok(Err(e)) => warn!(
-                "Kubeconfig load failed for context '{}': {}. \
-                 Exec credential may be unavailable (OIDC server down, plugin missing, etc.). \
-                 Starting with placeholder client — API calls will fail with auth errors \
-                 until credentials are available.",
-                ctx, e
-            ),
+            Ok(Err(e)) => {
+                let missing_exec = is_missing_exec_error(&e.to_string());
+
+                if missing_exec {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(8),
+                        try_load_kube_config_with_resolved_exec(&options),
+                    )
+                    .await
+                    {
+                        Ok(Ok(cfg)) => match Client::try_from(cfg) {
+                            Ok(c) => return Ok((c, KubeClientStatus::default())),
+                            Err(inner) => warn!(
+                                "Resolved exec command for context '{}', but client build still failed: {}. \
+                                 Starting with placeholder client.",
+                                ctx, inner
+                            ),
+                        },
+                        Ok(Err(inner)) => warn!(
+                            "Kubeconfig fallback with resolved exec command failed for context '{}': {}",
+                            ctx, inner
+                        ),
+                        Err(_) => warn!(
+                            "Kubeconfig fallback with resolved exec command timed out for context '{}'.",
+                            ctx
+                        ),
+                    }
+                }
+
+                warn!(
+                    "Kubeconfig load failed for context '{}': {}. \
+                     Exec credential may be unavailable (OIDC server down, plugin missing, etc.). \
+                     Starting with placeholder client — API calls will fail with auth errors \
+                     until credentials are available.",
+                    ctx, e
+                )
+            }
             Err(_) => warn!(
                 "Kubeconfig load timed out (>8 s) for context '{}'. \
                  Exec credential plugin is slow or unresponsive. \
@@ -217,16 +424,7 @@ pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, KubeClien
 /// It exists solely to let the HTTP server start and respond to health probes even
 /// when exec credential plugins are temporarily unavailable.
 async fn build_placeholder_client(context_name: Option<&str>) -> anyhow::Result<Client> {
-    let kubeconfig_path = env::var("KUBECONFIG")
-        .ok()
-        .map(|s| std::path::PathBuf::from(s.trim().to_string()))
-        .filter(|p| p.exists());
-
-    let mut kubeconfig = match kubeconfig_path {
-        Some(ref path) => Kubeconfig::read_from(path)
-            .or_else(|_| Kubeconfig::read()),
-        None => Kubeconfig::read(),
-    };
+    let mut kubeconfig = read_effective_kubeconfig();
 
     if let Ok(ref mut kc) = kubeconfig {
         // Find the user entry for the target context and strip exec credentials

@@ -290,6 +290,82 @@ fn sidecar_path() -> Option<String> {
         .and_then(|value| value.into_string().ok())
 }
 
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+fn resolve_executable_command(command: &str) -> Option<PathBuf> {
+    let cmd = command.trim();
+    if cmd.is_empty() {
+        return None;
+    }
+
+    if cmd.contains('/') {
+        let path = PathBuf::from(cmd);
+        return is_executable_file(&path).then_some(path);
+    }
+
+    let mut search_paths = Vec::<PathBuf>::new();
+    if let Some(path) = sidecar_path() {
+        search_paths.extend(env::split_paths(&path));
+    }
+
+    for candidate in [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ] {
+        append_unique_path(&mut search_paths, PathBuf::from(candidate));
+    }
+
+    if let Some(home) = env_value("HOME") {
+        append_unique_path(&mut search_paths, PathBuf::from(&home).join(".local/bin"));
+        append_unique_path(&mut search_paths, PathBuf::from(&home).join("google-cloud-sdk/bin"));
+    }
+
+    for dir in search_paths {
+        let candidate = dir.join(cmd);
+        if is_executable_file(&candidate) {
+            return Some(candidate);
+        }
+    }
+
+    // Common kubectl locations used by desktop runtimes (OrbStack/Rancher Desktop/Docker Desktop)
+    if cmd == "kubectl" {
+        for candidate in [
+            "/usr/local/bin/kubectl",
+            "/opt/homebrew/bin/kubectl",
+            "/Applications/OrbStack.app/Contents/MacOS/xbin/kubectl",
+            "/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin/kubectl",
+            "/Applications/Docker.app/Contents/Resources/bin/kubectl",
+        ] {
+            let path = PathBuf::from(candidate);
+            if is_executable_file(&path) {
+                return Some(path);
+            }
+        }
+    }
+
+    None
+}
+
 fn forward_env_if_present(command: &mut Command, key: &str) {
     if let Some(value) = env_value(key) {
         command.env(key, value);
@@ -523,6 +599,17 @@ fn try_begin_restart(restart_in_progress: &Arc<Mutex<bool>>) -> bool {
 
     *restarting = true;
     true
+}
+
+fn wait_and_begin_restart(restart_in_progress: &Arc<Mutex<bool>>, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if try_begin_restart(restart_in_progress) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(120));
+    }
+    false
 }
 
 fn end_restart(restart_in_progress: &Arc<Mutex<bool>>) {
@@ -868,9 +955,9 @@ fn restart_backend_sidecar_with_options(
     state: &BackendState,
     require_cluster_verification: bool,
 ) -> anyhow::Result<()> {
-    if !try_begin_restart(&state.restart_in_progress) {
+    if !wait_and_begin_restart(&state.restart_in_progress, Duration::from_secs(20)) {
         return Err(anyhow::anyhow!(
-            "sidecar restart already in progress; retry in a moment"
+            "sidecar restart already in progress for too long; retry in a moment"
         ));
     }
 
@@ -1205,7 +1292,31 @@ fn restart_sidecar(app: AppHandle, state: State<'_, BackendState>) -> Result<(),
 /// command exits successfully the sidecar is restarted so the backend picks up
 /// the freshly cached credentials.
 #[tauri::command]
-fn trigger_kube_browser_login(app: AppHandle, state: State<'_, BackendState>) -> Result<(), String> {
+async fn trigger_kube_browser_login(app: AppHandle, state: State<'_, BackendState>) -> Result<(), String> {
+    let login_state = BackendState {
+        child: Arc::clone(&state.child),
+        shutting_down: Arc::clone(&state.shutting_down),
+        config: Arc::clone(&state.config),
+        switch_status: Arc::clone(&state.switch_status),
+        restart_in_progress: Arc::clone(&state.restart_in_progress),
+    };
+    let app_handle = app.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let guarded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            trigger_kube_browser_login_impl(&app_handle, &login_state)
+        }));
+
+        match guarded {
+            Ok(result) => result,
+            Err(_) => Err("browser login workflow crashed unexpectedly".to_string()),
+        }
+    })
+    .await
+    .map_err(|e| format!("browser login task failed: {e}"))?
+}
+
+fn trigger_kube_browser_login_impl(app: &AppHandle, state: &BackendState) -> Result<(), String> {
     let cfg = state
         .config
         .lock()
@@ -1292,13 +1403,43 @@ fn trigger_kube_browser_login(app: AppHandle, state: State<'_, BackendState>) ->
         })
         .unwrap_or_default();
 
+    let exec_env: Vec<(String, String)> = exec
+        .get(serde_yaml::Value::String("env".into()))
+        .and_then(|v| v.as_sequence())
+        .map(|seq| {
+            seq.iter()
+                .filter_map(|entry| {
+                    let map = entry.as_mapping()?;
+                    let name = map
+                        .get(serde_yaml::Value::String("name".into()))
+                        .and_then(|v| v.as_str())?
+                        .to_string();
+                    let value = map
+                        .get(serde_yaml::Value::String("value".into()))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    Some((name, value))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     info!(
         "Launching exec credential browser login: {} {:?}",
         command_str, args
     );
 
-    let mut cmd = Command::new(command_str);
-    cmd.args(&args);
+    let resolved_command = resolve_executable_command(command_str).ok_or_else(|| {
+        format!(
+            "failed to resolve exec credential command '{command_str}' on PATH. \
+             Ensure the tool is installed and available in your login shell PATH."
+        )
+    })?;
+
+    let mut cmd = Command::new(&resolved_command);
+    cmd.args(&args)
+        .stdin(Stdio::null());
 
     // Provide a full PATH and all required env vars so the plugin can find its
     // dependencies and open the system browser.
@@ -1320,12 +1461,15 @@ fn trigger_kube_browser_login(app: AppHandle, state: State<'_, BackendState>) ->
     if let Some(ref p) = kubeconfig_path {
         cmd.env("KUBECONFIG", p);
     }
+    for (key, value) in exec_env {
+        cmd.env(key, value);
+    }
 
     // Run synchronously — the plugin opens a browser and blocks until the user
     // finishes logging in or the operation is cancelled.
     let status = cmd
         .status()
-        .map_err(|e| format!("failed to launch '{command_str}': {e}"))?;
+        .map_err(|e| format!("failed to launch '{}': {e}", resolved_command.display()))?;
 
     if !status.success() {
         return Err(format!(
@@ -1338,7 +1482,7 @@ fn trigger_kube_browser_login(app: AppHandle, state: State<'_, BackendState>) ->
 
     // Restart the sidecar so the backend builds a fresh Kubernetes client using
     // the credentials that were just written to the credential cache.
-    restart_backend_sidecar(&app, &state)
+    restart_backend_sidecar(app, state)
         .map_err(|e| format!("login succeeded but sidecar restart failed: {e}"))
 }
 

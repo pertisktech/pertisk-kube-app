@@ -708,3 +708,77 @@ body,
   min-width: 100%;
 }
 
+
+/* ── react-toastify: violet dark theme overrides ──────────────────────────── */
+:root {
+  --toastify-color-dark: #181a2c;
+  --toastify-color-light: #181a2c;
+  --toastify-color-info: #60a5fa;
+  --toastify-color-success: #4ade9b;
+  --toastify-color-warning: #fbbf24;
+  --toastify-color-error: #ff5c56;
+  --toastify-text-color-dark: #e6e7f0;
+  --toastify-font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --toastify-toast-min-height: 52px;
+  --toastify-toast-max-height: 300px;
+  --toastify-z-index: 9999;
+}
+
+.Toastify__toast {
+  background: #181a2c !important;
+  border: 1px solid #2c2f4c !important;
+  border-radius: 12px !important;
+  font-size: 13px !important;
+  font-family: var(--toastify-font-family) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55) !important;
+  color: #e6e7f0 !important;
+}
+
+.Toastify__toast--success {
+  border-left: 3px solid #4ade9b !important;
+}
+
+.Toastify__toast--error {
+  border-left: 3px solid #ff5c56 !important;
+}
+
+.Toastify__toast--warning {
+  border-left: 3px solid #fbbf24 !important;
+}
+
+.Toastify__toast--info {
+  border-left: 3px solid #60a5fa !important;
+}
+
+.Toastify__toast--default {
+  border-left: 3px solid #9a7bf7 !important;
+}
+
+.Toastify__progress-bar--success {
+  background: #4ade9b !important;
+}
+
+.Toastify__progress-bar--error {
+  background: #ff5c56 !important;
+}
+
+.Toastify__progress-bar--warning {
+  background: #fbbf24 !important;
+}
+
+.Toastify__progress-bar--info {
+  background: #60a5fa !important;
+}
+
+.Toastify__toast-icon svg {
+  fill: currentColor;
+}
+
+.Toastify__close-button {
+  color: #7778a0 !important;
+  opacity: 1 !important;
+}
+
+.Toastify__close-button:hover {
+  color: #e6e7f0 !important;
+}

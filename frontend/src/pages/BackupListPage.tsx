@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { ConfirmDialog, DataTable } from '../components';
 import { StatusBadge } from '../components/StatusBadge';
 import { Trash2 } from '../components/Icons';

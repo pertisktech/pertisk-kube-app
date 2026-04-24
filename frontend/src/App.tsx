@@ -1,6 +1,6 @@
 import { lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Toaster } from 'sonner';
+import { ToastContainer, Bounce } from 'react-toastify';
 import { Layout } from './components';
 import { NamespaceProvider } from './context/NamespaceContext';
 
@@ -54,20 +54,17 @@ const ResourceMapPage = lazy(() => import('./pages/ResourceMapPage').then(m => (
 export const App = () => {
   return (
     <NamespaceProvider>
-      <Toaster
+      <ToastContainer
         position="top-right"
-        closeButton
-        toastOptions={{
-          style: {
-            background: 'var(--color-naturals-n3)',
-            border: '1px solid var(--color-naturals-n6)',
-            color: 'var(--color-naturals-n13)',
-            borderRadius: 'var(--radius-lg)',
-            fontSize: '13px',
-            fontFamily: 'var(--font-sans)',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
-          },
-        }}
+        autoClose={4000}
+        hideProgressBar={false}
+        newestOnTop
+        closeOnClick
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="dark"
+        transition={Bounce}
       />
       <Router>
           <Routes>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { Folder, FileText, RotateCw, ArrowUp, ArrowDown, HardDrive, Server } from './Icons';
 import { getPodFiles, getPodPathDownloadUrl, uploadPodFiles, usePods } from '../hooks/useKubernetes';

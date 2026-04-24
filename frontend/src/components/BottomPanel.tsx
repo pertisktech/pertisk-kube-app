@@ -26,7 +26,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import YAML from 'yaml';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { Terminal as TerminalComponent } from './Terminal';
 import { PodFileTransfer } from './PodFileTransfer';
 import { getHelmChartReadme, getHelmChartValues, getHelmReleaseValues, installHelmChart, useHelmChartVersions, useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
@@ -1672,7 +1672,7 @@ export const BottomPanel = () => {
         });
 
         if (!savedPath) {
-          toast.message('Export cancelled.');
+          toast('Export cancelled.');
           return;
         }
 
@@ -1719,7 +1719,7 @@ export const BottomPanel = () => {
     } catch (err) {
       const maybeDomErr = err as { name?: string };
       if (maybeDomErr?.name === 'AbortError') {
-        toast.message('Export cancelled.');
+        toast('Export cancelled.');
         return;
       }
 

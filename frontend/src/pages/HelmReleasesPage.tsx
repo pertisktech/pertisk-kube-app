@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import YAML from 'yaml';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { Trash2 } from '../components/Icons';
 import { useHelmReleases, deleteHelmRelease, getHelmReleaseYaml } from '../hooks/useKubernetes';
 import { DataTable } from '../components/DataTable';

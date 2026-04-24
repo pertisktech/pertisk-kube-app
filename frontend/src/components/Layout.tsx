@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { useNamespace } from '../context/NamespaceContext';
 import { useRealtimeNamespaces, useRealtimeCrds } from '../hooks/useRealtimeResources';
 import { useNamespaces } from '../hooks/useKubernetes';
@@ -390,7 +390,7 @@ export const Layout = () => {
       toast.success('Authenticated successfully. Cluster connection restored.');
       setAuthStatus(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Browser login failed.');
+      toast.error(getErrorMessage(err) ?? 'Browser login failed.');
     } finally {
       setBrowserLoginLoading(false);
     }
@@ -460,7 +460,7 @@ export const Layout = () => {
       await refreshClustersForKubeconfig(nextPath);
       setShowKubeconfigModal(false);
       setStartupClusterSelectionDone(true);
-      toast.success('Cluster selection applied and sidecar restarted.');
+      toast.success('Cluster switched successfully.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to apply cluster selection.');
     } finally {

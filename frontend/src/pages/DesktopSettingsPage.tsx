@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
 import { checkHelmRepository } from '../hooks/useKubernetes';
 import { type IconComponent, Settings, Terminal, FileCode, Archive, Plus, Pencil, Trash2, ChevronDown } from '../components/Icons';

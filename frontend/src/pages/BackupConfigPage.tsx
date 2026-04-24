@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { saveBackupS3Config, testBackupS3, useBackupSettings } from '../hooks/useKubernetes';
 import { Eye, EyeOff } from '../components/Icons';
 import type { BackupSettings } from '../types';
