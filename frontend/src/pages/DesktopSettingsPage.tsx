@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
 import { useTheme } from '../context/ThemeContext';
 import { checkHelmRepository } from '../hooks/useKubernetes';

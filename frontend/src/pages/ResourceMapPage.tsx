@@ -50,7 +50,7 @@ import { useNamespace } from '../context/NamespaceContext';
 import { useResourceMap } from '../hooks/useKubernetes';
 import type { ResourceMapNode as ApiNode, ResourceMapEdge as ApiEdge } from '../types';
 import { cn } from '../utils';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 
 // ── Resource kind configuration ───────────────────────────────────────────────
 interface KindConfig {
@@ -651,7 +651,7 @@ export const ResourceMapPage = () => {
         });
 
         if (!savedPath) {
-          toast.message('Export cancelled.');
+          toast.info('Export cancelled.');
         } else {
           toast.success(`Resource map image saved to ${savedPath}`);
         }

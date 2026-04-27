@@ -1,6 +1,6 @@
 import { useState, useMemo, memo } from 'react';
 import { Link } from 'react-router-dom';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import {
   PieChart,
@@ -468,7 +468,7 @@ export const WorkloadsOverviewPage = () => {
 
   const handleRestartAllWorkloads = () => {
     if (restartableWorkloadsCount === 0) {
-      toast.message('No restartable workloads found for the current namespace filter.');
+      toast.info('No restartable workloads found for the current namespace filter.');
       return;
     }
 

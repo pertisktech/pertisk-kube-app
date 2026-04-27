@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { useNamespace } from '../context/NamespaceContext';
 import { useRealtimeNamespaces, useRealtimeCrds } from '../hooks/useRealtimeResources';
 import { useNamespaces } from '../hooks/useKubernetes';

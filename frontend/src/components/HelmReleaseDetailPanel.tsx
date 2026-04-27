@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { Box, Loader, RotateCw, Upload, Trash2 } from './Icons';
 import type { HelmRelease } from '../types';
 import { useHelmReleaseHistory, useHelmReleaseResources, rollbackHelmRelease } from '../hooks/useKubernetes';

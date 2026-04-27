@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from 'react-toastify';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import type {
   Namespace,

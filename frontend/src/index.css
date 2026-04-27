@@ -334,37 +334,72 @@ body,
   opacity: 1;
 }
 
-/* Sonner toaster — match app theme */
-[data-sonner-toast] {
-  gap: 10px !important;
+/* React-Toastify theme alignment */
+:root {
+  --toastify-font-family: var(--font-sans);
+  --toastify-color-light: var(--color-surface-elevated);
+  --toastify-color-dark: var(--color-surface-elevated);
+  --toastify-text-color-light: var(--color-text);
+  --toastify-text-color-dark: var(--color-text);
+  --toastify-color-info: var(--color-blue-b1);
+  --toastify-color-success: var(--color-green-g1);
+  --toastify-color-warning: var(--color-yellow-y1);
+  --toastify-color-error: var(--color-red-r1);
+  --toastify-toast-width: 360px;
+  --toastify-toast-min-height: 56px;
+  --toastify-toast-padding: 10px 12px;
+  --toastify-toast-bd-radius: var(--radius-lg);
 }
-[data-sonner-toast] [data-title] {
-  font-weight: 500;
-  color: var(--color-text) !important;
+
+.Toastify__toast-container {
+  width: min(92vw, 380px);
 }
-[data-sonner-toast] [data-description] {
-  color: var(--color-text-secondary) !important;
+
+.Toastify__toast {
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface-elevated) 92%, transparent);
+  color: var(--color-text);
+  box-shadow: var(--shadow-md);
+  gap: 10px;
 }
-[data-sonner-toast][data-type='success'] {
-  border-color: color-mix(in srgb, var(--color-green-g1) 30%, var(--color-border)) !important;
+
+.Toastify__toast-body {
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 0;
 }
-[data-sonner-toast][data-type='success'] [data-icon] svg {
-  color: var(--color-green-g1) !important;
+
+.Toastify__toast-icon svg {
+  fill: currentColor;
 }
-[data-sonner-toast][data-type='error'] {
-  border-color: color-mix(in srgb, var(--color-red-r1) 30%, var(--color-naturals-n6)) !important;
+
+.Toastify__toast--success {
+  border-color: color-mix(in srgb, var(--color-green-g1) 30%, var(--color-border));
 }
-[data-sonner-toast][data-type='error'] [data-icon] svg {
-  color: var(--color-red-r1) !important;
+
+.Toastify__toast--error {
+  border-color: color-mix(in srgb, var(--color-red-r1) 30%, var(--color-border));
 }
-[data-sonner-toast] [data-close-button] {
-  background: var(--color-hover) !important;
-  border-color: var(--color-border) !important;
-  color: var(--color-text-secondary) !important;
+
+.Toastify__toast--warning {
+  border-color: color-mix(in srgb, var(--color-yellow-y1) 30%, var(--color-border));
 }
-[data-sonner-toast] [data-close-button]:hover {
-  background: var(--color-border) !important;
-  color: var(--color-text) !important;
+
+.Toastify__toast--info {
+  border-color: color-mix(in srgb, var(--color-blue-b1) 30%, var(--color-border));
+}
+
+.Toastify__close-button {
+  color: var(--color-text-secondary);
+  opacity: 1;
+}
+
+.Toastify__close-button:hover {
+  color: var(--color-text);
+}
+
+.Toastify__progress-bar {
+  background: color-mix(in srgb, var(--color-primary) 76%, var(--color-bg));
 }
 
 .pod-transfer-shell {

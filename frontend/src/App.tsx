@@ -1,8 +1,9 @@
 import { lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Toaster } from 'sonner';
+import { ToastContainer } from 'react-toastify';
 import { Layout } from './components';
 import { NamespaceProvider } from './context/NamespaceContext';
+import { useTheme } from './context/ThemeContext';
 
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
 const ClusterPage = lazy(() => import('./pages/ClusterPage').then(m => ({ default: m.ClusterPage })));
@@ -52,22 +53,20 @@ const ResourceMapPage = lazy(() => import('./pages/ResourceMapPage').then(m => (
 
 
 export const App = () => {
+  const theme = useTheme();
+
   return (
     <NamespaceProvider>
-      <Toaster
+      <ToastContainer
         position="top-right"
-        closeButton
-        toastOptions={{
-          style: {
-            background: 'var(--color-naturals-n3)',
-            border: '1px solid var(--color-naturals-n6)',
-            color: 'var(--color-naturals-n13)',
-            borderRadius: 'var(--radius-lg)',
-            fontSize: '13px',
-            fontFamily: 'var(--font-sans)',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
-          },
-        }}
+        autoClose={3500}
+        newestOnTop
+        closeOnClick
+        pauseOnHover
+        draggable
+        hideProgressBar={false}
+        theme={theme?.isDark ? 'dark' : 'light'}
+        limit={5}
       />
       <Router>
           <Routes>

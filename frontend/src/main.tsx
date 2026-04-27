@@ -6,6 +6,7 @@ import { FeatureSettingsProvider } from './context/FeatureSettingsContext';
 import { App } from './App';
 import { installDesktopBridge } from './utils/desktopBridge';
 import './index.css';
+import 'react-toastify/dist/ReactToastify.css';
 import './styles/theme.css';
 
 installDesktopBridge();
