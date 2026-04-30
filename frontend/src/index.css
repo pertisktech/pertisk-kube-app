@@ -145,7 +145,7 @@ html.dark {
 html.light {
   --color-bg: #f5f5fa;
   --color-surface: #ffffff;
-  --color-surface-elevated: #ffffff;
+  --color-surface-elevated: #f0f0f9;
   --color-hover: #eeeef8;
   --color-border: #e2e2ec;
   --color-text: #16162a;
