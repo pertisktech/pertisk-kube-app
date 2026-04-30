@@ -214,6 +214,7 @@ export const Layout = () => {
   const isResizingRef = useRef(false);
   const resizeStartXRef = useRef(0);
   const resizeStartWidthRef = useRef(0);
+  const kubeconfigRefreshRequestRef = useRef(0);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -398,9 +399,15 @@ export const Layout = () => {
 
   const refreshClustersForKubeconfig = async (path: string) => {
     if (!desktopMode) return;
+
+    const requestId = ++kubeconfigRefreshRequestRef.current;
     setKubeconfigLoading(true);
     try {
       const clusters = await listDesktopKubeconfigClusters(path || null);
+      if (requestId !== kubeconfigRefreshRequestRef.current) {
+        return;
+      }
+
       setKubeClusters(clusters);
       if (clusters.length === 0) {
         setSelectedClusterContext('');
@@ -409,6 +416,10 @@ export const Layout = () => {
         setSelectedClusterContext((prev) => prev || currentCluster);
       }
     } catch (err) {
+      if (requestId !== kubeconfigRefreshRequestRef.current) {
+        return;
+      }
+
       const rawMessage = getErrorMessage(err);
       if (isNoKubeconfigError(rawMessage)) {
         setKubeClusters([]);
@@ -418,7 +429,9 @@ export const Layout = () => {
       setKubeClusters([]);
       toast.error(err instanceof Error ? err.message : 'Failed to load clusters for kubeconfig.');
     } finally {
-      setKubeconfigLoading(false);
+      if (requestId === kubeconfigRefreshRequestRef.current) {
+        setKubeconfigLoading(false);
+      }
     }
   };
 
@@ -772,6 +785,7 @@ export const Layout = () => {
                 const selected = e.target.value;
                 setKubeconfigInput(selected);
                 setSelectedClusterContext('');
+                setClusterSearch('');
                 void refreshClustersForKubeconfig(selected);
               }}
               className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
