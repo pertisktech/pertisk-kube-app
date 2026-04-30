@@ -1698,14 +1698,6 @@ export const Layout = () => {
             </button>
           </div>
           <div data-tauri-drag-region className="flex items-center gap-3 px-4">
-            <button
-              type="button"
-              onClick={() => setShowSidecarLogs(true)}
-              className="text-xs text-text-secondary hover:text-text px-2 py-1 rounded border border-border bg-surface"
-              title="Backend logs"
-            >
-              Logs
-            </button>
             <span className="text-[13px] font-medium tracking-wide text-text-secondary whitespace-nowrap">
               {topRightTitle}
             </span>
