@@ -43,6 +43,12 @@ export async function getDesktopSidecarConfig(): Promise<DesktopSidecarConfig> {
   return config;
 }
 
+export async function getDesktopSidecarLogs(): Promise<string[]> {
+  if (!isDesktopRuntime()) return [];
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string[]>('get_sidecar_logs');
+}
+
 export async function saveDesktopSidecarConfig(config: DesktopSidecarConfig): Promise<void> {
   if (!isDesktopRuntime()) {
     throw new Error('Desktop sidecar settings are only available in Tauri runtime.');
@@ -78,6 +84,15 @@ export async function triggerKubeBrowserLogin(): Promise<void> {
   }
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('trigger_kube_browser_login');
+}
+
+export async function openDesktopExternalUrl(url: string): Promise<void> {
+  if (!isDesktopRuntime()) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('open_external_url', { url });
 }
 
 export interface DesktopAuthStatus {
@@ -131,6 +146,47 @@ export async function listDesktopKubeconfigClusters(kubeconfigPath?: string | nu
     kubeconfigPath: kubeconfigPath ?? null,
   });
   return clusters;
+}
+
+export interface EksClusterEntry {
+  name: string;
+  region: string;
+  arn: string;
+}
+
+export async function listAwsEksClusters(
+  accessKey: string,
+  secretKey: string,
+  sessionToken: string,
+  region: string,
+): Promise<EksClusterEntry[]> {
+  if (!isDesktopRuntime()) {
+    return [];
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<EksClusterEntry[]>('list_eks_clusters', {
+    accessKey,
+    secretKey,
+    sessionToken,
+    region,
+  });
+}
+
+export async function awsEksUpdateKubeconfig(
+  accessKey: string,
+  secretKey: string,
+  sessionToken: string,
+  region: string,
+  clusterName: string,
+): Promise<string> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string>('aws_eks_update_kubeconfig', {
+    accessKey,
+    secretKey,
+    sessionToken,
+    region,
+    clusterName,
+  });
 }
 
 export async function waitDesktopClusterSwitchResult(

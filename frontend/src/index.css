@@ -734,6 +734,11 @@ body,
   color: #e6e7f0 !important;
 }
 
+.Toastify__toast-body {
+  user-select: text !important;
+  cursor: text;
+}
+
 .Toastify__toast--success {
   border-left: 3px solid #4ade9b !important;
 }

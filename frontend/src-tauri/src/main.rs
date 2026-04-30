@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::env;
@@ -17,12 +18,29 @@ use tracing::{error, info, warn};
 #[cfg(target_os = "macos")]
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem};
 
+const SIDECAR_LOG_CAPACITY: usize = 2000;
+
+type SidecarLogs = Arc<Mutex<VecDeque<String>>>;
+
+static APP_LOG_BUF: OnceLock<Mutex<VecDeque<String>>> = OnceLock::new();
+
+fn app_log(msg: impl Into<String>) {
+    let buf = APP_LOG_BUF.get_or_init(|| Mutex::new(VecDeque::new()));
+    if let Ok(mut guard) = buf.lock() {
+        guard.push_back(msg.into());
+        while guard.len() > SIDECAR_LOG_CAPACITY {
+            guard.pop_front();
+        }
+    }
+}
+
 struct BackendState {
     child: Arc<Mutex<Option<Child>>>,
     shutting_down: Arc<Mutex<bool>>,
     config: Arc<Mutex<SidecarConfig>>,
     switch_status: Arc<Mutex<ClusterSwitchStatus>>,
     restart_in_progress: Arc<Mutex<bool>>,
+    logs: SidecarLogs,
 }
 
 const DEFAULT_PORT: u16 = 15222;
@@ -366,6 +384,22 @@ fn resolve_executable_command(command: &str) -> Option<PathBuf> {
     None
 }
 
+fn shell_quote(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn build_shell_command(command: &str, args: &[String]) -> String {
+    let mut parts = Vec::with_capacity(args.len() + 1);
+    parts.push(shell_quote(command));
+    for arg in args {
+        parts.push(shell_quote(arg));
+    }
+    parts.join(" ")
+}
+
 fn forward_env_if_present(command: &mut Command, key: &str) {
     if let Some(value) = env_value(key) {
         command.env(key, value);
@@ -667,7 +701,32 @@ fn is_bad_cpu_type_error(error: &std::io::Error) -> bool {
             .contains("bad cpu type in executable")
 }
 
-fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> {
+fn push_log(logs: &SidecarLogs, line: String) {
+    if let Ok(mut buf) = logs.lock() {
+        buf.push_back(line);
+        while buf.len() > SIDECAR_LOG_CAPACITY {
+            buf.pop_front();
+        }
+    }
+}
+
+fn spawn_log_reader(reader: impl Read + Send + 'static, logs: SidecarLogs, prefix: &'static str) {
+    thread::spawn(move || {
+        let reader = BufReader::new(reader);
+        for line in reader.lines() {
+            match line {
+                Ok(l) => {
+                    let entry = format!("[{}] {}", prefix, l);
+                    info!("{}", entry);
+                    push_log(&logs, entry);
+                }
+                Err(_) => break,
+            }
+        }
+    });
+}
+
+fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig, logs: &SidecarLogs) -> anyhow::Result<Child> {
     if !is_port_bindable(cfg.port) {
         return Err(anyhow::anyhow!(
             "sidecar port {} is already in use; choose a different port in Desktop Settings",
@@ -737,8 +796,8 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
             .env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
             .env("PORT", cfg.port.to_string())
             .env("GRPC_PORT", grpc_port.to_string())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         configure_sidecar_environment(&mut command);
 
@@ -764,6 +823,14 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
 
         match command.spawn() {
             Ok(mut child) => {
+                // Attach log readers for stdout/stderr before the exit check.
+                if let Some(stdout) = child.stdout.take() {
+                    spawn_log_reader(stdout, Arc::clone(logs), "out");
+                }
+                if let Some(stderr) = child.stderr.take() {
+                    spawn_log_reader(stderr, Arc::clone(logs), "err");
+                }
+
                 // If the process exits immediately (common when port is already occupied), fail fast.
                 thread::sleep(Duration::from_millis(250));
                 if let Some(status) = child.try_wait()? {
@@ -815,7 +882,7 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
 fn discover_kubeconfig_candidates() -> Vec<String> {
     let mut candidates = Vec::<String>::new();
 
-    if let Ok(from_env) = std::env::var("KUBECONFIG") {
+    if let Some(from_env) = env_value("KUBECONFIG") {
         for item in from_env.split(':') {
             let path = item.trim();
             if !path.is_empty() {
@@ -837,12 +904,52 @@ fn discover_kubeconfig_candidates() -> Vec<String> {
         if let Ok(entries) = fs::read_dir(kube_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                    if ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml") {
-                        if path.exists() {
-                            candidates.push(path.to_string_lossy().to_string());
-                        }
-                    }
+                if !path.is_file() {
+                    continue;
+                }
+
+                let file_name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.to_lowercase())
+                    .unwrap_or_default();
+
+                let has_yaml_ext = path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
+                    .unwrap_or(false);
+
+                let is_likely_kubeconfig = file_name == "config"
+                    || file_name.contains("kubeconfig")
+                    || file_name.contains("kube-config")
+                    || file_name.contains("omni")
+                    || file_name.contains("talos");
+
+                if has_yaml_ext || is_likely_kubeconfig {
+                    candidates.push(path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    if let Some(home) = env_value("HOME") {
+        let talos_dir = PathBuf::from(home).join(".talos");
+        if let Ok(entries) = fs::read_dir(talos_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+
+                let file_name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.to_lowercase())
+                    .unwrap_or_default();
+
+                if file_name.contains("kubeconfig") || file_name.contains("omni") {
+                    candidates.push(path.to_string_lossy().to_string());
                 }
             }
         }
@@ -1002,7 +1109,7 @@ fn restart_backend_sidecar_with_options(
             }
         }
 
-        let child = spawn_backend(app, &cfg)?;
+        let child = spawn_backend(app, &cfg, &state.logs)?;
         if !wait_for_backend_ready(cfg.port, STARTUP_TIMEOUT) {
             let mut child_to_stop = child;
             graceful_stop_child(&mut child_to_stop);
@@ -1066,6 +1173,7 @@ fn start_backend_monitor(
     shutting_down: Arc<Mutex<bool>>,
     config_ref: Arc<Mutex<SidecarConfig>>,
     restart_in_progress: Arc<Mutex<bool>>,
+    logs: SidecarLogs,
 ) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_secs(2));
@@ -1143,7 +1251,7 @@ fn start_backend_monitor(
                 }
             }
 
-            match spawn_backend(&app_handle, &cfg) {
+            match spawn_backend(&app_handle, &cfg, &logs) {
                 Ok(new_child) => {
                     let ready = wait_for_backend_ready(cfg.port, STARTUP_TIMEOUT);
                     let mut guard = match child_ref.lock() {
@@ -1188,6 +1296,25 @@ fn get_sidecar_config(state: State<'_, BackendState>) -> Result<SidecarConfig, S
 }
 
 #[tauri::command]
+fn get_sidecar_logs(state: State<'_, BackendState>) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+
+    // App-level events (AWS calls, kubeconfig ops, errors from Tauri commands)
+    if let Some(buf) = APP_LOG_BUF.get() {
+        if let Ok(guard) = buf.lock() {
+            lines.extend(guard.iter().cloned());
+        }
+    }
+
+    // Backend sidecar stdout/stderr
+    if let Ok(guard) = state.logs.lock() {
+        lines.extend(guard.iter().cloned());
+    }
+
+    lines
+}
+
+#[tauri::command]
 fn set_sidecar_config(
     app: AppHandle,
     state: State<'_, BackendState>,
@@ -1229,6 +1356,7 @@ fn set_sidecar_config(
     let shutting_down = Arc::clone(&state.shutting_down);
     let switch_status_ref = Arc::clone(&state.switch_status);
     let restart_in_progress_ref = Arc::clone(&state.restart_in_progress);
+    let logs_ref = Arc::clone(&state.logs);
 
     // Restart sidecar in background so the command returns immediately and UI stays responsive.
     tauri::async_runtime::spawn(async move {
@@ -1238,6 +1366,7 @@ fn set_sidecar_config(
             config: config_ref,
             switch_status: switch_status_ref,
             restart_in_progress: restart_in_progress_ref,
+            logs: logs_ref,
         };
 
         match restart_backend_sidecar_with_options(&app_handle, &restart_state, true) {
@@ -1299,6 +1428,7 @@ async fn trigger_kube_browser_login(app: AppHandle, state: State<'_, BackendStat
         config: Arc::clone(&state.config),
         switch_status: Arc::clone(&state.switch_status),
         restart_in_progress: Arc::clone(&state.restart_in_progress),
+        logs: Arc::clone(&state.logs),
     };
     let app_handle = app.clone();
 
@@ -1437,8 +1567,14 @@ fn trigger_kube_browser_login_impl(app: &AppHandle, state: &BackendState) -> Res
         )
     })?;
 
-    let mut cmd = Command::new(&resolved_command);
-    cmd.args(&args)
+    let shell = env_value("SHELL")
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "/bin/zsh".to_string());
+
+    let command_line = build_shell_command(&resolved_command.to_string_lossy(), &args);
+
+    let mut cmd = Command::new(&shell);
+    cmd.args(["-ilc", &command_line])
         .stdin(Stdio::null());
 
     // Provide a full PATH and all required env vars so the plugin can find its
@@ -1469,7 +1605,7 @@ fn trigger_kube_browser_login_impl(app: &AppHandle, state: &BackendState) -> Res
     // finishes logging in or the operation is cancelled.
     let status = cmd
         .status()
-        .map_err(|e| format!("failed to launch '{}': {e}", resolved_command.display()))?;
+        .map_err(|e| format!("failed to launch '{shell} -ilc {command_line}': {e}"))?;
 
     if !status.success() {
         return Err(format!(
@@ -1493,11 +1629,37 @@ fn list_kubeconfig_candidates() -> Vec<String> {
 
 #[tauri::command]
 fn list_kubeconfig_clusters(kubeconfig_path: Option<String>) -> Result<Vec<KubeconfigCluster>, String> {
-    let Some(path) = resolve_kubeconfig_path(kubeconfig_path) else {
-        return Ok(Vec::new());
-    };
+    let explicit_path = kubeconfig_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
 
-    parse_kubeconfig_clusters(&path).map_err(|e| format!("failed to parse kubeconfig clusters: {e}"))
+    if let Some(path) = explicit_path {
+        return parse_kubeconfig_clusters(&path)
+            .map_err(|e| format!("failed to parse kubeconfig clusters from {}: {e}", path.display()));
+    }
+
+    let mut all_clusters = Vec::<KubeconfigCluster>::new();
+    let mut parse_errors = Vec::<String>::new();
+
+    for candidate in discover_kubeconfig_candidates() {
+        let path = PathBuf::from(&candidate);
+        match parse_kubeconfig_clusters(&path) {
+            Ok(clusters) => all_clusters.extend(clusters),
+            Err(err) => parse_errors.push(format!("{}: {err}", path.display())),
+        }
+    }
+
+    if all_clusters.is_empty() && !parse_errors.is_empty() {
+        warn!(
+            "no cluster contexts discovered; failed to parse {} kubeconfig candidate(s): {}",
+            parse_errors.len(),
+            parse_errors.join(" | ")
+        );
+    }
+
+    Ok(all_clusters)
 }
 
 #[tauri::command]
@@ -1659,15 +1821,245 @@ fn save_base64_file(default_file_name: String, base64_data: String) -> Result<Op
     Ok(Some(dest.display().to_string()))
 }
 
+#[derive(Debug, serde::Serialize)]
+struct EksClusterEntry {
+    name: String,
+    region: String,
+    arn: String,
+}
+
+#[tauri::command]
+fn list_eks_clusters(
+    access_key: String,
+    secret_key: String,
+    session_token: String,
+    region: String,
+) -> Result<Vec<EksClusterEntry>, String> {
+    let access_key = access_key.trim().to_string();
+    let secret_key = secret_key.trim().to_string();
+    let session_token = session_token.trim().to_string();
+
+    if access_key.is_empty() || secret_key.is_empty() {
+        let msg = "AWS access key and secret key are required".to_string();
+        app_log(format!("[aws] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    if access_key.starts_with("ASIA") && session_token.is_empty() {
+        let msg = "AWS session token is required for temporary STS credentials".to_string();
+        app_log(format!("[aws] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    let region = if region.trim().is_empty() {
+        "us-east-1".to_string()
+    } else {
+        region.trim().to_string()
+    };
+
+    app_log(format!("[aws] list-clusters region={region} key={}...", &access_key[..access_key.len().min(8)]));
+
+    let aws_bin = match resolve_executable_command("aws") {
+        Some(b) => { app_log(format!("[aws] binary={}", b.display())); b }
+        None => {
+            let msg = "failed to resolve 'aws' command on PATH".to_string();
+            app_log(format!("[aws] ERROR: {msg}"));
+            return Err(msg);
+        }
+    };
+
+    let mut cmd = Command::new(aws_bin);
+    cmd.args(["eks", "list-clusters", "--output", "json", "--region", &region])
+        .stdin(Stdio::null());
+
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+
+    for key in ["HOME", "USER", "LOGNAME", "SHELL", "AWS_PROFILE", "AWS_CONFIG_FILE"] {
+        forward_env_if_present(&mut cmd, key);
+    }
+
+    cmd.env("AWS_ACCESS_KEY_ID", &access_key)
+        .env("AWS_SECRET_ACCESS_KEY", &secret_key)
+        .env("AWS_REGION", &region)
+        .env("AWS_DEFAULT_REGION", &region);
+
+    if !session_token.is_empty() {
+        cmd.env("AWS_SESSION_TOKEN", &session_token);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run aws eks list-clusters: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let msg = if stderr.is_empty() {
+            format!("aws eks list-clusters failed with status {}", output.status)
+        } else {
+            format!("aws eks list-clusters failed: {stderr}")
+        };
+        app_log(format!("[aws] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    let stdout_preview = String::from_utf8_lossy(&output.stdout);
+    app_log(format!("[aws] list-clusters stdout: {}", stdout_preview.trim()));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).map_err(|e| format!("failed to parse aws output: {e}"))?;
+
+    let cluster_names = json["clusters"]
+        .as_array()
+        .ok_or_else(|| "unexpected aws output format".to_string())?;
+
+    // Fetch real ARNs by calling describe-cluster for each. Fall back to name-only if it fails.
+    let mut entries: Vec<EksClusterEntry> = Vec::new();
+    for name in cluster_names.iter().filter_map(|v| v.as_str()) {
+        let arn = describe_eks_cluster_arn(&access_key, &secret_key, &session_token, &region, name)
+            .unwrap_or_else(|| format!("arn:aws:eks:{region}:unknown:cluster/{name}"));
+        entries.push(EksClusterEntry {
+            name: name.to_string(),
+            region: region.clone(),
+            arn,
+        });
+    }
+
+    Ok(entries)
+}
+
+fn describe_eks_cluster_arn(access_key: &str, secret_key: &str, session_token: &str, region: &str, cluster_name: &str) -> Option<String> {
+    let aws_bin = resolve_executable_command("aws")?;
+    let mut cmd = Command::new(aws_bin);
+    cmd.args([
+        "eks", "describe-cluster",
+        "--name", cluster_name,
+        "--region", region,
+        "--query", "cluster.arn",
+        "--output", "text",
+    ])
+    .stdin(Stdio::null());
+
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+    cmd.env("AWS_ACCESS_KEY_ID", access_key)
+        .env("AWS_SECRET_ACCESS_KEY", secret_key)
+        .env("AWS_REGION", region)
+        .env("AWS_DEFAULT_REGION", region);
+    if !session_token.is_empty() {
+        cmd.env("AWS_SESSION_TOKEN", session_token);
+    }
+    if let Some(home) = env_value("HOME") { cmd.env("HOME", home); }
+
+    let output = cmd.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let arn = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if arn.starts_with("arn:aws:eks:") {
+        Some(arn)
+    } else {
+        None
+    }
+}
+
+#[tauri::command]
+fn aws_eks_update_kubeconfig(
+    access_key: String,
+    secret_key: String,
+    session_token: String,
+    region: String,
+    cluster_name: String,
+) -> Result<String, String> {
+    let region = region.trim().to_string();
+    let cluster_name = cluster_name.trim().to_string();
+    let session_token = session_token.trim().to_string();
+
+    if access_key.trim().starts_with("ASIA") && session_token.is_empty() {
+        let msg = "AWS session token is required for temporary STS credentials".to_string();
+        app_log(format!("[aws] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    app_log(format!("[aws] update-kubeconfig cluster={cluster_name} region={region}"));
+
+    let aws_bin = match resolve_executable_command("aws") {
+        Some(b) => b,
+        None => {
+            let msg = "failed to resolve 'aws' command on PATH".to_string();
+            app_log(format!("[aws] ERROR: {msg}"));
+            return Err(msg);
+        }
+    };
+
+    let mut cmd = Command::new(aws_bin);
+    cmd.args([
+        "eks", "update-kubeconfig",
+        "--name", &cluster_name,
+        "--region", &region,
+    ])
+    .stdin(Stdio::null());
+
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+
+    for key in ["HOME", "USER", "LOGNAME", "SHELL", "AWS_PROFILE", "AWS_CONFIG_FILE", "KUBECONFIG"] {
+        forward_env_if_present(&mut cmd, key);
+    }
+
+    cmd.env("AWS_ACCESS_KEY_ID", &access_key)
+        .env("AWS_SECRET_ACCESS_KEY", &secret_key)
+        .env("AWS_REGION", &region)
+        .env("AWS_DEFAULT_REGION", &region);
+
+    if !session_token.is_empty() {
+        cmd.env("AWS_SESSION_TOKEN", &session_token);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run aws eks update-kubeconfig: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("aws eks update-kubeconfig failed with status {}", output.status)
+        } else {
+            format!("aws eks update-kubeconfig failed: {stderr}")
+        });
+    }
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    app_log(format!("[aws] update-kubeconfig stdout: {}", stdout_str.trim()));
+
+    // Parse context name from stdout:
+    // "Updated context arn:aws:eks:<region>:<account>:cluster/<name> in /path/kubeconfig"
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let context = stdout
+        .split_whitespace()
+        .find(|w| w.starts_with("arn:aws:eks:"))
+        .map(|w| w.trim_end_matches(['.', ',', ';']).to_string())
+        .unwrap_or_else(|| cluster_name.clone());
+
+    Ok(context)
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
+    app_log("[app] PTKublet startup");
+
     let app = tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_sidecar_config,
             set_sidecar_config,
+            get_sidecar_logs,
             get_cluster_switch_status,
             restart_sidecar,
             trigger_kube_browser_login,
@@ -1678,7 +2070,9 @@ fn main() {
             list_local_directory,
             read_local_files,
             save_pod_file,
-            save_base64_file
+            save_base64_file,
+            list_eks_clusters,
+            aws_eks_update_kubeconfig
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -1720,7 +2114,9 @@ fn main() {
             }
             let _ = save_sidecar_config(app.handle(), &initial_config);
 
-            let initial_child = match spawn_backend(app.handle(), &initial_config) {
+            let logs: SidecarLogs = Arc::new(Mutex::new(VecDeque::new()));
+
+            let initial_child = match spawn_backend(app.handle(), &initial_config, &logs) {
                 Ok(child) => {
                     if !wait_for_backend_ready(initial_config.port, STARTUP_TIMEOUT) {
                         warn!(
@@ -1756,6 +2152,7 @@ fn main() {
                 Arc::clone(&shutting_down),
                 Arc::clone(&config_ref),
                 Arc::clone(&restart_in_progress),
+                Arc::clone(&logs),
             );
 
             app.manage(BackendState {
@@ -1764,6 +2161,7 @@ fn main() {
                 config: config_ref,
                 switch_status: Arc::new(Mutex::new(ClusterSwitchStatus::default())),
                 restart_in_progress,
+                logs,
             });
             Ok(())
         })

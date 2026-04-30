@@ -19,6 +19,23 @@ use tokio::time::{timeout, Duration};
 use tracing::warn;
 
 static NODE_DISK_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
+static POD_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
+static NODE_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
+const EXEC_PROVIDER_LOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
+
+fn is_metrics_api_unavailable(err: &kube::Error) -> bool {
+    match err {
+        kube::Error::Api(api_err) => api_err.code == 404 || api_err.code == 403,
+        _ => {
+            let normalized = err.to_string().to_lowercase();
+            normalized.contains("404 page not found")
+                || normalized.contains("status code 404")
+                || normalized.contains("status code: 404")
+                || normalized.contains("status code 403")
+                || normalized.contains("status code: 403")
+        }
+    }
+}
 
 fn is_kubelet_stats_proxy_unavailable(err: &kube::Error) -> bool {
     match err {
@@ -294,7 +311,7 @@ pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, KubeClien
         // to main() — the HTTP server must start so the Tauri sidecar health probe
         // passes and the cluster switch is not rolled back.
         match tokio::time::timeout(
-            std::time::Duration::from_secs(8),
+            EXEC_PROVIDER_LOAD_TIMEOUT,
             Config::from_kubeconfig(&options),
         )
         .await
@@ -304,7 +321,7 @@ pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, KubeClien
                 Err(e) => {
                     if is_missing_exec_error(&e.to_string()) {
                         match tokio::time::timeout(
-                            std::time::Duration::from_secs(8),
+                            EXEC_PROVIDER_LOAD_TIMEOUT,
                             try_load_kube_config_with_resolved_exec(&options),
                         )
                         .await
@@ -340,7 +357,7 @@ pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, KubeClien
 
                 if missing_exec {
                     match tokio::time::timeout(
-                        std::time::Duration::from_secs(8),
+                        EXEC_PROVIDER_LOAD_TIMEOUT,
                         try_load_kube_config_with_resolved_exec(&options),
                     )
                     .await
@@ -373,9 +390,10 @@ pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, KubeClien
                 )
             }
             Err(_) => warn!(
-                "Kubeconfig load timed out (>8 s) for context '{}'. \
+                "Kubeconfig load timed out (>{} s) for context '{}'. \
                  Exec credential plugin is slow or unresponsive. \
                  Starting with placeholder client.",
+                EXEC_PROVIDER_LOAD_TIMEOUT.as_secs(),
                 ctx
             ),
         }
@@ -592,13 +610,22 @@ pub fn format_binary_bytes(bytes: f64) -> String {
 pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (String, String)> {
     let mut metrics_map: HashMap<(String, String), (String, String)> = HashMap::new();
 
+    if !POD_METRICS_SUPPORTED.load(Ordering::Relaxed) {
+        return metrics_map;
+    }
+
     let pod_metrics_resource =
         ApiResource::from_gvk(&GroupVersionKind::gvk("metrics.k8s.io", "v1beta1", "PodMetrics"));
     let metrics_api: Api<DynamicObject> = Api::all_with(client, &pod_metrics_resource);
 
     let metrics_list = match metrics_api.list(&ListParams::default()).await {
         Ok(list) => list,
-        Err(_) => return metrics_map,
+        Err(err) => {
+            if is_metrics_api_unavailable(&err) {
+                POD_METRICS_SUPPORTED.store(false, Ordering::Relaxed);
+            }
+            return metrics_map;
+        }
     };
 
     for metric in metrics_list.items {
@@ -666,13 +693,22 @@ pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (Str
 pub async fn fetch_node_metrics(client: Client) -> HashMap<String, (String, String)> {
     let mut metrics_map: HashMap<String, (String, String)> = HashMap::new();
 
+    if !NODE_METRICS_SUPPORTED.load(Ordering::Relaxed) {
+        return metrics_map;
+    }
+
     let node_metrics_resource =
         ApiResource::from_gvk(&GroupVersionKind::gvk("metrics.k8s.io", "v1beta1", "NodeMetrics"));
     let metrics_api: Api<DynamicObject> = Api::all_with(client, &node_metrics_resource);
 
     let metrics_list = match metrics_api.list(&ListParams::default()).await {
         Ok(list) => list,
-        Err(_) => return metrics_map,
+        Err(err) => {
+            if is_metrics_api_unavailable(&err) {
+                NODE_METRICS_SUPPORTED.store(false, Ordering::Relaxed);
+            }
+            return metrics_map;
+        }
     };
 
     for metric in metrics_list.items {

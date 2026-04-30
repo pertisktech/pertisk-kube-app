@@ -59,9 +59,9 @@ export const App = () => {
         autoClose={4000}
         hideProgressBar={false}
         newestOnTop
-        closeOnClick
+        closeOnClick={false}
         pauseOnFocusLoss
-        draggable
+        draggable={false}
         pauseOnHover
         theme="dark"
         transition={Bounce}

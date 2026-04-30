@@ -41,6 +41,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from './Icons';
+import { SidecarLogsPanel } from './SidecarLogsPanel';
 import { cn } from '../utils';
 import {
   type DesktopAuthStatus,
@@ -49,6 +50,9 @@ import {
   getDesktopSidecarConfig,
   listDesktopKubeconfigClusters,
   listDesktopKubeconfigCandidates,
+  listAwsEksClusters,
+  awsEksUpdateKubeconfig,
+  openDesktopExternalUrl,
   saveDesktopSidecarConfig,
   triggerKubeBrowserLogin,
   waitDesktopClusterSwitchResult,
@@ -92,6 +96,26 @@ const SIDEBAR_WIDTH_DEFAULT = 256; // 16rem
 const SIDEBAR_WIDTH_MIN = 200;
 const SIDEBAR_WIDTH_MAX = 420;
 const SIDEBAR_WIDTH_STORAGE_KEY = 'pertisk-kube-sidebar-width';
+const TALOS_OMNI_URL_STORAGE_KEY = 'pertisk-talos-omni-url';
+const TALOS_OMNI_EMAIL_STORAGE_KEY = 'pertisk-talos-omni-email';
+const AWS_ACCESS_KEY_STORAGE_KEY = 'pertisk-aws-access-key';
+const AWS_SECRET_KEY_STORAGE_KEY = 'pertisk-aws-secret-key';
+const AWS_SESSION_TOKEN_STORAGE_KEY = 'pertisk-aws-session-token';
+const AWS_ACCOUNT_ID_STORAGE_KEY = 'pertisk-aws-account-id';
+const DIGITALOCEAN_TOKEN_STORAGE_KEY = 'pertisk-digitalocean-api-token';
+
+const CLOUD_PROVIDER_OPTIONS = [
+  { value: 'talos-omni', label: 'Talos Omni', description: 'Browser-based Omni login and cluster import.' },
+  { value: 'aws', label: 'AWS', description: 'List EKS clusters directly from the AWS API.' },
+  { value: 'gcp', label: 'Google Cloud', description: 'Use browser sign-in for Google Cloud access.' },
+  { value: 'azure', label: 'Azure', description: 'Authenticate with Microsoft Azure in the browser.' },
+  { value: 'digitalocian', label: 'DigitalOcean', description: 'Import clusters with a DigitalOcean API token.' },
+] as const;
+
+const CLUSTER_IMPORT_TABS = [
+  { value: 'kubeconfig', label: 'Kubeconfig', description: 'Import from local kubeconfig contexts.' },
+  { value: 'cloud', label: 'Cloud Provider', description: 'Connect directly to your cloud account.' },
+] as const;
 
 const HELM_ITEMS: NavItem[] = [
   { label: 'Charts', path: '/helm/charts', icon: Archive },
@@ -177,6 +201,43 @@ function kubeconfigDisplayName(path: string): string {
   return segments.length ? segments[segments.length - 1] : trimmed;
 }
 
+function normalizeOmniUrl(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+function buildOmniConnectUrl(omniUrl: string, email: string): string {
+  const parsed = new URL(omniUrl);
+  const normalizedEmail = email.trim();
+  if (normalizedEmail) {
+    parsed.searchParams.set('email', normalizedEmail);
+    parsed.searchParams.set('login_hint', normalizedEmail);
+  }
+  return parsed.toString();
+}
+
+function isLikelyOmniContext(item: DesktopKubeconfigCluster): boolean {
+  const haystack = `${item.context} ${item.cluster ?? ''} ${item.kubeconfigPath}`.toLowerCase();
+  return haystack.includes('omni') || haystack.includes('talos');
+}
+
+function isLikelyAzureContext(item: DesktopKubeconfigCluster): boolean {
+  const haystack = `${item.context} ${item.cluster ?? ''} ${item.kubeconfigPath}`.toLowerCase();
+  return haystack.includes('azure') || haystack.includes('aks');
+}
+
+function isLikelyGcpContext(item: DesktopKubeconfigCluster): boolean {
+  const haystack = `${item.context} ${item.cluster ?? ''} ${item.kubeconfigPath}`.toLowerCase();
+  return haystack.includes('gcp') || haystack.includes('gke') || haystack.includes('google');
+}
+
+function isLikelyDigitalOceanContext(item: DesktopKubeconfigCluster): boolean {
+  const haystack = `${item.context} ${item.cluster ?? ''} ${item.kubeconfigPath}`.toLowerCase();
+  return haystack.includes('digitalocean') || haystack.includes('digitalocian') || haystack.includes('do-');
+}
+
 export const Layout = () => {
   const desktopMode = isDesktopRuntime();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -197,7 +258,21 @@ export const Layout = () => {
   const [startupClusterSelectionDone, setStartupClusterSelectionDone] = useState(false);
   const [authStatus, setAuthStatus] = useState<DesktopAuthStatus | null>(null);
   const [browserLoginLoading, setBrowserLoginLoading] = useState(false);
+  const [omniUrl, setOmniUrl] = useState('');
+  const [omniEmail, setOmniEmail] = useState('');
+  const [omniConnectLoading, setOmniConnectLoading] = useState(false);
+  const [cloudProvider, setCloudProvider] = useState<'talos-omni' | 'gcp' | 'aws' | 'azure' | 'digitalocian'>('talos-omni');
+  const [digitaloceanApiToken, setDigitaloceanApiToken] = useState('');
+  const [awsAccessKey, setAwsAccessKey] = useState('');
+  const [awsSecretKey, setAwsSecretKey] = useState('');
+  const [awsSessionToken, setAwsSessionToken] = useState('');
+  const [awsAccountId, setAwsAccountId] = useState('');
+  const [awsRegion, setAwsRegion] = useState('ap-southeast-1');
+  const [awsEksClusters, setAwsEksClusters] = useState<import('../utils/tauriDesktop').EksClusterEntry[]>([]);
+  const [cloudListReady, setCloudListReady] = useState(false);
+  const [clusterImportTab, setClusterImportTab] = useState<'kubeconfig' | 'cloud'>('kubeconfig');
   const [workloadsOpen, setWorkloadsOpen] = useState(false);
+  const [showSidecarLogs, setShowSidecarLogs] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [storageOpen, setStorageOpen] = useState(false);
   const [networkOpen, setNetworkOpen] = useState(false);
@@ -215,6 +290,7 @@ export const Layout = () => {
   const resizeStartXRef = useRef(0);
   const resizeStartWidthRef = useRef(0);
   const kubeconfigRefreshRequestRef = useRef(0);
+  const clusterApplyTargetRef = useRef('');
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -309,7 +385,7 @@ export const Layout = () => {
         setKubeContext(currentContext);
         setStartupClusterSelectionDone(Boolean(currentContext.trim()));
         setKubeconfigInput(currentPath);
-        setSelectedClusterContext(currentContext);
+        setSelectedClusterContext('');
 
         const merged = new Set(candidates);
         if (currentPath) merged.add(currentPath);
@@ -319,16 +395,6 @@ export const Layout = () => {
         const clusters = await listDesktopKubeconfigClusters(currentPath || null);
         if (cancelled) return;
         setKubeClusters(clusters);
-
-        if (!currentContext) {
-          const currentCluster = clusters.find((item) => item.isCurrent)?.context ?? '';
-          setSelectedClusterContext(currentCluster);
-          if (currentCluster.trim()) {
-            // current-context in kubeconfig is a valid selected cluster,
-            // even when sidecar config does not persist kubeContext explicitly.
-            setStartupClusterSelectionDone(true);
-          }
-        }
       } catch (err) {
         if (cancelled) return;
         const rawMessage = getErrorMessage(err);
@@ -361,6 +427,17 @@ export const Layout = () => {
       cancelled = true;
     };
   }, [desktopMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setOmniUrl(window.localStorage.getItem(TALOS_OMNI_URL_STORAGE_KEY) ?? '');
+    setOmniEmail(window.localStorage.getItem(TALOS_OMNI_EMAIL_STORAGE_KEY) ?? '');
+    setAwsAccessKey(window.localStorage.getItem(AWS_ACCESS_KEY_STORAGE_KEY) ?? '');
+    setAwsSecretKey(window.localStorage.getItem(AWS_SECRET_KEY_STORAGE_KEY) ?? '');
+    setAwsSessionToken(window.localStorage.getItem(AWS_SESSION_TOKEN_STORAGE_KEY) ?? '');
+    setAwsAccountId(window.localStorage.getItem(AWS_ACCOUNT_ID_STORAGE_KEY) ?? '');
+    setDigitaloceanApiToken(window.localStorage.getItem(DIGITALOCEAN_TOKEN_STORAGE_KEY) ?? '');
+  }, []);
 
   // Poll /api/auth-status every 5s so we can show the browser-login CTA when
   // the sidecar starts with a placeholder (unauthenticated) kube client.
@@ -397,6 +474,176 @@ export const Layout = () => {
     }
   };
 
+  const handleTalosOmniConnect = async () => {
+    const normalizedUrl = normalizeOmniUrl(omniUrl);
+    const normalizedEmail = omniEmail.trim();
+
+    if (!normalizedUrl) {
+      toast.error('Talos Omni URL is required.');
+      return;
+    }
+
+    if (!normalizedEmail) {
+      toast.error('Email address is required.');
+      return;
+    }
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(normalizedUrl);
+    } catch {
+      toast.error('Enter a valid Talos Omni URL.');
+      return;
+    }
+
+    if (!parsedUrl.protocol.startsWith('http')) {
+      toast.error('Talos Omni URL must start with http:// or https://');
+      return;
+    }
+
+    setOmniConnectLoading(true);
+    setCloudListReady(true);
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(TALOS_OMNI_URL_STORAGE_KEY, normalizedUrl);
+        window.localStorage.setItem(TALOS_OMNI_EMAIL_STORAGE_KEY, normalizedEmail);
+      }
+
+      const connectUrl = buildOmniConnectUrl(normalizedUrl, normalizedEmail);
+      await openDesktopExternalUrl(connectUrl);
+
+      // Trigger existing browser-login path as a fallback for desktop kube auth workflows.
+      if (desktopMode) {
+        try {
+          await triggerKubeBrowserLogin();
+        } catch {
+          // Ignore and continue with Omni browser connect flow.
+        }
+      }
+
+      const candidates = await listDesktopKubeconfigCandidates();
+      const merged = new Set(candidates);
+      if (kubeconfigPath) merged.add(kubeconfigPath);
+      const sortedCandidates = Array.from(merged).sort((a, b) => a.localeCompare(b));
+      setKubeconfigCandidates(sortedCandidates);
+
+      const preferred = kubeconfigInput || kubeconfigPath || '';
+      let discoveredClusters: DesktopKubeconfigCluster[] = [];
+
+      // Omni/OIDC login may update kubeconfig asynchronously; probe repeatedly for a short period.
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const dynamicCandidates = await listDesktopKubeconfigCandidates();
+        const dynamicMerged = new Set(dynamicCandidates);
+        if (kubeconfigPath) dynamicMerged.add(kubeconfigPath);
+        const dynamicSortedCandidates = Array.from(dynamicMerged).sort((a, b) => a.localeCompare(b));
+        const probeSources = [preferred, ...dynamicSortedCandidates]
+          .filter((path, index, arr) => arr.indexOf(path) === index);
+
+        const combined = new Map<string, DesktopKubeconfigCluster>();
+
+        for (const source of probeSources) {
+          const clusters = await listDesktopKubeconfigClusters(source || null);
+          for (const cluster of clusters) {
+            const key = `${cluster.kubeconfigPath}:${cluster.context}`;
+            combined.set(key, cluster);
+          }
+        }
+
+        discoveredClusters = Array.from(combined.values()).sort((a, b) => {
+          const aLabel = `${a.context} ${a.cluster ?? ''} ${a.namespace ?? ''}`.toLowerCase();
+          const bLabel = `${b.context} ${b.cluster ?? ''} ${b.namespace ?? ''}`.toLowerCase();
+          return aLabel.localeCompare(bLabel);
+        });
+
+        if (discoveredClusters.length > 0) {
+          setKubeconfigCandidates(dynamicSortedCandidates);
+          break;
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 3_000));
+      }
+
+      if (discoveredClusters.length > 0) {
+        setKubeClusters(discoveredClusters);
+        const omniClusters = discoveredClusters.filter(isLikelyOmniContext);
+        const preferredClusters = omniClusters.length > 0 ? omniClusters : discoveredClusters;
+        const currentItem = preferredClusters.find((item) => item.isCurrent) ?? preferredClusters[0];
+        setSelectedClusterContext('');
+        setKubeconfigInput(currentItem?.kubeconfigPath ?? '');
+        const shownCount = omniClusters.length > 0 ? omniClusters.length : discoveredClusters.length;
+        toast.success(`Connected. Loaded ${shownCount} cluster context(s). Select one from the list and click Import Cluster.`);
+      } else {
+        await refreshClustersForKubeconfig(preferred);
+        toast.info('Connected. No cluster contexts found yet. Check kubeconfig source and refresh after login completes.');
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err) ?? 'Failed to start Talos Omni browser connection.');
+    } finally {
+      setOmniConnectLoading(false);
+    }
+  };
+
+  const handleProviderSignIn = async () => {
+    if (cloudProvider === 'azure') {
+      await openDesktopExternalUrl('https://portal.azure.com/');
+      return;
+    }
+    if (cloudProvider === 'gcp') {
+      await openDesktopExternalUrl('https://accounts.google.com/');
+    }
+  };
+
+  const handleAwsApplyCredentials = async () => {
+    const accessKey = awsAccessKey.trim();
+    const secretKey = awsSecretKey.trim();
+    const sessionToken = awsSessionToken.trim();
+
+    if (!accessKey || !secretKey) {
+      toast.error('AWS Access key and Secret key are required.');
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(AWS_ACCESS_KEY_STORAGE_KEY, accessKey);
+      window.localStorage.setItem(AWS_SECRET_KEY_STORAGE_KEY, secretKey);
+      window.localStorage.setItem(AWS_SESSION_TOKEN_STORAGE_KEY, sessionToken);
+      window.localStorage.setItem(AWS_ACCOUNT_ID_STORAGE_KEY, awsAccountId.trim());
+    }
+
+    setKubeconfigLoading(true);
+    try {
+      const eksClusters = await listAwsEksClusters(accessKey, secretKey, sessionToken, awsRegion.trim() || 'us-east-1');
+      setAwsEksClusters(eksClusters);
+      if (eksClusters.length === 0) {
+        toast.success('AWS credentials saved. No EKS clusters found in that region.');
+      } else {
+        toast.success(`AWS credentials saved. Found ${eksClusters.length} EKS cluster(s).`);
+      }
+      setCloudListReady(true);
+    } catch (err) {
+      console.error('[AWS] list EKS clusters error:', err);
+      toast.error(`Failed to list EKS clusters: ${getErrorMessage(err) ?? String(err)}`);
+    } finally {
+      setKubeconfigLoading(false);
+    }
+  };
+
+  const handleDigitaloceanApplyToken = async () => {
+    const token = digitaloceanApiToken.trim();
+    if (!token) {
+      toast.error('DigitalOcian API token is required.');
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(DIGITALOCEAN_TOKEN_STORAGE_KEY, token);
+    }
+
+    toast.success('DigitalOcian API token saved.');
+    setCloudListReady(true);
+    await handleManualClusterRefresh();
+  };
+
   const refreshClustersForKubeconfig = async (path: string) => {
     if (!desktopMode) return;
 
@@ -412,8 +659,7 @@ export const Layout = () => {
       if (clusters.length === 0) {
         setSelectedClusterContext('');
       } else {
-        const currentCluster = clusters.find((item) => item.isCurrent)?.context ?? '';
-        setSelectedClusterContext((prev) => prev || currentCluster);
+        setSelectedClusterContext('');
       }
     } catch (err) {
       if (requestId !== kubeconfigRefreshRequestRef.current) {
@@ -435,14 +681,59 @@ export const Layout = () => {
     }
   };
 
+  const handleManualClusterRefresh = async () => {
+    try {
+      const candidates = await listDesktopKubeconfigCandidates();
+      const merged = new Set(candidates);
+      if (kubeconfigInput) merged.add(kubeconfigInput);
+      if (kubeconfigPath) merged.add(kubeconfigPath);
+      const sorted = Array.from(merged).sort((a, b) => a.localeCompare(b));
+      setKubeconfigCandidates(sorted);
+
+      const refreshPath = clusterImportTab === 'cloud' ? '' : (kubeconfigInput || kubeconfigPath);
+      await refreshClustersForKubeconfig(refreshPath);
+      if (refreshPath.trim()) {
+        setKubeconfigInput(refreshPath);
+      } else {
+        setKubeconfigInput('');
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err) ?? 'Failed to refresh cluster contexts.');
+    }
+  };
+
   const applyClusterSelection = async (path: string, context: string) => {
     if (!desktopMode) return;
+    if (kubeconfigSwitching) return;
 
     setKubeconfigSwitching(true);
     try {
       const current = await getDesktopSidecarConfig();
       const nextPath = path.trim();
       const nextContext = context.trim();
+
+      if (!nextContext) {
+        return;
+      }
+
+      const targetKey = `${nextPath}::${nextContext}`;
+      if (clusterApplyTargetRef.current === targetKey) {
+        return;
+      }
+      clusterApplyTargetRef.current = targetKey;
+
+      const currentPath = (current.kubeconfigPath || '').trim();
+      const currentContext = (current.kubeContext || '').trim();
+      if (currentPath === nextPath && currentContext === nextContext) {
+        setKubeconfigPath(nextPath);
+        setKubeContext(nextContext);
+        setKubeconfigInput(nextPath);
+        setSelectedClusterContext(nextContext);
+        setShowKubeconfigModal(false);
+        setStartupClusterSelectionDone(true);
+        return;
+      }
+
       await saveDesktopSidecarConfig({
         ...current,
         kubeconfigPath: nextPath || null,
@@ -477,6 +768,7 @@ export const Layout = () => {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to apply cluster selection.');
     } finally {
+      clusterApplyTargetRef.current = '';
       setKubeconfigSwitching(false);
     }
   };
@@ -489,6 +781,31 @@ export const Layout = () => {
       return hay.includes(q);
     });
   }, [clusterSearch, kubeClusters]);
+
+  const visibleClusters = useMemo(() => {
+    if (clusterImportTab !== 'cloud') return filteredClusters;
+
+    if (cloudProvider === 'talos-omni') return filteredClusters.filter(isLikelyOmniContext);
+    if (cloudProvider === 'aws') {
+      // When cloud list is ready, show only clusters fetched directly from AWS EKS API
+      if (cloudListReady && awsEksClusters.length >= 0) {
+        const q = clusterSearch.toLowerCase();
+        return awsEksClusters
+          .filter((e) => !q || e.arn.toLowerCase().includes(q) || e.name.toLowerCase().includes(q))
+          .map((e) => ({
+            context: e.arn,
+            cluster: e.arn,
+            namespace: null,
+            isCurrent: false,
+            kubeconfigPath: '',
+          }));
+      }
+      return [];
+    }
+    if (cloudProvider === 'azure') return filteredClusters.filter(isLikelyAzureContext);
+    if (cloudProvider === 'gcp') return filteredClusters.filter(isLikelyGcpContext);
+    return filteredClusters.filter(isLikelyDigitalOceanContext);
+  }, [clusterImportTab, cloudProvider, filteredClusters, awsAccountId, awsEksClusters, cloudListReady, clusterSearch]);
 
   const hasConfiguredClusterContext = kubeContext.trim().length > 0 || selectedClusterContext.trim().length > 0;
   const hasKubeconfigSource = kubeconfigPath.trim().length > 0 || kubeconfigCandidates.length > 0;
@@ -504,10 +821,27 @@ export const Layout = () => {
 
   useEffect(() => {
     if (mustSelectCluster) {
+      setCloudProvider('talos-omni');
+      setClusterImportTab('kubeconfig');
       setClusterSearch('');
       setShowKubeconfigModal(true);
     }
   }, [mustSelectCluster]);
+
+  useEffect(() => {
+    if (!desktopMode) return;
+    if (clusterImportTab !== 'kubeconfig') return;
+
+    const source = kubeconfigInput || kubeconfigPath;
+    void refreshClustersForKubeconfig(source);
+  }, [clusterImportTab]);
+
+  useEffect(() => {
+    if (clusterImportTab !== 'cloud') return;
+    setCloudListReady(false);
+    setSelectedClusterContext('');
+    setAwsEksClusters([]);
+  }, [clusterImportTab, cloudProvider]);
 
   useEffect(() => {
     const pathname = location.pathname;
@@ -753,7 +1087,7 @@ export const Layout = () => {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h3 className="text-base font-semibold text-text">Select Cluster</h3>
+          <h3 className="text-base font-semibold text-text">Cluster</h3>
           <button
             type="button"
             onClick={() => {
@@ -768,64 +1102,378 @@ export const Layout = () => {
           </button>
         </div>
 
+        <div className="px-5 pt-4">
+          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-border bg-surface-elevated/70 p-2 shadow-sm">
+            {CLUSTER_IMPORT_TABS.map((tab) => {
+              const active = clusterImportTab === tab.value;
+              return (
+                <button
+                  key={tab.value}
+                  type="button"
+                  onClick={() => {
+                    if (tab.value === 'cloud') {
+                      setClusterImportTab('cloud');
+                      setKubeconfigInput('');
+                      return;
+                    }
+                    setClusterImportTab('kubeconfig');
+                  }}
+                  className={cn(
+                    'rounded-xl border px-4 py-3 text-left transition-colors',
+                    active
+                      ? 'border-primary bg-primary/15 text-text shadow-sm'
+                      : 'border-transparent bg-transparent text-text-secondary hover:border-border hover:bg-hover/60 hover:text-text'
+                  )}
+                >
+                  <div className={cn('text-sm font-semibold', active ? 'text-text' : 'text-text-secondary')}>
+                    {tab.label}
+                  </div>
+                  <div className={cn('mt-1 text-xs', active ? 'text-text-secondary' : 'text-text-secondary/80')}>
+                    {tab.description}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="space-y-4 px-5 py-4">
           {mustSelectCluster && (
             <div className="rounded-md border border-border bg-surface-elevated px-3 py-2 text-sm text-text-secondary">
               Select a cluster context to continue to the dashboard.
             </div>
           )}
-          <div className="space-y-2">
-            <label htmlFor="modal-kubeconfig-path" className="block text-sm font-medium text-text-secondary">
-              Kubeconfig source
-            </label>
-            <select
-              id="modal-kubeconfig-path"
-              value={kubeconfigInput}
-              onChange={(e) => {
-                const selected = e.target.value;
-                setKubeconfigInput(selected);
-                setSelectedClusterContext('');
-                setClusterSearch('');
-                void refreshClustersForKubeconfig(selected);
-              }}
-              className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-            >
-              <option value="">Default kubeconfig</option>
-              {kubeconfigCandidates.map((candidate) => (
-                <option key={candidate} value={candidate}>{candidate}</option>
-              ))}
-            </select>
-          </div>
 
-          <div className="space-y-2">
-            <label htmlFor="modal-cluster-search" className="block text-sm font-medium text-text-secondary">
-              Search cluster context
-            </label>
-            <input
-              id="modal-cluster-search"
-              value={clusterSearch}
-              onChange={(e) => setClusterSearch(e.target.value)}
-              placeholder="Type context, cluster, namespace..."
-              className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-            />
-          </div>
+          {clusterImportTab === 'cloud' && (
+            <div className="rounded-lg border border-border bg-surface-elevated px-4 py-4 space-y-3">
+              <div>
+                <h4 className="text-sm font-semibold text-text">Cloud Provider</h4>
+                <p className="mt-1 text-xs text-text-secondary">
+                  Connect in your browser, then refresh and import a cluster context.
+                </p>
+              </div>
 
+              <div className="space-y-2">
+                <div className="block text-sm font-medium text-text-secondary">Provider</div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  {CLOUD_PROVIDER_OPTIONS.map((provider) => {
+                    const active = cloudProvider === provider.value;
+                    return (
+                      <button
+                        key={provider.value}
+                        type="button"
+                        onClick={() => setCloudProvider(provider.value)}
+                        className={cn(
+                          'rounded-xl border px-4 py-3 text-left transition-colors',
+                          active
+                            ? 'border-primary bg-primary/15 shadow-sm'
+                            : 'border-border bg-surface hover:border-primary/40 hover:bg-hover/50'
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className={cn('text-sm font-semibold', active ? 'text-text' : 'text-text-secondary')}>
+                            {provider.label}
+                          </div>
+                          <div
+                            className={cn(
+                              'h-2.5 w-2.5 rounded-full transition-colors',
+                              active ? 'bg-primary shadow-[0_0_0_4px_rgba(154,123,247,0.15)]' : 'bg-border'
+                            )}
+                          />
+                        </div>
+                        <div className="mt-1 text-xs text-text-secondary">
+                          {provider.description}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {cloudProvider === 'gcp' && (
+                <div className="rounded-md border border-border bg-surface px-3 py-3 text-xs text-text-secondary space-y-3">
+                  <div>Sign in to Google to continue with Google Cloud Platform provider setup.</div>
+                  <div className="flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={() => void handleProviderSignIn()}
+                      className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-hover"
+                    >
+                      Sign In With Google
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {cloudProvider === 'azure' && (
+                <div className="rounded-md border border-border bg-surface px-3 py-3 text-xs text-text-secondary space-y-3">
+                  <div>Use web sign-in to authenticate with Microsoft Azure.</div>
+                  <div className="flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={() => void handleProviderSignIn()}
+                      className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-hover"
+                    >
+                      Web Sign In Azure
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {cloudProvider === 'aws' && (
+                <div className="rounded-md border border-border bg-surface px-3 py-3 text-xs text-text-secondary space-y-3">
+                  <div className="space-y-2">
+                    <label htmlFor="aws-account-id" className="block text-sm font-medium text-text-secondary">
+                      AWS account ID (optional)
+                    </label>
+                    <input
+                      id="aws-account-id"
+                      value={awsAccountId}
+                      onChange={(e) => setAwsAccountId(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                      placeholder="123456789012"
+                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="aws-access-key" className="block text-sm font-medium text-text-secondary">
+                      Access key
+                    </label>
+                    <input
+                      id="aws-access-key"
+                      value={awsAccessKey}
+                      onChange={(e) => setAwsAccessKey(e.target.value)}
+                      placeholder="AKIA..."
+                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="aws-secret-key" className="block text-sm font-medium text-text-secondary">
+                      Secret key
+                    </label>
+                    <input
+                      id="aws-secret-key"
+                      type="password"
+                      value={awsSecretKey}
+                      onChange={(e) => setAwsSecretKey(e.target.value)}
+                      placeholder="Enter secret key"
+                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="aws-session-token" className="block text-sm font-medium text-text-secondary">
+                      Session token (optional)
+                    </label>
+                    <input
+                      id="aws-session-token"
+                      type="password"
+                      value={awsSessionToken}
+                      onChange={(e) => setAwsSessionToken(e.target.value)}
+                      placeholder="Required for temporary STS credentials"
+                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="aws-region" className="block text-sm font-medium text-text-secondary">
+                      Region
+                    </label>
+                    <input
+                      id="aws-region"
+                      value={awsRegion}
+                      onChange={(e) => setAwsRegion(e.target.value)}
+                      placeholder="ap-southeast-1"
+                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {cloudProvider === 'digitalocian' && (
+                <div className="rounded-md border border-border bg-surface px-3 py-3 text-xs text-text-secondary space-y-3">
+                  <div className="space-y-2">
+                    <label htmlFor="digitalocean-api-token" className="block text-sm font-medium text-text-secondary">
+                      API token
+                    </label>
+                    <input
+                      id="digitalocean-api-token"
+                      type="password"
+                      value={digitaloceanApiToken}
+                      onChange={(e) => setDigitaloceanApiToken(e.target.value)}
+                      placeholder="dop_v1_..."
+                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {cloudProvider === 'talos-omni' && (
+                <>
+                  <div className="space-y-2">
+                    <label htmlFor="omni-url" className="block text-sm font-medium text-text-secondary">
+                      Omni URL
+                    </label>
+                    <input
+                      id="omni-url"
+                      value={omniUrl}
+                      onChange={(e) => setOmniUrl(e.target.value)}
+                      placeholder="https://omni.example.com"
+                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="omni-email" className="block text-sm font-medium text-text-secondary">
+                      Email address
+                    </label>
+                    <input
+                      id="omni-email"
+                      type="email"
+                      value={omniEmail}
+                      onChange={(e) => setOmniEmail(e.target.value)}
+                      placeholder="you@company.com"
+                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                    />
+                  </div>
+                </>
+              )}
+
+              {cloudProvider === 'talos-omni' && (
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void handleTalosOmniConnect()}
+                    disabled={omniConnectLoading}
+                    className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-hover disabled:opacity-60"
+                  >
+                    {omniConnectLoading ? 'Connecting...' : 'Connect in Browser'}
+                  </button>
+                </div>
+              )}
+
+              {cloudProvider === 'aws' && (
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void handleAwsApplyCredentials()}
+                    className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-hover"
+                  >
+                    Apply AWS Credentials
+                  </button>
+                </div>
+              )}
+
+              {cloudProvider === 'digitalocian' && (
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void handleDigitaloceanApplyToken()}
+                    className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-hover"
+                  >
+                    Apply DigitalOcian Token
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {clusterImportTab === 'kubeconfig' && (
+            <div className="space-y-2">
+              <label htmlFor="modal-kubeconfig-path" className="block text-sm font-medium text-text-secondary">
+                Kubeconfig source
+              </label>
+              <select
+                id="modal-kubeconfig-path"
+                value={kubeconfigInput}
+                onChange={(e) => {
+                  const selected = e.target.value;
+                  setKubeconfigInput(selected);
+                  setSelectedClusterContext('');
+                  setClusterSearch('');
+                  void refreshClustersForKubeconfig(selected);
+                }}
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+              >
+                <option value="">All discovered kubeconfigs (default)</option>
+                {kubeconfigCandidates.map((candidate) => (
+                  <option key={candidate} value={candidate}>{candidate}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {clusterImportTab === 'kubeconfig' && (
+            <div className="space-y-2">
+              <label htmlFor="modal-cluster-search" className="block text-sm font-medium text-text-secondary">
+                Search cluster context
+              </label>
+              <input
+                id="modal-cluster-search"
+                value={clusterSearch}
+                onChange={(e) => setClusterSearch(e.target.value)}
+                placeholder="Type context, cluster, namespace..."
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+              />
+            </div>
+          )}
+
+          {clusterImportTab === 'cloud' && !cloudListReady ? (
+            <div className="rounded-lg border border-border bg-surface-elevated px-3 py-3 text-sm text-text-secondary">
+              Apply provider credentials/action first, then cluster contexts will be listed here.
+            </div>
+          ) : (
           <div className="rounded-lg border border-border">
-            <div className="px-3 py-2 text-xs text-text-secondary border-b border-border">
-              Available cluster contexts
+            <div className="px-3 py-2 text-xs text-text-secondary border-b border-border flex items-center justify-between gap-2">
+              <span>Available cluster contexts</span>
+              <button
+                type="button"
+                onClick={() => void handleManualClusterRefresh()}
+                disabled={kubeconfigLoading}
+                className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-hover disabled:opacity-60"
+              >
+                <RotateCw size={12} />
+                Refresh
+              </button>
             </div>
             <div className="max-h-56 overflow-y-auto">
               {kubeconfigLoading && (
                 <div className="px-3 py-2 text-sm text-text-secondary">Loading contexts...</div>
               )}
-              {!kubeconfigLoading && filteredClusters.length === 0 && (
-                <div className="px-3 py-2 text-sm text-text-secondary">No cluster contexts found for this kubeconfig.</div>
+              {!kubeconfigLoading && visibleClusters.length === 0 && (
+                <div className="px-3 py-3 text-sm text-text-secondary space-y-2">
+                  <div>
+                    {clusterImportTab === 'cloud'
+                      ? (cloudProvider === 'talos-omni'
+                        ? 'No Talos Omni cluster contexts found.'
+                        : cloudProvider === 'aws'
+                          ? 'No Amazon Web Services cluster contexts found.'
+                          : cloudProvider === 'azure'
+                            ? 'No Microsoft Azure cluster contexts found.'
+                            : cloudProvider === 'gcp'
+                              ? 'No Google Cloud Platform cluster contexts found.'
+                              : 'No DigitalOcian cluster contexts found.')
+                      : 'No cluster contexts found for this kubeconfig.'}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKubeconfigInput('');
+                      setSelectedClusterContext('');
+                      setClusterSearch('');
+                      void refreshClustersForKubeconfig('');
+                    }}
+                    className="rounded border border-border px-2 py-1 text-xs hover:bg-hover"
+                  >
+                    Load from all discovered kubeconfigs
+                  </button>
+                </div>
               )}
-              {filteredClusters.map((item) => (
+              {visibleClusters.map((item) => (
                 <button
                   key={`${item.kubeconfigPath}:${item.context}`}
                   type="button"
-                  onClick={() => setSelectedClusterContext(item.context)}
+                  onClick={() => {
+                    setSelectedClusterContext(item.context);
+                    setKubeconfigInput(item.kubeconfigPath);
+                  }}
                   className={cn(
                     'w-full px-3 py-2 text-left text-sm border-t border-border first:border-t-0 hover:bg-hover',
                     selectedClusterContext === item.context ? 'bg-hover text-primary font-medium' : 'text-text-secondary'
@@ -843,6 +1491,7 @@ export const Layout = () => {
               ))}
             </div>
           </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
@@ -856,11 +1505,41 @@ export const Layout = () => {
           </button>
           <button
             type="button"
-            disabled={kubeconfigSwitching || !selectedClusterContext}
-            onClick={() => void applyClusterSelection(kubeconfigInput, selectedClusterContext)}
+            disabled={kubeconfigSwitching || !selectedClusterContext || (clusterImportTab === 'cloud' && !cloudListReady)}
+            onClick={() => {
+              if (clusterImportTab === 'cloud' && cloudProvider === 'aws') {
+                // For AWS EKS: run update-kubeconfig first, then switch
+                const clusterArn = selectedClusterContext;
+                // Extract cluster name from ARN: arn:aws:eks:<region>:<account>:cluster/<name>
+                const clusterName = clusterArn.split('/').pop() ?? clusterArn;
+                void (async () => {
+                  setKubeconfigSwitching(true);
+                  try {
+                    const contextName = await awsEksUpdateKubeconfig(
+                      awsAccessKey.trim(),
+                      awsSecretKey.trim(),
+                      awsSessionToken.trim(),
+                      awsRegion.trim() || 'us-east-1',
+                      clusterName,
+                    );
+                    // Reload default kubeconfig and switch to the new context
+                    await applyClusterSelection('', contextName);
+                  } catch (err) {
+                    toast.error(`Failed to import EKS cluster: ${getErrorMessage(err) ?? String(err)}`);
+                    setKubeconfigSwitching(false);
+                  }
+                })();
+              } else {
+                const selectedItem = visibleClusters.find((item) => item.context === selectedClusterContext);
+                const sourcePath = selectedItem?.kubeconfigPath || kubeconfigInput;
+                void applyClusterSelection(sourcePath, selectedClusterContext);
+              }
+            }}
             className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
-            {kubeconfigSwitching ? 'Switching...' : 'Apply'}
+            {kubeconfigSwitching
+              ? (clusterImportTab === 'kubeconfig' ? 'Applying...' : 'Importing/Applying...')
+              : (clusterImportTab === 'kubeconfig' ? 'Apply' : 'Import/Apply')}
           </button>
         </div>
       </div>
@@ -891,6 +1570,7 @@ export const Layout = () => {
 
   return (
     <div className="flex h-screen flex-col bg-bg text-text">
+      <SidecarLogsPanel open={showSidecarLogs} onClose={() => setShowSidecarLogs(false)} />
       {desktopMode && (
         <div
           data-tauri-drag-region
@@ -901,6 +1581,7 @@ export const Layout = () => {
             <button
               type="button"
               onClick={() => {
+                setCloudProvider('talos-omni');
                 setKubeconfigInput(kubeconfigPath);
                 setSelectedClusterContext(kubeContext);
                 setClusterSearch('');
@@ -924,6 +1605,14 @@ export const Layout = () => {
             </button>
           </div>
           <div data-tauri-drag-region className="flex items-center gap-3 px-4">
+            <button
+              type="button"
+              onClick={() => setShowSidecarLogs(true)}
+              className="text-xs text-text-secondary hover:text-text px-2 py-1 rounded border border-border bg-surface"
+              title="Backend logs"
+            >
+              Logs
+            </button>
             <span className="text-[13px] font-medium tracking-wide text-text-secondary whitespace-nowrap">
               {topRightTitle}
             </span>
