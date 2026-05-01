@@ -2060,6 +2060,109 @@ fn log_omni_connection_attempt(
     Ok(())
 }
 
+/// Resolve the omniconfig file path and the best-matching context name for the
+/// given Omni endpoint URL. Returns `(omniconfig_path, context_name)` when
+/// found so callers can pass `--omniconfig` and `--context` explicitly to
+/// omnictl, avoiding "context not found" errors in release builds where env
+/// vars may not be inherited from the user's interactive shell.
+fn find_omni_context(omni_url: &str) -> Option<(PathBuf, String)> {
+    let config_path = if let Some(p) = env_value("OMNICONFIG") {
+        PathBuf::from(p)
+    } else if let Some(home) = resolve_home_dir() {
+        PathBuf::from(home).join(".talos/omni/config")
+    } else {
+        app_log("[omni] find_omni_context: HOME not set, cannot locate omniconfig".to_string());
+        return None;
+    };
+
+    if !config_path.exists() {
+        app_log(format!("[omni] omniconfig not found at {}", config_path.display()));
+        return None;
+    }
+
+    let content = match fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(e) => {
+            app_log(format!("[omni] failed to read omniconfig {}: {e}", config_path.display()));
+            return None;
+        }
+    };
+
+    let yaml: serde_yaml::Value = match serde_yaml::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            app_log(format!("[omni] failed to parse omniconfig: {e}"));
+            return None;
+        }
+    };
+
+    let contexts = yaml.get("contexts").and_then(|v| v.as_mapping());
+    if let Some(contexts) = contexts {
+        let normalized_url = omni_url.trim_end_matches('/').to_lowercase();
+
+        // First pass: find a context whose URL matches the provided endpoint.
+        for (key, ctx) in contexts {
+            let ctx_url = ctx
+                .get("url")
+                .and_then(|v| v.as_str())
+                .map(|u| u.trim_end_matches('/').to_lowercase());
+            if let (Some(name), Some(url)) = (key.as_str(), ctx_url) {
+                if url == normalized_url {
+                    app_log(format!("[omni] matched context={name} for url={omni_url}"));
+                    return Some((config_path, name.to_string()));
+                }
+            }
+        }
+
+        // Second pass: current-context.
+        if let Some(current) = yaml.get("current-context").and_then(|v| v.as_str()) {
+            if !current.is_empty() && contexts.get(current).is_some() {
+                app_log(format!("[omni] using current-context={current}"));
+                return Some((config_path, current.to_string()));
+            }
+        }
+
+        // Third pass: first available context.
+        if let Some((key, _)) = contexts.iter().next() {
+            if let Some(name) = key.as_str() {
+                app_log(format!("[omni] falling back to first context={name}"));
+                return Some((config_path, name.to_string()));
+            }
+        }
+    }
+
+    app_log(format!("[omni] no usable context found in omniconfig at {}", config_path.display()));
+    None
+}
+
+fn resolve_home_dir() -> Option<PathBuf> {
+    if let Some(home) = env_value("HOME") {
+        let p = PathBuf::from(home);
+        if !p.as_os_str().is_empty() {
+            return Some(p);
+        }
+    }
+    dirs::home_dir()
+}
+
+fn resolve_siderov1_keys_dir() -> Option<PathBuf> {
+    if let Some(explicit) = env_value("SIDEROV1_KEYS_DIR") {
+        let p = PathBuf::from(explicit);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    if let Some(home) = resolve_home_dir() {
+        let p = home.join(".talos/keys");
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    None
+}
+
 #[tauri::command]
 fn omni_update_kubeconfig(
     cluster_name: String,
@@ -2097,7 +2200,33 @@ fn omni_update_kubeconfig(
         }
     };
 
+    let omni_context = find_omni_context(&omni_url);
+    let resolved_home = resolve_home_dir();
+    let siderov1_keys_dir = resolve_siderov1_keys_dir();
+
+    if let Some(home) = &resolved_home {
+        app_log(format!("[omni] resolved HOME={}", home.display()));
+    }
+
     let mut cmd = Command::new(omnictl_bin);
+    // --omniconfig and --context are global flags; they must come before the subcommand.
+    // When no valid context is found (e.g. empty default config), point --omniconfig at a
+    // nonexistent path so omnictl skips the empty ~/.talos/omni/config and falls back to
+    // using OMNI_ENDPOINT (which we always set below).
+    match &omni_context {
+        Some((cfg_path, ctx_name)) => {
+            app_log(format!("[omni] kubeconfig using --omniconfig={} --context={}", cfg_path.display(), ctx_name));
+            cmd.arg("--omniconfig").arg(cfg_path).arg("--context").arg(ctx_name);
+        }
+        None => {
+            app_log("[omni] kubeconfig: no valid context, using OMNI_ENDPOINT with placeholder omniconfig".to_string());
+            cmd.arg("--omniconfig").arg("/tmp/.pertisk-omni-no-context-placeholder");
+        }
+    }
+    if let Some(keys_dir) = &siderov1_keys_dir {
+        app_log(format!("[omni] kubeconfig using --siderov1-keys-dir={}", keys_dir.display()));
+        cmd.arg("--siderov1-keys-dir").arg(keys_dir);
+    }
     cmd.args([
         "kubeconfig",
         "--cluster", &cluster_name,
@@ -2111,7 +2240,14 @@ fn omni_update_kubeconfig(
         cmd.env("PATH", path);
     }
 
-    for key in ["HOME", "USER", "LOGNAME", "SHELL", "OMNICONFIG", "TALOSCONFIG", "KUBECONFIG"] {
+    if let Some(home) = &resolved_home {
+        cmd.env("HOME", home);
+    }
+    if let Some(keys_dir) = &siderov1_keys_dir {
+        cmd.env("SIDEROV1_KEYS_DIR", keys_dir);
+    }
+
+    for key in ["HOME", "USER", "LOGNAME", "SHELL", "OMNICONFIG", "TALOSCONFIG", "KUBECONFIG", "SIDEROV1_KEYS_DIR"] {
         forward_env_if_present(&mut cmd, key);
     }
 
@@ -2267,12 +2403,13 @@ fn list_omni_clusters(
 
     let arg_variants: Vec<Vec<String>> = vec![
         vec!["get".to_string(), "clusters".to_string()],
-        vec!["get".to_string(), "clusters".to_string(), "-n".to_string(), "default".to_string()],
-        vec!["get".to_string(), "clusters.omni.sidero.dev".to_string(), "-o".to_string(), "json".to_string()],
-        vec!["get".to_string(), "cluster.omni.sidero.dev".to_string(), "-o".to_string(), "json".to_string()],
-        vec!["get".to_string(), "clusters.omni.sidero.dev".to_string(), "-n".to_string(), "default".to_string(), "-o".to_string(), "json".to_string()],
-        vec!["get".to_string(), "cluster.omni.sidero.dev".to_string(), "-n".to_string(), "default".to_string(), "-o".to_string(), "json".to_string()],
     ];
+
+    let resolved_home = resolve_home_dir();
+
+    if let Some(home) = &resolved_home {
+        app_log(format!("[omni] list-clusters resolved HOME={}", home.display()));
+    }
 
     let mut last_error = String::new();
     let mut had_successful_output = false;
@@ -2281,25 +2418,28 @@ fn list_omni_clusters(
 
     for args in arg_variants {
         let cmd_label = format!("omnictl {}", args.join(" "));
-        let mut cmd = Command::new(omnictl_bin.clone());
-        cmd.args(args.iter().map(|s| s.as_str())).stdin(Stdio::null());
+        let omnictl_cmd = build_shell_command(&omnictl_bin.to_string_lossy(), &args);
+        let shell_cmd = format!(
+            "OMNI_ENDPOINT={} OMNICONFIG={} {}",
+            shell_quote(&omni_url),
+            shell_quote("/tmp/.pertisk-omni-no-context-placeholder"),
+            omnictl_cmd
+        );
+        let shell = env_value("SHELL").unwrap_or_else(|| "/bin/zsh".to_string());
 
-        if let Some(path) = sidecar_path() {
-            cmd.env("PATH", path);
+        app_log(format!("[omni] list-clusters cmd={} -ilc {}", shell, shell_cmd));
+
+        let mut cmd = Command::new(&shell);
+        cmd.args(["-ilc", &shell_cmd]).stdin(Stdio::null());
+
+        if let Some(home) = &resolved_home {
+            cmd.env("HOME", home);
         }
-
-        for key in ["HOME", "USER", "LOGNAME", "SHELL", "OMNICONFIG", "TALOSCONFIG"] {
-            forward_env_if_present(&mut cmd, key);
-        }
-
-        cmd.env("OMNI_ENDPOINT", &omni_url);
-
-        app_log(format!("[omni] list-clusters cmd={cmd_label}"));
 
         let output = match cmd.output() {
             Ok(v) => v,
             Err(e) => {
-                last_error = format!("failed to run omnictl cluster list: {e}");
+                last_error = format!("failed to run omnictl cluster list via '{shell} -ilc': {e}");
                 continue;
             }
         };
@@ -2339,8 +2479,8 @@ fn list_omni_clusters(
             }
             if first_successful_empty.is_none() {
                 first_successful_empty = Some(clusters);
+                continue;
             }
-            continue;
         }
 
         // Table fallback specifically for: `omnictl get clusters`
