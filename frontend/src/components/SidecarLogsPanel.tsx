@@ -90,7 +90,7 @@ export function SidecarLogsPanel({ open, onClose }: Props) {
         </div>
 
         {/* Log body */}
-        <div className="flex-1 overflow-y-auto font-mono text-xs p-3 space-y-0.5 bg-bg">
+        <div className="flex-1 overflow-auto font-mono text-xs p-3 space-y-0.5 bg-bg">
           {loadError ? (
             <p className="text-red-400">Failed to load logs: {loadError}</p>
           ) : null}
@@ -105,10 +105,10 @@ export function SidecarLogsPanel({ open, onClose }: Props) {
                   key={i}
                   className={
                     isErr
-                      ? 'text-red-400'
+                      ? 'text-red-400 whitespace-pre min-w-max'
                       : isWarn
-                      ? 'text-yellow-400'
-                      : 'text-text-secondary'
+                      ? 'text-yellow-400 whitespace-pre min-w-max'
+                      : 'text-text-secondary whitespace-pre min-w-max'
                   }
                 >
                   {line}

@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::fs;
@@ -2048,6 +2049,499 @@ fn aws_eks_update_kubeconfig(
     Ok(context)
 }
 
+#[tauri::command]
+fn log_omni_connection_attempt(
+    omni_url: String,
+    email: String,
+) -> Result<(), String> {
+    let omni_url = omni_url.trim().to_string();
+    let email = email.trim().to_string();
+    app_log(format!("[omni] connection-attempt url={} email={}", omni_url, email));
+    Ok(())
+}
+
+#[tauri::command]
+fn omni_update_kubeconfig(
+    cluster_name: String,
+    omni_url: String,
+) -> Result<String, String> {
+    let cluster_name = cluster_name.trim().to_string();
+    let omni_url = omni_url.trim().to_string();
+
+    if cluster_name.is_empty() {
+        let msg = "Omni cluster name is required".to_string();
+        app_log(format!("[omni] ERROR: {msg}"));
+        return Err(msg);
+    }
+    if omni_url.is_empty() {
+        let msg = "Omni URL is required".to_string();
+        app_log(format!("[omni] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    let context_name = format!("omni-{}", cluster_name);
+    app_log(format!(
+        "[omni] update-kubeconfig cluster={} endpoint={} context={}",
+        cluster_name, omni_url, context_name
+    ));
+
+    let omnictl_bin = match resolve_executable_command("omnictl") {
+        Some(b) => {
+            app_log(format!("[omni] binary={}", b.display()));
+            b
+        }
+        None => {
+            let msg = "failed to resolve 'omnictl' command on PATH".to_string();
+            app_log(format!("[omni] ERROR: {msg}"));
+            return Err(msg);
+        }
+    };
+
+    let mut cmd = Command::new(omnictl_bin);
+    cmd.args([
+        "kubeconfig",
+        "--cluster", &cluster_name,
+        "--merge",
+        "--force",
+        "--force-context-name", &context_name,
+    ])
+    .stdin(Stdio::null());
+
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+
+    for key in ["HOME", "USER", "LOGNAME", "SHELL", "OMNICONFIG", "TALOSCONFIG", "KUBECONFIG"] {
+        forward_env_if_present(&mut cmd, key);
+    }
+
+    cmd.env("OMNI_ENDPOINT", &omni_url);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run omnictl kubeconfig: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let msg = if stderr.is_empty() {
+            format!("omnictl kubeconfig failed with status {}", output.status)
+        } else {
+            format!("omnictl kubeconfig failed: {stderr}")
+        };
+        app_log(format!("[omni] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !stdout.is_empty() {
+        app_log(format!("[omni] update-kubeconfig stdout: {stdout}"));
+    }
+
+    Ok(context_name)
+}
+
+#[tauri::command]
+fn list_omni_clusters(
+    omni_url: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    fn preview(s: &str, max: usize) -> String {
+        let trimmed = s.trim();
+        if trimmed.chars().count() <= max {
+            return trimmed.to_string();
+        }
+        let mut out = String::new();
+        for (i, ch) in trimmed.chars().enumerate() {
+            if i >= max {
+                break;
+            }
+            out.push(ch);
+        }
+        out.push_str("...<truncated>");
+        out
+    }
+
+    let omni_url = omni_url.trim().to_string();
+
+    if omni_url.is_empty() {
+        let msg = "Omni URL is required".to_string();
+        app_log(format!("[omni] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    app_log(format!("[omni] list-clusters endpoint={omni_url}"));
+
+    let omniconfig_env = env_value("OMNICONFIG").unwrap_or_else(|| "<unset>".to_string());
+    let default_omni_cfg_exists = env_value("HOME")
+        .map(|h| PathBuf::from(h).join(".talos/omni/config").exists())
+        .unwrap_or(false);
+    app_log(format!(
+        "[omni] runtime env OMNICONFIG={} default_config_exists={} HOME={}",
+        omniconfig_env,
+        default_omni_cfg_exists,
+        env_value("HOME").unwrap_or_else(|| "<unset>".to_string())
+    ));
+
+    let omnictl_bin = match resolve_executable_command("omnictl") {
+        Some(b) => {
+            app_log(format!("[omni] binary={}", b.display()));
+            b
+        }
+        None => {
+            let msg = "failed to resolve 'omnictl' command on PATH".to_string();
+            app_log(format!("[omni] ERROR: {msg}"));
+            return Err(msg);
+        }
+    };
+
+    fn looks_like_real_omni_cluster_name(name: &str) -> bool {
+        let n = name.trim();
+        if n.is_empty() {
+            return false;
+        }
+
+        // Keep this permissive enough to avoid false negatives across naming schemes.
+        // We only block obvious non-cluster/control-plane artifacts below.
+        if n.len() > 200 {
+            return false;
+        }
+
+        // Filter known non-cluster/control-plane artifact names.
+        if n.ends_with("Controller") || n.contains("Controller") {
+            return false;
+        }
+
+        let lower = n.to_ascii_lowercase();
+        if lower.contains("controllerversion")
+            || lower.contains("resource definition")
+            || lower.contains("resourcedefinition")
+            || lower.contains("clusterconfigversioncontroller")
+            || lower.contains("backupdatacontroller")
+            || lower.contains("clusterdestroystatuscontroller")
+        {
+            return false;
+        }
+
+        true
+    }
+
+    fn omni_name_from_item(item: &serde_json::Value) -> Option<String> {
+        let candidates = [
+            item.pointer("/name").and_then(|v| v.as_str()),
+            item.pointer("/metadata/name").and_then(|v| v.as_str()),
+            item.pointer("/metadata/id").and_then(|v| v.as_str()),
+            item.pointer("/id").and_then(|v| v.as_str()),
+            item.pointer("/spec/name").and_then(|v| v.as_str()),
+        ];
+
+        for c in candidates.into_iter().flatten() {
+            let t = c.trim();
+            if !t.is_empty() && looks_like_real_omni_cluster_name(t) {
+                return Some(t.to_string());
+            }
+        }
+        None
+    }
+
+    fn omni_extract_names(json: &serde_json::Value) -> Vec<serde_json::Value> {
+        let mut names = BTreeSet::<String>::new();
+
+        let items: Vec<&serde_json::Value> = if let Some(arr) = json.as_array() {
+            arr.iter().collect()
+        } else if let Some(arr) = json.get("items").and_then(|v| v.as_array()) {
+            arr.iter().collect()
+        } else {
+            vec![json]
+        };
+
+        for item in items {
+            if let Some(name) = omni_name_from_item(item) {
+                names.insert(name);
+            }
+        }
+
+        names
+            .into_iter()
+            .map(|name| serde_json::json!({ "name": name }))
+            .collect()
+    }
+
+    let arg_variants: Vec<Vec<String>> = vec![
+        vec!["get".to_string(), "clusters".to_string()],
+        vec!["get".to_string(), "clusters".to_string(), "-n".to_string(), "default".to_string()],
+        vec!["get".to_string(), "clusters.omni.sidero.dev".to_string(), "-o".to_string(), "json".to_string()],
+        vec!["get".to_string(), "cluster.omni.sidero.dev".to_string(), "-o".to_string(), "json".to_string()],
+        vec!["get".to_string(), "clusters.omni.sidero.dev".to_string(), "-n".to_string(), "default".to_string(), "-o".to_string(), "json".to_string()],
+        vec!["get".to_string(), "cluster.omni.sidero.dev".to_string(), "-n".to_string(), "default".to_string(), "-o".to_string(), "json".to_string()],
+    ];
+
+    let mut last_error = String::new();
+    let mut had_successful_output = false;
+
+    let mut first_successful_empty: Option<Vec<serde_json::Value>> = None;
+
+    for args in arg_variants {
+        let cmd_label = format!("omnictl {}", args.join(" "));
+        let mut cmd = Command::new(omnictl_bin.clone());
+        cmd.args(args.iter().map(|s| s.as_str())).stdin(Stdio::null());
+
+        if let Some(path) = sidecar_path() {
+            cmd.env("PATH", path);
+        }
+
+        for key in ["HOME", "USER", "LOGNAME", "SHELL", "OMNICONFIG", "TALOSCONFIG"] {
+            forward_env_if_present(&mut cmd, key);
+        }
+
+        cmd.env("OMNI_ENDPOINT", &omni_url);
+
+        app_log(format!("[omni] list-clusters cmd={cmd_label}"));
+
+        let output = match cmd.output() {
+            Ok(v) => v,
+            Err(e) => {
+                last_error = format!("failed to run omnictl cluster list: {e}");
+                continue;
+            }
+        };
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let msg = if stderr.is_empty() {
+                format!("omnictl cluster list failed with status {}", output.status)
+            } else {
+                format!("omnictl cluster list failed: {stderr}")
+            };
+            app_log(format!("[omni] WARN: {msg}"));
+            if !stdout.is_empty() {
+                app_log(format!("[omni] WARN stdout-preview: {}", preview(&stdout, 400)));
+            }
+            last_error = msg;
+            continue;
+        }
+
+        had_successful_output = true;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        app_log(format!("[omni] list-clusters stdout: {}", stdout.trim()));
+
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
+            app_log(format!("[omni] list-clusters json-preview={}", preview(&stdout, 800)));
+            let clusters = omni_extract_names(&json);
+            app_log(format!("[omni] list-clusters count={}", clusters.len()));
+            if !clusters.is_empty() {
+                let names: Vec<String> = clusters
+                    .iter()
+                    .filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                    .collect();
+                app_log(format!("[omni] list-clusters source={cmd_label} names={}", names.join(",")));
+                return Ok(clusters);
+            }
+            if first_successful_empty.is_none() {
+                first_successful_empty = Some(clusters);
+            }
+            continue;
+        }
+
+        // Table fallback specifically for: `omnictl get clusters`
+        // Example:
+        // NAMESPACE   TYPE      ID                            VERSION ...
+        // default     Cluster   talos-orangepi-prod-cluster   14      ...
+        if args.len() >= 2 && args[0] == "get" && args[1] == "clusters" {
+            let mut names = BTreeSet::<String>::new();
+            for line in stdout.lines() {
+                let t = line.trim();
+                if t.is_empty() {
+                    continue;
+                }
+                let upper = t.to_ascii_uppercase();
+                if upper.starts_with("NAMESPACE") {
+                    continue;
+                }
+
+                let cols: Vec<&str> = t.split_whitespace().collect();
+                if cols.len() < 3 {
+                    continue;
+                }
+
+                // Expect TYPE column to be Cluster and ID column to be name.
+                if !cols[1].eq_ignore_ascii_case("cluster") {
+                    continue;
+                }
+
+                let cluster_id = cols[2].trim();
+                if looks_like_real_omni_cluster_name(cluster_id) {
+                    names.insert(cluster_id.to_string());
+                }
+            }
+
+            if !names.is_empty() {
+                let clusters: Vec<serde_json::Value> = names
+                    .into_iter()
+                    .map(|name| serde_json::json!({ "name": name }))
+                    .collect();
+                app_log(format!("[omni] list-clusters count={} (table)", clusters.len()));
+                let names: Vec<String> = clusters
+                    .iter()
+                    .filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                    .collect();
+                app_log(format!("[omni] list-clusters source={cmd_label} names={}", names.join(",")));
+                return Ok(clusters);
+            }
+        }
+
+        last_error = "omnictl returned non-JSON output for JSON request".to_string();
+        app_log(format!(
+            "[omni] non-json output for {} stdout-preview={}",
+            cmd_label,
+            preview(&stdout, 400)
+        ));
+    }
+
+    let msg = if last_error.is_empty() {
+        "omnictl cluster list failed for all supported output formats".to_string()
+    } else {
+        last_error
+    };
+    if let Some(clusters) = first_successful_empty {
+        app_log("[omni] list-clusters count=0 (json parsed but no valid cluster names found)");
+        return Ok(clusters);
+    }
+    if had_successful_output {
+        app_log("[omni] ERROR: successful command returned non-json output for all attempts");
+    }
+    app_log(format!("[omni] ERROR: {msg}"));
+    Err(msg)
+}
+
+#[tauri::command]
+fn list_gcp_clusters(
+    project_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let project_id = project_id.trim().to_string();
+    
+    if project_id.is_empty() {
+        let msg = "GCP project ID is required".to_string();
+        app_log(format!("[gcp] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    app_log(format!("[gcp] list-clusters project_id={project_id}"));
+
+    let gcloud_bin = match resolve_executable_command("gcloud") {
+        Some(b) => { app_log(format!("[gcp] binary={}", b.display())); b }
+        None => {
+            let msg = "failed to resolve 'gcloud' command on PATH".to_string();
+            app_log(format!("[gcp] ERROR: {msg}"));
+            return Err(msg);
+        }
+    };
+
+    let mut cmd = Command::new(gcloud_bin);
+    cmd.args(["container", "clusters", "list", "--project", &project_id, "--format", "json"])
+        .stdin(Stdio::null());
+
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+
+    for key in ["HOME", "USER", "LOGNAME", "SHELL", "GOOGLE_APPLICATION_CREDENTIALS"] {
+        forward_env_if_present(&mut cmd, key);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run gcloud container clusters list: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let msg = if stderr.is_empty() {
+            format!("gcloud container clusters list failed with status {}", output.status)
+        } else {
+            format!("gcloud container clusters list failed: {stderr}")
+        };
+        app_log(format!("[gcp] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    let stdout_preview = String::from_utf8_lossy(&output.stdout);
+    app_log(format!("[gcp] list-clusters stdout: {}", stdout_preview.trim()));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).map_err(|e| format!("failed to parse gcloud output: {e}"))?;
+
+    let clusters = json.as_array()
+        .cloned()
+        .ok_or_else(|| "unexpected gcloud output format".to_string())?;
+
+    Ok(clusters)
+}
+
+#[tauri::command]
+fn list_azure_clusters(
+    subscription_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let subscription_id = subscription_id.trim().to_string();
+    
+    if subscription_id.is_empty() {
+        let msg = "Azure subscription ID is required".to_string();
+        app_log(format!("[azure] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    app_log(format!("[azure] list-clusters subscription_id={}", &subscription_id[..subscription_id.len().min(8)]));
+
+    let az_bin = match resolve_executable_command("az") {
+        Some(b) => { app_log(format!("[azure] binary={}", b.display())); b }
+        None => {
+            let msg = "failed to resolve 'az' command on PATH".to_string();
+            app_log(format!("[azure] ERROR: {msg}"));
+            return Err(msg);
+        }
+    };
+
+    let mut cmd = Command::new(az_bin);
+    cmd.args(["aks", "list", "--subscription", &subscription_id, "--output", "json"])
+        .stdin(Stdio::null());
+
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+
+    for key in ["HOME", "USER", "LOGNAME", "SHELL", "AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID"] {
+        forward_env_if_present(&mut cmd, key);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run az aks list: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let msg = if stderr.is_empty() {
+            format!("az aks list failed with status {}", output.status)
+        } else {
+            format!("az aks list failed: {stderr}")
+        };
+        app_log(format!("[azure] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    let stdout_preview = String::from_utf8_lossy(&output.stdout);
+    app_log(format!("[azure] list-clusters stdout: {}", stdout_preview.trim()));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).map_err(|e| format!("failed to parse az output: {e}"))?;
+
+    let clusters = json.as_array()
+        .cloned()
+        .ok_or_else(|| "unexpected az output format".to_string())?;
+
+    Ok(clusters)
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -2072,7 +2566,12 @@ fn main() {
             save_pod_file,
             save_base64_file,
             list_eks_clusters,
-            aws_eks_update_kubeconfig
+            aws_eks_update_kubeconfig,
+            log_omni_connection_attempt,
+            omni_update_kubeconfig,
+            list_omni_clusters,
+            list_gcp_clusters,
+            list_azure_clusters
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]

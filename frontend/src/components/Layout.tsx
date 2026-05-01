@@ -54,8 +54,12 @@ import {
   awsEksUpdateKubeconfig,
   openDesktopExternalUrl,
   saveDesktopSidecarConfig,
-  triggerKubeBrowserLogin,
   waitDesktopClusterSwitchResult,
+  logOmniConnectionAttempt,
+  listOmniClusters,
+  omniUpdateKubeconfig,
+  listGcpClusters,
+  listAzureClusters,
 } from '../utils/tauriDesktop';
 import { isDesktopRuntime } from '../utils/desktopBridge';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -102,6 +106,8 @@ const AWS_ACCESS_KEY_STORAGE_KEY = 'pertisk-aws-access-key';
 const AWS_SECRET_KEY_STORAGE_KEY = 'pertisk-aws-secret-key';
 const AWS_SESSION_TOKEN_STORAGE_KEY = 'pertisk-aws-session-token';
 const AWS_ACCOUNT_ID_STORAGE_KEY = 'pertisk-aws-account-id';
+const GCP_PROJECT_ID_STORAGE_KEY = 'pertisk-gcp-project-id';
+const AZURE_SUBSCRIPTION_ID_STORAGE_KEY = 'pertisk-azure-subscription-id';
 const DIGITALOCEAN_TOKEN_STORAGE_KEY = 'pertisk-digitalocean-api-token';
 
 const CLOUD_PROVIDER_OPTIONS = [
@@ -160,7 +166,7 @@ function isNoKubeconfigError(message: string | null): boolean {
   const normalized = message.toLowerCase();
   return normalized.includes('no kubeconfig file found')
     || normalized.includes('no kubeconfig files found')
-    || normalized.includes('no kubernetes cluster configuration found');
+    || normalized.includes('no cluster configuration found');
 }
 
 const CONFIG_ITEMS: NavItem[] = [
@@ -218,21 +224,6 @@ function buildOmniConnectUrl(omniUrl: string, email: string): string {
   return parsed.toString();
 }
 
-function isLikelyOmniContext(item: DesktopKubeconfigCluster): boolean {
-  const haystack = `${item.context} ${item.cluster ?? ''} ${item.kubeconfigPath}`.toLowerCase();
-  return haystack.includes('omni') || haystack.includes('talos');
-}
-
-function isLikelyAzureContext(item: DesktopKubeconfigCluster): boolean {
-  const haystack = `${item.context} ${item.cluster ?? ''} ${item.kubeconfigPath}`.toLowerCase();
-  return haystack.includes('azure') || haystack.includes('aks');
-}
-
-function isLikelyGcpContext(item: DesktopKubeconfigCluster): boolean {
-  const haystack = `${item.context} ${item.cluster ?? ''} ${item.kubeconfigPath}`.toLowerCase();
-  return haystack.includes('gcp') || haystack.includes('gke') || haystack.includes('google');
-}
-
 function isLikelyDigitalOceanContext(item: DesktopKubeconfigCluster): boolean {
   const haystack = `${item.context} ${item.cluster ?? ''} ${item.kubeconfigPath}`.toLowerCase();
   return haystack.includes('digitalocean') || haystack.includes('digitalocian') || haystack.includes('do-');
@@ -255,9 +246,9 @@ export const Layout = () => {
   const [kubeconfigSwitching, setKubeconfigSwitching] = useState(false);
   const [kubeconfigInitialized, setKubeconfigInitialized] = useState(false);
   const [kubeconfigError, setKubeconfigError] = useState<string | null>(null);
+  const [noClusterConfigDetected, setNoClusterConfigDetected] = useState(false);
   const [startupClusterSelectionDone, setStartupClusterSelectionDone] = useState(false);
   const [authStatus, setAuthStatus] = useState<DesktopAuthStatus | null>(null);
-  const [browserLoginLoading, setBrowserLoginLoading] = useState(false);
   const [omniUrl, setOmniUrl] = useState('');
   const [omniEmail, setOmniEmail] = useState('');
   const [omniConnectLoading, setOmniConnectLoading] = useState(false);
@@ -270,9 +261,19 @@ export const Layout = () => {
   const [awsRegion, setAwsRegion] = useState('ap-southeast-1');
   const [awsEksClusters, setAwsEksClusters] = useState<import('../utils/tauriDesktop').EksClusterEntry[]>([]);
   const [cloudListReady, setCloudListReady] = useState(false);
+  const [omniClusters, setOmniClusters] = useState<any[]>([]);
+  const [omniLoading, setOmniLoading] = useState(false);
+  const [gcpProjectId, setGcpProjectId] = useState('');
+  const [gcpClusters, setGcpClusters] = useState<any[]>([]);
+  const [gcpLoading, setGcpLoading] = useState(false);
+  const [azureSubscriptionId, setAzureSubscriptionId] = useState('');
+  const [azureClusters, setAzureClusters] = useState<any[]>([]);
+  const [azureLoading, setAzureLoading] = useState(false);
   const [showCloudProviderMenu, setShowCloudProviderMenu] = useState(false);
   const [omniSubmitted, setOmniSubmitted] = useState(false);
   const [awsSubmitted, setAwsSubmitted] = useState(false);
+  const [gcpSubmitted, setGcpSubmitted] = useState(false);
+  const [azureSubmitted, setAzureSubmitted] = useState(false);
   const [digitaloceanSubmitted, setDigitaloceanSubmitted] = useState(false);
   const [clusterImportTab, setClusterImportTab] = useState<'kubeconfig' | 'cloud'>('kubeconfig');
   const [workloadsOpen, setWorkloadsOpen] = useState(false);
@@ -295,6 +296,8 @@ export const Layout = () => {
   const resizeStartWidthRef = useRef(0);
   const kubeconfigRefreshRequestRef = useRef(0);
   const clusterApplyTargetRef = useRef('');
+  const noConfigModalShownRef = useRef(false);
+  const authPlaceholderModalShownRef = useRef(false);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -380,12 +383,15 @@ export const Layout = () => {
         // Check if no kubeconfig files were found
         if (!candidates || candidates.length === 0) {
           setKubeconfigError(null);
+          setNoClusterConfigDetected(true);
           setKubeClusters([]);
           setSelectedClusterContext('');
           setKubeconfigLoading(false);
           setKubeconfigInitialized(true);
           return;
         }
+
+        setNoClusterConfigDetected(false);
 
         const currentPath = config.kubeconfigPath ?? '';
         const currentContext = config.kubeContext ?? '';
@@ -410,15 +416,17 @@ export const Layout = () => {
         const resolvedMessage =
           rawMessage
           || auth.message
-          || 'No Kubernetes cluster configuration found. Add a kubeconfig at ~/.kube/config or set KUBECONFIG, then restart the app.';
+          || 'Failed to load Kubernetes cluster configuration.';
 
         if (isNoKubeconfigError(resolvedMessage)) {
           setKubeconfigError(null);
+          setNoClusterConfigDetected(true);
           setKubeClusters([]);
           setSelectedClusterContext('');
           return;
         }
 
+        setNoClusterConfigDetected(false);
         setKubeconfigError(resolvedMessage);
         toast.error(resolvedMessage);
       } finally {
@@ -444,6 +452,8 @@ export const Layout = () => {
     setAwsSecretKey(window.localStorage.getItem(AWS_SECRET_KEY_STORAGE_KEY) ?? '');
     setAwsSessionToken(window.localStorage.getItem(AWS_SESSION_TOKEN_STORAGE_KEY) ?? '');
     setAwsAccountId(window.localStorage.getItem(AWS_ACCOUNT_ID_STORAGE_KEY) ?? '');
+    setGcpProjectId(window.localStorage.getItem(GCP_PROJECT_ID_STORAGE_KEY) ?? '');
+    setAzureSubscriptionId(window.localStorage.getItem(AZURE_SUBSCRIPTION_ID_STORAGE_KEY) ?? '');
     setDigitaloceanApiToken(window.localStorage.getItem(DIGITALOCEAN_TOKEN_STORAGE_KEY) ?? '');
   }, []);
 
@@ -468,19 +478,6 @@ export const Layout = () => {
       clearInterval(id);
     };
   }, [desktopMode]);
-
-  const handleBrowserLogin = async () => {
-    setBrowserLoginLoading(true);
-    try {
-      await triggerKubeBrowserLogin();
-      toast.success('Authenticated successfully. Cluster connection restored.');
-      setAuthStatus(null);
-    } catch (err) {
-      toast.error(getErrorMessage(err) ?? 'Browser login failed.');
-    } finally {
-      setBrowserLoginLoading(false);
-    }
-  };
 
   const trimmedOmniUrl = omniUrl.trim();
   const trimmedOmniEmail = omniEmail.trim();
@@ -530,6 +527,18 @@ export const Layout = () => {
       : 'Region format looks invalid (example: ap-southeast-1).';
   }, [trimmedAwsRegion]);
 
+  const trimmedGcpProjectId = gcpProjectId.trim();
+  const gcpProjectIdError = useMemo(() => {
+    if (!trimmedGcpProjectId) return 'GCP project ID is required.';
+    return trimmedGcpProjectId.length >= 6 ? null : 'Project ID should be at least 6 characters.';
+  }, [trimmedGcpProjectId]);
+
+  const trimmedAzureSubscriptionId = azureSubscriptionId.trim();
+  const azureSubscriptionIdError = useMemo(() => {
+    if (!trimmedAzureSubscriptionId) return 'Subscription ID is required.';
+    return /^[a-f0-9\-]{36}$/.test(trimmedAzureSubscriptionId) ? null : 'Subscription ID format is invalid.';
+  }, [trimmedAzureSubscriptionId]);
+
   const trimmedDigitaloceanToken = digitaloceanApiToken.trim();
   const digitaloceanTokenError = useMemo(() => {
     if (!trimmedDigitaloceanToken) return 'DigitalOcean API token is required.';
@@ -556,14 +565,40 @@ export const Layout = () => {
         window.localStorage.setItem(TALOS_OMNI_EMAIL_STORAGE_KEY, trimmedOmniEmail);
       }
 
+      // Log the connection attempt
+      await logOmniConnectionAttempt(normalizedOmniUrl, trimmedOmniEmail);
+
       const connectUrl = buildOmniConnectUrl(normalizedOmniUrl, trimmedOmniEmail);
       await openDesktopExternalUrl(connectUrl);
-
-      toast.info('Browser opened for Omni authentication. After login, your kubeconfig will be updated — click Refresh to load new clusters.');
+      setCloudListReady(true);
     } catch (err) {
       toast.error(getErrorMessage(err) ?? 'Failed to open Talos Omni browser login.');
     } finally {
       setOmniConnectLoading(false);
+    }
+  };
+
+  const handleOmniListClusters = async () => {
+    setOmniSubmitted(true);
+    if (omniUrlError) {
+      toast.error(omniUrlError);
+      return;
+    }
+
+    setOmniLoading(true);
+    try {
+      const clusters = await listOmniClusters(normalizedOmniUrl);
+      setOmniClusters(clusters || []);
+      setCloudListReady(true);
+      if (!clusters || clusters.length === 0) {
+        toast.success('No Talos Omni clusters found from provider.');
+      } else {
+        toast.success(`Found ${clusters.length} Talos Omni cluster(s) from provider (filtered).`);
+      }
+    } catch (err) {
+      toast.error(`Failed to list Talos Omni clusters: ${getErrorMessage(err) ?? String(err)}`);
+    } finally {
+      setOmniLoading(false);
     }
   };
 
@@ -610,6 +645,64 @@ export const Layout = () => {
     }
   };
 
+  const handleGcpApplyCredentials = async () => {
+    setGcpSubmitted(true);
+    if (gcpProjectIdError) {
+      toast.error(gcpProjectIdError);
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(GCP_PROJECT_ID_STORAGE_KEY, trimmedGcpProjectId);
+    }
+
+    setGcpLoading(true);
+    try {
+      const clusters = await listGcpClusters(trimmedGcpProjectId);
+      setGcpClusters(clusters || []);
+      setCloudListReady(true);
+      if (!clusters || clusters.length === 0) {
+        toast.success('GCP project set. No GKE clusters found.');
+      } else {
+        toast.success(`GCP project set. Found ${clusters.length} GKE cluster(s).`);
+      }
+    } catch (err) {
+      console.error('[GCP] list clusters error:', err);
+      toast.error(`Failed to list GCP clusters: ${getErrorMessage(err) ?? String(err)}`);
+    } finally {
+      setGcpLoading(false);
+    }
+  };
+
+  const handleAzureApplyCredentials = async () => {
+    setAzureSubmitted(true);
+    if (azureSubscriptionIdError) {
+      toast.error(azureSubscriptionIdError);
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(AZURE_SUBSCRIPTION_ID_STORAGE_KEY, trimmedAzureSubscriptionId);
+    }
+
+    setAzureLoading(true);
+    try {
+      const clusters = await listAzureClusters(trimmedAzureSubscriptionId);
+      setAzureClusters(clusters || []);
+      setCloudListReady(true);
+      if (!clusters || clusters.length === 0) {
+        toast.success('Azure subscription set. No AKS clusters found.');
+      } else {
+        toast.success(`Azure subscription set. Found ${clusters.length} AKS cluster(s).`);
+      }
+    } catch (err) {
+      console.error('[Azure] list clusters error:', err);
+      toast.error(`Failed to list Azure clusters: ${getErrorMessage(err) ?? String(err)}`);
+    } finally {
+      setAzureLoading(false);
+    }
+  };
+
   const handleDigitaloceanApplyToken = async () => {
     setDigitaloceanSubmitted(true);
     if (digitaloceanTokenError) {
@@ -623,7 +716,26 @@ export const Layout = () => {
 
     toast.success('DigitalOcian API token saved.');
     setCloudListReady(true);
-    await handleManualClusterRefresh();
+  };
+
+  const handleCloudProviderRefresh = async () => {
+    if (cloudProvider === 'talos-omni') {
+      await handleOmniListClusters();
+      return;
+    }
+    if (cloudProvider === 'aws') {
+      await handleAwsApplyCredentials();
+      return;
+    }
+    if (cloudProvider === 'gcp') {
+      await handleGcpApplyCredentials();
+      return;
+    }
+    if (cloudProvider === 'azure') {
+      await handleAzureApplyCredentials();
+      return;
+    }
+    await handleDigitaloceanApplyToken();
   };
 
   const refreshClustersForKubeconfig = async (path: string) => {
@@ -638,6 +750,7 @@ export const Layout = () => {
       }
 
       setKubeClusters(clusters);
+      setNoClusterConfigDetected(false);
       if (clusters.length === 0) {
         setSelectedClusterContext('');
       } else {
@@ -650,10 +763,12 @@ export const Layout = () => {
 
       const rawMessage = getErrorMessage(err);
       if (isNoKubeconfigError(rawMessage)) {
+        setNoClusterConfigDetected(true);
         setKubeClusters([]);
         setSelectedClusterContext('');
         return;
       }
+      setNoClusterConfigDetected(false);
       setKubeClusters([]);
       toast.error(err instanceof Error ? err.message : 'Failed to load clusters for kubeconfig.');
     } finally {
@@ -740,6 +855,7 @@ export const Layout = () => {
 
       setKubeconfigPath(nextPath);
       setKubeContext(nextContext);
+      setNoClusterConfigDetected(false);
       setKubeconfigInput(nextPath);
       setSelectedClusterContext(nextContext);
       setKubeconfigCandidates(Array.from(merged).sort((a, b) => a.localeCompare(b)));
@@ -767,7 +883,28 @@ export const Layout = () => {
   const visibleClusters = useMemo(() => {
     if (clusterImportTab !== 'cloud') return filteredClusters;
 
-    if (cloudProvider === 'talos-omni') return filteredClusters.filter(isLikelyOmniContext);
+    if (cloudProvider === 'talos-omni') {
+      if (omniClusters.length > 0) {
+        const q = clusterSearch.toLowerCase();
+        return omniClusters
+          .filter((c) => {
+            const name = (c?.name || c?.id || c?.metadata?.name || '').toString();
+            return !q || name.toLowerCase().includes(q);
+          })
+          .map((c) => {
+            const name = (c?.name || c?.id || c?.metadata?.name || 'unknown').toString();
+            return {
+              context: name,
+              cluster: name,
+              namespace: null,
+              isCurrent: false,
+              kubeconfigPath: '',
+            };
+          });
+      }
+      return [];
+    }
+    
     if (cloudProvider === 'aws') {
       // When cloud list is ready, show only clusters fetched directly from AWS EKS API
       if (cloudListReady && awsEksClusters.length >= 0) {
@@ -784,10 +921,49 @@ export const Layout = () => {
       }
       return [];
     }
-    if (cloudProvider === 'azure') return filteredClusters.filter(isLikelyAzureContext);
-    if (cloudProvider === 'gcp') return filteredClusters.filter(isLikelyGcpContext);
+    
+    if (cloudProvider === 'gcp') {
+      // Show clusters from GCP API
+      if (gcpClusters.length > 0) {
+        const q = clusterSearch.toLowerCase();
+        return gcpClusters
+          .filter((c) => {
+            const name = c.name || '';
+            return !q || name.toLowerCase().includes(q);
+          })
+          .map((c) => ({
+            context: c.name || 'unknown',
+            cluster: c.name || 'unknown',
+            namespace: null,
+            isCurrent: false,
+            kubeconfigPath: '',
+          }));
+      }
+      return [];
+    }
+    
+    if (cloudProvider === 'azure') {
+      // Show clusters from Azure API
+      if (azureClusters.length > 0) {
+        const q = clusterSearch.toLowerCase();
+        return azureClusters
+          .filter((c) => {
+            const name = c.name || '';
+            return !q || name.toLowerCase().includes(q);
+          })
+          .map((c) => ({
+            context: c.name || 'unknown',
+            cluster: c.name || 'unknown',
+            namespace: null,
+            isCurrent: false,
+            kubeconfigPath: '',
+          }));
+      }
+      return [];
+    }
+    
     return filteredClusters.filter(isLikelyDigitalOceanContext);
-  }, [clusterImportTab, cloudProvider, filteredClusters, awsAccountId, awsEksClusters, cloudListReady, clusterSearch]);
+  }, [clusterImportTab, cloudProvider, filteredClusters, awsAccountId, awsEksClusters, cloudListReady, clusterSearch, omniClusters, gcpClusters, azureClusters]);
 
   const hasConfiguredClusterContext = kubeContext.trim().length > 0 || selectedClusterContext.trim().length > 0;
   const hasKubeconfigSource = kubeconfigPath.trim().length > 0 || kubeconfigCandidates.length > 0;
@@ -812,6 +988,44 @@ export const Layout = () => {
 
   useEffect(() => {
     if (!desktopMode) return;
+
+    if (!noClusterConfigDetected) {
+      noConfigModalShownRef.current = false;
+      return;
+    }
+
+    // No kubeconfig was discovered; open cluster modal once and direct user to
+    // browser-based auth/import flow.
+    if (noConfigModalShownRef.current) return;
+
+    noConfigModalShownRef.current = true;
+    setCloudProvider('talos-omni');
+    setClusterImportTab('cloud');
+    setClusterSearch('');
+    setShowKubeconfigModal(true);
+  }, [desktopMode, noClusterConfigDetected]);
+
+  useEffect(() => {
+    if (!desktopMode) return;
+
+    if (!authStatus?.placeholder) {
+      authPlaceholderModalShownRef.current = false;
+      return;
+    }
+
+    // Cluster auth exists but is not currently usable (e.g. expired OIDC creds).
+    // Open cluster selection modal once so user can re-authenticate or switch cluster.
+    if (authPlaceholderModalShownRef.current) return;
+
+    authPlaceholderModalShownRef.current = true;
+    setCloudProvider('talos-omni');
+    setClusterImportTab('cloud');
+    setClusterSearch('');
+    setShowKubeconfigModal(true);
+  }, [desktopMode, authStatus?.placeholder]);
+
+  useEffect(() => {
+    if (!desktopMode) return;
     if (clusterImportTab !== 'kubeconfig') return;
 
     const source = kubeconfigInput || kubeconfigPath;
@@ -822,36 +1036,10 @@ export const Layout = () => {
     if (clusterImportTab !== 'cloud') return;
     setCloudListReady(false);
     setSelectedClusterContext('');
+    setOmniClusters([]);
     setAwsEksClusters([]);
-
-    // For talos-omni, auto-load clusters from local kubeconfigs without requiring browser auth
-    if (cloudProvider === 'talos-omni' && desktopMode) {
-      void (async () => {
-        try {
-          const candidates = await listDesktopKubeconfigCandidates();
-          const merged = new Set(candidates);
-          if (kubeconfigPath) merged.add(kubeconfigPath);
-          const combined = new Map<string, DesktopKubeconfigCluster>();
-          for (const source of merged) {
-            const clusters = await listDesktopKubeconfigClusters(source || null);
-            for (const cluster of clusters) {
-              combined.set(`${cluster.kubeconfigPath}:${cluster.context}`, cluster);
-            }
-          }
-          const found = Array.from(combined.values()).sort((a, b) => {
-            const aLabel = `${a.context} ${a.cluster ?? ''}`.toLowerCase();
-            const bLabel = `${b.context} ${b.cluster ?? ''}`.toLowerCase();
-            return aLabel.localeCompare(bLabel);
-          });
-          if (found.length > 0) {
-            setKubeClusters(found);
-            setCloudListReady(true);
-          }
-        } catch {
-          // Silently ignore — user can still click Connect in Browser
-        }
-      })();
-    }
+    setGcpClusters([]);
+    setAzureClusters([]);
   }, [clusterImportTab, cloudProvider]);
 
   useEffect(() => {
@@ -904,15 +1092,17 @@ export const Layout = () => {
 
     const namespaceNames = Array.from(merged).sort((a, b) => a.localeCompare(b));
 
-    if (namespaceNames.length > 0) {
-      setNamespaces(namespaceNames);
-    }
+    // Always sync namespace options, including empty states after cluster switches,
+    // so old-cluster entries do not linger in the filter menu.
+    setNamespaces(namespaceNames);
 
     if (selectedNamespaces.length > 0 && namespaceNames.length > 0) {
       const validSelected = selectedNamespaces.filter((ns) => namespaceNames.includes(ns));
       if (validSelected.length !== selectedNamespaces.length) {
         setSelectedNamespaces(validSelected);
       }
+    } else if (selectedNamespaces.length > 0 && namespaceNames.length === 0) {
+      setSelectedNamespaces([]);
     }
   }, [apiNamespaces, realtimeNamespaces, selectedNamespaces, setNamespaces, setSelectedNamespaces]);
 
@@ -1083,13 +1273,13 @@ export const Layout = () => {
 
   const clusterSelectionDialog = (
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 px-4"
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-3 sm:p-4"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Select cluster"
-        className="w-full max-w-5xl rounded-xl border border-border bg-surface shadow-xl"
+        className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl sm:max-h-[calc(100vh-2rem)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -1108,9 +1298,9 @@ export const Layout = () => {
           </button>
         </div>
 
-        <div className="px-5 py-4">
-          <div className="grid min-h-[540px] md:grid-cols-[220px,1fr] rounded-lg border border-border bg-surface">
-            <aside className="border-b border-border p-3 md:border-b-0 md:border-r">
+        <div className="min-h-0 flex-1 px-4 py-3 sm:px-5 sm:py-4">
+          <div className="grid h-full min-h-0 rounded-lg border border-border bg-surface md:grid-cols-[220px,1fr]">
+            <aside className="overflow-auto border-b border-border p-3 md:border-b-0 md:border-r">
               <nav className="space-y-1" aria-label="Cluster source tabs">
                 {CLUSTER_IMPORT_TABS.map((tab) => {
                   const active = clusterImportTab === tab.value;
@@ -1148,7 +1338,7 @@ export const Layout = () => {
                 </h4>
               </header>
 
-              <div className="flex-1 space-y-4 overflow-auto p-5">
+              <div className="flex-1 space-y-4 overflow-auto p-4 sm:p-5">
                 {mustSelectCluster && (
                   <div className="rounded-md border border-border bg-surface-elevated px-3 py-2 text-sm text-text-secondary">
                     Select a cluster context to continue to the dashboard.
@@ -1375,6 +1565,56 @@ export const Layout = () => {
                       </div>
                     )}
 
+                    {cloudProvider === 'gcp' && (
+                      <div className="rounded-md border border-border bg-surface px-3 py-3 text-xs text-text-secondary space-y-3">
+                        <div className="space-y-2">
+                          <label htmlFor="gcp-project-id" className="block text-sm font-medium text-text-secondary">
+                            GCP Project ID
+                          </label>
+                          <input
+                            id="gcp-project-id"
+                            value={gcpProjectId}
+                            onChange={(e) => setGcpProjectId(e.target.value)}
+                            placeholder="my-project-id"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            className={cn(
+                              'w-full rounded-md border bg-surface px-3 py-2 text-sm',
+                              gcpSubmitted && gcpProjectIdError ? 'border-red-500/70' : 'border-border'
+                            )}
+                          />
+                          {gcpSubmitted && gcpProjectIdError && <p className="text-xs text-red-400">{gcpProjectIdError}</p>}
+                        </div>
+                        <p className="text-xs text-text-secondary">Make sure gcloud CLI is installed and configured with appropriate credentials.</p>
+                      </div>
+                    )}
+
+                    {cloudProvider === 'azure' && (
+                      <div className="rounded-md border border-border bg-surface px-3 py-3 text-xs text-text-secondary space-y-3">
+                        <div className="space-y-2">
+                          <label htmlFor="azure-subscription-id" className="block text-sm font-medium text-text-secondary">
+                            Azure Subscription ID
+                          </label>
+                          <input
+                            id="azure-subscription-id"
+                            value={azureSubscriptionId}
+                            onChange={(e) => setAzureSubscriptionId(e.target.value)}
+                            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            className={cn(
+                              'w-full rounded-md border bg-surface px-3 py-2 text-sm',
+                              azureSubmitted && azureSubscriptionIdError ? 'border-red-500/70' : 'border-border'
+                            )}
+                          />
+                          {azureSubmitted && azureSubscriptionIdError && <p className="text-xs text-red-400">{azureSubscriptionIdError}</p>}
+                        </div>
+                        <p className="text-xs text-text-secondary">Make sure az CLI is installed and configured with appropriate credentials.</p>
+                      </div>
+                    )}
+
                     {cloudProvider === 'talos-omni' && (
                       <div className="rounded-md border border-border bg-surface px-3 py-3 space-y-3">
                         <p className="text-xs text-text-secondary">Talos Omni settings (editable)</p>
@@ -1422,18 +1662,33 @@ export const Layout = () => {
                     )}
 
                     {cloudProvider === 'talos-omni' && (
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="rounded-md border border-border bg-surface-elevated px-3 py-3 space-y-3">
+                        <div className="text-[11px] uppercase tracking-wide text-text-secondary">Omni flow</div>
                         <p className="text-xs text-text-secondary">
-                          {cloudListReady ? `${visibleClusters.length} cluster(s) loaded from local kubeconfig.` : 'Enter your Omni URL and email to authenticate.'}
+                          {omniConnectLoading
+                            ? 'Opening browser for Omni login...'
+                            : cloudListReady
+                              ? 'Login started. After completing browser auth, click List Omni Clusters.'
+                              : 'Step 1: Connect in Browser. Step 2: List Omni Clusters.'}
                         </p>
-                        <button
-                          type="button"
-                          onClick={() => void handleTalosOmniConnect()}
-                          disabled={omniConnectLoading}
-                          className="shrink-0 rounded-md border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-hover disabled:opacity-60"
-                        >
-                          {omniConnectLoading ? 'Connecting...' : cloudListReady ? 'Re-authenticate' : 'Connect in Browser'}
-                        </button>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleTalosOmniConnect()}
+                            disabled={omniConnectLoading}
+                            className="rounded-md bg-primary px-3 py-2 text-xs sm:text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
+                          >
+                            {omniConnectLoading ? 'Connecting...' : cloudListReady ? 'Connect Again' : 'Connect in Browser'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleOmniListClusters()}
+                            disabled={omniLoading}
+                            className="rounded-md border border-border px-3 py-2 text-xs sm:text-sm font-medium text-text-secondary hover:bg-hover disabled:opacity-60"
+                          >
+                            {omniLoading ? 'Loading...' : 'List Omni Clusters'}
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -1446,6 +1701,32 @@ export const Layout = () => {
                           className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-hover disabled:opacity-60"
                         >
                           Apply AWS Credentials
+                        </button>
+                      </div>
+                    )}
+
+                    {cloudProvider === 'gcp' && (
+                      <div className="flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() => void handleGcpApplyCredentials()}
+                          disabled={gcpLoading}
+                          className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-hover disabled:opacity-60"
+                        >
+                          {gcpLoading ? 'Loading...' : 'List GCP Clusters'}
+                        </button>
+                      </div>
+                    )}
+
+                    {cloudProvider === 'azure' && (
+                      <div className="flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() => void handleAzureApplyCredentials()}
+                          disabled={azureLoading}
+                          className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-hover disabled:opacity-60"
+                        >
+                          {azureLoading ? 'Loading...' : 'List Azure Clusters'}
                         </button>
                       </div>
                     )}
@@ -1515,7 +1796,13 @@ export const Layout = () => {
                     <span>Available cluster contexts</span>
                     <button
                       type="button"
-                      onClick={() => void handleManualClusterRefresh()}
+                      onClick={() => {
+                        if (clusterImportTab === 'cloud') {
+                          void handleCloudProviderRefresh();
+                          return;
+                        }
+                        void handleManualClusterRefresh();
+                      }}
                       disabled={kubeconfigLoading}
                       className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-hover disabled:opacity-60"
                     >
@@ -1523,7 +1810,7 @@ export const Layout = () => {
                       Refresh
                     </button>
                   </div>
-                  <div className="max-h-56 overflow-y-auto">
+                  <div className="max-h-56 overflow-auto">
                     {kubeconfigLoading && (
                       <div className="px-3 py-2 text-sm text-text-secondary">Loading contexts...</div>
                     )}
@@ -1532,28 +1819,30 @@ export const Layout = () => {
                         <div>
                           {clusterImportTab === 'cloud'
                             ? (cloudProvider === 'talos-omni'
-                              ? 'No Talos Omni cluster contexts found.'
+                              ? 'No Talos Omni clusters found from provider.'
                               : cloudProvider === 'aws'
-                                ? 'No Amazon Web Services cluster contexts found.'
+                                ? 'No Amazon Web Services clusters found from provider.'
                                 : cloudProvider === 'azure'
-                                  ? 'No Microsoft Azure cluster contexts found.'
+                                  ? 'No Microsoft Azure clusters found from provider.'
                                   : cloudProvider === 'gcp'
-                                    ? 'No Google Cloud Platform cluster contexts found.'
-                                    : 'No DigitalOcian cluster contexts found.')
+                                    ? 'No Google Cloud Platform clusters found from provider.'
+                                    : 'No DigitalOcian clusters found from provider.')
                             : 'No cluster contexts found for this kubeconfig.'}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setKubeconfigInput('');
-                            setSelectedClusterContext('');
-                            setClusterSearch('');
-                            void refreshClustersForKubeconfig('');
-                          }}
-                          className="rounded border border-border px-2 py-1 text-xs hover:bg-hover"
-                        >
-                          Load from all discovered kubeconfigs
-                        </button>
+                        {clusterImportTab === 'kubeconfig' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setKubeconfigInput('');
+                              setSelectedClusterContext('');
+                              setClusterSearch('');
+                              void refreshClustersForKubeconfig('');
+                            }}
+                            className="rounded border border-border px-2 py-1 text-xs hover:bg-hover"
+                          >
+                            Load from all discovered kubeconfigs
+                          </button>
+                        )}
                       </div>
                     )}
                     {visibleClusters.map((item) => (
@@ -1570,8 +1859,8 @@ export const Layout = () => {
                         )}
                         title={item.context}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate">{item.context}</span>
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                          <span className="truncate" title={item.context}>{item.context}</span>
                           {item.isCurrent && <span className="text-xs text-primary">current</span>}
                         </div>
                         <div className="text-xs text-text-secondary truncate">
@@ -1619,6 +1908,19 @@ export const Layout = () => {
                     await applyClusterSelection('', contextName);
                   } catch (err) {
                     toast.error(`Failed to import EKS cluster: ${getErrorMessage(err) ?? String(err)}`);
+                    setKubeconfigSwitching(false);
+                  }
+                })();
+              } else if (clusterImportTab === 'cloud' && cloudProvider === 'talos-omni') {
+                // For Talos Omni: download/merge kubeconfig first, then switch to that context.
+                const clusterName = selectedClusterContext;
+                void (async () => {
+                  setKubeconfigSwitching(true);
+                  try {
+                    const contextName = await omniUpdateKubeconfig(clusterName, normalizedOmniUrl);
+                    await applyClusterSelection('', contextName);
+                  } catch (err) {
+                    toast.error(`Failed to import Omni cluster: ${getErrorMessage(err) ?? String(err)}`);
                     setKubeconfigSwitching(false);
                   }
                 })();
@@ -2479,32 +2781,6 @@ export const Layout = () => {
             >
               Configure
             </Link>
-          </div>
-        )}
-
-        {/* Auth placeholder banner — shown when sidecar started with a placeholder kube client */}
-        {desktopMode && authStatus?.placeholder && (
-          <div className="bg-amber-900/20 border-b border-amber-700/50 px-4 py-2.5 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="text-amber-500 font-semibold shrink-0">⚠</div>
-              <div className="flex flex-col gap-0.5 min-w-0">
-                <div className="text-sm font-medium text-amber-600">Authentication required</div>
-                <div className="text-xs text-amber-500">
-                  {authStatus.message
-                    || 'Credentials are expired or the OIDC provider was unreachable at startup. Click Login with Browser to re-authenticate.'}
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              disabled={browserLoginLoading}
-              onClick={() => {
-                void handleBrowserLogin();
-              }}
-              className="flex-shrink-0 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-500 disabled:opacity-50 transition-colors"
-            >
-              {browserLoginLoading ? 'Logging in…' : 'Login with Browser'}
-            </button>
           </div>
         )}
 

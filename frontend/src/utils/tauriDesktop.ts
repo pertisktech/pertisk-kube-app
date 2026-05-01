@@ -231,3 +231,64 @@ export async function waitDesktopClusterSwitchResult(
     message: 'Timed out while waiting for cluster switch. Previous cluster may still be active.',
   };
 }
+
+export async function logOmniConnectionAttempt(omniUrl: string, email: string): Promise<void> {
+  if (!isDesktopRuntime()) {
+    return;
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('log_omni_connection_attempt', {
+    omniUrl,
+    email,
+  });
+}
+
+export async function listOmniClusters(
+  omniUrl: string,
+): Promise<any[]> {
+  if (!isDesktopRuntime()) {
+    return [];
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<any[]>('list_omni_clusters', {
+    omniUrl,
+  });
+}
+
+export async function omniUpdateKubeconfig(
+  clusterName: string,
+  omniUrl: string,
+): Promise<string> {
+  if (!isDesktopRuntime()) {
+    return clusterName;
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string>('omni_update_kubeconfig', {
+    clusterName,
+    omniUrl,
+  });
+}
+
+export async function listGcpClusters(
+  projectId: string,
+): Promise<any[]> {
+  if (!isDesktopRuntime()) {
+    return [];
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<any[]>('list_gcp_clusters', {
+    projectId,
+  });
+}
+
+export async function listAzureClusters(
+  subscriptionId: string,
+): Promise<any[]> {
+  if (!isDesktopRuntime()) {
+    return [];
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<any[]>('list_azure_clusters', {
+    subscriptionId,
+  });
+}
