@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { ScrollText, Trash2 } from '../components/Icons';
+import { toast } from 'react-toastify';
+import { Loader, RefreshCw, ScrollText, Trash2 } from '../components/Icons';
 import { useRealtimeDeployments } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
@@ -129,6 +130,7 @@ export const DeploymentsPage = () => {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRestartingSelected, setIsRestartingSelected] = useState(false);
   const [sortState, setSortState] = useState<{ key: DeploymentSortKey; direction: 'asc' | 'desc' }>({
     key: 'age',
     direction: 'desc',
@@ -231,6 +233,24 @@ export const DeploymentsPage = () => {
       keys: selectedRows,
       label: selectedRows.length === 1 ? selectedRows[0].split('/')[1] : `${selectedRows.length} deployments`,
     });
+  };
+
+  const handleRestartSelected = async () => {
+    if (selectedRows.length === 0 || isRestartingSelected) return;
+    setIsRestartingSelected(true);
+    const results = await Promise.allSettled(
+      selectedRows.map((key) => {
+        const [ns, name] = key.split('/');
+        return restartDeployment(ns, name);
+      })
+    );
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length === 0) {
+      toast.success(`Restarted ${selectedRows.length} deployment${selectedRows.length > 1 ? 's' : ''}.`);
+    } else {
+      toast.error(`${failed.length} restart${failed.length > 1 ? 's' : ''} failed.`);
+    }
+    setIsRestartingSelected(false);
   };
 
   const handleConfirmDelete = async () => {
@@ -444,6 +464,15 @@ export const DeploymentsPage = () => {
             {selectedRows.length} selected
           </span>
           <div className="w-px h-4 bg-border" />
+          <button
+            type="button"
+            onClick={() => void handleRestartSelected()}
+            disabled={isRestartingSelected}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 font-medium transition-colors disabled:opacity-50"
+          >
+            {isRestartingSelected ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {isRestartingSelected ? 'Restarting...' : 'Restart'}
+          </button>
           <button
             type="button"
             onClick={handleDeleteSelected}

@@ -1,4 +1,6 @@
-import { Pencil, Trash2 } from './Icons';
+import { useState } from 'react';
+import { toast } from 'react-toastify';
+import { Loader, Pencil, RefreshCw, Trash2 } from './Icons';
 import type { StatefulSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
@@ -9,6 +11,7 @@ interface StatefulSetDetailPanelProps {
   statefulSet: StatefulSet;
   onClose: () => void;
   onOpenYamlEditor?: (statefulSet: StatefulSet) => void;
+  onRestart?: (namespace: string, name: string) => Promise<void>;
   onDelete?: (namespace: string, name: string) => Promise<void>;
 }
 
@@ -20,7 +23,23 @@ const getStatusTextClass = (status: string) => {
   return 'text-text-secondary';
 };
 
-export const StatefulSetDetailPanel = ({ statefulSet, onClose, onOpenYamlEditor, onDelete }: StatefulSetDetailPanelProps) => (
+export const StatefulSetDetailPanel = ({ statefulSet, onClose, onOpenYamlEditor, onRestart, onDelete }: StatefulSetDetailPanelProps) => {
+  const [isRestarting, setIsRestarting] = useState(false);
+
+  const handleRestart = async () => {
+    if (!onRestart || isRestarting) return;
+    setIsRestarting(true);
+    try {
+      await onRestart(statefulSet.namespace, statefulSet.name);
+      toast.success(`Restart triggered for StatefulSet ${statefulSet.namespace}/${statefulSet.name}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to restart StatefulSet');
+    } finally {
+      setIsRestarting(false);
+    }
+  };
+
+  return (
   <ResourceDetailPanelLayout
     title={statefulSet.name}
     status={statefulSet.status ?? undefined}
@@ -31,6 +50,13 @@ export const StatefulSetDetailPanel = ({ statefulSet, onClose, onOpenYamlEditor,
     ]}
     actions={
       <>
+        <PanelActionButton
+          icon={isRestarting ? Loader : RefreshCw}
+          iconClassName={isRestarting ? 'h-4 w-4 shrink-0 animate-spin' : 'h-4 w-4 shrink-0'}
+          label={isRestarting ? 'Restarting...' : 'Restart'}
+          onClick={handleRestart}
+          disabled={isRestarting || !onRestart}
+        />
         <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor?.(statefulSet)} />
         <PanelActionButton icon={Trash2} label="Delete" danger onClick={() => onDelete?.(statefulSet.namespace, statefulSet.name)} />
       </>
@@ -63,4 +89,5 @@ export const StatefulSetDetailPanel = ({ statefulSet, onClose, onOpenYamlEditor,
     ) : null}
     <DrawerLabelsAnnotations labels={statefulSet.labels} annotations={statefulSet.annotations} />
   </ResourceDetailPanelLayout>
-);
+  );
+};
