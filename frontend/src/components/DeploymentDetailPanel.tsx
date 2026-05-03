@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pencil, RotateCcw, ScrollText, Trash2 } from './Icons';
+import { toast } from 'react-toastify';
+import { Loader, Pencil, RefreshCw, ScrollText, Trash2 } from './Icons';
 import type { Deployment, Pod, ReplicaSet, KubernetesEvent } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResizablePanel } from './ResizablePanel';
@@ -75,8 +76,6 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
   const [isRestarting, setIsRestarting] = useState(false);
   const [scaleError, setScaleError] = useState('');
   const [scaleSuccess, setScaleSuccess] = useState('');
-  const [restartError, setRestartError] = useState('');
-  const [restartSuccess, setRestartSuccess] = useState('');
   const [tagValues, setTagValues] = useState<Record<string, string>>({});
   const [updatingImage, setUpdatingImage] = useState<string | null>(null);
   const [tagError, setTagError] = useState('');
@@ -148,17 +147,14 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
   };
 
   const handleRestart = async () => {
+    if (!onRestart || isRestarting) return;
+
     setIsRestarting(true);
-    setRestartError('');
-    setRestartSuccess('');
     try {
-      if (onRestart) {
-        await onRestart(deployment.namespace, deployment.name);
-        setRestartSuccess('Deployment restart triggered');
-        setTimeout(() => setRestartSuccess(''), 3000);
-      }
+      await onRestart(deployment.namespace, deployment.name);
+      toast.success(`Restart triggered for Deployment ${deployment.namespace}/${deployment.name}.`);
     } catch (err) {
-      setRestartError(err instanceof Error ? err.message : 'Failed to restart deployment');
+      toast.error(err instanceof Error ? err.message : 'Failed to restart deployment');
     } finally {
       setIsRestarting(false);
     }
@@ -258,7 +254,13 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
               className="flex items-center flex-shrink-0 rounded-lg border"
               style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
             >
-              <PanelActionButton icon={RotateCcw} label="Restart" onClick={handleRestart} disabled={isRestarting} />
+              <PanelActionButton
+                icon={isRestarting ? Loader : RefreshCw}
+                iconClassName={isRestarting ? 'h-4 w-4 shrink-0 animate-spin' : 'h-4 w-4 shrink-0'}
+                label={isRestarting ? 'Restarting...' : 'Restart'}
+                onClick={handleRestart}
+                disabled={isRestarting}
+              />
               {onTailLogs && <PanelActionButton icon={ScrollText} label="Tail Logs" onClick={() => onTailLogs(deployment)} />}
               <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor(deployment)} />
               {onDelete && (
@@ -429,12 +431,10 @@ export const DeploymentDetailPanel = ({ deployment, onClose, onOpenYamlEditor, o
             </div>
           </DrawerItem>
 
-          {(scaleError || scaleSuccess || restartError || restartSuccess || tagError || tagSuccess) && (
+          {(scaleError || scaleSuccess || tagError || tagSuccess) && (
             <div className="space-y-1">
               {scaleError && <p className="text-xs text-[var(--color-icon-danger)]">{scaleError}</p>}
               {scaleSuccess && <p className="text-xs text-[var(--color-icon-success)]">{scaleSuccess}</p>}
-              {restartError && <p className="text-xs text-[var(--color-icon-danger)]">{restartError}</p>}
-              {restartSuccess && <p className="text-xs text-[var(--color-icon-success)]">{restartSuccess}</p>}
               {tagError && <p className="text-xs text-[var(--color-icon-danger)]">{tagError}</p>}
               {tagSuccess && <p className="text-xs text-[var(--color-icon-success)]">{tagSuccess}</p>}
             </div>
