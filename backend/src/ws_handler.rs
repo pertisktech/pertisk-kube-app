@@ -140,6 +140,39 @@ fn node_debug_namespace() -> String {
         .unwrap_or_else(|| "default".to_string())
 }
 
+/// Returns the Kubernetes context configured for this backend process, if any.
+/// The sidecar passes the user-selected context via the KUBE_CONTEXT env var.
+fn active_kube_context() -> Option<String> {
+    env::var("KUBE_CONTEXT")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+}
+
+/// Build a KUBECONFIG value that makes kubectl use the app-selected context.
+///
+/// If KUBE_CONTEXT is set, we write a tiny override kubeconfig that only contains
+/// `current-context: <ctx>`, then prepend it to the existing KUBECONFIG path list.
+/// kubectl merges all files in KUBECONFIG order and the first `current-context` wins,
+/// so the selected context is used even if the user's shell startup scripts set KUBECONFIG
+/// to a file whose current-context points to a different cluster.
+///
+/// Returns None if no context override is needed (no KUBE_CONTEXT set).
+fn kubeconfig_with_context_override() -> Option<String> {
+    let ctx = active_kube_context()?;
+    let content = format!("apiVersion: v1\nkind: Config\ncurrent-context: {ctx}\n");
+    let override_path = std::env::temp_dir()
+        .join(format!(".pertisk-kube-ctx-{}.yaml", std::process::id()));
+    std::fs::write(&override_path, content).ok()?;
+    let override_str = override_path.to_string_lossy().into_owned();
+    let existing = env::var("KUBECONFIG").unwrap_or_default();
+    let merged = if existing.trim().is_empty() {
+        override_str
+    } else {
+        format!("{override_str}:{existing}")
+    };
+    Some(merged)
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ClientMessage {
@@ -283,7 +316,23 @@ async fn spawn_exec_shell(
         }
         cmd.env("TERM", "xterm-256color");
         cmd.env("LANG", "en_US.UTF-8");
-        
+
+        // Pass the app-selected Kubernetes context into the shell so that kubectl
+        // commands run by the user target the correct cluster.
+        if let Some(ctx) = active_kube_context() {
+            cmd.env("KUBE_CONTEXT", &ctx);
+        }
+        // Build a KUBECONFIG that has the selected context as current-context and
+        // set it explicitly so it survives even if the login shell re-reads startup
+        // files (as long as those don't forcibly overwrite KUBECONFIG themselves).
+        if let Some(kubeconfig) = kubeconfig_with_context_override() {
+            cmd.env("KUBECONFIG", kubeconfig);
+        } else if let Ok(existing) = env::var("KUBECONFIG") {
+            if !existing.trim().is_empty() {
+                cmd.env("KUBECONFIG", existing);
+            }
+        }
+
         // Spawn the shell process
         if let Err(err) = pair.slave.spawn_command(cmd) {
             error!("Failed to spawn host shell: {}", err);
@@ -312,6 +361,9 @@ async fn spawn_exec_shell(
         info!("Connecting to node shell for node: {}", query.pod);
         let debug_namespace = node_debug_namespace();
         let mut cmd = Command::new("kubectl");
+        if let Some(ctx) = active_kube_context() {
+            cmd.arg("--context").arg(ctx);
+        }
         cmd.arg("debug")
             .arg("-n")
             .arg(&debug_namespace)
@@ -378,6 +430,10 @@ async fn spawn_exec_shell(
         };
 
         let mut cmd = CommandBuilder::new("kubectl");
+        if let Some(ctx) = active_kube_context() {
+            cmd.arg("--context");
+            cmd.arg(ctx);
+        }
         cmd.arg("exec");
         cmd.arg("-i");
         cmd.arg("-t"); // Works now — we have a real local PTY
@@ -395,6 +451,12 @@ async fn spawn_exec_shell(
         cmd.arg("-lc");
         cmd.arg(PREFERRED_SHELL_SCRIPT);
         cmd.env("TERM", "xterm-256color");
+        // Ensure kubectl in the exec session targets the correct cluster.
+        if let Ok(kubeconfig) = env::var("KUBECONFIG") {
+            if !kubeconfig.trim().is_empty() {
+                cmd.env("KUBECONFIG", kubeconfig);
+            }
+        }
 
         if let Err(err) = pair.slave.spawn_command(cmd) {
             error!("Failed to spawn kubectl exec: {}", err);
@@ -447,6 +509,7 @@ async fn cleanup_node_debug_pod(pod_name: Option<String>) {
     let debug_namespace = node_debug_namespace();
 
     let result = Command::new("kubectl")
+        .args(active_kube_context().map(|ctx| vec!["--context".to_string(), ctx]).unwrap_or_default())
         .arg("delete")
         .arg("pod")
         .arg(&pod_name)

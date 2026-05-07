@@ -28,6 +28,21 @@ use crate::AppState;
 
 // 1 month at 15s intervals = 172,800 samples (~8.8 MB)
 const WORKLOAD_METRIC_HISTORY_LIMIT: usize = 172_800;
+
+/// Returns the Kubernetes context configured for this backend process, if any.
+/// The sidecar passes the user-selected context via the KUBE_CONTEXT env var.
+fn active_kube_context() -> Option<String> {
+    env::var("KUBE_CONTEXT")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+}
+
+/// Prepend --context <ctx> to a kubectl Command if KUBE_CONTEXT is set.
+fn apply_kube_context(cmd: &mut Command) {
+    if let Some(ctx) = active_kube_context() {
+        cmd.arg("--context").arg(ctx);
+    }
+}
 const WORKLOAD_METRIC_SAMPLE_INTERVAL_SECS: i64 = 15;
 const WORKLOAD_METRIC_DEFAULT_DURATION_SECS: i64 = 3600; // 1 hour
 
@@ -1816,6 +1831,7 @@ async fn collect_upload_diagnostics(
     );
 
     let mut cmd = Command::new("kubectl");
+    apply_kube_context(&mut cmd);
     cmd.arg("exec").arg("-n").arg(namespace).arg(pod_name);
     if let Some(c) = container.filter(|v| !v.is_empty()) {
         cmd.arg("-c").arg(c);
@@ -1856,6 +1872,7 @@ pub async fn list_pod_files(
     );
 
     let mut cmd = Command::new("kubectl");
+    apply_kube_context(&mut cmd);
     cmd.arg("exec")
         .arg("-n")
         .arg(&namespace)
@@ -2055,6 +2072,7 @@ pub async fn upload_pod_files(
 
     let escaped_dest = shell_escape_single_quoted(&destination);
     let mut preflight_cmd = Command::new("kubectl");
+    apply_kube_context(&mut preflight_cmd);
     preflight_cmd
         .arg("exec")
         .arg("-n")
@@ -2145,6 +2163,7 @@ pub async fn upload_pod_files(
         let escaped_remote = shell_escape_single_quoted(&remote_path);
 
         let mut write_cmd = Command::new("kubectl");
+        apply_kube_context(&mut write_cmd);
         write_cmd
             .arg("exec")
             .arg("-i")
@@ -2237,6 +2256,7 @@ pub async fn upload_pod_files(
                     let escaped_flat = shell_escape_single_quoted(&flat_remote_path);
 
                     let mut fallback_cmd = Command::new("kubectl");
+                    apply_kube_context(&mut fallback_cmd);
                     fallback_cmd
                         .arg("exec")
                         .arg("-i")
@@ -2400,6 +2420,7 @@ pub async fn download_pod_path(
     let escaped_path = shell_escape_single_quoted(&target_path);
 
     let mut kind_cmd = Command::new("kubectl");
+    apply_kube_context(&mut kind_cmd);
     kind_cmd
         .arg("exec")
         .arg("-n")
@@ -2447,6 +2468,7 @@ pub async fn download_pod_path(
     }
 
     let mut content_cmd = Command::new("kubectl");
+    apply_kube_context(&mut content_cmd);
     content_cmd
         .arg("exec")
         .arg("-n")
@@ -3979,7 +4001,11 @@ pub async fn drain_node(
     }
 
     // Then drain via kubectl
-    let output = SysCommand::new("kubectl")
+    let mut drain_cmd = SysCommand::new("kubectl");
+    if let Some(ctx) = active_kube_context() {
+        drain_cmd.arg("--context").arg(ctx);
+    }
+    let output = drain_cmd
         .arg("drain")
         .arg(&name)
         .arg("--ignore-daemonsets")
