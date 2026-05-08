@@ -270,6 +270,7 @@ export const Layout = () => {
   const [azureClusters, setAzureClusters] = useState<any[]>([]);
   const [azureLoading, setAzureLoading] = useState(false);
   const [showCloudProviderMenu, setShowCloudProviderMenu] = useState(false);
+  const [showClusterMenu, setShowClusterMenu] = useState(false);
   const [omniSubmitted, setOmniSubmitted] = useState(false);
   const [awsSubmitted, setAwsSubmitted] = useState(false);
   const [gcpSubmitted, setGcpSubmitted] = useState(false);
@@ -321,6 +322,7 @@ export const Layout = () => {
 
   const namespaceMenuRef = useRef<HTMLDivElement>(null);
   const cloudProviderMenuRef = useRef<HTMLDivElement>(null);
+  const clusterMenuRef = useRef<HTMLDivElement>(null);
   const { selectedNamespaces, setSelectedNamespaces, toggleNamespace, clearNamespaces, namespaces, setNamespaces, resourceNameFilter, setResourceNameFilter } = useNamespace();
   const { data: realtimeNamespaces } = useRealtimeNamespaces();
   const { data: apiNamespaces } = useNamespaces();
@@ -342,6 +344,9 @@ export const Layout = () => {
       }
       if (cloudProviderMenuRef.current && !cloudProviderMenuRef.current.contains(event.target as Node)) {
         setShowCloudProviderMenu(false);
+      }
+      if (clusterMenuRef.current && !clusterMenuRef.current.contains(event.target as Node)) {
+        setShowClusterMenu(false);
       }
     }
 
@@ -965,6 +970,11 @@ export const Layout = () => {
     return filteredClusters.filter(isLikelyDigitalOceanContext);
   }, [clusterImportTab, cloudProvider, filteredClusters, awsAccountId, awsEksClusters, cloudListReady, clusterSearch, omniClusters, gcpClusters, azureClusters]);
 
+  const selectedClusterItem = useMemo(
+    () => visibleClusters.find((item) => item.context === selectedClusterContext) ?? null,
+    [selectedClusterContext, visibleClusters]
+  );
+
   const hasConfiguredClusterContext = kubeContext.trim().length > 0 || selectedClusterContext.trim().length > 0;
   const hasKubeconfigSource = kubeconfigPath.trim().length > 0 || kubeconfigCandidates.length > 0;
 
@@ -1004,6 +1014,26 @@ export const Layout = () => {
     setClusterSearch('');
     setShowKubeconfigModal(true);
   }, [desktopMode, noClusterConfigDetected]);
+
+  // Clear search when switching between tabs so cluster lists don't get filtered by stale search terms
+  useEffect(() => {
+    if (showKubeconfigModal) {
+      setClusterSearch('');
+    }
+  }, [clusterImportTab, showKubeconfigModal]);
+
+  useEffect(() => {
+    if (!showKubeconfigModal) {
+      setShowCloudProviderMenu(false);
+      setShowClusterMenu(false);
+      return;
+    }
+
+    if (clusterImportTab !== 'cloud' || cloudListReady) {
+      setShowCloudProviderMenu(false);
+    }
+    setShowClusterMenu(false);
+  }, [clusterImportTab, cloudListReady, showKubeconfigModal]);
 
   useEffect(() => {
     if (!desktopMode) return;
@@ -1279,7 +1309,7 @@ export const Layout = () => {
         role="dialog"
         aria-modal="true"
         aria-label="Select cluster"
-        className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl sm:max-h-[calc(100vh-2rem)]"
+        className="flex h-[calc(100vh-1.5rem)] max-h-[calc(100vh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl sm:h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-2rem)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -1299,7 +1329,7 @@ export const Layout = () => {
         </div>
 
         <div className="min-h-0 flex-1 px-4 py-3 sm:px-5 sm:py-4">
-          <div className="grid h-full min-h-0 rounded-lg border border-border bg-surface md:grid-cols-[220px,1fr]">
+          <div className="grid h-full min-h-0 overflow-hidden rounded-lg border border-border bg-surface md:grid-cols-[220px,1fr]">
             <aside className="overflow-auto border-b border-border p-3 md:border-b-0 md:border-r">
               <nav className="space-y-1" aria-label="Cluster source tabs">
                 {CLUSTER_IMPORT_TABS.map((tab) => {
@@ -1309,6 +1339,7 @@ export const Layout = () => {
                       key={tab.value}
                       type="button"
                       onClick={() => {
+                        setShowCloudProviderMenu(false);
                         if (tab.value === 'cloud') {
                           setClusterImportTab('cloud');
                           setKubeconfigInput('');
@@ -1338,7 +1369,14 @@ export const Layout = () => {
                 </h4>
               </header>
 
-              <div className="flex-1 space-y-4 overflow-auto p-4 sm:p-5">
+              <div
+                className={cn(
+                  'flex-1 p-4 sm:p-5',
+                  clusterImportTab === 'cloud' || clusterImportTab === 'kubeconfig'
+                    ? `flex min-h-0 flex-col gap-4 ${showClusterMenu ? 'overflow-auto' : 'overflow-hidden'}`
+                    : 'space-y-4 overflow-auto'
+                )}
+              >
                 {mustSelectCluster && (
                   <div className="rounded-md border border-border bg-surface-elevated px-3 py-2 text-sm text-text-secondary">
                     Select a cluster context to continue to the dashboard.
@@ -1346,7 +1384,7 @@ export const Layout = () => {
                 )}
 
                 {clusterImportTab === 'cloud' && (
-                  <div className="rounded-lg border border-border bg-surface-elevated px-4 py-4 space-y-3">
+                  <div className="max-h-[40vh] shrink-0 overflow-auto rounded-lg border border-border bg-surface-elevated px-4 py-4 space-y-3 sm:max-h-[45vh] md:max-h-[unset]">
                     <div>
                       <h4 className="text-sm font-semibold text-text">Cloud Provider</h4>
                       <p className="mt-1 text-xs text-text-secondary">
@@ -1747,7 +1785,7 @@ export const Layout = () => {
                 )}
 
                 {clusterImportTab === 'kubeconfig' && (
-                  <div className="space-y-2">
+                  <div className="shrink-0 space-y-2">
                     <label htmlFor="modal-kubeconfig-path" className="block text-sm font-medium text-text-secondary">
                       Kubeconfig source
                     </label>
@@ -1771,32 +1809,21 @@ export const Layout = () => {
                   </div>
                 )}
 
-                {clusterImportTab === 'kubeconfig' && (
-                  <div className="space-y-2">
-                    <label htmlFor="modal-cluster-search" className="block text-sm font-medium text-text-secondary">
-                      Search cluster context
-                    </label>
-                    <input
-                      id="modal-cluster-search"
-                      value={clusterSearch}
-                      onChange={(e) => setClusterSearch(e.target.value)}
-                      placeholder="Type context, cluster, namespace..."
-                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-                    />
-                  </div>
-                )}
-
                 {clusterImportTab === 'cloud' && !cloudListReady ? (
-                  <div className="rounded-lg border border-border bg-surface-elevated px-3 py-3 text-sm text-text-secondary">
+                  <div className="shrink-0 rounded-lg border border-border bg-surface-elevated px-3 py-3 text-sm text-text-secondary">
                     Apply provider credentials/action first, then cluster contexts will be listed here.
                   </div>
                 ) : (
-                <div className="rounded-lg border border-border">
-                  <div className="px-3 py-2 text-xs text-text-secondary border-b border-border flex items-center justify-between gap-2">
-                    <span>Available cluster contexts</span>
+                <div className="shrink-0 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label htmlFor="modal-cluster-dropdown" className="block text-sm font-medium text-text-secondary">
+                      {clusterImportTab === 'cloud' ? 'Cloud cluster' : 'Cluster context'}
+                    </label>
                     <button
                       type="button"
                       onClick={() => {
+                        setShowCloudProviderMenu(false);
+                        setShowClusterMenu(false);
                         if (clusterImportTab === 'cloud') {
                           void handleCloudProviderRefresh();
                           return;
@@ -1810,64 +1837,127 @@ export const Layout = () => {
                       Refresh
                     </button>
                   </div>
-                  <div className="max-h-56 overflow-auto">
-                    {kubeconfigLoading && (
-                      <div className="px-3 py-2 text-sm text-text-secondary">Loading contexts...</div>
-                    )}
-                    {!kubeconfigLoading && visibleClusters.length === 0 && (
-                      <div className="px-3 py-3 text-sm text-text-secondary space-y-2">
-                        <div>
-                          {clusterImportTab === 'cloud'
-                            ? (cloudProvider === 'talos-omni'
-                              ? 'No Talos Omni clusters found from provider.'
-                              : cloudProvider === 'aws'
-                                ? 'No Amazon Web Services clusters found from provider.'
-                                : cloudProvider === 'azure'
-                                  ? 'No Microsoft Azure clusters found from provider.'
-                                  : cloudProvider === 'gcp'
-                                    ? 'No Google Cloud Platform clusters found from provider.'
-                                    : 'No DigitalOcian clusters found from provider.')
-                            : 'No cluster contexts found for this kubeconfig.'}
+
+                  <div ref={clusterMenuRef} className="relative">
+                    <button
+                      id="modal-cluster-dropdown"
+                      type="button"
+                      onClick={() => {
+                        setShowCloudProviderMenu(false);
+                        setShowClusterMenu((previous) => {
+                          const next = !previous;
+                          if (next) {
+                            setClusterSearch('');
+                          }
+                          return next;
+                        });
+                      }}
+                      className={cn(
+                        'w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-left transition-colors',
+                        showClusterMenu ? 'border-primary/50 bg-hover/60' : 'hover:bg-hover/50'
+                      )}
+                      aria-haspopup="listbox"
+                      aria-expanded={showClusterMenu}
+                    >
+                      <span className="flex items-start justify-between gap-3">
+                        <span className="min-w-0">
+                          <span className={cn('block truncate text-sm font-medium', selectedClusterItem ? 'text-text' : 'text-text-secondary')}>
+                            {selectedClusterItem?.context ?? (clusterImportTab === 'cloud' ? 'Select a cloud cluster' : 'Select a kubeconfig context')}
+                          </span>
+                          <span className="block truncate text-xs text-text-secondary">
+                            {selectedClusterItem
+                              ? `cluster: ${selectedClusterItem.cluster ?? '-'}${selectedClusterItem.namespace ? ` • ns: ${selectedClusterItem.namespace}` : ''}`
+                              : (clusterImportTab === 'cloud' ? 'Search and choose from imported provider clusters.' : 'Search and choose from local kubeconfig contexts.')}
+                          </span>
+                        </span>
+                        <ChevronDown
+                          size={14}
+                          className={cn('mt-0.5 shrink-0 text-text-secondary transition-transform', showClusterMenu && 'rotate-180')}
+                        />
+                      </span>
+                    </button>
+
+                    {showClusterMenu && (
+                      <div className="mt-2 overflow-hidden rounded-lg border border-border bg-surface-elevated shadow-lg ring-1 ring-black/15 dark:ring-white/20">
+                        <div className="space-y-2 border-b border-border p-3">
+                          <input
+                            autoFocus
+                            value={clusterSearch}
+                            onChange={(e) => setClusterSearch(e.target.value)}
+                            placeholder={clusterImportTab === 'cloud' ? 'Search cloud clusters...' : 'Search context, cluster, namespace...'}
+                            className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                          />
+                          <div className="text-[11px] text-text-secondary">
+                            {kubeconfigLoading ? 'Loading contexts...' : `${visibleClusters.length} result${visibleClusters.length === 1 ? '' : 's'}`}
+                          </div>
                         </div>
-                        {clusterImportTab === 'kubeconfig' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setKubeconfigInput('');
-                              setSelectedClusterContext('');
-                              setClusterSearch('');
-                              void refreshClustersForKubeconfig('');
-                            }}
-                            className="rounded border border-border px-2 py-1 text-xs hover:bg-hover"
-                          >
-                            Load from all discovered kubeconfigs
-                          </button>
-                        )}
+
+                        <div className="max-h-[min(40vh,20rem)] overflow-auto">
+                          {kubeconfigLoading && (
+                            <div className="px-3 py-3 text-sm text-text-secondary">Loading contexts...</div>
+                          )}
+
+                          {!kubeconfigLoading && visibleClusters.length === 0 && (
+                            <div className="space-y-2 px-3 py-3 text-sm text-text-secondary">
+                              <div>
+                                {clusterImportTab === 'cloud'
+                                  ? (cloudProvider === 'talos-omni'
+                                    ? 'No Talos Omni clusters found from provider.'
+                                    : cloudProvider === 'aws'
+                                      ? 'No Amazon Web Services clusters found from provider.'
+                                      : cloudProvider === 'azure'
+                                        ? 'No Microsoft Azure clusters found from provider.'
+                                        : cloudProvider === 'gcp'
+                                          ? 'No Google Cloud Platform clusters found from provider.'
+                                          : 'No DigitalOcian clusters found from provider.')
+                                  : 'No cluster contexts found for this kubeconfig.'}
+                              </div>
+                              {clusterImportTab === 'kubeconfig' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setKubeconfigInput('');
+                                    setSelectedClusterContext('');
+                                    setClusterSearch('');
+                                    void refreshClustersForKubeconfig('');
+                                  }}
+                                  className="rounded border border-border px-2 py-1 text-xs hover:bg-hover"
+                                >
+                                  Load from all discovered kubeconfigs
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {visibleClusters.map((item) => (
+                            <button
+                              key={`${item.kubeconfigPath}:${item.context}`}
+                              type="button"
+                              onClick={() => {
+                                setSelectedClusterContext(item.context);
+                                setKubeconfigInput(item.kubeconfigPath);
+                                setShowClusterMenu(false);
+                              }}
+                              className={cn(
+                                'w-full border-t border-border px-3 py-2 text-left first:border-t-0 hover:bg-hover',
+                                selectedClusterContext === item.context ? 'bg-hover text-primary' : 'text-text-secondary'
+                              )}
+                              title={item.context}
+                            >
+                              <div className="flex min-w-0 items-center justify-between gap-2">
+                                <span className="truncate text-sm font-medium" title={item.context}>{item.context}</span>
+                                <span className="shrink-0 text-[11px] text-text-secondary">
+                                  {selectedClusterContext === item.context ? 'selected' : item.isCurrent ? 'current' : ''}
+                                </span>
+                              </div>
+                              <div className="truncate text-xs text-text-secondary">
+                                cluster: {item.cluster ?? '-'}{item.namespace ? ` • ns: ${item.namespace}` : ''}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
-                    {visibleClusters.map((item) => (
-                      <button
-                        key={`${item.kubeconfigPath}:${item.context}`}
-                        type="button"
-                        onClick={() => {
-                          setSelectedClusterContext(item.context);
-                          setKubeconfigInput(item.kubeconfigPath);
-                        }}
-                        className={cn(
-                          'w-full px-3 py-2 text-left text-sm border-t border-border first:border-t-0 hover:bg-hover',
-                          selectedClusterContext === item.context ? 'bg-hover text-primary font-medium' : 'text-text-secondary'
-                        )}
-                        title={item.context}
-                      >
-                        <div className="flex items-center justify-between gap-2 min-w-0">
-                          <span className="truncate" title={item.context}>{item.context}</span>
-                          {item.isCurrent && <span className="text-xs text-primary">current</span>}
-                        </div>
-                        <div className="text-xs text-text-secondary truncate">
-                          cluster: {item.cluster ?? '-'}{item.namespace ? ` • ns: ${item.namespace}` : ''}
-                        </div>
-                      </button>
-                    ))}
                   </div>
                 </div>
                 )}

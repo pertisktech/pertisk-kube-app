@@ -150,11 +150,10 @@ fn active_kube_context() -> Option<String> {
 
 /// Build a KUBECONFIG value that makes kubectl use the app-selected context.
 ///
-/// If KUBE_CONTEXT is set, we write a tiny override kubeconfig that only contains
-/// `current-context: <ctx>`, then prepend it to the existing KUBECONFIG path list.
-/// kubectl merges all files in KUBECONFIG order and the first `current-context` wins,
-/// so the selected context is used even if the user's shell startup scripts set KUBECONFIG
-/// to a file whose current-context points to a different cluster.
+/// If KUBE_CONTEXT is set, we ensure the default kubeconfig (~/.kube/config) is included
+/// in the KUBECONFIG path list, and write a small override file that sets current-context.
+/// This ensures that contexts imported via omnictl (which merges into ~/.kube/config) are
+/// accessible even if the user's shell startup scripts modify KUBECONFIG.
 ///
 /// Returns None if no context override is needed (no KUBE_CONTEXT set).
 fn kubeconfig_with_context_override() -> Option<String> {
@@ -164,13 +163,27 @@ fn kubeconfig_with_context_override() -> Option<String> {
         .join(format!(".pertisk-kube-ctx-{}.yaml", std::process::id()));
     std::fs::write(&override_path, content).ok()?;
     let override_str = override_path.to_string_lossy().into_owned();
+    
+    // Always ensure ~/.kube/config is in the list (where omnictl merges by default)
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    let default_config = format!("{}/.kube/config", home);
+    
     let existing = env::var("KUBECONFIG").unwrap_or_default();
-    let merged = if existing.trim().is_empty() {
-        override_str
-    } else {
-        format!("{override_str}:{existing}")
-    };
-    Some(merged)
+    let mut parts: Vec<String> = existing.split(':')
+        .filter(|p| !p.trim().is_empty())
+        .map(|p| p.to_string())
+        .collect();
+    
+    // Add default config if not already present
+    if !parts.iter().any(|p| p.contains(".kube/config")) {
+        parts.push(default_config);
+    }
+    
+    // Prepend override
+    parts.insert(0, override_str);
+    
+    // Build final KUBECONFIG with override first, so its current-context wins
+    Some(parts.join(":"))
 }
 
 #[derive(Debug, Clone, Deserialize)]

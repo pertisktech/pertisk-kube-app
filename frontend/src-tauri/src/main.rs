@@ -2208,7 +2208,9 @@ fn omni_update_kubeconfig(
         app_log(format!("[omni] resolved HOME={}", home.display()));
     }
 
-    let mut cmd = Command::new(omnictl_bin);
+    // Build omnictl command arguments
+    let mut omnictl_args = Vec::new();
+    
     // --omniconfig and --context are global flags; they must come before the subcommand.
     // When no valid context is found (e.g. empty default config), point --omniconfig at a
     // nonexistent path so omnictl skips the empty ~/.talos/omni/config and falls back to
@@ -2216,25 +2218,47 @@ fn omni_update_kubeconfig(
     match &omni_context {
         Some((cfg_path, ctx_name)) => {
             app_log(format!("[omni] kubeconfig using --omniconfig={} --context={}", cfg_path.display(), ctx_name));
-            cmd.arg("--omniconfig").arg(cfg_path).arg("--context").arg(ctx_name);
+            omnictl_args.push("--omniconfig".to_string());
+            omnictl_args.push(cfg_path.to_string_lossy().to_string());
+            omnictl_args.push("--context".to_string());
+            omnictl_args.push(ctx_name.clone());
         }
         None => {
             app_log("[omni] kubeconfig: no valid context, using OMNI_ENDPOINT with placeholder omniconfig".to_string());
-            cmd.arg("--omniconfig").arg("/tmp/.pertisk-omni-no-context-placeholder");
+            omnictl_args.push("--omniconfig".to_string());
+            omnictl_args.push("/tmp/.pertisk-omni-no-context-placeholder".to_string());
         }
     }
     if let Some(keys_dir) = &siderov1_keys_dir {
         app_log(format!("[omni] kubeconfig using --siderov1-keys-dir={}", keys_dir.display()));
-        cmd.arg("--siderov1-keys-dir").arg(keys_dir);
+        omnictl_args.push("--siderov1-keys-dir".to_string());
+        omnictl_args.push(keys_dir.to_string_lossy().to_string());
     }
-    cmd.args([
-        "kubeconfig",
-        "--cluster", &cluster_name,
-        "--merge",
-        "--force",
-        "--force-context-name", &context_name,
-    ])
-    .stdin(Stdio::null());
+    
+    omnictl_args.extend(vec![
+        "kubeconfig".to_string(),
+        "--cluster".to_string(),
+        cluster_name.clone(),
+        "--merge".to_string(),
+        "--force".to_string(),
+        "--force-context-name".to_string(),
+        context_name.clone(),
+    ]);
+
+    // Build the shell command with environment variables
+    let omnictl_cmd = build_shell_command(&omnictl_bin.to_string_lossy(), &omnictl_args);
+    let shell_cmd = format!(
+        "OMNI_ENDPOINT={} {}",
+        shell_quote(&omni_url),
+        omnictl_cmd
+    );
+    
+    let shell = env_value("SHELL").unwrap_or_else(|| "/bin/zsh".to_string());
+    
+    app_log(format!("[omni] running via shell: {} -ilc [command]", shell));
+
+    let mut cmd = Command::new(&shell);
+    cmd.args(["-ilc", &shell_cmd]).stdin(Stdio::null());
 
     if let Some(path) = sidecar_path() {
         cmd.env("PATH", path);
@@ -2251,14 +2275,19 @@ fn omni_update_kubeconfig(
         forward_env_if_present(&mut cmd, key);
     }
 
-    cmd.env("OMNI_ENDPOINT", &omni_url);
-
     let output = cmd
         .output()
         .map_err(|e| format!("failed to run omnictl kubeconfig: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        
+        // Log stdout for debugging
+        if !stdout.is_empty() {
+            app_log(format!("[omni] kubeconfig stdout: {}", stdout));
+        }
+        
         let msg = if stderr.is_empty() {
             format!("omnictl kubeconfig failed with status {}", output.status)
         } else {
