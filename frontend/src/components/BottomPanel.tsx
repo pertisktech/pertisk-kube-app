@@ -1424,7 +1424,7 @@ export const BottomPanel = () => {
       if (existing) {
         setActiveTabId(existing.id);
         setCollapsed(false);
-        setPanelHeight((h) => (h <= MIN_PANEL_HEIGHT ? DEFAULT_PANEL_HEIGHT() : h));
+        setPanelHeight(DEFAULT_PANEL_HEIGHT());
         setShowAddMenu(false);
         return;
       }
@@ -1470,7 +1470,7 @@ export const BottomPanel = () => {
     ]);
     setActiveTabId(id);
     setCollapsed(false);
-    setPanelHeight((h) => (h <= MIN_PANEL_HEIGHT ? DEFAULT_PANEL_HEIGHT() : h));
+    setPanelHeight(DEFAULT_PANEL_HEIGHT());
     setShowAddMenu(false);
   }, [tabs]);
 

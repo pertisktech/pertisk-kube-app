@@ -2255,10 +2255,10 @@ fn omni_update_kubeconfig(
     
     let shell = env_value("SHELL").unwrap_or_else(|| "/bin/zsh".to_string());
     
-    app_log(format!("[omni] running via shell: {} -ilc [command]", shell));
+    app_log(format!("[omni] running via shell: {} -lc [command]", shell));
 
     let mut cmd = Command::new(&shell);
-    cmd.args(["-ilc", &shell_cmd]).stdin(Stdio::null());
+    cmd.args(["-lc", &shell_cmd]).stdin(Stdio::null());
 
     if let Some(path) = sidecar_path() {
         cmd.env("PATH", path);
@@ -2456,10 +2456,10 @@ fn list_omni_clusters(
         );
         let shell = env_value("SHELL").unwrap_or_else(|| "/bin/zsh".to_string());
 
-        app_log(format!("[omni] list-clusters cmd={} -ilc {}", shell, shell_cmd));
+        app_log(format!("[omni] list-clusters cmd={} -lc {}", shell, shell_cmd));
 
         let mut cmd = Command::new(&shell);
-        cmd.args(["-ilc", &shell_cmd]).stdin(Stdio::null());
+        cmd.args(["-lc", &shell_cmd]).stdin(Stdio::null());
 
         if let Some(home) = &resolved_home {
             cmd.env("HOME", home);
@@ -2468,7 +2468,7 @@ fn list_omni_clusters(
         let output = match cmd.output() {
             Ok(v) => v,
             Err(e) => {
-                last_error = format!("failed to run omnictl cluster list via '{shell} -ilc': {e}");
+                last_error = format!("failed to run omnictl cluster list via '{shell} -lc': {e}");
                 continue;
             }
         };
