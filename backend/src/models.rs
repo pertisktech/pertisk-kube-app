@@ -120,9 +120,13 @@ pub struct NodeItem {
 pub struct EventItem {
     pub name: String,
     pub namespace: String,
-    pub kind: Option<String>,
-    pub reason: Option<String>,
-    pub message: Option<String>,
+    pub involved_object: String,
+    pub reason: String,
+    pub message: String,
+    pub count: i32,
+    pub first_timestamp: String,
+    pub last_timestamp: String,
+    #[serde(rename = "type")]
     pub type_: Option<String>,
 }
 

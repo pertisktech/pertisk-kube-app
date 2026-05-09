@@ -33,6 +33,11 @@ const keepField = (nextVal: unknown, prevVal: unknown): unknown => {
   return prevVal;
 };
 
+const isHealthyPodStatus = (status: unknown): boolean => {
+  const normalized = String(status ?? '').trim().toLowerCase();
+  return normalized === 'running' || normalized === 'completed' || normalized === 'succeeded';
+};
+
 const isTransientPodSyncFailureStatus = (status: number): boolean => {
   return status === 500 || status === 502 || status === 503 || status === 504;
 };
@@ -533,12 +538,21 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
 
           nextMissCounts.delete(keyOf(item));
 
+          const reconciledStatus = keepField(apiItem.status, item.status);
+          const reconciledDisplayStatus = keepField(
+            apiItem.display_status ?? getFreelensLikeDisplayStatus(apiItem),
+            item.display_status
+          );
+          const shouldClearLastError =
+            isHealthyPodStatus(reconciledDisplayStatus) || isHealthyPodStatus(reconciledStatus);
+
           return [{
             ...item,
             // Keep pod lifecycle fields fresh even when a websocket update is delayed/missed.
-            status: keepField(apiItem.status, item.status),
-            display_status: keepField(apiItem.display_status ?? getFreelensLikeDisplayStatus(apiItem), item.display_status),
+            status: reconciledStatus,
+            display_status: reconciledDisplayStatus,
             phase: keepField(apiItem.phase, item.phase),
+            last_error: shouldClearLastError ? undefined : keepField(apiItem.last_error, item.last_error),
             ready: keepField(apiItem.ready, item.ready),
             restarts: keepField(apiItem.restarts, item.restarts),
             node: keepField(apiItem.node, item.node),

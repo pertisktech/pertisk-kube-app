@@ -20,7 +20,7 @@ use tokio::io::AsyncWriteExt;
 use std::str::FromStr;
 use tokio::fs;
 use tokio::process::Command;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::models::*;
 use crate::utils::*;
@@ -870,16 +870,40 @@ pub async fn list_events(State(state): State<AppState>) -> impl IntoResponse {
                 .map(|event| {
                     let name = event.metadata.name.unwrap_or_default();
                     let namespace = event.metadata.namespace.unwrap_or_else(|| "default".into());
-                    let kind = event.involved_object.kind;
-                    let reason = event.reason;
-                    let message = event.message;
+                    let involved_kind = event.involved_object.kind.unwrap_or_default();
+                    let involved_name = event.involved_object.name.unwrap_or_default();
+                    let involved_object = if involved_kind.is_empty() || involved_name.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{}/{}", involved_kind, involved_name)
+                    };
+
+                    let reason = event.reason.unwrap_or_default();
+                    let message = event.message.unwrap_or_default();
+                    let count = event.count.unwrap_or(1);
+                    let first_timestamp = event
+                        .first_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .or_else(|| event.metadata.creation_timestamp.as_ref().map(|t| t.0.to_rfc3339()))
+                        .unwrap_or_default();
+                    let last_timestamp = event
+                        .last_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .or_else(|| event.event_time.as_ref().map(|mt| mt.0.to_rfc3339()))
+                        .or_else(|| event.metadata.creation_timestamp.as_ref().map(|t| t.0.to_rfc3339()))
+                        .unwrap_or_default();
                     let type_ = event.type_;
                     EventItem {
                         name,
                         namespace,
-                        kind,
+                        involved_object,
                         reason,
                         message,
+                        count,
+                        first_timestamp,
+                        last_timestamp,
                         type_,
                     }
                 })
@@ -4110,6 +4134,28 @@ pub async fn apply_yaml(
     let discovery = match Discovery::new(state.client.clone()).run().await {
         Ok(d) => d,
         Err(err) => {
+            let is_transient_discovery_failure = match &err {
+                kube::Error::Api(api_err) => api_err.code == 503,
+                _ => {
+                    let normalized = err.to_string().to_lowercase();
+                    normalized.contains("service unavailable")
+                        || normalized.contains("status code 503")
+                        || normalized.contains("status code: 503")
+                }
+            };
+
+            if is_transient_discovery_failure {
+                warn!("API discovery temporarily unavailable: {:?}", err);
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(serde_json::json!({
+                        "success": false,
+                        "message": "Kubernetes API temporarily unavailable (503). Please retry."
+                    })),
+                )
+                    .into_response();
+            }
+
             error!("API discovery failed: {:?}", err);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,

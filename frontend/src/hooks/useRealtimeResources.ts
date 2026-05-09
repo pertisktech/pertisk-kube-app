@@ -634,16 +634,25 @@ function transformCronJob(raw: any): CronJob {
 function transformEvent(raw: any): KubernetesEvent {
   const metadata = raw.metadata || {};
   const involvedObject = raw.involvedObject || {};
+  const message = raw.message || raw.note || '';
+  const firstTimestamp = raw.firstTimestamp || raw.deprecatedFirstTimestamp || metadata.creationTimestamp || '';
+  const lastTimestamp =
+    raw.lastTimestamp
+    || raw.eventTime
+    || raw.series?.lastObservedTime
+    || raw.deprecatedLastTimestamp
+    || metadata.creationTimestamp
+    || '';
   
   return {
     name: metadata.name || '',
     namespace: metadata.namespace || 'default',
     involved_object: `${involvedObject.kind || ''}/${involvedObject.name || ''}`,
     reason: raw.reason || '',
-    message: raw.message || '',
+    message,
     count: raw.count || 1,
-    first_timestamp: raw.firstTimestamp || metadata.creationTimestamp || '',
-    last_timestamp: raw.lastTimestamp || raw.eventTime || metadata.creationTimestamp || '',
+    first_timestamp: firstTimestamp,
+    last_timestamp: lastTimestamp,
     type: raw.type || 'Normal',
   };
 }

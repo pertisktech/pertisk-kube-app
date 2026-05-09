@@ -246,10 +246,15 @@ async fn try_load_kube_config_with_resolved_exec(
 
 pub fn kube_list_warning_response(resource_name: &str, err: &kube::Error) -> Option<Response> {
     if let kube::Error::Api(api_err) = err {
-        if api_err.code == 403 || api_err.code == 404 {
+        if api_err.code == 403 || api_err.code == 404 || api_err.code == 503 {
             let warning = if api_err.code == 403 {
                 format!(
                     "Limited access: no permission to list {}. The app will continue without this resource.",
+                    resource_name
+                )
+            } else if api_err.code == 503 {
+                format!(
+                    "{} is temporarily unavailable (503). Retrying in background.",
                     resource_name
                 )
             } else {
