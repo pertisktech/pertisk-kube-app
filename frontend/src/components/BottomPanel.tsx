@@ -1395,7 +1395,6 @@ const TabContent = ({
 // ── BottomPanel (main export) ─────────────────────────────────────────────────
 
 const MENU_ITEM_HEIGHT = 48;
-const MIN_PANEL_HEIGHT = 280;
 const DEFAULT_PANEL_HEIGHT = () => Math.round(window.innerHeight * 0.5);
 
 export const BottomPanel = () => {
