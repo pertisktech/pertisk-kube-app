@@ -76,6 +76,15 @@ fn parse_optional_quantity(value: &serde_json::Value) -> Option<f64> {
         .or_else(|| value.as_u64().map(|v| v as f64))
 }
 
+fn map_apply_error(err: &kube::Error) -> (StatusCode, String) {
+    if let kube::Error::Api(api_err) = err {
+        let status = StatusCode::from_u16(api_err.code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        return (status, api_err.message.clone());
+    }
+
+    (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+}
+
 async fn collect_workload_metric_totals(state: &AppState) -> WorkloadMetricTotals {
     let pod_metrics_resource =
         ApiResource::from_gvk(&GroupVersionKind::gvk("metrics.k8s.io", "v1beta1", "PodMetrics"));
@@ -4215,11 +4224,12 @@ pub async fn apply_yaml(
                 .into_response(),
             Err(err) => {
                 error!("Error applying resource {}/{}: {:?}", kind, name, err);
+                let (status, message) = map_apply_error(&err);
                 (
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                    status,
                     Json(serde_json::json!({
                         "success": false,
-                        "message": format!("Failed to apply resource: {}", err)
+                        "message": format!("Failed to apply resource: {}", message)
                     })),
                 )
                     .into_response()
@@ -4238,11 +4248,12 @@ pub async fn apply_yaml(
                 .into_response(),
             Err(err) => {
                 error!("Error applying cluster resource {}/{}: {:?}", kind, name, err);
+                let (status, message) = map_apply_error(&err);
                 (
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                    status,
                     Json(serde_json::json!({
                         "success": false,
-                        "message": format!("Failed to apply resource: {}", err)
+                        "message": format!("Failed to apply resource: {}", message)
                     })),
                 )
                     .into_response()
