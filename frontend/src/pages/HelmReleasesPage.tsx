@@ -9,6 +9,7 @@ import { HelmReleaseDetailPanel } from '../components/HelmReleaseDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { openPanelTab } from '../components/BottomPanel';
 import { timeAgo } from '../utils';
+import { useNamespace } from '../context/NamespaceContext';
 import type { HelmRelease } from '../types';
 
 type ReleaseSortKey = 'name' | 'namespace' | 'chart' | 'revision' | 'status' | 'updated';
@@ -177,7 +178,8 @@ const getLifecycleDescription = (status: string): string => {
 
 export const HelmReleasesPage = () => {
   const queryClient = useQueryClient();
-  const { data, isLoading, error } = useHelmReleases();
+  const { selectedNamespaces } = useNamespace();
+  const { data, isLoading, error } = useHelmReleases(selectedNamespaces.length > 0 ? selectedNamespaces : undefined);
   const [selectedRelease, setSelectedRelease] = useState<HelmRelease | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -423,7 +425,7 @@ export const HelmReleasesPage = () => {
           <HelmReleaseDetailPanel
             release={selectedRelease}
             onClose={() => setPanelOpen(false)}
-            onOpenYaml={handleOpenYaml}
+            onOpenYamlEditor={handleOpenYaml}
             onDelete={handleDeleteSingle}
           />
         </>

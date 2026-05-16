@@ -65,7 +65,7 @@ const emitApiWarnings = (payload: unknown) => {
     const normalized = warning.trim();
     if (!normalized || seenApiWarnings.has(normalized)) return;
     seenApiWarnings.add(normalized);
-    toast.warning(normalized);
+    toast.warn(normalized);
   });
 };
 
@@ -939,14 +939,25 @@ const restartStatefulSetViaYaml = async (
     throw new Error(`Invalid StatefulSet YAML for ${namespace}/${name}`);
   }
 
+  // Strip server-managed fields that cause 400 on PUT
+  const topMeta = (parsed.metadata as Record<string, unknown> | undefined) ?? {};
+  delete topMeta.managedFields;
+  delete topMeta.resourceVersion;
+  delete topMeta.uid;
+  delete topMeta.generation;
+  delete topMeta.creationTimestamp;
+  delete topMeta.selfLink;
+  parsed.metadata = topMeta;
+  delete parsed.status;
+
   const spec = (parsed.spec as Record<string, unknown> | undefined) ?? {};
   parsed.spec = spec;
   const template = (spec.template as Record<string, unknown> | undefined) ?? {};
   spec.template = template;
-  const metadata = (template.metadata as Record<string, unknown> | undefined) ?? {};
-  template.metadata = metadata;
-  const annotations = (metadata.annotations as Record<string, unknown> | undefined) ?? {};
-  metadata.annotations = annotations;
+  const podMeta = (template.metadata as Record<string, unknown> | undefined) ?? {};
+  template.metadata = podMeta;
+  const annotations = (podMeta.annotations as Record<string, unknown> | undefined) ?? {};
+  podMeta.annotations = annotations;
   annotations['kubectl.kubernetes.io/restartedAt'] = restartedAt;
 
   const updateRes = await apiFetch(yamlPath, {
@@ -977,14 +988,25 @@ const restartDaemonSetViaYaml = async (
     throw new Error(`Invalid DaemonSet YAML for ${namespace}/${name}`);
   }
 
+  // Strip server-managed fields that cause 400 on PUT
+  const topMeta = (parsed.metadata as Record<string, unknown> | undefined) ?? {};
+  delete topMeta.managedFields;
+  delete topMeta.resourceVersion;
+  delete topMeta.uid;
+  delete topMeta.generation;
+  delete topMeta.creationTimestamp;
+  delete topMeta.selfLink;
+  parsed.metadata = topMeta;
+  delete parsed.status;
+
   const spec = (parsed.spec as Record<string, unknown> | undefined) ?? {};
   parsed.spec = spec;
   const template = (spec.template as Record<string, unknown> | undefined) ?? {};
   spec.template = template;
-  const metadata = (template.metadata as Record<string, unknown> | undefined) ?? {};
-  template.metadata = metadata;
-  const annotations = (metadata.annotations as Record<string, unknown> | undefined) ?? {};
-  metadata.annotations = annotations;
+  const podMeta = (template.metadata as Record<string, unknown> | undefined) ?? {};
+  template.metadata = podMeta;
+  const annotations = (podMeta.annotations as Record<string, unknown> | undefined) ?? {};
+  podMeta.annotations = annotations;
   annotations['kubectl.kubernetes.io/restartedAt'] = restartedAt;
 
   const updateRes = await apiFetch(yamlPath, {
@@ -996,6 +1018,14 @@ const restartDaemonSetViaYaml = async (
     const body = (await updateRes.json().catch(() => ({}))) as { message?: string };
     throw new Error(body.message || `Failed to restart DaemonSet ${namespace}/${name} (${updateRes.status})`);
   }
+};
+
+export const restartStatefulSet = async (namespace: string, name: string): Promise<void> => {
+  await restartStatefulSetViaYaml(namespace, name, new Date().toISOString());
+};
+
+export const restartDaemonSet = async (namespace: string, name: string): Promise<void> => {
+  await restartDaemonSetViaYaml(namespace, name, new Date().toISOString());
 };
 
 const legacyRestartAllWorkloads = async (namespaces: string[]): Promise<RestartAllWorkloadsResult> => {
@@ -1539,11 +1569,20 @@ export const deleteCustomResource = (crdName: string, name: string, namespace?: 
   return apiDelete(`/crds/${encodeURIComponent(crdName)}/resources/${encodeURIComponent(name)}${params}`);
 };
 
-export const useHelmReleases = () => {
+export const useHelmReleases = (namespaces?: string[]) => {
+  const normalizedNamespaces = (namespaces ?? [])
+    .map((ns) => ns.trim())
+    .filter(Boolean);
+
   return useQuery({
-    queryKey: ['helm-releases'],
+    queryKey: ['helm-releases', normalizedNamespaces.join(',')],
     queryFn: async () => {
-      const res = await apiFetch('/helm/releases');
+      const params = new URLSearchParams();
+      if (normalizedNamespaces.length > 0) {
+        params.set('namespaces', normalizedNamespaces.join(','));
+      }
+      const suffix = params.toString() ? `?${params.toString()}` : '';
+      const res = await apiFetch(`/helm/releases${suffix}`);
       if (!res.ok) throw new Error('Failed to fetch Helm releases');
       const data = (await res.json()) as ApiResponse<HelmRelease>;
       return data.data;

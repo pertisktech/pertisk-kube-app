@@ -43,6 +43,12 @@ export async function getDesktopSidecarConfig(): Promise<DesktopSidecarConfig> {
   return config;
 }
 
+export async function getDesktopSidecarLogs(): Promise<string[]> {
+  if (!isDesktopRuntime()) return [];
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string[]>('get_sidecar_logs');
+}
+
 export async function saveDesktopSidecarConfig(config: DesktopSidecarConfig): Promise<void> {
   if (!isDesktopRuntime()) {
     throw new Error('Desktop sidecar settings are only available in Tauri runtime.');
@@ -78,6 +84,15 @@ export async function triggerKubeBrowserLogin(): Promise<void> {
   }
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('trigger_kube_browser_login');
+}
+
+export async function openDesktopExternalUrl(url: string): Promise<void> {
+  if (!isDesktopRuntime()) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('open_external_url', { url });
 }
 
 export interface DesktopAuthStatus {
@@ -133,6 +148,47 @@ export async function listDesktopKubeconfigClusters(kubeconfigPath?: string | nu
   return clusters;
 }
 
+export interface EksClusterEntry {
+  name: string;
+  region: string;
+  arn: string;
+}
+
+export async function listAwsEksClusters(
+  accessKey: string,
+  secretKey: string,
+  sessionToken: string,
+  region: string,
+): Promise<EksClusterEntry[]> {
+  if (!isDesktopRuntime()) {
+    return [];
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<EksClusterEntry[]>('list_eks_clusters', {
+    accessKey,
+    secretKey,
+    sessionToken,
+    region,
+  });
+}
+
+export async function awsEksUpdateKubeconfig(
+  accessKey: string,
+  secretKey: string,
+  sessionToken: string,
+  region: string,
+  clusterName: string,
+): Promise<string> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string>('aws_eks_update_kubeconfig', {
+    accessKey,
+    secretKey,
+    sessionToken,
+    region,
+    clusterName,
+  });
+}
+
 export async function waitDesktopClusterSwitchResult(
   expectedContext: string,
   timeoutMs: number = 65_000
@@ -174,4 +230,65 @@ export async function waitDesktopClusterSwitchResult(
     success: false,
     message: 'Timed out while waiting for cluster switch. Previous cluster may still be active.',
   };
+}
+
+export async function logOmniConnectionAttempt(omniUrl: string, email: string): Promise<void> {
+  if (!isDesktopRuntime()) {
+    return;
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('log_omni_connection_attempt', {
+    omniUrl,
+    email,
+  });
+}
+
+export async function listOmniClusters(
+  omniUrl: string,
+): Promise<any[]> {
+  if (!isDesktopRuntime()) {
+    return [];
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<any[]>('list_omni_clusters', {
+    omniUrl,
+  });
+}
+
+export async function omniUpdateKubeconfig(
+  clusterName: string,
+  omniUrl: string,
+): Promise<string> {
+  if (!isDesktopRuntime()) {
+    return clusterName;
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string>('omni_update_kubeconfig', {
+    clusterName,
+    omniUrl,
+  });
+}
+
+export async function listGcpClusters(
+  projectId: string,
+): Promise<any[]> {
+  if (!isDesktopRuntime()) {
+    return [];
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<any[]>('list_gcp_clusters', {
+    projectId,
+  });
+}
+
+export async function listAzureClusters(
+  subscriptionId: string,
+): Promise<any[]> {
+  if (!isDesktopRuntime()) {
+    return [];
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<any[]>('list_azure_clusters', {
+    subscriptionId,
+  });
 }

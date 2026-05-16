@@ -1,6 +1,8 @@
+use std::collections::BTreeSet;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::env;
@@ -17,12 +19,29 @@ use tracing::{error, info, warn};
 #[cfg(target_os = "macos")]
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem};
 
+const SIDECAR_LOG_CAPACITY: usize = 2000;
+
+type SidecarLogs = Arc<Mutex<VecDeque<String>>>;
+
+static APP_LOG_BUF: OnceLock<Mutex<VecDeque<String>>> = OnceLock::new();
+
+fn app_log(msg: impl Into<String>) {
+    let buf = APP_LOG_BUF.get_or_init(|| Mutex::new(VecDeque::new()));
+    if let Ok(mut guard) = buf.lock() {
+        guard.push_back(msg.into());
+        while guard.len() > SIDECAR_LOG_CAPACITY {
+            guard.pop_front();
+        }
+    }
+}
+
 struct BackendState {
     child: Arc<Mutex<Option<Child>>>,
     shutting_down: Arc<Mutex<bool>>,
     config: Arc<Mutex<SidecarConfig>>,
     switch_status: Arc<Mutex<ClusterSwitchStatus>>,
     restart_in_progress: Arc<Mutex<bool>>,
+    logs: SidecarLogs,
 }
 
 const DEFAULT_PORT: u16 = 15222;
@@ -290,6 +309,98 @@ fn sidecar_path() -> Option<String> {
         .and_then(|value| value.into_string().ok())
 }
 
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+fn resolve_executable_command(command: &str) -> Option<PathBuf> {
+    let cmd = command.trim();
+    if cmd.is_empty() {
+        return None;
+    }
+
+    if cmd.contains('/') {
+        let path = PathBuf::from(cmd);
+        return is_executable_file(&path).then_some(path);
+    }
+
+    let mut search_paths = Vec::<PathBuf>::new();
+    if let Some(path) = sidecar_path() {
+        search_paths.extend(env::split_paths(&path));
+    }
+
+    for candidate in [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ] {
+        append_unique_path(&mut search_paths, PathBuf::from(candidate));
+    }
+
+    if let Some(home) = env_value("HOME") {
+        append_unique_path(&mut search_paths, PathBuf::from(&home).join(".local/bin"));
+        append_unique_path(&mut search_paths, PathBuf::from(&home).join("google-cloud-sdk/bin"));
+    }
+
+    for dir in search_paths {
+        let candidate = dir.join(cmd);
+        if is_executable_file(&candidate) {
+            return Some(candidate);
+        }
+    }
+
+    // Common kubectl locations used by desktop runtimes (OrbStack/Rancher Desktop/Docker Desktop)
+    if cmd == "kubectl" {
+        for candidate in [
+            "/usr/local/bin/kubectl",
+            "/opt/homebrew/bin/kubectl",
+            "/Applications/OrbStack.app/Contents/MacOS/xbin/kubectl",
+            "/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin/kubectl",
+            "/Applications/Docker.app/Contents/Resources/bin/kubectl",
+        ] {
+            let path = PathBuf::from(candidate);
+            if is_executable_file(&path) {
+                return Some(path);
+            }
+        }
+    }
+
+    None
+}
+
+fn shell_quote(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn build_shell_command(command: &str, args: &[String]) -> String {
+    let mut parts = Vec::with_capacity(args.len() + 1);
+    parts.push(shell_quote(command));
+    for arg in args {
+        parts.push(shell_quote(arg));
+    }
+    parts.join(" ")
+}
+
 fn forward_env_if_present(command: &mut Command, key: &str) {
     if let Some(value) = env_value(key) {
         command.env(key, value);
@@ -525,6 +636,17 @@ fn try_begin_restart(restart_in_progress: &Arc<Mutex<bool>>) -> bool {
     true
 }
 
+fn wait_and_begin_restart(restart_in_progress: &Arc<Mutex<bool>>, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if try_begin_restart(restart_in_progress) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(120));
+    }
+    false
+}
+
 fn end_restart(restart_in_progress: &Arc<Mutex<bool>>) {
     if let Ok(mut restarting) = restart_in_progress.lock() {
         *restarting = false;
@@ -580,7 +702,32 @@ fn is_bad_cpu_type_error(error: &std::io::Error) -> bool {
             .contains("bad cpu type in executable")
 }
 
-fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> {
+fn push_log(logs: &SidecarLogs, line: String) {
+    if let Ok(mut buf) = logs.lock() {
+        buf.push_back(line);
+        while buf.len() > SIDECAR_LOG_CAPACITY {
+            buf.pop_front();
+        }
+    }
+}
+
+fn spawn_log_reader(reader: impl Read + Send + 'static, logs: SidecarLogs, prefix: &'static str) {
+    thread::spawn(move || {
+        let reader = BufReader::new(reader);
+        for line in reader.lines() {
+            match line {
+                Ok(l) => {
+                    let entry = format!("[{}] {}", prefix, l);
+                    info!("{}", entry);
+                    push_log(&logs, entry);
+                }
+                Err(_) => break,
+            }
+        }
+    });
+}
+
+fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig, logs: &SidecarLogs) -> anyhow::Result<Child> {
     if !is_port_bindable(cfg.port) {
         return Err(anyhow::anyhow!(
             "sidecar port {} is already in use; choose a different port in Desktop Settings",
@@ -650,8 +797,8 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
             .env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
             .env("PORT", cfg.port.to_string())
             .env("GRPC_PORT", grpc_port.to_string())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         configure_sidecar_environment(&mut command);
 
@@ -677,6 +824,14 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
 
         match command.spawn() {
             Ok(mut child) => {
+                // Attach log readers for stdout/stderr before the exit check.
+                if let Some(stdout) = child.stdout.take() {
+                    spawn_log_reader(stdout, Arc::clone(logs), "out");
+                }
+                if let Some(stderr) = child.stderr.take() {
+                    spawn_log_reader(stderr, Arc::clone(logs), "err");
+                }
+
                 // If the process exits immediately (common when port is already occupied), fail fast.
                 thread::sleep(Duration::from_millis(250));
                 if let Some(status) = child.try_wait()? {
@@ -728,7 +883,7 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig) -> anyhow::Result<Child> 
 fn discover_kubeconfig_candidates() -> Vec<String> {
     let mut candidates = Vec::<String>::new();
 
-    if let Ok(from_env) = std::env::var("KUBECONFIG") {
+    if let Some(from_env) = env_value("KUBECONFIG") {
         for item in from_env.split(':') {
             let path = item.trim();
             if !path.is_empty() {
@@ -750,12 +905,52 @@ fn discover_kubeconfig_candidates() -> Vec<String> {
         if let Ok(entries) = fs::read_dir(kube_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                    if ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml") {
-                        if path.exists() {
-                            candidates.push(path.to_string_lossy().to_string());
-                        }
-                    }
+                if !path.is_file() {
+                    continue;
+                }
+
+                let file_name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.to_lowercase())
+                    .unwrap_or_default();
+
+                let has_yaml_ext = path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
+                    .unwrap_or(false);
+
+                let is_likely_kubeconfig = file_name == "config"
+                    || file_name.contains("kubeconfig")
+                    || file_name.contains("kube-config")
+                    || file_name.contains("omni")
+                    || file_name.contains("talos");
+
+                if has_yaml_ext || is_likely_kubeconfig {
+                    candidates.push(path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    if let Some(home) = env_value("HOME") {
+        let talos_dir = PathBuf::from(home).join(".talos");
+        if let Ok(entries) = fs::read_dir(talos_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+
+                let file_name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.to_lowercase())
+                    .unwrap_or_default();
+
+                if file_name.contains("kubeconfig") || file_name.contains("omni") {
+                    candidates.push(path.to_string_lossy().to_string());
                 }
             }
         }
@@ -868,9 +1063,9 @@ fn restart_backend_sidecar_with_options(
     state: &BackendState,
     require_cluster_verification: bool,
 ) -> anyhow::Result<()> {
-    if !try_begin_restart(&state.restart_in_progress) {
+    if !wait_and_begin_restart(&state.restart_in_progress, Duration::from_secs(20)) {
         return Err(anyhow::anyhow!(
-            "sidecar restart already in progress; retry in a moment"
+            "sidecar restart already in progress for too long; retry in a moment"
         ));
     }
 
@@ -915,7 +1110,7 @@ fn restart_backend_sidecar_with_options(
             }
         }
 
-        let child = spawn_backend(app, &cfg)?;
+        let child = spawn_backend(app, &cfg, &state.logs)?;
         if !wait_for_backend_ready(cfg.port, STARTUP_TIMEOUT) {
             let mut child_to_stop = child;
             graceful_stop_child(&mut child_to_stop);
@@ -979,6 +1174,7 @@ fn start_backend_monitor(
     shutting_down: Arc<Mutex<bool>>,
     config_ref: Arc<Mutex<SidecarConfig>>,
     restart_in_progress: Arc<Mutex<bool>>,
+    logs: SidecarLogs,
 ) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_secs(2));
@@ -1056,7 +1252,7 @@ fn start_backend_monitor(
                 }
             }
 
-            match spawn_backend(&app_handle, &cfg) {
+            match spawn_backend(&app_handle, &cfg, &logs) {
                 Ok(new_child) => {
                     let ready = wait_for_backend_ready(cfg.port, STARTUP_TIMEOUT);
                     let mut guard = match child_ref.lock() {
@@ -1101,6 +1297,25 @@ fn get_sidecar_config(state: State<'_, BackendState>) -> Result<SidecarConfig, S
 }
 
 #[tauri::command]
+fn get_sidecar_logs(state: State<'_, BackendState>) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+
+    // App-level events (AWS calls, kubeconfig ops, errors from Tauri commands)
+    if let Some(buf) = APP_LOG_BUF.get() {
+        if let Ok(guard) = buf.lock() {
+            lines.extend(guard.iter().cloned());
+        }
+    }
+
+    // Backend sidecar stdout/stderr
+    if let Ok(guard) = state.logs.lock() {
+        lines.extend(guard.iter().cloned());
+    }
+
+    lines
+}
+
+#[tauri::command]
 fn set_sidecar_config(
     app: AppHandle,
     state: State<'_, BackendState>,
@@ -1142,6 +1357,7 @@ fn set_sidecar_config(
     let shutting_down = Arc::clone(&state.shutting_down);
     let switch_status_ref = Arc::clone(&state.switch_status);
     let restart_in_progress_ref = Arc::clone(&state.restart_in_progress);
+    let logs_ref = Arc::clone(&state.logs);
 
     // Restart sidecar in background so the command returns immediately and UI stays responsive.
     tauri::async_runtime::spawn(async move {
@@ -1151,6 +1367,7 @@ fn set_sidecar_config(
             config: config_ref,
             switch_status: switch_status_ref,
             restart_in_progress: restart_in_progress_ref,
+            logs: logs_ref,
         };
 
         match restart_backend_sidecar_with_options(&app_handle, &restart_state, true) {
@@ -1205,7 +1422,32 @@ fn restart_sidecar(app: AppHandle, state: State<'_, BackendState>) -> Result<(),
 /// command exits successfully the sidecar is restarted so the backend picks up
 /// the freshly cached credentials.
 #[tauri::command]
-fn trigger_kube_browser_login(app: AppHandle, state: State<'_, BackendState>) -> Result<(), String> {
+async fn trigger_kube_browser_login(app: AppHandle, state: State<'_, BackendState>) -> Result<(), String> {
+    let login_state = BackendState {
+        child: Arc::clone(&state.child),
+        shutting_down: Arc::clone(&state.shutting_down),
+        config: Arc::clone(&state.config),
+        switch_status: Arc::clone(&state.switch_status),
+        restart_in_progress: Arc::clone(&state.restart_in_progress),
+        logs: Arc::clone(&state.logs),
+    };
+    let app_handle = app.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let guarded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            trigger_kube_browser_login_impl(&app_handle, &login_state)
+        }));
+
+        match guarded {
+            Ok(result) => result,
+            Err(_) => Err("browser login workflow crashed unexpectedly".to_string()),
+        }
+    })
+    .await
+    .map_err(|e| format!("browser login task failed: {e}"))?
+}
+
+fn trigger_kube_browser_login_impl(app: &AppHandle, state: &BackendState) -> Result<(), String> {
     let cfg = state
         .config
         .lock()
@@ -1292,13 +1534,49 @@ fn trigger_kube_browser_login(app: AppHandle, state: State<'_, BackendState>) ->
         })
         .unwrap_or_default();
 
+    let exec_env: Vec<(String, String)> = exec
+        .get(serde_yaml::Value::String("env".into()))
+        .and_then(|v| v.as_sequence())
+        .map(|seq| {
+            seq.iter()
+                .filter_map(|entry| {
+                    let map = entry.as_mapping()?;
+                    let name = map
+                        .get(serde_yaml::Value::String("name".into()))
+                        .and_then(|v| v.as_str())?
+                        .to_string();
+                    let value = map
+                        .get(serde_yaml::Value::String("value".into()))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    Some((name, value))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     info!(
         "Launching exec credential browser login: {} {:?}",
         command_str, args
     );
 
-    let mut cmd = Command::new(command_str);
-    cmd.args(&args);
+    let resolved_command = resolve_executable_command(command_str).ok_or_else(|| {
+        format!(
+            "failed to resolve exec credential command '{command_str}' on PATH. \
+             Ensure the tool is installed and available in your login shell PATH."
+        )
+    })?;
+
+    let shell = env_value("SHELL")
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "/bin/zsh".to_string());
+
+    let command_line = build_shell_command(&resolved_command.to_string_lossy(), &args);
+
+    let mut cmd = Command::new(&shell);
+    cmd.args(["-ilc", &command_line])
+        .stdin(Stdio::null());
 
     // Provide a full PATH and all required env vars so the plugin can find its
     // dependencies and open the system browser.
@@ -1320,12 +1598,15 @@ fn trigger_kube_browser_login(app: AppHandle, state: State<'_, BackendState>) ->
     if let Some(ref p) = kubeconfig_path {
         cmd.env("KUBECONFIG", p);
     }
+    for (key, value) in exec_env {
+        cmd.env(key, value);
+    }
 
     // Run synchronously — the plugin opens a browser and blocks until the user
     // finishes logging in or the operation is cancelled.
     let status = cmd
         .status()
-        .map_err(|e| format!("failed to launch '{command_str}': {e}"))?;
+        .map_err(|e| format!("failed to launch '{shell} -ilc {command_line}': {e}"))?;
 
     if !status.success() {
         return Err(format!(
@@ -1338,7 +1619,7 @@ fn trigger_kube_browser_login(app: AppHandle, state: State<'_, BackendState>) ->
 
     // Restart the sidecar so the backend builds a fresh Kubernetes client using
     // the credentials that were just written to the credential cache.
-    restart_backend_sidecar(&app, &state)
+    restart_backend_sidecar(app, state)
         .map_err(|e| format!("login succeeded but sidecar restart failed: {e}"))
 }
 
@@ -1349,11 +1630,37 @@ fn list_kubeconfig_candidates() -> Vec<String> {
 
 #[tauri::command]
 fn list_kubeconfig_clusters(kubeconfig_path: Option<String>) -> Result<Vec<KubeconfigCluster>, String> {
-    let Some(path) = resolve_kubeconfig_path(kubeconfig_path) else {
-        return Ok(Vec::new());
-    };
+    let explicit_path = kubeconfig_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
 
-    parse_kubeconfig_clusters(&path).map_err(|e| format!("failed to parse kubeconfig clusters: {e}"))
+    if let Some(path) = explicit_path {
+        return parse_kubeconfig_clusters(&path)
+            .map_err(|e| format!("failed to parse kubeconfig clusters from {}: {e}", path.display()));
+    }
+
+    let mut all_clusters = Vec::<KubeconfigCluster>::new();
+    let mut parse_errors = Vec::<String>::new();
+
+    for candidate in discover_kubeconfig_candidates() {
+        let path = PathBuf::from(&candidate);
+        match parse_kubeconfig_clusters(&path) {
+            Ok(clusters) => all_clusters.extend(clusters),
+            Err(err) => parse_errors.push(format!("{}: {err}", path.display())),
+        }
+    }
+
+    if all_clusters.is_empty() && !parse_errors.is_empty() {
+        warn!(
+            "no cluster contexts discovered; failed to parse {} kubeconfig candidate(s): {}",
+            parse_errors.len(),
+            parse_errors.join(" | ")
+        );
+    }
+
+    Ok(all_clusters)
 }
 
 #[tauri::command]
@@ -1515,15 +1822,907 @@ fn save_base64_file(default_file_name: String, base64_data: String) -> Result<Op
     Ok(Some(dest.display().to_string()))
 }
 
+#[derive(Debug, serde::Serialize)]
+struct EksClusterEntry {
+    name: String,
+    region: String,
+    arn: String,
+}
+
+#[tauri::command]
+fn list_eks_clusters(
+    access_key: String,
+    secret_key: String,
+    session_token: String,
+    region: String,
+) -> Result<Vec<EksClusterEntry>, String> {
+    let access_key = access_key.trim().to_string();
+    let secret_key = secret_key.trim().to_string();
+    let session_token = session_token.trim().to_string();
+
+    if access_key.is_empty() || secret_key.is_empty() {
+        let msg = "AWS access key and secret key are required".to_string();
+        app_log(format!("[aws] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    if access_key.starts_with("ASIA") && session_token.is_empty() {
+        let msg = "AWS session token is required for temporary STS credentials".to_string();
+        app_log(format!("[aws] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    let region = if region.trim().is_empty() {
+        "us-east-1".to_string()
+    } else {
+        region.trim().to_string()
+    };
+
+    app_log(format!("[aws] list-clusters region={region} key={}...", &access_key[..access_key.len().min(8)]));
+
+    let aws_bin = match resolve_executable_command("aws") {
+        Some(b) => { app_log(format!("[aws] binary={}", b.display())); b }
+        None => {
+            let msg = "failed to resolve 'aws' command on PATH".to_string();
+            app_log(format!("[aws] ERROR: {msg}"));
+            return Err(msg);
+        }
+    };
+
+    let mut cmd = Command::new(aws_bin);
+    cmd.args(["eks", "list-clusters", "--output", "json", "--region", &region])
+        .stdin(Stdio::null());
+
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+
+    for key in ["HOME", "USER", "LOGNAME", "SHELL", "AWS_PROFILE", "AWS_CONFIG_FILE"] {
+        forward_env_if_present(&mut cmd, key);
+    }
+
+    cmd.env("AWS_ACCESS_KEY_ID", &access_key)
+        .env("AWS_SECRET_ACCESS_KEY", &secret_key)
+        .env("AWS_REGION", &region)
+        .env("AWS_DEFAULT_REGION", &region);
+
+    if !session_token.is_empty() {
+        cmd.env("AWS_SESSION_TOKEN", &session_token);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run aws eks list-clusters: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let msg = if stderr.is_empty() {
+            format!("aws eks list-clusters failed with status {}", output.status)
+        } else {
+            format!("aws eks list-clusters failed: {stderr}")
+        };
+        app_log(format!("[aws] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    let stdout_preview = String::from_utf8_lossy(&output.stdout);
+    app_log(format!("[aws] list-clusters stdout: {}", stdout_preview.trim()));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).map_err(|e| format!("failed to parse aws output: {e}"))?;
+
+    let cluster_names = json["clusters"]
+        .as_array()
+        .ok_or_else(|| "unexpected aws output format".to_string())?;
+
+    // Fetch real ARNs by calling describe-cluster for each. Fall back to name-only if it fails.
+    let mut entries: Vec<EksClusterEntry> = Vec::new();
+    for name in cluster_names.iter().filter_map(|v| v.as_str()) {
+        let arn = describe_eks_cluster_arn(&access_key, &secret_key, &session_token, &region, name)
+            .unwrap_or_else(|| format!("arn:aws:eks:{region}:unknown:cluster/{name}"));
+        entries.push(EksClusterEntry {
+            name: name.to_string(),
+            region: region.clone(),
+            arn,
+        });
+    }
+
+    Ok(entries)
+}
+
+fn describe_eks_cluster_arn(access_key: &str, secret_key: &str, session_token: &str, region: &str, cluster_name: &str) -> Option<String> {
+    let aws_bin = resolve_executable_command("aws")?;
+    let mut cmd = Command::new(aws_bin);
+    cmd.args([
+        "eks", "describe-cluster",
+        "--name", cluster_name,
+        "--region", region,
+        "--query", "cluster.arn",
+        "--output", "text",
+    ])
+    .stdin(Stdio::null());
+
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+    cmd.env("AWS_ACCESS_KEY_ID", access_key)
+        .env("AWS_SECRET_ACCESS_KEY", secret_key)
+        .env("AWS_REGION", region)
+        .env("AWS_DEFAULT_REGION", region);
+    if !session_token.is_empty() {
+        cmd.env("AWS_SESSION_TOKEN", session_token);
+    }
+    if let Some(home) = env_value("HOME") { cmd.env("HOME", home); }
+
+    let output = cmd.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let arn = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if arn.starts_with("arn:aws:eks:") {
+        Some(arn)
+    } else {
+        None
+    }
+}
+
+#[tauri::command]
+fn aws_eks_update_kubeconfig(
+    access_key: String,
+    secret_key: String,
+    session_token: String,
+    region: String,
+    cluster_name: String,
+) -> Result<String, String> {
+    let region = region.trim().to_string();
+    let cluster_name = cluster_name.trim().to_string();
+    let session_token = session_token.trim().to_string();
+
+    if access_key.trim().starts_with("ASIA") && session_token.is_empty() {
+        let msg = "AWS session token is required for temporary STS credentials".to_string();
+        app_log(format!("[aws] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    app_log(format!("[aws] update-kubeconfig cluster={cluster_name} region={region}"));
+
+    let aws_bin = match resolve_executable_command("aws") {
+        Some(b) => b,
+        None => {
+            let msg = "failed to resolve 'aws' command on PATH".to_string();
+            app_log(format!("[aws] ERROR: {msg}"));
+            return Err(msg);
+        }
+    };
+
+    let mut cmd = Command::new(aws_bin);
+    cmd.args([
+        "eks", "update-kubeconfig",
+        "--name", &cluster_name,
+        "--region", &region,
+    ])
+    .stdin(Stdio::null());
+
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+
+    for key in ["HOME", "USER", "LOGNAME", "SHELL", "AWS_PROFILE", "AWS_CONFIG_FILE", "KUBECONFIG"] {
+        forward_env_if_present(&mut cmd, key);
+    }
+
+    cmd.env("AWS_ACCESS_KEY_ID", &access_key)
+        .env("AWS_SECRET_ACCESS_KEY", &secret_key)
+        .env("AWS_REGION", &region)
+        .env("AWS_DEFAULT_REGION", &region);
+
+    if !session_token.is_empty() {
+        cmd.env("AWS_SESSION_TOKEN", &session_token);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run aws eks update-kubeconfig: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("aws eks update-kubeconfig failed with status {}", output.status)
+        } else {
+            format!("aws eks update-kubeconfig failed: {stderr}")
+        });
+    }
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    app_log(format!("[aws] update-kubeconfig stdout: {}", stdout_str.trim()));
+
+    // Parse context name from stdout:
+    // "Updated context arn:aws:eks:<region>:<account>:cluster/<name> in /path/kubeconfig"
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let context = stdout
+        .split_whitespace()
+        .find(|w| w.starts_with("arn:aws:eks:"))
+        .map(|w| w.trim_end_matches(['.', ',', ';']).to_string())
+        .unwrap_or_else(|| cluster_name.clone());
+
+    Ok(context)
+}
+
+#[tauri::command]
+fn log_omni_connection_attempt(
+    omni_url: String,
+    email: String,
+) -> Result<(), String> {
+    let omni_url = omni_url.trim().to_string();
+    let email = email.trim().to_string();
+    app_log(format!("[omni] connection-attempt url={} email={}", omni_url, email));
+    Ok(())
+}
+
+/// Resolve the omniconfig file path and the best-matching context name for the
+/// given Omni endpoint URL. Returns `(omniconfig_path, context_name)` when
+/// found so callers can pass `--omniconfig` and `--context` explicitly to
+/// omnictl, avoiding "context not found" errors in release builds where env
+/// vars may not be inherited from the user's interactive shell.
+fn find_omni_context(omni_url: &str) -> Option<(PathBuf, String)> {
+    let config_path = if let Some(p) = env_value("OMNICONFIG") {
+        PathBuf::from(p)
+    } else if let Some(home) = resolve_home_dir() {
+        PathBuf::from(home).join(".talos/omni/config")
+    } else {
+        app_log("[omni] find_omni_context: HOME not set, cannot locate omniconfig".to_string());
+        return None;
+    };
+
+    if !config_path.exists() {
+        app_log(format!("[omni] omniconfig not found at {}", config_path.display()));
+        return None;
+    }
+
+    let content = match fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(e) => {
+            app_log(format!("[omni] failed to read omniconfig {}: {e}", config_path.display()));
+            return None;
+        }
+    };
+
+    let yaml: serde_yaml::Value = match serde_yaml::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            app_log(format!("[omni] failed to parse omniconfig: {e}"));
+            return None;
+        }
+    };
+
+    let contexts = yaml.get("contexts").and_then(|v| v.as_mapping());
+    if let Some(contexts) = contexts {
+        let normalized_url = omni_url.trim_end_matches('/').to_lowercase();
+
+        // First pass: find a context whose URL matches the provided endpoint.
+        for (key, ctx) in contexts {
+            let ctx_url = ctx
+                .get("url")
+                .and_then(|v| v.as_str())
+                .map(|u| u.trim_end_matches('/').to_lowercase());
+            if let (Some(name), Some(url)) = (key.as_str(), ctx_url) {
+                if url == normalized_url {
+                    app_log(format!("[omni] matched context={name} for url={omni_url}"));
+                    return Some((config_path, name.to_string()));
+                }
+            }
+        }
+
+        // Second pass: current-context.
+        if let Some(current) = yaml.get("current-context").and_then(|v| v.as_str()) {
+            if !current.is_empty() && contexts.get(current).is_some() {
+                app_log(format!("[omni] using current-context={current}"));
+                return Some((config_path, current.to_string()));
+            }
+        }
+
+        // Third pass: first available context.
+        if let Some((key, _)) = contexts.iter().next() {
+            if let Some(name) = key.as_str() {
+                app_log(format!("[omni] falling back to first context={name}"));
+                return Some((config_path, name.to_string()));
+            }
+        }
+    }
+
+    app_log(format!("[omni] no usable context found in omniconfig at {}", config_path.display()));
+    None
+}
+
+fn resolve_home_dir() -> Option<PathBuf> {
+    if let Some(home) = env_value("HOME") {
+        let p = PathBuf::from(home);
+        if !p.as_os_str().is_empty() {
+            return Some(p);
+        }
+    }
+    dirs::home_dir()
+}
+
+fn resolve_siderov1_keys_dir() -> Option<PathBuf> {
+    if let Some(explicit) = env_value("SIDEROV1_KEYS_DIR") {
+        let p = PathBuf::from(explicit);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    if let Some(home) = resolve_home_dir() {
+        let p = home.join(".talos/keys");
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    None
+}
+
+#[tauri::command]
+fn omni_update_kubeconfig(
+    cluster_name: String,
+    omni_url: String,
+) -> Result<String, String> {
+    let cluster_name = cluster_name.trim().to_string();
+    let omni_url = omni_url.trim().to_string();
+
+    if cluster_name.is_empty() {
+        let msg = "Omni cluster name is required".to_string();
+        app_log(format!("[omni] ERROR: {msg}"));
+        return Err(msg);
+    }
+    if omni_url.is_empty() {
+        let msg = "Omni URL is required".to_string();
+        app_log(format!("[omni] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    let context_name = format!("omni-{}", cluster_name);
+    app_log(format!(
+        "[omni] update-kubeconfig cluster={} endpoint={} context={}",
+        cluster_name, omni_url, context_name
+    ));
+
+    let omnictl_bin = match resolve_executable_command("omnictl") {
+        Some(b) => {
+            app_log(format!("[omni] binary={}", b.display()));
+            b
+        }
+        None => {
+            let msg = "failed to resolve 'omnictl' command on PATH".to_string();
+            app_log(format!("[omni] ERROR: {msg}"));
+            return Err(msg);
+        }
+    };
+
+    let omni_context = find_omni_context(&omni_url);
+    let resolved_home = resolve_home_dir();
+    let siderov1_keys_dir = resolve_siderov1_keys_dir();
+
+    if let Some(home) = &resolved_home {
+        app_log(format!("[omni] resolved HOME={}", home.display()));
+    }
+
+    // Build omnictl command arguments
+    let mut omnictl_args = Vec::new();
+    
+    // --omniconfig and --context are global flags; they must come before the subcommand.
+    // When no valid context is found (e.g. empty default config), point --omniconfig at a
+    // nonexistent path so omnictl skips the empty ~/.talos/omni/config and falls back to
+    // using OMNI_ENDPOINT (which we always set below).
+    match &omni_context {
+        Some((cfg_path, ctx_name)) => {
+            app_log(format!("[omni] kubeconfig using --omniconfig={} --context={}", cfg_path.display(), ctx_name));
+            omnictl_args.push("--omniconfig".to_string());
+            omnictl_args.push(cfg_path.to_string_lossy().to_string());
+            omnictl_args.push("--context".to_string());
+            omnictl_args.push(ctx_name.clone());
+        }
+        None => {
+            app_log("[omni] kubeconfig: no valid context, using OMNI_ENDPOINT with placeholder omniconfig".to_string());
+            omnictl_args.push("--omniconfig".to_string());
+            omnictl_args.push("/tmp/.pertisk-omni-no-context-placeholder".to_string());
+        }
+    }
+    if let Some(keys_dir) = &siderov1_keys_dir {
+        app_log(format!("[omni] kubeconfig using --siderov1-keys-dir={}", keys_dir.display()));
+        omnictl_args.push("--siderov1-keys-dir".to_string());
+        omnictl_args.push(keys_dir.to_string_lossy().to_string());
+    }
+    
+    omnictl_args.extend(vec![
+        "kubeconfig".to_string(),
+        "--cluster".to_string(),
+        cluster_name.clone(),
+        "--merge".to_string(),
+        "--force".to_string(),
+        "--force-context-name".to_string(),
+        context_name.clone(),
+    ]);
+
+    // Build the shell command with environment variables
+    let omnictl_cmd = build_shell_command(&omnictl_bin.to_string_lossy(), &omnictl_args);
+    let shell_cmd = format!(
+        "OMNI_ENDPOINT={} {}",
+        shell_quote(&omni_url),
+        omnictl_cmd
+    );
+    
+    let shell = env_value("SHELL").unwrap_or_else(|| "/bin/zsh".to_string());
+    
+    app_log(format!("[omni] running via shell: {} -lc [command]", shell));
+
+    let mut cmd = Command::new(&shell);
+    cmd.args(["-lc", &shell_cmd]).stdin(Stdio::null());
+
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+
+    if let Some(home) = &resolved_home {
+        cmd.env("HOME", home);
+    }
+    if let Some(keys_dir) = &siderov1_keys_dir {
+        cmd.env("SIDEROV1_KEYS_DIR", keys_dir);
+    }
+
+    for key in ["HOME", "USER", "LOGNAME", "SHELL", "OMNICONFIG", "TALOSCONFIG", "KUBECONFIG", "SIDEROV1_KEYS_DIR"] {
+        forward_env_if_present(&mut cmd, key);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run omnictl kubeconfig: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        
+        // Log stdout for debugging
+        if !stdout.is_empty() {
+            app_log(format!("[omni] kubeconfig stdout: {}", stdout));
+        }
+        
+        let msg = if stderr.is_empty() {
+            format!("omnictl kubeconfig failed with status {}", output.status)
+        } else {
+            format!("omnictl kubeconfig failed: {stderr}")
+        };
+        app_log(format!("[omni] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !stdout.is_empty() {
+        app_log(format!("[omni] update-kubeconfig stdout: {stdout}"));
+    }
+
+    Ok(context_name)
+}
+
+#[tauri::command]
+fn list_omni_clusters(
+    omni_url: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    fn preview(s: &str, max: usize) -> String {
+        let trimmed = s.trim();
+        if trimmed.chars().count() <= max {
+            return trimmed.to_string();
+        }
+        let mut out = String::new();
+        for (i, ch) in trimmed.chars().enumerate() {
+            if i >= max {
+                break;
+            }
+            out.push(ch);
+        }
+        out.push_str("...<truncated>");
+        out
+    }
+
+    let omni_url = omni_url.trim().to_string();
+
+    if omni_url.is_empty() {
+        let msg = "Omni URL is required".to_string();
+        app_log(format!("[omni] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    app_log(format!("[omni] list-clusters endpoint={omni_url}"));
+
+    let omniconfig_env = env_value("OMNICONFIG").unwrap_or_else(|| "<unset>".to_string());
+    let default_omni_cfg_exists = env_value("HOME")
+        .map(|h| PathBuf::from(h).join(".talos/omni/config").exists())
+        .unwrap_or(false);
+    app_log(format!(
+        "[omni] runtime env OMNICONFIG={} default_config_exists={} HOME={}",
+        omniconfig_env,
+        default_omni_cfg_exists,
+        env_value("HOME").unwrap_or_else(|| "<unset>".to_string())
+    ));
+
+    let omnictl_bin = match resolve_executable_command("omnictl") {
+        Some(b) => {
+            app_log(format!("[omni] binary={}", b.display()));
+            b
+        }
+        None => {
+            let msg = "failed to resolve 'omnictl' command on PATH".to_string();
+            app_log(format!("[omni] ERROR: {msg}"));
+            return Err(msg);
+        }
+    };
+
+    fn looks_like_real_omni_cluster_name(name: &str) -> bool {
+        let n = name.trim();
+        if n.is_empty() {
+            return false;
+        }
+
+        // Keep this permissive enough to avoid false negatives across naming schemes.
+        // We only block obvious non-cluster/control-plane artifacts below.
+        if n.len() > 200 {
+            return false;
+        }
+
+        // Filter known non-cluster/control-plane artifact names.
+        if n.ends_with("Controller") || n.contains("Controller") {
+            return false;
+        }
+
+        let lower = n.to_ascii_lowercase();
+        if lower.contains("controllerversion")
+            || lower.contains("resource definition")
+            || lower.contains("resourcedefinition")
+            || lower.contains("clusterconfigversioncontroller")
+            || lower.contains("backupdatacontroller")
+            || lower.contains("clusterdestroystatuscontroller")
+        {
+            return false;
+        }
+
+        true
+    }
+
+    fn omni_name_from_item(item: &serde_json::Value) -> Option<String> {
+        let candidates = [
+            item.pointer("/name").and_then(|v| v.as_str()),
+            item.pointer("/metadata/name").and_then(|v| v.as_str()),
+            item.pointer("/metadata/id").and_then(|v| v.as_str()),
+            item.pointer("/id").and_then(|v| v.as_str()),
+            item.pointer("/spec/name").and_then(|v| v.as_str()),
+        ];
+
+        for c in candidates.into_iter().flatten() {
+            let t = c.trim();
+            if !t.is_empty() && looks_like_real_omni_cluster_name(t) {
+                return Some(t.to_string());
+            }
+        }
+        None
+    }
+
+    fn omni_extract_names(json: &serde_json::Value) -> Vec<serde_json::Value> {
+        let mut names = BTreeSet::<String>::new();
+
+        let items: Vec<&serde_json::Value> = if let Some(arr) = json.as_array() {
+            arr.iter().collect()
+        } else if let Some(arr) = json.get("items").and_then(|v| v.as_array()) {
+            arr.iter().collect()
+        } else {
+            vec![json]
+        };
+
+        for item in items {
+            if let Some(name) = omni_name_from_item(item) {
+                names.insert(name);
+            }
+        }
+
+        names
+            .into_iter()
+            .map(|name| serde_json::json!({ "name": name }))
+            .collect()
+    }
+
+    let arg_variants: Vec<Vec<String>> = vec![
+        vec!["get".to_string(), "clusters".to_string()],
+    ];
+
+    let resolved_home = resolve_home_dir();
+
+    if let Some(home) = &resolved_home {
+        app_log(format!("[omni] list-clusters resolved HOME={}", home.display()));
+    }
+
+    let mut last_error = String::new();
+    let mut had_successful_output = false;
+
+    let mut first_successful_empty: Option<Vec<serde_json::Value>> = None;
+
+    for args in arg_variants {
+        let cmd_label = format!("omnictl {}", args.join(" "));
+        let omnictl_cmd = build_shell_command(&omnictl_bin.to_string_lossy(), &args);
+        let shell_cmd = format!(
+            "OMNI_ENDPOINT={} OMNICONFIG={} {}",
+            shell_quote(&omni_url),
+            shell_quote("/tmp/.pertisk-omni-no-context-placeholder"),
+            omnictl_cmd
+        );
+        let shell = env_value("SHELL").unwrap_or_else(|| "/bin/zsh".to_string());
+
+        app_log(format!("[omni] list-clusters cmd={} -lc {}", shell, shell_cmd));
+
+        let mut cmd = Command::new(&shell);
+        cmd.args(["-lc", &shell_cmd]).stdin(Stdio::null());
+
+        if let Some(home) = &resolved_home {
+            cmd.env("HOME", home);
+        }
+
+        let output = match cmd.output() {
+            Ok(v) => v,
+            Err(e) => {
+                last_error = format!("failed to run omnictl cluster list via '{shell} -lc': {e}");
+                continue;
+            }
+        };
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let msg = if stderr.is_empty() {
+                format!("omnictl cluster list failed with status {}", output.status)
+            } else {
+                format!("omnictl cluster list failed: {stderr}")
+            };
+            app_log(format!("[omni] WARN: {msg}"));
+            if !stdout.is_empty() {
+                app_log(format!("[omni] WARN stdout-preview: {}", preview(&stdout, 400)));
+            }
+            last_error = msg;
+            continue;
+        }
+
+        had_successful_output = true;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        app_log(format!("[omni] list-clusters stdout: {}", stdout.trim()));
+
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
+            app_log(format!("[omni] list-clusters json-preview={}", preview(&stdout, 800)));
+            let clusters = omni_extract_names(&json);
+            app_log(format!("[omni] list-clusters count={}", clusters.len()));
+            if !clusters.is_empty() {
+                let names: Vec<String> = clusters
+                    .iter()
+                    .filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                    .collect();
+                app_log(format!("[omni] list-clusters source={cmd_label} names={}", names.join(",")));
+                return Ok(clusters);
+            }
+            if first_successful_empty.is_none() {
+                first_successful_empty = Some(clusters);
+                continue;
+            }
+        }
+
+        // Table fallback specifically for: `omnictl get clusters`
+        // Example:
+        // NAMESPACE   TYPE      ID                            VERSION ...
+        // default     Cluster   talos-orangepi-prod-cluster   14      ...
+        if args.len() >= 2 && args[0] == "get" && args[1] == "clusters" {
+            let mut names = BTreeSet::<String>::new();
+            for line in stdout.lines() {
+                let t = line.trim();
+                if t.is_empty() {
+                    continue;
+                }
+                let upper = t.to_ascii_uppercase();
+                if upper.starts_with("NAMESPACE") {
+                    continue;
+                }
+
+                let cols: Vec<&str> = t.split_whitespace().collect();
+                if cols.len() < 3 {
+                    continue;
+                }
+
+                // Expect TYPE column to be Cluster and ID column to be name.
+                if !cols[1].eq_ignore_ascii_case("cluster") {
+                    continue;
+                }
+
+                let cluster_id = cols[2].trim();
+                if looks_like_real_omni_cluster_name(cluster_id) {
+                    names.insert(cluster_id.to_string());
+                }
+            }
+
+            if !names.is_empty() {
+                let clusters: Vec<serde_json::Value> = names
+                    .into_iter()
+                    .map(|name| serde_json::json!({ "name": name }))
+                    .collect();
+                app_log(format!("[omni] list-clusters count={} (table)", clusters.len()));
+                let names: Vec<String> = clusters
+                    .iter()
+                    .filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                    .collect();
+                app_log(format!("[omni] list-clusters source={cmd_label} names={}", names.join(",")));
+                return Ok(clusters);
+            }
+        }
+
+        last_error = "omnictl returned non-JSON output for JSON request".to_string();
+        app_log(format!(
+            "[omni] non-json output for {} stdout-preview={}",
+            cmd_label,
+            preview(&stdout, 400)
+        ));
+    }
+
+    let msg = if last_error.is_empty() {
+        "omnictl cluster list failed for all supported output formats".to_string()
+    } else {
+        last_error
+    };
+    if let Some(clusters) = first_successful_empty {
+        app_log("[omni] list-clusters count=0 (json parsed but no valid cluster names found)");
+        return Ok(clusters);
+    }
+    if had_successful_output {
+        app_log("[omni] ERROR: successful command returned non-json output for all attempts");
+    }
+    app_log(format!("[omni] ERROR: {msg}"));
+    Err(msg)
+}
+
+#[tauri::command]
+fn list_gcp_clusters(
+    project_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let project_id = project_id.trim().to_string();
+    
+    if project_id.is_empty() {
+        let msg = "GCP project ID is required".to_string();
+        app_log(format!("[gcp] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    app_log(format!("[gcp] list-clusters project_id={project_id}"));
+
+    let gcloud_bin = match resolve_executable_command("gcloud") {
+        Some(b) => { app_log(format!("[gcp] binary={}", b.display())); b }
+        None => {
+            let msg = "failed to resolve 'gcloud' command on PATH".to_string();
+            app_log(format!("[gcp] ERROR: {msg}"));
+            return Err(msg);
+        }
+    };
+
+    let mut cmd = Command::new(gcloud_bin);
+    cmd.args(["container", "clusters", "list", "--project", &project_id, "--format", "json"])
+        .stdin(Stdio::null());
+
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+
+    for key in ["HOME", "USER", "LOGNAME", "SHELL", "GOOGLE_APPLICATION_CREDENTIALS"] {
+        forward_env_if_present(&mut cmd, key);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run gcloud container clusters list: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let msg = if stderr.is_empty() {
+            format!("gcloud container clusters list failed with status {}", output.status)
+        } else {
+            format!("gcloud container clusters list failed: {stderr}")
+        };
+        app_log(format!("[gcp] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    let stdout_preview = String::from_utf8_lossy(&output.stdout);
+    app_log(format!("[gcp] list-clusters stdout: {}", stdout_preview.trim()));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).map_err(|e| format!("failed to parse gcloud output: {e}"))?;
+
+    let clusters = json.as_array()
+        .cloned()
+        .ok_or_else(|| "unexpected gcloud output format".to_string())?;
+
+    Ok(clusters)
+}
+
+#[tauri::command]
+fn list_azure_clusters(
+    subscription_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let subscription_id = subscription_id.trim().to_string();
+    
+    if subscription_id.is_empty() {
+        let msg = "Azure subscription ID is required".to_string();
+        app_log(format!("[azure] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    app_log(format!("[azure] list-clusters subscription_id={}", &subscription_id[..subscription_id.len().min(8)]));
+
+    let az_bin = match resolve_executable_command("az") {
+        Some(b) => { app_log(format!("[azure] binary={}", b.display())); b }
+        None => {
+            let msg = "failed to resolve 'az' command on PATH".to_string();
+            app_log(format!("[azure] ERROR: {msg}"));
+            return Err(msg);
+        }
+    };
+
+    let mut cmd = Command::new(az_bin);
+    cmd.args(["aks", "list", "--subscription", &subscription_id, "--output", "json"])
+        .stdin(Stdio::null());
+
+    if let Some(path) = sidecar_path() {
+        cmd.env("PATH", path);
+    }
+
+    for key in ["HOME", "USER", "LOGNAME", "SHELL", "AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID"] {
+        forward_env_if_present(&mut cmd, key);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run az aks list: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let msg = if stderr.is_empty() {
+            format!("az aks list failed with status {}", output.status)
+        } else {
+            format!("az aks list failed: {stderr}")
+        };
+        app_log(format!("[azure] ERROR: {msg}"));
+        return Err(msg);
+    }
+
+    let stdout_preview = String::from_utf8_lossy(&output.stdout);
+    app_log(format!("[azure] list-clusters stdout: {}", stdout_preview.trim()));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).map_err(|e| format!("failed to parse az output: {e}"))?;
+
+    let clusters = json.as_array()
+        .cloned()
+        .ok_or_else(|| "unexpected az output format".to_string())?;
+
+    Ok(clusters)
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
+    app_log("[app] PTKublet startup");
+
     let app = tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_sidecar_config,
             set_sidecar_config,
+            get_sidecar_logs,
             get_cluster_switch_status,
             restart_sidecar,
             trigger_kube_browser_login,
@@ -1534,7 +2733,14 @@ fn main() {
             list_local_directory,
             read_local_files,
             save_pod_file,
-            save_base64_file
+            save_base64_file,
+            list_eks_clusters,
+            aws_eks_update_kubeconfig,
+            log_omni_connection_attempt,
+            omni_update_kubeconfig,
+            list_omni_clusters,
+            list_gcp_clusters,
+            list_azure_clusters
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -1576,7 +2782,9 @@ fn main() {
             }
             let _ = save_sidecar_config(app.handle(), &initial_config);
 
-            let initial_child = match spawn_backend(app.handle(), &initial_config) {
+            let logs: SidecarLogs = Arc::new(Mutex::new(VecDeque::new()));
+
+            let initial_child = match spawn_backend(app.handle(), &initial_config, &logs) {
                 Ok(child) => {
                     if !wait_for_backend_ready(initial_config.port, STARTUP_TIMEOUT) {
                         warn!(
@@ -1612,6 +2820,7 @@ fn main() {
                 Arc::clone(&shutting_down),
                 Arc::clone(&config_ref),
                 Arc::clone(&restart_in_progress),
+                Arc::clone(&logs),
             );
 
             app.manage(BackendState {
@@ -1620,6 +2829,7 @@ fn main() {
                 config: config_ref,
                 switch_status: Arc::new(Mutex::new(ClusterSwitchStatus::default())),
                 restart_in_progress,
+                logs,
             });
             Ok(())
         })

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from '../components/Icons';
+import { toast } from 'react-toastify';
+import { Loader, RefreshCw, Trash2 } from '../components/Icons';
 import { useRealtimeStatefulSets } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, StatefulSetDetailPanel, ConfirmDialog } from '../components';
@@ -8,7 +9,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import type { StatefulSet } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
-import { deleteStatefulSet, useStatefulSets } from '../hooks/useKubernetes';
+import { deleteStatefulSet, restartStatefulSet, useStatefulSets } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
 type StatefulSetSortKey = 'name' | 'namespace' | 'status' | 'ready' | 'current' | 'updated' | 'age';
@@ -55,12 +56,14 @@ export const StatefulSetsPage = () => {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRestartingSelected, setIsRestartingSelected] = useState(false);
   const [sortState, setSortState] = useState<{ key: StatefulSetSortKey; direction: 'asc' | 'desc' }>({
     key: 'age',
     direction: 'desc',
   });
 
-  // Merge realtime + REST so replica counters stay fresh when watch stream lags.
+  // Merge realtime + REST so replica counters stay fresh.
+  // Realtime data is preferred since it's more up-to-date.
   const data = useMemo(() => {
     const realtime = realtimeStatefulSets ?? [];
     const api = apiStatefulSets ?? [];
@@ -68,23 +71,24 @@ export const StatefulSetsPage = () => {
     if (realtime.length === 0) return api;
     if (api.length === 0) return realtime;
 
-    const realtimeByKey = new Map(realtime.map((item) => [`${item.namespace}/${item.name}`, item]));
-    const merged = api.map((item) => {
+    const apiByKey = new Map(api.map((item) => [`${item.namespace}/${item.name}`, item]));
+    const merged = realtime.map((item) => {
       const key = `${item.namespace}/${item.name}`;
-      const fromRealtime = realtimeByKey.get(key);
-      if (!fromRealtime) return item;
+      const fromApi = apiByKey.get(key);
+      if (!fromApi) return item;
 
       return {
-        ...fromRealtime,
-        status: item.status ?? fromRealtime.status,
-        ready: item.ready ?? fromRealtime.ready,
-        current: item.current ?? fromRealtime.current,
-        updated: item.updated ?? fromRealtime.updated,
-        images: item.images ?? fromRealtime.images,
+        ...fromApi,
+        ...item,
+        status: item.status ?? fromApi.status,
+        ready: item.ready ?? fromApi.ready,
+        current: item.current ?? fromApi.current,
+        updated: item.updated ?? fromApi.updated,
+        images: fromApi.images ?? item.images,
       };
     });
 
-    for (const item of realtime) {
+    for (const item of api) {
       const key = `${item.namespace}/${item.name}`;
       if (!merged.some((existing) => `${existing.namespace}/${existing.name}` === key)) {
         merged.push(item);
@@ -142,6 +146,24 @@ export const StatefulSetsPage = () => {
       keys: selectedRows,
       label: selectedRows.length === 1 ? selectedRows[0].split('/')[1] : `${selectedRows.length} statefulsets`,
     });
+  };
+
+  const handleRestartSelected = async () => {
+    if (selectedRows.length === 0 || isRestartingSelected) return;
+    setIsRestartingSelected(true);
+    const results = await Promise.allSettled(
+      selectedRows.map((key) => {
+        const [ns, name] = key.split('/');
+        return restartStatefulSet(ns, name);
+      })
+    );
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length === 0) {
+      toast.success(`Restarted ${selectedRows.length} statefulset${selectedRows.length > 1 ? 's' : ''}.`);
+    } else {
+      toast.error(`${failed.length} restart${failed.length > 1 ? 's' : ''} failed.`);
+    }
+    setIsRestartingSelected(false);
   };
 
   const handleConfirmDelete = async () => {
@@ -288,6 +310,7 @@ export const StatefulSetsPage = () => {
             statefulSet={selectedStatefulSet}
             onClose={() => setPanelOpen(false)}
             onOpenYamlEditor={handleOpenYamlEditorFromPanel}
+            onRestart={restartStatefulSet}
             onDelete={handleDeleteSingle}
           />
         </>
@@ -297,6 +320,15 @@ export const StatefulSetsPage = () => {
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-3 px-4 py-3 bg-surface border-2 border-orange-500 rounded-xl shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
           <span className="text-sm text-text-secondary font-medium">{selectedRows.length} selected</span>
           <div className="w-px h-4 bg-border" />
+          <button
+            type="button"
+            onClick={() => void handleRestartSelected()}
+            disabled={isRestartingSelected}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 font-medium transition-colors disabled:opacity-50"
+          >
+            {isRestartingSelected ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {isRestartingSelected ? 'Restarting...' : 'Restart'}
+          </button>
           <button
             type="button"
             onClick={handleDeleteSelected}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { ScrollText, Trash2 } from '../components/Icons';
+import { toast } from 'react-toastify';
+import { Loader, RefreshCw, ScrollText, Trash2 } from '../components/Icons';
 import { useRealtimeDeployments } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable } from '../components/DataTable';
@@ -129,12 +130,14 @@ export const DeploymentsPage = () => {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRestartingSelected, setIsRestartingSelected] = useState(false);
   const [sortState, setSortState] = useState<{ key: DeploymentSortKey; direction: 'asc' | 'desc' }>({
     key: 'age',
     direction: 'desc',
   });
 
   // Merge realtime + REST so table values stay fresh when watch events lag.
+  // Realtime data is preferred since it's more up-to-date.
   const data = useMemo(() => {
     const realtime = realtimeDeployments ?? [];
     const api = apiDeployments ?? [];
@@ -142,23 +145,28 @@ export const DeploymentsPage = () => {
     if (realtime.length === 0) return api;
     if (api.length === 0) return realtime;
 
-    const realtimeByKey = new Map(realtime.map((item) => [`${item.namespace}/${item.name}`, item]));
-    const merged = api.map((item) => {
+    const apiByKey = new Map(api.map((item) => [`${item.namespace}/${item.name}`, item]));
+    const merged = realtime.map((item) => {
       const key = `${item.namespace}/${item.name}`;
-      const fromRealtime = realtimeByKey.get(key);
-      if (!fromRealtime) return item;
+      const fromApi = apiByKey.get(key);
+      if (!fromApi) return item;
 
+      // Prefer realtime values, fall back to API for fields that might be missing
       return {
-        ...fromRealtime,
-        status: item.status ?? fromRealtime.status,
-        ready: item.ready ?? fromRealtime.ready,
-        updated: item.updated ?? fromRealtime.updated,
-        available: item.available ?? fromRealtime.available,
-        images: item.images ?? fromRealtime.images,
+        ...fromApi,
+        ...item,
+        // Use realtime values, they are more current
+        status: item.status ?? fromApi.status,
+        ready: item.ready ?? fromApi.ready,
+        updated: item.updated ?? fromApi.updated,
+        available: item.available ?? fromApi.available,
+        // Prefer API images because they include pod digests
+        images: fromApi.images ?? item.images,
       };
     });
 
-    for (const item of realtime) {
+    // Add any API-only items not in realtime yet
+    for (const item of api) {
       const key = `${item.namespace}/${item.name}`;
       if (!merged.some((existing) => `${existing.namespace}/${existing.name}` === key)) {
         merged.push(item);
@@ -225,6 +233,24 @@ export const DeploymentsPage = () => {
       keys: selectedRows,
       label: selectedRows.length === 1 ? selectedRows[0].split('/')[1] : `${selectedRows.length} deployments`,
     });
+  };
+
+  const handleRestartSelected = async () => {
+    if (selectedRows.length === 0 || isRestartingSelected) return;
+    setIsRestartingSelected(true);
+    const results = await Promise.allSettled(
+      selectedRows.map((key) => {
+        const [ns, name] = key.split('/');
+        return restartDeployment(ns, name);
+      })
+    );
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length === 0) {
+      toast.success(`Restarted ${selectedRows.length} deployment${selectedRows.length > 1 ? 's' : ''}.`);
+    } else {
+      toast.error(`${failed.length} restart${failed.length > 1 ? 's' : ''} failed.`);
+    }
+    setIsRestartingSelected(false);
   };
 
   const handleConfirmDelete = async () => {
@@ -438,6 +464,15 @@ export const DeploymentsPage = () => {
             {selectedRows.length} selected
           </span>
           <div className="w-px h-4 bg-border" />
+          <button
+            type="button"
+            onClick={() => void handleRestartSelected()}
+            disabled={isRestartingSelected}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 font-medium transition-colors disabled:opacity-50"
+          >
+            {isRestartingSelected ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {isRestartingSelected ? 'Restarting...' : 'Restart'}
+          </button>
           <button
             type="button"
             onClick={handleDeleteSelected}

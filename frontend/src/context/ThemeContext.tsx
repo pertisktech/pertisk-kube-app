@@ -1,8 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo } from 'react';
 
-const THEME_KEY = 'pertisk_theme';
-
-type Theme = 'light' | 'dark';
+type Theme = 'dark'; // Light theme disabled - app only supports dark mode
 
 type ThemeContextValue = {
   theme: Theme;
@@ -13,13 +11,6 @@ type ThemeContextValue = {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function getStoredTheme(): Theme {
-  if (typeof document === 'undefined') return 'dark';
-  const stored = localStorage.getItem(THEME_KEY);
-  if (stored === 'dark' || stored === 'light') return stored;
-  return 'dark';
-}
-
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
   root.classList.remove('light', 'dark');
@@ -27,26 +18,25 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>) {
-  const [theme, setTheme] = useState<Theme>(() => getStoredTheme());
+  // Force dark theme - light mode disabled
+  const theme: Theme = 'dark';
 
   useEffect(() => {
     applyTheme(theme);
-    localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  useEffect(() => {
-    const stored = getStoredTheme();
-    setTheme(stored);
-    applyTheme(stored);
-  }, []);
-
+  // No-op functions since theme is locked to dark
   function toggleTheme() {
-    setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+    // Light theme disabled
+  }
+
+  function setTheme(_nextTheme: Theme) {
+    // Light theme disabled
   }
 
   const value = useMemo<ThemeContextValue>(() => ({
     theme,
-    isDark: theme === 'dark',
+    isDark: true,
     toggleTheme,
     setTheme,
   }), [theme]);

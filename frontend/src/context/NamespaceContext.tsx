@@ -62,6 +62,8 @@ export const NamespaceProvider = ({ children }: { children: ReactNode }) => {
       // Persist to localStorage
       if (newNamespaces.length > 0) {
         localStorage.setItem('availableNamespaces', JSON.stringify(newNamespaces));
+      } else {
+        localStorage.removeItem('availableNamespaces');
       }
       return newNamespaces;
     });

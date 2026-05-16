@@ -1395,7 +1395,6 @@ const TabContent = ({
 // ── BottomPanel (main export) ─────────────────────────────────────────────────
 
 const MENU_ITEM_HEIGHT = 48;
-const MIN_PANEL_HEIGHT = 280;
 const DEFAULT_PANEL_HEIGHT = () => Math.round(window.innerHeight * 0.5);
 
 export const BottomPanel = () => {
@@ -1424,7 +1423,7 @@ export const BottomPanel = () => {
       if (existing) {
         setActiveTabId(existing.id);
         setCollapsed(false);
-        setPanelHeight((h) => (h <= MIN_PANEL_HEIGHT ? DEFAULT_PANEL_HEIGHT() : h));
+        setPanelHeight(DEFAULT_PANEL_HEIGHT());
         setShowAddMenu(false);
         return;
       }
@@ -1470,7 +1469,7 @@ export const BottomPanel = () => {
     ]);
     setActiveTabId(id);
     setCollapsed(false);
-    setPanelHeight((h) => (h <= MIN_PANEL_HEIGHT ? DEFAULT_PANEL_HEIGHT() : h));
+    setPanelHeight(DEFAULT_PANEL_HEIGHT());
     setShowAddMenu(false);
   }, [tabs]);
 
@@ -1482,6 +1481,14 @@ export const BottomPanel = () => {
     window.addEventListener('panel:open', handler);
     return () => window.removeEventListener('panel:open', handler);
   }, [doAddTab]);
+
+  useEffect(() => {
+    if (collapsed || !activeTabId) return;
+    const rafId = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent('panel:tab-activated'));
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [activeTabId, collapsed, panelHeight]);
 
   // ── Close add menu on outside click ───────────────────────────────────────
   useEffect(() => {
@@ -1664,7 +1671,7 @@ export const BottomPanel = () => {
         });
 
         if (!savedPath) {
-          toast.info('Export cancelled.');
+          toast('Export cancelled.');
           return;
         }
 
@@ -1711,7 +1718,7 @@ export const BottomPanel = () => {
     } catch (err) {
       const maybeDomErr = err as { name?: string };
       if (maybeDomErr?.name === 'AbortError') {
-        toast.info('Export cancelled.');
+        toast('Export cancelled.');
         return;
       }
 
@@ -1925,9 +1932,9 @@ export const BottomPanel = () => {
 
       {/* Content area — all tabs stay mounted; only active one is visible */}
       {tabs.length > 0 && !collapsed && (
-        <div className="flex-1 min-h-0 overflow-hidden bg-sidebar">
+        <div className="flex-1 min-h-0 overflow-hidden bg-bg">
           {tabs.map((tab) => (
-            <div key={tab.id} className="h-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
+            <div key={tab.id} className="h-full w-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
               <TabContent
                 tab={tab}
                 onConnect={(target) => connectTab(tab.id, target)}

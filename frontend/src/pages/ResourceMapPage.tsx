@@ -651,7 +651,7 @@ export const ResourceMapPage = () => {
         });
 
         if (!savedPath) {
-          toast.info('Export cancelled.');
+          toast('Export cancelled.');
         } else {
           toast.success(`Resource map image saved to ${savedPath}`);
         }

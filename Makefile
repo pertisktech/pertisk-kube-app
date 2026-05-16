@@ -134,7 +134,7 @@ run-desktop: frontend-install build-backend
 	@pkill -f "vite" 2>/dev/null || true
 	@sleep 0.5
 	@lsof -ti:3000 -ti:$(APP_PORT) -ti:$(GRPC_PORT) 2>/dev/null | sort -u | xargs kill -9 2>/dev/null || true
-	cd frontend && $(KUBE_ENV) APP_PORT=$(APP_PORT) GRPC_PORT=$(GRPC_PORT) PERTISK_BACKEND_BIN="$(CURDIR)/target/debug/pertisk-kube-backend" npm run tauri:dev
+	cd frontend && $(KUBE_ENV) APP_PORT=$(APP_PORT) GRPC_PORT=$(GRPC_PORT) RUST_LOG=info PERTISK_BACKEND_BIN="$(CURDIR)/target/debug/pertisk-kube-backend" npm run tauri:dev
 
 run-desktop-dev: run-desktop
 	@echo "Desktop dev uses debug backend at target/debug/pertisk-kube-backend"

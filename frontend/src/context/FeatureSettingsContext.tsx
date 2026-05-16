@@ -1,8 +1,16 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  applyAppThemePreset,
+  normalizeAppThemePreset,
+  normalizeTerminalThemePreset,
+  type AppThemePresetId,
+  type TerminalThemePresetId,
+} from '../utils/themePresets';
 
 const FEATURE_SETTINGS_KEY = 'pertisk_feature_settings_v1';
 
-export type FeatureThemePreference = 'auto' | 'light' | 'dark';
+// Light theme disabled - app only supports dark mode
+export type FeatureThemePreference = 'auto' | 'dark';
 
 export interface EditorVisualSettings {
   fontName: string;
@@ -14,6 +22,8 @@ export interface FeatureSettings {
   general: EditorVisualSettings;
   terminal: EditorVisualSettings;
   yamlEditor: EditorVisualSettings;
+  generalThemePreset: AppThemePresetId;
+  terminalThemePreset: TerminalThemePresetId;
   helmRepoUrl: string;
   helmRepositories: HelmRepository[];
 }
@@ -33,11 +43,11 @@ interface FeatureSettingsContextValue {
 const DEFAULT_SETTINGS: FeatureSettings = {
   general: {
     fontName: 'Inter',
-    fontSize: 15,
+    fontSize: 14,
     theme: 'dark',
   },
   terminal: {
-    fontName: 'JetBrains Mono',
+    fontName: 'Meslo Nerd Font',
     fontSize: 13,
     theme: 'auto',
   },
@@ -46,6 +56,8 @@ const DEFAULT_SETTINGS: FeatureSettings = {
     fontSize: 13,
     theme: 'auto',
   },
+  generalThemePreset: 'flux-violet',
+  terminalThemePreset: 'wild-cherry',
   helmRepoUrl: '',
   helmRepositories: [
     {
@@ -77,8 +89,18 @@ function clampFontSize(value: number, fallback: number): number {
 }
 
 function normalizeTheme(value: unknown): FeatureThemePreference {
-  if (value === 'light' || value === 'dark' || value === 'auto') return value;
+  // Light theme disabled - only allow 'auto' or 'dark'
+  if (value === 'dark' || value === 'auto') return value;
+  if (value === 'light') return 'dark'; // Convert light to dark
   return 'auto';
+}
+
+export function resolveFeatureTheme(
+  _preference: FeatureThemePreference,
+  _options?: { systemPrefersDark?: boolean },
+): 'dark' {
+  // Light theme disabled - always return dark
+  return 'dark';
 }
 
 function normalizeVisualSettings(value: unknown, fallback: EditorVisualSettings): EditorVisualSettings {
@@ -134,6 +156,8 @@ function normalizeSettings(value: unknown): FeatureSettings {
     general: normalizeVisualSettings(source.general, DEFAULT_SETTINGS.general),
     terminal: normalizeVisualSettings(source.terminal, DEFAULT_SETTINGS.terminal),
     yamlEditor: normalizeVisualSettings(source.yamlEditor, DEFAULT_SETTINGS.yamlEditor),
+    generalThemePreset: normalizeAppThemePreset(source.generalThemePreset),
+    terminalThemePreset: normalizeTerminalThemePreset(source.terminalThemePreset),
     helmRepoUrl: legacyHelmRepoUrl,
     helmRepositories: normalizedRepos,
   };
@@ -172,6 +196,11 @@ export function FeatureSettingsProvider({ children }: Readonly<{ children: React
     root.style.setProperty('--font-sans', toFontFamily(settings.general.fontName));
     root.style.fontSize = `${clampFontSize(settings.general.fontSize, DEFAULT_SETTINGS.general.fontSize)}px`;
   }, [settings.general.fontName, settings.general.fontSize]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    applyAppThemePreset(document.documentElement, settings.generalThemePreset);
+  }, [settings.generalThemePreset]);
 
   const value = useMemo<FeatureSettingsContextValue>(() => ({
     settings,

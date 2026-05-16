@@ -13,7 +13,6 @@ import {
   Server,
   Cpu,
   HardDrive,
-  TrendingUp,
   Monitor,
   CheckCircle,
   XCircle,
@@ -307,16 +306,17 @@ export const Dashboard = () => {
             <span>Updated {new Date().toLocaleTimeString()}</span>
           </div>
 
-          {/* Cluster resource pie charts (freelens-style: CPU, Memory, Pods) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-            {/* CPU pie */}
-            <div className="bg-bg border border-border rounded-xl p-4 flex flex-col items-center chart-theme-text">
+          {/* Single-row metric strip (6 sections): 3 capacity pies + 3 usage gauges */}
+          <div className="mt-6">
+            <div className="grid grid-cols-6 gap-3">
+              {/* CPU pie */}
+              <div className="bg-bg border border-border rounded-xl p-3 min-w-0 flex flex-col items-center chart-theme-text">
               <div className="flex items-center gap-2 mb-3">
                 <Cpu size={20} className="text-dashboard-metric-primary" />
-                <span className="font-semibold text-text">CPU</span>
+                <span className="font-semibold text-text">CPU Capacity</span>
               </div>
-              <div className="w-full h-44 min-h-[176px]">
-                <ResponsiveContainer width="100%" height={176} minHeight={176}>
+              <div className="w-full h-36 min-h-[144px]">
+                <ResponsiveContainer width="100%" height={144} minHeight={144}>
                   <PieChart>
                     <Pie
                       data={[
@@ -329,8 +329,8 @@ export const Dashboard = () => {
                       ]}
                       cx="50%"
                       cy="50%"
-                      innerRadius={44}
-                      outerRadius={64}
+                      innerRadius={34}
+                      outerRadius={52}
                       paddingAngle={0}
                       dataKey="value"
                     >
@@ -355,16 +355,16 @@ export const Dashboard = () => {
               <p className="text-xs text-text-secondary mt-2">
                 {formatCPU(usedCPU)} / {formatCPU(totalCPU)} cores
               </p>
-            </div>
+              </div>
 
-            {/* Memory pie */}
-            <div className="bg-bg border border-border rounded-xl p-4 flex flex-col items-center chart-theme-text">
+              {/* Memory pie */}
+              <div className="bg-bg border border-border rounded-xl p-3 min-w-0 flex flex-col items-center chart-theme-text">
               <div className="flex items-center gap-2 mb-3">
                 <HardDrive size={20} className="text-dashboard-metric-secondary" />
-                <span className="font-semibold text-text">Memory</span>
+                <span className="font-semibold text-text">Memory Capacity</span>
               </div>
-              <div className="w-full h-44 min-h-[176px]">
-                <ResponsiveContainer width="100%" height={176} minHeight={176}>
+              <div className="w-full h-36 min-h-[144px]">
+                <ResponsiveContainer width="100%" height={144} minHeight={144}>
                   <PieChart>
                     <Pie
                       data={[
@@ -377,8 +377,8 @@ export const Dashboard = () => {
                       ]}
                       cx="50%"
                       cy="50%"
-                      innerRadius={44}
-                      outerRadius={64}
+                      innerRadius={34}
+                      outerRadius={52}
                       paddingAngle={0}
                       dataKey="value"
                     >
@@ -403,16 +403,16 @@ export const Dashboard = () => {
               <p className="text-xs text-text-secondary mt-2">
                 {formatMemory(usedMemory)} / {formatMemory(totalMemory)}
               </p>
-            </div>
+              </div>
 
-            {/* Pods pie */}
-            <div className="bg-bg border border-border rounded-xl p-4 flex flex-col items-center chart-theme-text">
+              {/* Pods pie */}
+              <div className="bg-bg border border-border rounded-xl p-3 min-w-0 flex flex-col items-center chart-theme-text">
               <div className="flex items-center gap-2 mb-3">
                 <Box size={20} className="text-dashboard-metric-tertiary" />
-                <span className="font-semibold text-text">Pods</span>
+                <span className="font-semibold text-text">Pods Capacity</span>
               </div>
-              <div className="w-full h-44 min-h-[176px]">
-                <ResponsiveContainer width="100%" height={176} minHeight={176}>
+              <div className="w-full h-36 min-h-[144px]">
+                <ResponsiveContainer width="100%" height={144} minHeight={144}>
                   <PieChart>
                     <Pie
                       data={[
@@ -425,8 +425,8 @@ export const Dashboard = () => {
                       ]}
                       cx="50%"
                       cy="50%"
-                      innerRadius={44}
-                      outerRadius={64}
+                      innerRadius={34}
+                      outerRadius={52}
                       paddingAngle={0}
                       dataKey="value"
                     >
@@ -454,10 +454,47 @@ export const Dashboard = () => {
               <p className="text-xs text-text-secondary mt-2">
                 {podCount} / {totalPodsAllocatable || 0} pods
               </p>
+              </div>
+
+              {/* CPU usage gauge */}
+              <div className="bg-bg border border-border rounded-xl p-3 min-w-0 transition-all hover:shadow-md">
+                <GaugeChart
+                  value={Math.round(cpuUsagePercent)}
+                  color="var(--color-dashboard-metric-primary)"
+                  label="CPU Usage"
+                  used={`${formatCPU(usedCPU)} cores`}
+                  total={`${formatCPU(totalCPU)} cores`}
+                  icon={<Cpu size={20} className="text-dashboard-metric-primary" />}
+                />
+              </div>
+
+              {/* Memory usage gauge */}
+              <div className="bg-bg border border-border rounded-xl p-3 min-w-0 transition-all hover:shadow-md">
+                <GaugeChart
+                  value={Math.round(memoryUsagePercent)}
+                  color="var(--color-dashboard-metric-secondary)"
+                  label="Memory Usage"
+                  used={formatMemory(usedMemory)}
+                  total={formatMemory(totalMemory)}
+                  icon={<HardDrive size={20} className="text-dashboard-metric-secondary" />}
+                />
+              </div>
+
+              {/* Disk usage gauge */}
+              <div className="bg-bg border border-border rounded-xl p-3 min-w-0 transition-all hover:shadow-md">
+                <GaugeChart
+                  value={Math.round(diskUsagePercent)}
+                  color="var(--color-dashboard-metric-tertiary)"
+                  label="Disk Usage"
+                  used={formatMemory(usedDisk)}
+                  total={formatMemory(totalDisk)}
+                  icon={<HardDrive size={20} className="text-dashboard-metric-tertiary" />}
+                />
+              </div>
             </div>
           </div>
 
-          {/* Nodes summary line below pies */}
+          {/* Nodes summary line below overview metrics */}
           <div className="mt-4 pt-4 border-t border-border flex items-center gap-4 text-sm text-text-secondary">
             <span className="flex items-center gap-1.5">
               <Server size={14} className="text-dashboard-metric-quaternary" />
@@ -661,56 +698,6 @@ export const Dashboard = () => {
 
       {/* Metrics Charts */}
       <MetricsCharts />
-
-      {/* Resource Usage Section - 3 Gauge Charts */}
-      <div className="bg-surface border border-border rounded-lg p-6 backdrop-blur-sm">
-        <div className="flex items-center gap-3 mb-6">
-          <TrendingUp size={24} className="text-dashboard-metric-primary" />
-          <h2 className="text-2xl font-bold text-text">Resource Usage</h2>
-        </div>
-
-        {!nodes || nodes.length === 0 ? (
-          <div className="text-center py-8 text-text-secondary">No nodes found</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* CPU Panel */}
-            <div className="bg-bg border border-border rounded-lg p-6 transition-all hover:shadow-md">
-              <GaugeChart
-                value={Math.round(cpuUsagePercent)}
-                color="var(--color-dashboard-metric-primary)"
-                label="CPU"
-                used={`${formatCPU(usedCPU)} cores`}
-                total={`${formatCPU(totalCPU)} cores`}
-                icon={<Cpu size={20} className="text-dashboard-metric-primary" />}
-              />
-            </div>
-
-            {/* Memory Panel */}
-            <div className="bg-bg border border-border rounded-lg p-6 transition-all hover:shadow-md">
-              <GaugeChart
-                value={Math.round(memoryUsagePercent)}
-                color="var(--color-dashboard-metric-secondary)"
-                label="Memory"
-                used={formatMemory(usedMemory)}
-                total={formatMemory(totalMemory)}
-                icon={<HardDrive size={20} className="text-dashboard-metric-secondary" />}
-              />
-            </div>
-
-            {/* Disk Panel */}
-            <div className="bg-bg border border-border rounded-lg p-6 transition-all hover:shadow-md">
-              <GaugeChart
-                value={Math.round(diskUsagePercent)}
-                color="var(--color-dashboard-metric-tertiary)"
-                label="Disk"
-                used={formatMemory(usedDisk)}
-                total={formatMemory(totalDisk)}
-                icon={<HardDrive size={20} className="text-dashboard-metric-tertiary" />}
-              />
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 };

@@ -8,6 +8,7 @@ import { installDesktopBridge } from './utils/desktopBridge';
 import './index.css';
 import 'react-toastify/dist/ReactToastify.css';
 import './styles/theme.css';
+import 'react-toastify/dist/ReactToastify.css';
 
 installDesktopBridge();
 

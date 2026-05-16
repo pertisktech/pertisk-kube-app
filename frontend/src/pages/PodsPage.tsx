@@ -70,6 +70,18 @@ const formatPodMemoryGb = (value?: string | null): string => {
   return `${gb >= 10 ? gb.toFixed(1) : gb.toFixed(2)} GB`;
 };
 
+const getPodEventSortTimestamp = (event: { last_timestamp?: string; first_timestamp?: string }): number => {
+  const ts = Date.parse(event.last_timestamp || event.first_timestamp || '');
+  return Number.isNaN(ts) ? 0 : ts;
+};
+
+const normalizePodErrorMessage = (input: string): string => {
+  const text = input.trim();
+  if (!text) return '';
+  const failedSchedulingPrefix = /^failedscheduling\s*:\s*/i;
+  return text.replace(failedSchedulingPrefix, '').trim();
+};
+
 export const PodsPage = () => {
   const [, forceUpdate] = useState({});
   
@@ -90,6 +102,63 @@ export const PodsPage = () => {
     key: 'age',
     direction: 'desc',
   });
+
+  const podStatusTooltipByKey = useMemo(() => {
+    const selectedByPod = new Map<string, {
+      text: string;
+      type: string;
+      ts: number;
+    }>();
+    const events = eventsData || [];
+
+    for (const event of events) {
+      const eventAny = event as any;
+      const involvedRaw = typeof eventAny?.involved_object === 'string' ? eventAny.involved_object : '';
+      const legacyKind = typeof eventAny?.kind === 'string' ? eventAny.kind : '';
+      const legacyEventName = typeof eventAny?.name === 'string' ? eventAny.name : '';
+
+      const involved = involvedRaw
+        || (legacyKind.toLowerCase() === 'pod' && legacyEventName
+          ? `Pod/${legacyEventName.split('.')[0] || ''}`
+          : '');
+
+      if (!involved || !involved.toLowerCase().startsWith('pod/')) continue;
+
+      const podName = involved.split('/')[1] || '';
+      const namespace = (eventAny.namespace as string) || 'default';
+      if (!podName) continue;
+
+      const key = `${namespace}/${podName}`;
+      const message = String(eventAny.message || eventAny.note || '').trim();
+      const reason = String(eventAny.reason || '').trim();
+      if (!message && !reason) continue;
+
+      const candidateType = String(eventAny.type || eventAny.type_ || '').toLowerCase();
+      const candidateTs = getPodEventSortTimestamp(eventAny);
+      const existing = selectedByPod.get(key);
+      const shouldReplace = !existing
+        || (candidateType === 'warning' && existing.type !== 'warning')
+        || (candidateType === existing.type && candidateTs >= existing.ts);
+
+      if (!shouldReplace) continue;
+
+      const age = timeAgo(eventAny.last_timestamp || eventAny.first_timestamp || '');
+      const eventText = reason.toLowerCase() === 'failedscheduling'
+        ? (message || reason)
+        : (reason && message ? `${reason}: ${message}` : (message || reason));
+      selectedByPod.set(key, {
+        text: age ? `${eventText} (${age})` : eventText,
+        type: candidateType,
+        ts: candidateTs,
+      });
+    }
+
+    const byPod = new Map<string, string>();
+    selectedByPod.forEach((value, key) => {
+      byPod.set(key, value.text);
+    });
+    return byPod;
+  }, [eventsData]);
 
   const handleOpenYamlTab = async (pod: Pod) => {
     setPanelOpen(false);
@@ -253,10 +322,15 @@ export const PodsPage = () => {
     {
       header: 'Status',
       accessor: (row: Pod) => {
-        const podStatus = row.status || row.phase || 'Unknown';
+        const podStatus = row.display_status || row.status || row.phase || 'Unknown';
         const normalized = podStatus.toLowerCase();
-        const showWarning = normalized !== 'running' && normalized !== 'completed' && normalized !== 'succeeded';
-        const tooltip = row.last_error || podStatus;
+        const hasErrorDetails = Boolean((row.last_error || '').trim());
+        const podKey = `${row.namespace}/${row.name}`;
+        const eventDetails = podStatusTooltipByKey.get(podKey);
+        const showWarning = hasErrorDetails || (normalized !== 'running' && normalized !== 'completed' && normalized !== 'succeeded');
+        const tooltip = eventDetails
+          || normalizePodErrorMessage((row.last_error || '').trim())
+          || (showWarning ? `Status: ${podStatus}` : podStatus);
 
         return (
           <span className="whitespace-nowrap inline-flex items-center gap-1.5">
@@ -273,7 +347,7 @@ export const PodsPage = () => {
                   <HelpCircle size={14} />
                 </button>
                 <span
-                  className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 hidden w-72 -translate-x-1/2 rounded border border-border bg-surface px-2 py-1 text-xs text-text shadow-lg group-hover:block"
+                  className="pointer-events-none absolute bottom-full left-1/2 z-[130] mb-2 hidden w-[min(90vw,40rem)] max-h-56 -translate-x-1/2 overflow-y-auto rounded-md border border-border bg-surface px-3 py-2 text-left text-xs leading-relaxed text-text shadow-lg whitespace-normal break-words group-hover:block group-focus-within:block"
                   role="tooltip"
                 >
                   {tooltip}
@@ -367,8 +441,8 @@ export const PodsPage = () => {
     const factor = sortState.direction === 'asc' ? 1 : -1;
 
     return source.sort((first, second) => {
-      const firstStatus = first.status || first.phase || '';
-      const secondStatus = second.status || second.phase || '';
+      const firstStatus = first.display_status || first.status || first.phase || '';
+      const secondStatus = second.display_status || second.status || second.phase || '';
 
       if (sortState.key === 'name') return first.name.localeCompare(second.name) * factor;
       if (sortState.key === 'namespace') return first.namespace.localeCompare(second.namespace) * factor;

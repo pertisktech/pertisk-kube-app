@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import CronExpressionParser from 'cron-parser';
 import { sortNodeRoles } from '../utils/nodeRoles';
-import { getDesktopWebSocketBase, isDesktopRuntime } from '../utils/desktopBridge';
+import { getDesktopWebSocketBase, isDesktopRuntime, refreshDesktopBackendPortFromSidecar } from '../utils/desktopBridge';
+import { getAuthToken } from '../utils/auth';
 import {
   Namespace,
   Deployment,
@@ -53,6 +54,10 @@ const isRealtimeDebug = (): boolean =>
   typeof window !== 'undefined' &&
   (import.meta.env.DEV || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
+const isDesktopDevRealtimePollingMode = (): boolean => (
+  isDesktopRuntime() && import.meta.env.DEV
+);
+
 const shouldIgnoreRealtimeError = (message?: string): boolean => {
   if (!message) return false;
   const normalized = message.toLowerCase();
@@ -70,10 +75,311 @@ const isTransientRealtimeConnectivityError = (message?: string): boolean => {
     || normalized.includes('failed to fetch initial');
 };
 
+const stableHash = (input: string): number => {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+};
+
+const connectDelayForResource = (resourceType: string): number => {
+  const bucket = stableHash(resourceType) % 8;
+  return 120 + bucket * 90;
+};
+
+const reconnectDelayForResource = (resourceType: string, attempt: number): number => {
+  const jitter = (stableHash(resourceType) % 5) * 120;
+  const backoff = Math.min(5000, Math.max(0, attempt - 1) * 700);
+  return 1200 + backoff + jitter;
+};
+
+type RealtimeMessageListener = (message: WebSocketMessage) => void;
+
+const realtimeResourceListeners = new Map<string, Set<RealtimeMessageListener>>();
+let realtimeSharedSocket: WebSocket | null = null;
+let realtimeSharedReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let realtimeSharedHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let realtimeSharedStaleWatchdogTimer: ReturnType<typeof setInterval> | null = null;
+let realtimeSharedLastMessageAt = Date.now();
+let realtimeSharedReconnectAttempts = 0;
+let realtimeSharedClosingIntentional = false;
+let realtimeSharedConnectInFlight = false;
+
+const getRealtimeWsUrl = (): string => (
+  isDesktopRuntime()
+    ? `${getDesktopWebSocketBase()}/ws`
+    : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
+);
+
+const clearRealtimeSharedTimers = () => {
+  if (realtimeSharedReconnectTimer) {
+    clearTimeout(realtimeSharedReconnectTimer);
+    realtimeSharedReconnectTimer = null;
+  }
+  if (realtimeSharedHeartbeatTimer) {
+    clearInterval(realtimeSharedHeartbeatTimer);
+    realtimeSharedHeartbeatTimer = null;
+  }
+  if (realtimeSharedStaleWatchdogTimer) {
+    clearInterval(realtimeSharedStaleWatchdogTimer);
+    realtimeSharedStaleWatchdogTimer = null;
+  }
+};
+
+const safeCloseRealtimeSocket = (socket: WebSocket) => {
+  if (socket.readyState === WebSocket.CONNECTING) {
+    socket.onmessage = null;
+    socket.onerror = null;
+    socket.onclose = null;
+    socket.onopen = () => {
+      socket.close();
+    };
+    return;
+  }
+
+  if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CLOSING) {
+    socket.close();
+  }
+};
+
+const dispatchRealtimeMessage = (message: WebSocketMessage) => {
+  if (message.resource) {
+    const listeners = realtimeResourceListeners.get(message.resource);
+    if (listeners) {
+      listeners.forEach((listener) => {
+        listener(message);
+      });
+    }
+    return;
+  }
+
+  if (message.type === 'error') {
+    realtimeResourceListeners.forEach((listeners) => {
+      listeners.forEach((listener) => listener(message));
+    });
+  }
+};
+
+const openRealtimeSharedSocket = () => {
+  if (isDesktopDevRealtimePollingMode()) {
+    return;
+  }
+
+  if (realtimeSharedSocket && (
+    realtimeSharedSocket.readyState === WebSocket.OPEN
+    || realtimeSharedSocket.readyState === WebSocket.CONNECTING
+  )) {
+    return;
+  }
+
+  if (realtimeSharedConnectInFlight) {
+    return;
+  }
+
+  const createSocket = () => {
+    if (realtimeResourceListeners.size === 0) {
+      return;
+    }
+
+    try {
+      const socket = new WebSocket(getRealtimeWsUrl());
+      realtimeSharedSocket = socket;
+
+      socket.onopen = () => {
+        if (realtimeSharedClosingIntentional) {
+          socket.close();
+          return;
+        }
+
+        realtimeSharedReconnectAttempts = 0;
+        realtimeSharedLastMessageAt = Date.now();
+
+        if (isRealtimeDebug()) {
+          console.log('Realtime shared websocket connected');
+        }
+
+        clearRealtimeSharedTimers();
+
+        realtimeSharedHeartbeatTimer = setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, 15000);
+
+        realtimeSharedStaleWatchdogTimer = setInterval(() => {
+          const staleForMs = Date.now() - realtimeSharedLastMessageAt;
+          if (socket.readyState === WebSocket.OPEN && staleForMs > 45000) {
+            if (isRealtimeDebug()) {
+              console.warn(`Realtime shared websocket stale for ${staleForMs}ms; reconnecting`);
+            }
+            socket.close();
+          }
+        }, 10000);
+
+        realtimeResourceListeners.forEach((_listeners, resource) => {
+          socket.send(JSON.stringify({ type: 'subscribe', resource }));
+        });
+      };
+
+      socket.onmessage = (event) => {
+        realtimeSharedLastMessageAt = Date.now();
+        try {
+          const message = JSON.parse(event.data) as WebSocketMessage;
+          dispatchRealtimeMessage(message);
+        } catch (error) {
+          console.error('Realtime shared websocket parse error:', error);
+        }
+      };
+
+      socket.onerror = () => {
+        if (realtimeSharedClosingIntentional) return;
+        if (import.meta.env.DEV && socket.readyState !== WebSocket.OPEN) return;
+        if (isRealtimeDebug()) {
+          console.warn('Realtime shared websocket error');
+        }
+      };
+
+      socket.onclose = () => {
+        clearRealtimeSharedTimers();
+
+        if (realtimeSharedClosingIntentional) {
+          realtimeSharedClosingIntentional = false;
+          return;
+        }
+
+        if (realtimeResourceListeners.size === 0) {
+          return;
+        }
+
+        realtimeSharedReconnectAttempts += 1;
+        const delay = 1200 + Math.min(5000, (realtimeSharedReconnectAttempts - 1) * 700);
+        realtimeSharedReconnectTimer = setTimeout(() => {
+          if (realtimeResourceListeners.size === 0) {
+            return;
+          }
+          openRealtimeSharedSocket();
+        }, delay);
+      };
+    } catch (error) {
+      if (isRealtimeDebug()) {
+        console.error('Failed to create realtime shared websocket:', error);
+      }
+    }
+  };
+
+  realtimeSharedConnectInFlight = true;
+  const connect = async () => {
+    try {
+      if (isDesktopRuntime()) {
+        await refreshDesktopBackendPortFromSidecar();
+      }
+    } finally {
+      realtimeSharedConnectInFlight = false;
+      createSocket();
+    }
+  };
+
+  void connect();
+};
+
+const fetchRealtimeResourceSnapshot = async <T>(
+  resourceType: string,
+  transformFn: (raw: any) => T,
+  signal: AbortSignal,
+): Promise<T[]> => {
+  const token = getAuthToken();
+  const response = await fetch(`/api/${resourceType}`, {
+    cache: 'no-store',
+    signal,
+    headers: token ? { Authorization: token } : undefined,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch initial ${resourceType} snapshot`);
+  }
+
+  const payload = await response.json() as { data?: any[] };
+  const items = Array.isArray(payload?.data) ? payload.data : [];
+
+  return items.map((raw) => {
+    const looksLikeRawK8sObject =
+      raw
+      && typeof raw === 'object'
+      && raw !== null
+      && typeof (raw as { metadata?: unknown }).metadata === 'object'
+      && (raw as { metadata?: unknown }).metadata !== null;
+
+    if (looksLikeRawK8sObject) {
+      return transformFn(raw);
+    }
+
+    // REST list endpoints already return frontend-shaped items; avoid double-transform.
+    return raw as T;
+  });
+};
+
+const subscribeRealtimeResource = (
+  resource: string,
+  listener: RealtimeMessageListener,
+): (() => void) => {
+  let listeners = realtimeResourceListeners.get(resource);
+  const isFirstSubscriberForResource = !listeners;
+
+  if (!listeners) {
+    listeners = new Set<RealtimeMessageListener>();
+    realtimeResourceListeners.set(resource, listeners);
+  }
+  listeners.add(listener);
+
+  if (!isDesktopDevRealtimePollingMode()) {
+    openRealtimeSharedSocket();
+  }
+
+  if (
+    isFirstSubscriberForResource
+    && realtimeSharedSocket
+    && realtimeSharedSocket.readyState === WebSocket.OPEN
+  ) {
+    realtimeSharedSocket.send(JSON.stringify({ type: 'subscribe', resource }));
+  }
+
+  return () => {
+    const set = realtimeResourceListeners.get(resource);
+    if (!set) return;
+
+    set.delete(listener);
+
+    if (set.size === 0) {
+      realtimeResourceListeners.delete(resource);
+
+      if (realtimeSharedSocket && realtimeSharedSocket.readyState === WebSocket.OPEN) {
+        realtimeSharedSocket.send(JSON.stringify({ type: 'unsubscribe', resource }));
+      }
+    }
+
+    if (realtimeResourceListeners.size === 0 && realtimeSharedSocket) {
+      realtimeSharedClosingIntentional = true;
+      clearRealtimeSharedTimers();
+      safeCloseRealtimeSocket(realtimeSharedSocket);
+      realtimeSharedSocket = null;
+    }
+  };
+};
+
 // Transformation functions to convert raw K8s objects to frontend format
 function transformNamespace(raw: any): Namespace {
   const metadata = raw.metadata || {};
   const status = raw.status || {};
+
+  const fallbackNameParts = [
+    metadata.uid,
+    metadata.resourceVersion,
+    metadata.creationTimestamp,
+  ].filter((part) => typeof part === 'string' && part.trim().length > 0);
+  const fallbackName = fallbackNameParts.length > 0
+    ? `namespace-${fallbackNameParts[0]}`
+    : 'namespace-unknown';
 
   const labelsObj = metadata.labels || {};
   const labels = Object.entries(labelsObj)
@@ -81,7 +387,7 @@ function transformNamespace(raw: any): Namespace {
     .join(', ');
 
   return {
-    name: metadata.name || '',
+    name: metadata.name || fallbackName,
     phase: status.phase || 'Unknown',
     labels,
     age: metadata.creationTimestamp || '',
@@ -93,14 +399,16 @@ function transformDeployment(raw: any): Deployment {
   const spec = raw.spec || {};
   const status = raw.status || {};
   
-  const desired = spec.replicas || 1;
-  const ready = status.readyReplicas || 0;
-  const updated = status.updatedReplicas || 0;
-  const available = status.availableReplicas || 0;
+  const desired = spec.replicas ?? 1;
+  const ready = status.readyReplicas ?? 0;
+  const updated = status.updatedReplicas ?? 0;
+  const available = status.availableReplicas ?? 0;
   
   const images = spec.template?.spec?.containers
     ?.map((c: any) => c.image)
     .filter((img: string) => img) || [];
+  
+  const selectorLabels = spec.selector?.matchLabels as Record<string, string> | undefined;
   
   const statusText = desired === 0
     ? 'Stopped'
@@ -119,6 +427,7 @@ function transformDeployment(raw: any): Deployment {
     available,
     images,
     age: metadata.creationTimestamp || '',
+    selector_labels: selectorLabels,
     labels: (metadata.labels as Record<string, string> | undefined) ?? undefined,
     annotations: (metadata.annotations as Record<string, string> | undefined) ?? undefined,
   };
@@ -325,18 +634,49 @@ function transformCronJob(raw: any): CronJob {
 function transformEvent(raw: any): KubernetesEvent {
   const metadata = raw.metadata || {};
   const involvedObject = raw.involvedObject || {};
+  const message = raw.message || raw.note || '';
+  const firstTimestamp = raw.firstTimestamp || raw.deprecatedFirstTimestamp || metadata.creationTimestamp || '';
+  const lastTimestamp =
+    raw.lastTimestamp
+    || raw.eventTime
+    || raw.series?.lastObservedTime
+    || raw.deprecatedLastTimestamp
+    || metadata.creationTimestamp
+    || '';
   
   return {
     name: metadata.name || '',
     namespace: metadata.namespace || 'default',
     involved_object: `${involvedObject.kind || ''}/${involvedObject.name || ''}`,
     reason: raw.reason || '',
-    message: raw.message || '',
+    message,
     count: raw.count || 1,
-    first_timestamp: raw.firstTimestamp || metadata.creationTimestamp || '',
-    last_timestamp: raw.lastTimestamp || raw.eventTime || metadata.creationTimestamp || '',
+    first_timestamp: firstTimestamp,
+    last_timestamp: lastTimestamp,
     type: raw.type || 'Normal',
   };
+}
+
+/** Check if node has meaningfully changed, with explicit conditions/taints comparison */
+function nodeHasChanged(prev: K8sNode, current: K8sNode): boolean {
+  // Always update if ready status changed
+  if (prev.ready !== current.ready) return true;
+  
+  // Always update if unschedulable status changed
+  if (prev.unschedulable !== current.unschedulable) return true;
+  
+  // Check if taints changed (by comparing stringified array)
+  const prevTaints = (prev.taints || []).sort().join('|');
+  const currTaints = (current.taints || []).sort().join('|');
+  if (prevTaints !== currTaints) return true;
+  
+  // Check if conditions changed (by comparing stringified array)
+  const prevConditions = JSON.stringify((prev.conditions || []).sort((a, b) => a.type.localeCompare(b.type)));
+  const currConditions = JSON.stringify((current.conditions || []).sort((a, b) => a.type.localeCompare(b.type)));
+  if (prevConditions !== currConditions) return true;
+  
+  // For other fields, use full JSON comparison
+  return JSON.stringify(prev) !== JSON.stringify(current);
 }
 
 function transformNode(raw: any): K8sNode {
@@ -944,203 +1284,165 @@ function createRealtimeHook<T>(
     }, []);
 
     useEffect(() => {
-      let ws: WebSocket | null = null;
-      let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-      let connectTimeout: ReturnType<typeof setTimeout> | null = null;
       let emptyListTimeout: ReturnType<typeof setTimeout> | null = null;
-      let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-      let staleWatchdogInterval: ReturnType<typeof setInterval> | null = null;
-      let lastMessageAt = Date.now();
-      let messageQueue: WebSocketMessage[] = [];
-      let closingIntentional = false;
-      let disposed = false;
+      let reconcileInterval: ReturnType<typeof setInterval> | null = null;
+      let aborted = false;
+      let receivedRealtimeEvent = false;
+      const abortController = new AbortController();
 
-      const connect = () => {
-        try {
-          const wsUrl = isDesktopRuntime()
-            ? `${getDesktopWebSocketBase()}/ws`
-            : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
-
-          ws = new WebSocket(wsUrl);
-
-          ws.onopen = () => {
-            if (isRealtimeDebug()) console.log(`WebSocket connected for ${displayName}`);
-            setError(null);
-            lastMessageAt = Date.now();
-
-            if (heartbeatInterval) clearInterval(heartbeatInterval);
-            heartbeatInterval = setInterval(() => {
-              if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'ping' }));
-              }
-            }, 15000);
-
-            if (staleWatchdogInterval) clearInterval(staleWatchdogInterval);
-            staleWatchdogInterval = setInterval(() => {
-              const staleForMs = Date.now() - lastMessageAt;
-              if (ws && ws.readyState === WebSocket.OPEN && staleForMs > 45000) {
-                if (isRealtimeDebug()) {
-                  console.warn(`No ${displayName} messages for ${staleForMs}ms, reconnecting stale socket`);
-                }
-                ws.close();
-              }
-            }, 10000);
-
-            // Subscribe to resource
-            ws!.send(
-              JSON.stringify({
-                type: 'subscribe',
-                resource: resourceType,
-              })
-            );
-
-            // Flush queued messages if any
-            while (messageQueue.length > 0) {
-              const msg = messageQueue.shift();
-              if (msg) {
-                ws!.send(JSON.stringify(msg));
-              }
-            }
-            // Keep loading true until first data or "subscribed" + timeout (avoid "No ... found" on refresh)
-          };
-
-          ws.onmessage = (event) => {
-            lastMessageAt = Date.now();
-            try {
-              const message: WebSocketMessage = JSON.parse(event.data);
-
-              if (message.type === 'resource_update' && message.resource === resourceType) {
-                if (emptyListTimeout) {
-                  clearTimeout(emptyListTimeout);
-                  emptyListTimeout = null;
-                }
-                setHasFetched(true);
-                setIsLoading(false);
-
-                const action = message.action?.toUpperCase();
-                const rawItem = message.data;
-
-                if (!rawItem) return;
-
-                // Transform raw K8s object to frontend format
-                const item = transformFn(rawItem);
-
-                if (action === 'ADDED' || action === 'MODIFIED') {
-                  setData((prev) => {
-                    const itemKey = getKey(item);
-                    const existingIndex = prev.findIndex((p) => getKey(p) === itemKey);
-
-                    if (existingIndex >= 0) {
-                      // Skip update if nothing actually changed (avoids unnecessary re-renders / chart flicker)
-                      if (JSON.stringify(prev[existingIndex]) === JSON.stringify(item)) return prev;
-                      const updated = [...prev];
-                      updated[existingIndex] = item;
-                      return updated;
-                    } else {
-                      // Add new item
-                      return [...prev, item];
-                    }
-                  });
-                } else if (action === 'DELETED') {
-                  const itemKey = getKey(item);
-                  setData((prev) => prev.filter((p) => getKey(p) !== itemKey));
-                }
-              } else if (message.type === 'subscribed' && message.resource === resourceType) {
-                if (isRealtimeDebug()) console.log(`Subscribed to ${displayName}`);
-                // If no resource_update arrives within 2s, list is truly empty
-                emptyListTimeout = setTimeout(() => {
-                  emptyListTimeout = null;
-                  setHasFetched(true);
-                  setIsLoading(false);
-                  setEmptyListConfirmed(true);
-                }, 2000);
-              } else if (message.type === 'error') {
-                if (shouldIgnoreRealtimeError(message.message)) {
-                  if (isRealtimeDebug()) {
-                    console.warn(`Ignoring realtime permission error for ${displayName}:`, message.message);
-                  }
-                  return;
-                }
-                if (isTransientRealtimeConnectivityError(message.message)) {
-                  if (isRealtimeDebug()) {
-                    console.warn(`Transient realtime connectivity issue for ${displayName}; retrying in background:`, message.message);
-                  }
-                  setError(null);
-                  return;
-                }
-                console.error(`WebSocket error for ${displayName}:`, message.message);
-                setError(message.message || 'Unknown error');
-              }
-            } catch (e) {
-              console.error(`Error parsing ${displayName} message:`, e);
-            }
-          };
-
-          ws.onerror = (event) => {
-            // Don't set error here — onclose fires immediately after and handles reconnection.
-            console.error(`WebSocket error for ${displayName}:`, event);
-          };
-
-          ws.onclose = () => {
-            if (disposed || closingIntentional) {
-              return;
-            }
-            if (heartbeatInterval) {
-              clearInterval(heartbeatInterval);
-              heartbeatInterval = null;
-            }
-            if (staleWatchdogInterval) {
-              clearInterval(staleWatchdogInterval);
-              staleWatchdogInterval = null;
-            }
-            if (isRealtimeDebug()) console.log(`WebSocket disconnected for ${displayName}`);
-
-            // Attempt to reconnect after 3 seconds
-            reconnectTimeout = setTimeout(() => {
-              if (disposed || closingIntentional) {
-                return;
-              }
-              if (isRealtimeDebug()) console.log(`Attempting to reconnect to ${displayName}...`);
-              connect();
-            }, 3000);
-          };
-        } catch (err) {
-          if (disposed || closingIntentional) {
+      void fetchRealtimeResourceSnapshot(resourceType, transformFn, abortController.signal)
+        .then((snapshot) => {
+          if (aborted || receivedRealtimeEvent) {
             return;
           }
-          console.error(`Failed to connect WebSocket for ${displayName}:`, err);
-          setError(`Failed to connect to ${displayName} stream`);
+          setData(snapshot);
+          setHasFetched(true);
+          setIsLoading(false);
+          setEmptyListConfirmed(snapshot.length === 0);
+          setError(null);
+        })
+        .catch((fetchError) => {
+          if (aborted) {
+            return;
+          }
+          const message = fetchError instanceof Error ? fetchError.message : 'Failed to fetch initial resources';
+          if (isRealtimeDebug()) {
+            console.warn(`Initial snapshot fetch failed for ${displayName}:`, message);
+          }
+        });
 
-          // Attempt to reconnect
-          reconnectTimeout = setTimeout(connect, 3000);
+      // Node watches can intermittently miss DELETED events when API watch is unstable.
+      // Periodically reconcile nodes from REST snapshot so removals are reflected quickly.
+      if (resourceType === 'nodes') {
+        reconcileInterval = setInterval(() => {
+          if (aborted) return;
+
+          const reconcileAbortController = new AbortController();
+          void fetchRealtimeResourceSnapshot(resourceType, transformFn, reconcileAbortController.signal)
+            .then((snapshot) => {
+              if (aborted) return;
+              setData((prev) => (JSON.stringify(prev) === JSON.stringify(snapshot) ? prev : snapshot));
+              setHasFetched(true);
+              setIsLoading(false);
+              setEmptyListConfirmed(snapshot.length === 0);
+              setError(null);
+            })
+            .catch(() => {
+              // Keep existing realtime state if reconcile snapshot fails.
+            });
+        }, 3000);
+      }
+
+      const unsubscribe = subscribeRealtimeResource(resourceType, (message) => {
+        if (message.type === 'resource_update' && message.resource === resourceType) {
+          receivedRealtimeEvent = true;
+          if (emptyListTimeout) {
+            clearTimeout(emptyListTimeout);
+            emptyListTimeout = null;
+          }
+          setHasFetched(true);
+          setIsLoading(false);
+
+          const action = message.action?.toUpperCase();
+          const rawItem = message.data;
+          if (!rawItem) return;
+
+          if (resourceType === 'nodes' && (action === 'ADDED' || action === 'MODIFIED')) {
+            const deletingName = (rawItem as any)?.metadata?.deletionTimestamp
+              ? (rawItem as any)?.metadata?.name
+              : undefined;
+            if (deletingName) {
+              setData((prev) => prev.filter((p) => getKey(p) !== deletingName));
+              return;
+            }
+          }
+
+          if (action === 'DELETED') {
+            // For deletions, extract key directly from raw metadata to avoid transform errors
+            const itemKey = (() => {
+              if (resourceType === 'nodes') {
+                return (rawItem as any)?.metadata?.name;
+              } else if (resourceType === 'namespaces' || resourceType === 'events') {
+                return (resourceType === 'events') 
+                  ? `${(rawItem as any)?.metadata?.namespace}/${(rawItem as any)?.metadata?.name}`
+                  : (rawItem as any)?.metadata?.name;
+              } else {
+                // namespaced resources
+                return `${(rawItem as any)?.metadata?.namespace}/${(rawItem as any)?.metadata?.name}`;
+              }
+            })();
+            
+            if (itemKey) {
+              setData((prev) => prev.filter((p) => getKey(p) !== itemKey));
+            }
+            return;
+          }
+
+          const item = transformFn(rawItem);
+
+          if (action === 'ADDED' || action === 'MODIFIED') {
+            setData((prev) => {
+              const itemKey = getKey(item);
+              const existingIndex = prev.findIndex((p) => getKey(p) === itemKey);
+              if (existingIndex >= 0) {
+                const prevItem = prev[existingIndex];
+                // For nodes, explicitly check conditions and taints to ensure changes are detected
+                const isNode = resourceType === 'nodes';
+                const hasChanged = isNode 
+                  ? nodeHasChanged(prevItem as any, item as any)
+                  : JSON.stringify(prevItem) !== JSON.stringify(item);
+                
+                if (!hasChanged) return prev;
+                const updated = [...prev];
+                updated[existingIndex] = item;
+                return updated;
+              }
+              return [...prev, item];
+            });
+          }
+          return;
         }
-      };
 
-      // Defer initial connect slightly so React StrictMode DEV unmount/remount
-      // can cancel the first attempt before a socket is created.
-      connectTimeout = setTimeout(connect, 50);
+        if (message.type === 'subscribed' && message.resource === resourceType) {
+          if (isRealtimeDebug()) console.log(`Subscribed to ${displayName}`);
+          emptyListTimeout = setTimeout(() => {
+            emptyListTimeout = null;
+            setHasFetched(true);
+            setIsLoading(false);
+            setEmptyListConfirmed(true);
+          }, 2000);
+          return;
+        }
+
+        if (message.type === 'error') {
+          if (shouldIgnoreRealtimeError(message.message)) {
+            if (isRealtimeDebug()) {
+              console.warn(`Ignoring realtime permission error for ${displayName}:`, message.message);
+            }
+            return;
+          }
+          if (isTransientRealtimeConnectivityError(message.message)) {
+            if (isRealtimeDebug()) {
+              console.warn(`Transient realtime connectivity issue for ${displayName}; retrying in background:`, message.message);
+            }
+            setError(null);
+            return;
+          }
+          console.error(`WebSocket error for ${displayName}:`, message.message);
+          setError(message.message || 'Unknown error');
+        }
+      });
 
       return () => {
-        disposed = true;
-        closingIntentional = true;
-        if (connectTimeout) {
-          clearTimeout(connectTimeout);
-        }
-        if (reconnectTimeout) {
-          clearTimeout(reconnectTimeout);
-        }
+        aborted = true;
+        abortController.abort();
         if (emptyListTimeout) {
           clearTimeout(emptyListTimeout);
         }
-        if (heartbeatInterval) {
-          clearInterval(heartbeatInterval);
+        if (reconcileInterval) {
+          clearInterval(reconcileInterval);
         }
-        if (staleWatchdogInterval) {
-          clearInterval(staleWatchdogInterval);
-        }
-        if (ws) {
-          ws.close();
-        }
+        unsubscribe();
       };
     }, [clusterSwitchVersion]);
 
@@ -1382,23 +1684,94 @@ export function useRealtimeCustomResources(crdName: string | null): {
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let connectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let snapshotTimeout: ReturnType<typeof setTimeout> | null = null;
     let emptyListTimeout: ReturnType<typeof setTimeout> | null = null;
     let closingIntentional = false;
     let disposed = false;
-    const connect = () => {
+    let reconnectAttempts = 0;
+    let hasReceivedRealtime = false;
+
+    const loadSnapshot = async () => {
       try {
+        // Custom resources use different REST endpoint: /api/crds/:crd_name/resources
+        const token = getAuthToken();
+        const response = await fetch(`/api/crds/${encodeURIComponent(crdName)}/resources`, {
+          cache: 'no-store',
+          headers: token ? { Authorization: token } : undefined,
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to fetch initial ${resourceType} snapshot`);
+        }
+        const payload = await response.json() as { data?: any[] };
+        const items = Array.isArray(payload?.data) ? payload.data : [];
+        const snapshot = items.map((raw) => {
+          const looksLikeRawK8sObject =
+            raw
+            && typeof raw === 'object'
+            && raw !== null
+            && typeof (raw as { metadata?: unknown }).metadata === 'object'
+            && (raw as { metadata?: unknown }).metadata !== null;
+          if (looksLikeRawK8sObject) {
+            return transformCustomResource(raw);
+          }
+          return raw as CustomResource;
+        });
+        if (disposed || hasReceivedRealtime) {
+          return;
+        }
+        setData(snapshot);
+        setIsLoading(false);
+        setError(null);
+      } catch (err) {
+        if (disposed) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : 'Failed to fetch initial resources';
+        if (isRealtimeDebug()) {
+          console.warn(`Initial snapshot fetch failed for custom resource ${resourceType}:`, message);
+        }
+      }
+    };
+
+    void loadSnapshot();
+
+    if (isDesktopDevRealtimePollingMode()) {
+      pollInterval = setInterval(() => {
+        void loadSnapshot();
+      }, 4000);
+
+      return () => {
+        disposed = true;
+        if (pollInterval) clearInterval(pollInterval);
+      };
+    }
+
+    const connect = () => {
+      const connectNow = async () => {
+        try {
+          if (isDesktopRuntime()) {
+            await refreshDesktopBackendPortFromSidecar();
+          }
+
         const wsUrl = isDesktopRuntime()
           ? `${getDesktopWebSocketBase()}/ws`
           : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
         ws = new WebSocket(wsUrl);
         ws.onopen = () => {
+          if (disposed || closingIntentional) {
+            ws?.close();
+            return;
+          }
           setError(null);
+          reconnectAttempts = 0;
           ws!.send(JSON.stringify({ type: 'subscribe', resource: resourceType }));
         };
         ws.onmessage = (event) => {
           try {
             const message: WebSocketMessage = JSON.parse(event.data);
             if (message.type === 'resource_update' && message.resource === resourceType && message.data) {
+              hasReceivedRealtime = true;
               if (emptyListTimeout) {
                 clearTimeout(emptyListTimeout);
                 emptyListTimeout = null;
@@ -1447,31 +1820,62 @@ export function useRealtimeCustomResources(crdName: string | null): {
           }
         };
         ws.onerror = () => {
+          if (disposed || closingIntentional) {
+            return;
+          }
+          if (import.meta.env.DEV && ws && ws.readyState !== WebSocket.OPEN) {
+            return;
+          }
           // Don't set error here — onclose fires immediately after and handles reconnection.
         };
         ws.onclose = () => {
           if (disposed || closingIntentional) {
             return;
           }
-          reconnectTimeout = setTimeout(connect, 3000);
+          reconnectAttempts += 1;
+          reconnectTimeout = setTimeout(connect, reconnectDelayForResource(resourceType, reconnectAttempts));
         };
-      } catch (err) {
-        if (disposed || closingIntentional) {
-          return;
+        } catch (err) {
+          if (disposed || closingIntentional) {
+            return;
+          }
+          setError('Failed to connect');
+          reconnectAttempts += 1;
+          reconnectTimeout = setTimeout(connect, reconnectDelayForResource(resourceType, reconnectAttempts));
         }
-        setError('Failed to connect');
-        reconnectTimeout = setTimeout(connect, 3000);
-      }
+      };
+
+      void connectNow();
     };
     // Same StrictMode-safe connect deferral as the generic realtime hook.
-    connectTimeout = setTimeout(connect, 50);
+    connectTimeout = setTimeout(connect, connectDelayForResource(resourceType));
+
+    snapshotTimeout = setInterval(() => {
+      if (!hasReceivedRealtime) {
+        void loadSnapshot();
+      }
+    }, 5000);
+
     return () => {
       disposed = true;
       closingIntentional = true;
       if (connectTimeout) clearTimeout(connectTimeout);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (snapshotTimeout) clearInterval(snapshotTimeout);
       if (emptyListTimeout) clearTimeout(emptyListTimeout);
-      ws?.close();
+      if (ws) {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          const socket = ws;
+          ws.onmessage = null;
+          ws.onerror = null;
+          ws.onclose = null;
+          ws.onopen = () => {
+            socket.close();
+          };
+        } else if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CLOSING) {
+          ws.close();
+        }
+      }
     };
   }, [crdName, resourceType]);
 

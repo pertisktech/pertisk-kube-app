@@ -15,6 +15,7 @@ export const PanelActionButton = ({
   danger,
   disabled,
   colorClass = 'text-amber-400 hover:bg-amber-500/20 hover:text-amber-300',
+  iconClassName = 'h-4 w-4 shrink-0',
 }: {
   icon: IconComponent;
   label: string;
@@ -22,6 +23,7 @@ export const PanelActionButton = ({
   danger?: boolean;
   disabled?: boolean;
   colorClass?: string;
+  iconClassName?: string;
 }) => (
   <div className="group relative">
     <button
@@ -29,12 +31,12 @@ export const PanelActionButton = ({
       onClick={onClick}
       disabled={disabled}
       title={label}
-      className={`p-2 rounded-md transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed ${
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-md transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${
         danger ? 'text-red-400 hover:bg-red-500/20 hover:text-red-300' : colorClass
       }`}
       aria-label={label}
     >
-      <Icon size={16} />
+      <Icon size={16} className={iconClassName} />
     </button>
     <div
       className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 text-xs rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-sm"
@@ -63,14 +65,14 @@ export const PanelCloseButton = ({
       type="button"
       onClick={onClick}
       title={label}
-      className="p-2 rounded-r-md transition-all duration-150 hover:opacity-80 flex-shrink-0"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-r-md transition-all duration-150 hover:opacity-80"
       style={{
         color: 'var(--color-muted)',
         borderLeft,
       }}
       aria-label={label}
     >
-      <X size={18} />
+      <X size={16} className="h-4 w-4 shrink-0" />
     </button>
     <div
       className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 text-xs rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-sm"

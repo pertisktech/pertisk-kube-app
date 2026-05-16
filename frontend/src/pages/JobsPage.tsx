@@ -62,7 +62,8 @@ export const JobsPage = () => {
     direction: 'desc',
   });
 
-  // Merge realtime + REST so job status/completions stay fresh when watch stream lags.
+  // Merge realtime + REST so job status/completions stay fresh.
+  // Realtime data is preferred since it's more up-to-date.
   const data = useMemo(() => {
     const realtime = realtimeJobs ?? [];
     const api = apiJobs ?? [];
@@ -70,21 +71,22 @@ export const JobsPage = () => {
     if (realtime.length === 0) return api;
     if (api.length === 0) return realtime;
 
-    const realtimeByKey = new Map(realtime.map((item) => [`${item.namespace}/${item.name}`, item]));
-    const merged = api.map((item) => {
+    const apiByKey = new Map(api.map((item) => [`${item.namespace}/${item.name}`, item]));
+    const merged = realtime.map((item) => {
       const key = `${item.namespace}/${item.name}`;
-      const fromRealtime = realtimeByKey.get(key);
-      if (!fromRealtime) return item;
+      const fromApi = apiByKey.get(key);
+      if (!fromApi) return item;
 
       return {
-        ...fromRealtime,
-        status: item.status ?? fromRealtime.status,
-        completions: item.completions ?? fromRealtime.completions,
-        duration: item.duration ?? fromRealtime.duration,
+        ...fromApi,
+        ...item,
+        status: item.status ?? fromApi.status,
+        completions: item.completions ?? fromApi.completions,
+        duration: item.duration ?? fromApi.duration,
       };
     });
 
-    for (const item of realtime) {
+    for (const item of api) {
       const key = `${item.namespace}/${item.name}`;
       if (!merged.some((existing) => `${existing.namespace}/${existing.name}` === key)) {
         merged.push(item);

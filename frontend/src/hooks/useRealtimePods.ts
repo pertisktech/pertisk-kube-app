@@ -9,6 +9,8 @@ const isRealtimeDebug = (): boolean =>
   typeof window !== 'undefined' &&
   (import.meta.env.DEV || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
+const isDesktopDevPollingMode = (): boolean => import.meta.env.DEV && isDesktopRuntime();
+
 interface UseRealtimePodsOptions {
   enabled?: boolean;
   reconnectInterval?: number;
@@ -31,8 +33,24 @@ const keepField = (nextVal: unknown, prevVal: unknown): unknown => {
   return prevVal;
 };
 
+const isHealthyPodStatus = (status: unknown): boolean => {
+  const normalized = String(status ?? '').trim().toLowerCase();
+  return normalized === 'running' || normalized === 'completed' || normalized === 'succeeded';
+};
+
 const isTransientPodSyncFailureStatus = (status: number): boolean => {
   return status === 500 || status === 502 || status === 503 || status === 504;
+};
+
+const getFreelensLikeDisplayStatus = (pod: any): string => {
+  const statusValue = typeof pod?.status === 'string' ? pod.status.trim() : '';
+  const phaseValue = typeof pod?.phase === 'string' ? pod.phase.trim() : '';
+
+  if (statusValue === 'Evicted' || statusValue === 'Terminating' || statusValue === 'Finalizing') {
+    return statusValue;
+  }
+
+  return phaseValue || statusValue || 'Waiting';
 };
 
 const normalizeWatchAction = (action: unknown): 'ADDED' | 'MODIFIED' | 'DELETED' | null => {
@@ -116,7 +134,32 @@ const transformPod = (rawPod: any): any => {
       lastErrorMessage = reasonText;
     }
   };
-  
+
+  const getDisplayStatus = (): string => {
+    if (status.reason === 'Evicted') {
+      return 'Evicted';
+    }
+
+    if (metadata.deletionTimestamp) {
+      const ephemeralContainerStatuses = status.ephemeralContainerStatuses || [];
+      const allContainerStatuses = [
+        ...containerStatuses,
+        ...initContainerStatuses,
+        ...ephemeralContainerStatuses,
+      ];
+
+      if (allContainerStatuses.some((containerStatus: any) => containerStatus.state?.running || containerStatus.state?.waiting)) {
+        return 'Terminating';
+      }
+
+      if (Array.isArray(metadata.finalizers) && metadata.finalizers.length > 0) {
+        return 'Finalizing';
+      }
+    }
+
+    return phase || 'Waiting';
+  };
+
   // Priority 1: Check for deletion/termination
   if (metadata.deletionTimestamp) {
     podStatus = 'Terminating';
@@ -248,6 +291,32 @@ const transformPod = (rawPod: any): any => {
     }
   }
 
+  // Fallback: derive a user-facing error message from pod-level status/conditions
+  // when container-level state does not expose one.
+  if (!lastErrorMessage) {
+    const normalizedStatus = String(podStatus).toLowerCase();
+    const isHealthyStatus =
+      normalizedStatus === 'running' ||
+      normalizedStatus === 'completed' ||
+      normalizedStatus === 'succeeded';
+
+    if (!isHealthyStatus) {
+      setLastError(status.reason, status.message);
+
+      if (!lastErrorMessage) {
+        const conditions = Array.isArray(status.conditions) ? status.conditions : [];
+        const failingCondition = conditions.find(
+          (condition: any) =>
+            String(condition?.status).toLowerCase() === 'false' &&
+            (typeof condition?.message === 'string' || typeof condition?.reason === 'string')
+        );
+        if (failingCondition) {
+          setLastError(failingCondition.reason, failingCondition.message);
+        }
+      }
+    }
+  }
+
   const volumes = (spec.volumes || []).map((vol: any) => {
     const sourceType = Object.keys(vol || {}).find((k) => k !== 'name') || 'unknown';
     const source = vol?.[sourceType];
@@ -340,6 +409,7 @@ const transformPod = (rawPod: any): any => {
     namespace: metadata.namespace || '',
     created: metadata.creationTimestamp || '',
     status: podStatus,
+    display_status: getDisplayStatus(),
     phase: phase,
     last_error: lastErrorMessage,
     ready,
@@ -458,9 +528,9 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
             const missCount = (apiMissCountsRef.current.get(key) ?? 0) + 1;
             nextMissCounts.set(key, missCount);
 
-            // Keep pod for one full sync window when API lags behind WS.
-            // If missing for 2+ consecutive syncs, treat as deleted/missed and remove.
-            if (missCount >= 2 && !deletedPodsRef.current.has(key)) {
+            // If a pod disappears from the authoritative REST list, remove it on the
+            // next reconciliation pass so stale redeploy pods don't linger in the table.
+            if (missCount >= 1 && !deletedPodsRef.current.has(key)) {
               return [];
             }
             return [item];
@@ -468,11 +538,21 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
 
           nextMissCounts.delete(keyOf(item));
 
+          const reconciledStatus = keepField(apiItem.status, item.status);
+          const reconciledDisplayStatus = keepField(
+            apiItem.display_status ?? getFreelensLikeDisplayStatus(apiItem),
+            item.display_status
+          );
+          const shouldClearLastError =
+            isHealthyPodStatus(reconciledDisplayStatus) || isHealthyPodStatus(reconciledStatus);
+
           return [{
             ...item,
             // Keep pod lifecycle fields fresh even when a websocket update is delayed/missed.
-            status: keepField(apiItem.status, item.status),
+            status: reconciledStatus,
+            display_status: reconciledDisplayStatus,
             phase: keepField(apiItem.phase, item.phase),
+            last_error: shouldClearLastError ? undefined : keepField(apiItem.last_error, item.last_error),
             ready: keepField(apiItem.ready, item.ready),
             restarts: keepField(apiItem.restarts, item.restarts),
             node: keepField(apiItem.node, item.node),
@@ -497,7 +577,10 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
           const key = keyOf(apiItem);
           // Don't re-add pods that were recently deleted
           if (!existingKeys.has(key) && !deletedPodsRef.current.has(key)) {
-            merged.push(apiItem as T);
+            merged.push({
+              ...apiItem,
+              display_status: apiItem.display_status ?? getFreelensLikeDisplayStatus(apiItem),
+            } as T);
           }
         }
 
@@ -522,6 +605,12 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
   }, []);
 
   const connect = useCallback(() => {
+    if (isDesktopDevPollingMode()) {
+      if (isRealtimeDebug()) console.log('[useRealtimePods] Desktop dev polling mode enabled; skipping websocket connect');
+      setIsConnected(false);
+      return;
+    }
+
     if (!enabled) return;
 
     const wsUrl = isDesktopRuntime()
@@ -533,6 +622,11 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
+        if (intentionalCloseRef.current) {
+          ws.close();
+          return;
+        }
+
         if (isRealtimeDebug()) console.log('[useRealtimePods] WebSocket connected');
         setIsConnected(true);
         setError(null);
@@ -806,9 +900,11 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
           if (isRealtimeDebug()) console.log(
             `[useRealtimePods] Reconnecting... (attempt ${reconnectAttemptsRef.current})`
           );
+          const jitter = (reconnectAttemptsRef.current % 5) * 120;
+          const backoff = Math.min(5000, Math.max(0, reconnectAttemptsRef.current - 1) * 600);
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
-          }, reconnectInterval);
+          }, reconnectInterval + backoff + jitter);
         }
       };
 
@@ -830,7 +926,17 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       staleWatchdogRef.current = undefined;
     }
     if (wsRef.current) {
-      wsRef.current.close();
+      const ws = wsRef.current;
+      if (ws.readyState === WebSocket.CONNECTING) {
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        ws.onopen = () => {
+          ws.close();
+        };
+      } else if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CLOSING) {
+        ws.close();
+      }
       wsRef.current = null;
     }
     if (reconnectTimeoutRef.current) {
@@ -853,7 +959,12 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
       setIsLoading(true);
       setHasFetched(false);
       setEmptyListConfirmed(false);
-      connect();
+      if (!isDesktopDevPollingMode()) {
+        // Stagger initial connect a bit to reduce websocket burst during route/hot updates.
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connect();
+        }, 180);
+      }
     }
 
     return () => {

@@ -20,7 +20,7 @@ use tokio::io::AsyncWriteExt;
 use std::str::FromStr;
 use tokio::fs;
 use tokio::process::Command;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::models::*;
 use crate::utils::*;
@@ -28,6 +28,21 @@ use crate::AppState;
 
 // 1 month at 15s intervals = 172,800 samples (~8.8 MB)
 const WORKLOAD_METRIC_HISTORY_LIMIT: usize = 172_800;
+
+/// Returns the Kubernetes context configured for this backend process, if any.
+/// The sidecar passes the user-selected context via the KUBE_CONTEXT env var.
+fn active_kube_context() -> Option<String> {
+    env::var("KUBE_CONTEXT")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+}
+
+/// Prepend --context <ctx> to a kubectl Command if KUBE_CONTEXT is set.
+fn apply_kube_context(cmd: &mut Command) {
+    if let Some(ctx) = active_kube_context() {
+        cmd.arg("--context").arg(ctx);
+    }
+}
 const WORKLOAD_METRIC_SAMPLE_INTERVAL_SECS: i64 = 15;
 const WORKLOAD_METRIC_DEFAULT_DURATION_SECS: i64 = 3600; // 1 hour
 
@@ -59,6 +74,15 @@ fn parse_optional_quantity(value: &serde_json::Value) -> Option<f64> {
         .and_then(parse_memory_bytes)
         .or_else(|| value.as_f64())
         .or_else(|| value.as_u64().map(|v| v as f64))
+}
+
+fn map_apply_error(err: &kube::Error) -> (StatusCode, String) {
+    if let kube::Error::Api(api_err) = err {
+        let status = StatusCode::from_u16(api_err.code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        return (status, api_err.message.clone());
+    }
+
+    (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
 
 async fn collect_workload_metric_totals(state: &AppState) -> WorkloadMetricTotals {
@@ -855,16 +879,40 @@ pub async fn list_events(State(state): State<AppState>) -> impl IntoResponse {
                 .map(|event| {
                     let name = event.metadata.name.unwrap_or_default();
                     let namespace = event.metadata.namespace.unwrap_or_else(|| "default".into());
-                    let kind = event.involved_object.kind;
-                    let reason = event.reason;
-                    let message = event.message;
+                    let involved_kind = event.involved_object.kind.unwrap_or_default();
+                    let involved_name = event.involved_object.name.unwrap_or_default();
+                    let involved_object = if involved_kind.is_empty() || involved_name.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{}/{}", involved_kind, involved_name)
+                    };
+
+                    let reason = event.reason.unwrap_or_default();
+                    let message = event.message.unwrap_or_default();
+                    let count = event.count.unwrap_or(1);
+                    let first_timestamp = event
+                        .first_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .or_else(|| event.metadata.creation_timestamp.as_ref().map(|t| t.0.to_rfc3339()))
+                        .unwrap_or_default();
+                    let last_timestamp = event
+                        .last_timestamp
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .or_else(|| event.event_time.as_ref().map(|mt| mt.0.to_rfc3339()))
+                        .or_else(|| event.metadata.creation_timestamp.as_ref().map(|t| t.0.to_rfc3339()))
+                        .unwrap_or_default();
                     let type_ = event.type_;
                     EventItem {
                         name,
                         namespace,
-                        kind,
+                        involved_object,
                         reason,
                         message,
+                        count,
+                        first_timestamp,
+                        last_timestamp,
                         type_,
                     }
                 })
@@ -1816,6 +1864,7 @@ async fn collect_upload_diagnostics(
     );
 
     let mut cmd = Command::new("kubectl");
+    apply_kube_context(&mut cmd);
     cmd.arg("exec").arg("-n").arg(namespace).arg(pod_name);
     if let Some(c) = container.filter(|v| !v.is_empty()) {
         cmd.arg("-c").arg(c);
@@ -1856,6 +1905,7 @@ pub async fn list_pod_files(
     );
 
     let mut cmd = Command::new("kubectl");
+    apply_kube_context(&mut cmd);
     cmd.arg("exec")
         .arg("-n")
         .arg(&namespace)
@@ -2055,6 +2105,7 @@ pub async fn upload_pod_files(
 
     let escaped_dest = shell_escape_single_quoted(&destination);
     let mut preflight_cmd = Command::new("kubectl");
+    apply_kube_context(&mut preflight_cmd);
     preflight_cmd
         .arg("exec")
         .arg("-n")
@@ -2145,6 +2196,7 @@ pub async fn upload_pod_files(
         let escaped_remote = shell_escape_single_quoted(&remote_path);
 
         let mut write_cmd = Command::new("kubectl");
+        apply_kube_context(&mut write_cmd);
         write_cmd
             .arg("exec")
             .arg("-i")
@@ -2237,6 +2289,7 @@ pub async fn upload_pod_files(
                     let escaped_flat = shell_escape_single_quoted(&flat_remote_path);
 
                     let mut fallback_cmd = Command::new("kubectl");
+                    apply_kube_context(&mut fallback_cmd);
                     fallback_cmd
                         .arg("exec")
                         .arg("-i")
@@ -2400,6 +2453,7 @@ pub async fn download_pod_path(
     let escaped_path = shell_escape_single_quoted(&target_path);
 
     let mut kind_cmd = Command::new("kubectl");
+    apply_kube_context(&mut kind_cmd);
     kind_cmd
         .arg("exec")
         .arg("-n")
@@ -2447,6 +2501,7 @@ pub async fn download_pod_path(
     }
 
     let mut content_cmd = Command::new("kubectl");
+    apply_kube_context(&mut content_cmd);
     content_cmd
         .arg("exec")
         .arg("-n")
@@ -3979,7 +4034,11 @@ pub async fn drain_node(
     }
 
     // Then drain via kubectl
-    let output = SysCommand::new("kubectl")
+    let mut drain_cmd = SysCommand::new("kubectl");
+    if let Some(ctx) = active_kube_context() {
+        drain_cmd.arg("--context").arg(ctx);
+    }
+    let output = drain_cmd
         .arg("drain")
         .arg(&name)
         .arg("--ignore-daemonsets")
@@ -4084,6 +4143,28 @@ pub async fn apply_yaml(
     let discovery = match Discovery::new(state.client.clone()).run().await {
         Ok(d) => d,
         Err(err) => {
+            let is_transient_discovery_failure = match &err {
+                kube::Error::Api(api_err) => api_err.code == 503,
+                _ => {
+                    let normalized = err.to_string().to_lowercase();
+                    normalized.contains("service unavailable")
+                        || normalized.contains("status code 503")
+                        || normalized.contains("status code: 503")
+                }
+            };
+
+            if is_transient_discovery_failure {
+                warn!("API discovery temporarily unavailable: {:?}", err);
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(serde_json::json!({
+                        "success": false,
+                        "message": "Kubernetes API temporarily unavailable (503). Please retry."
+                    })),
+                )
+                    .into_response();
+            }
+
             error!("API discovery failed: {:?}", err);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -4143,11 +4224,12 @@ pub async fn apply_yaml(
                 .into_response(),
             Err(err) => {
                 error!("Error applying resource {}/{}: {:?}", kind, name, err);
+                let (status, message) = map_apply_error(&err);
                 (
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                    status,
                     Json(serde_json::json!({
                         "success": false,
-                        "message": format!("Failed to apply resource: {}", err)
+                        "message": format!("Failed to apply resource: {}", message)
                     })),
                 )
                     .into_response()
@@ -4166,11 +4248,12 @@ pub async fn apply_yaml(
                 .into_response(),
             Err(err) => {
                 error!("Error applying cluster resource {}/{}: {:?}", kind, name, err);
+                let (status, message) = map_apply_error(&err);
                 (
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                    status,
                     Json(serde_json::json!({
                         "success": false,
-                        "message": format!("Failed to apply resource: {}", err)
+                        "message": format!("Failed to apply resource: {}", message)
                     })),
                 )
                     .into_response()

@@ -1,6 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { Moon, Shield, Sun } from '../components/Icons';
-import { useTheme } from '../context/ThemeContext';
+import { Shield } from '../components/Icons';
 import { setAuth } from '../utils/auth';
 import { APP_VERSION } from '../utils/version';
 import styles from './LoginPage.module.css';
@@ -10,7 +9,6 @@ interface LoginPageProps {
 }
 
 export const LoginPage = ({ onLogin }: LoginPageProps) => {
-  const theme = useTheme();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -54,18 +52,6 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
     <div className={styles.wrap}>
       <header className={styles.topBar}>
         <span className={styles.topBarSpacer} />
-        {theme && (
-          <button
-            type="button"
-            className={styles.themeToggle}
-            onClick={theme.toggleTheme}
-            title={theme.isDark ? 'Light mode' : 'Dark mode'}
-            aria-label={theme.isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          >
-            {theme.isDark ? <Sun size={16} aria-hidden /> : <Moon size={16} aria-hidden />}
-            <span className={styles.themeToggleLabel}>{theme.isDark ? 'Light' : 'Dark'}</span>
-          </button>
-        )}
       </header>
 
       <div className={styles.brand}>

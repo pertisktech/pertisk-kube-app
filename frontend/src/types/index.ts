@@ -92,6 +92,7 @@ export interface Pod {
   namespace: string;
   created?: string;
   status?: string;
+  display_status?: string;
   phase?: string;
   last_error?: string;
   ready: string;

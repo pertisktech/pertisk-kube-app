@@ -181,13 +181,13 @@ const DetailPanel = ({
   item,
   crd,
   onClose,
-  onEditYaml,
+  onOpenYamlEditor,
   onDelete,
 }: {
   item: CustomResource;
   crd: Crd | undefined;
   onClose: () => void;
-  onEditYaml: (item: CustomResource) => void;
+  onOpenYamlEditor: (item: CustomResource) => void;
   onDelete: (item: CustomResource) => void;
 }) => {
   const resourceObj = resourceObjectForJsonPath(item);
@@ -198,7 +198,7 @@ const DetailPanel = ({
 
   const actions = (
     <>
-      <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onEditYaml(item)} />
+      <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor(item)} />
       <PanelActionButton icon={Trash2} label="Delete" onClick={() => onDelete(item)} danger />
     </>
   );
@@ -468,7 +468,7 @@ export const CustomResourcesPage = () => {
           item={selectedItem}
           crd={crd}
           onClose={() => setPanelOpen(false)}
-          onEditYaml={handleEditYaml}
+          onOpenYamlEditor={handleEditYaml}
           onDelete={(item) => setConfirmDelete(item)}
         />
       )}

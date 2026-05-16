@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'react-toastify';
-import { Box, Loader, RotateCw, Upload, Trash2 } from './Icons';
+import { Box, Loader, Pencil, RotateCw, Trash2 } from './Icons';
 import type { HelmRelease } from '../types';
 import { useHelmReleaseHistory, useHelmReleaseResources, rollbackHelmRelease } from '../hooks/useKubernetes';
 import { timeAgo } from '../utils';
@@ -29,12 +29,12 @@ const getLifecycleDescription = (status: string): string => {
 interface HelmReleaseDetailPanelProps {
   release: HelmRelease;
   onClose: () => void;
-  onOpenYaml: (release: HelmRelease) => void;
+  onOpenYamlEditor: (release: HelmRelease) => void;
   onDelete: (namespace: string, name: string) => void;
 }
 
 /** Helm release detail panel — layout and content order aligned with Freelens; includes Revisions (history) and Rollback like helm-dashboard. */
-export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYaml, onDelete }: HelmReleaseDetailPanelProps) => {
+export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYamlEditor, onDelete }: HelmReleaseDetailPanelProps) => {
   const queryClient = useQueryClient();
   const { data: history = [], isLoading: historyLoading } = useHelmReleaseHistory(release.namespace, release.name);
   const { data: resources = [], isLoading: resourcesLoading } = useHelmReleaseResources(release.namespace, release.name);
@@ -76,7 +76,7 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYaml, onDelete 
     ]}
     actions={
       <>
-        <PanelActionButton icon={Upload} label="Upgrade Release" onClick={() => onOpenYaml(release)} />
+        <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor(release)} />
         <PanelActionButton icon={Trash2} label="Uninstall Release" danger onClick={() => onDelete(release.namespace, release.name)} />
       </>
     }

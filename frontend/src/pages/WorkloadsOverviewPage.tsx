@@ -468,7 +468,7 @@ export const WorkloadsOverviewPage = () => {
 
   const handleRestartAllWorkloads = () => {
     if (restartableWorkloadsCount === 0) {
-      toast.info('No restartable workloads found for the current namespace filter.');
+      toast('No restartable workloads found for the current namespace filter.');
       return;
     }
 
@@ -483,7 +483,7 @@ export const WorkloadsOverviewPage = () => {
       if (result.failed.length === 0) {
         toast.success(`Restarted ${result.restarted.total} workload controllers.`);
       } else if (result.restarted.total > 0) {
-        toast.warning(
+        toast.warn(
           `Restarted ${result.restarted.total} workload controllers with ${result.failed.length} failure(s).`
         );
       } else {

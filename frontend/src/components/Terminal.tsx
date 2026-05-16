@@ -5,14 +5,25 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useTheme } from '../context/ThemeContext';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
-import { getDesktopWebSocketBase, isDesktopRuntime } from '../utils/desktopBridge';
+import { getDesktopWebSocketBase, isDesktopRuntime, refreshDesktopBackendPortFromSidecar } from '../utils/desktopBridge';
+import { getAppThemeTerminalPalette, resolveTerminalThemePreset } from '../utils/themePresets';
 
 interface TerminalProps {
   podName: string;
   namespace: string;
   containerName?: string;
   initialCommand?: string;
-  onClose?: () => void;
+}
+
+function toTerminalFontFamily(fontName: string): string {
+  const normalized = fontName.trim();
+  if (!normalized || normalized === 'Meslo Nerd Font') {
+    return '"MesloLGM Nerd Font", "MesloLGL Nerd Font", "JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+  }
+  if (normalized === 'JetBrainsMono Nerd Font') {
+    return '"JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+  }
+  return `"${normalized}", "JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
 }
 
 export const Terminal = ({ podName, namespace, containerName, initialCommand }: TerminalProps) => {
@@ -24,6 +35,12 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
   const resizeTimeoutRef = useRef<number | null>(null);
   const theme = useTheme();
   const { settings } = useFeatureSettings();
+  
+  // Store settings in refs so the effect doesn't depend on them
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
 
   const sendResize = () => {
     const ws = wsRef.current;
@@ -57,7 +74,7 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
     }
     
     resizeTimeoutRef.current = window.setTimeout(() => {
-      if (fitAddonRef.current && xtermRef.current) {
+      if (fitAddonRef.current && xtermRef.current && terminalRef.current && terminalRef.current.offsetWidth > 0) {
         try {
           fitAddonRef.current.fit();
           sendResize();
@@ -71,211 +88,419 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
   useEffect(() => {
     if (!terminalRef.current) return;
 
-    // Get actual theme colors from CSS variables
-    const computedStyle = getComputedStyle(document.documentElement);
-    const surfaceElevated = computedStyle.getPropertyValue('--color-surface-elevated').trim() || (theme?.isDark ? '#15161e' : '#f5f5f5');
-    const textColor = computedStyle.getPropertyValue('--color-text').trim() || (theme?.isDark ? '#e8e8e9' : '#1a1a1a');
-
-    const terminalThemeDark = settings.terminal.theme === 'auto'
-      ? !!theme?.isDark
-      : settings.terminal.theme === 'dark';
-
-    const terminalFont = settings.terminal.fontName.trim() || 'JetBrains Mono';
+    // Get current settings from refs
+    const currentSettings = settingsRef.current;
+    const currentTheme = themeRef.current;
+    
+    const terminalThemeDark = currentSettings.terminal.theme === 'auto'
+      ? !!currentTheme?.isDark
+      : currentSettings.terminal.theme === 'dark';
+    
+    // When theme is 'auto', use the app theme palette for consistency
+    // Otherwise, use the custom terminal theme preset
+    const terminalPalette = currentSettings.terminal.theme === 'auto'
+      ? getAppThemeTerminalPalette(currentSettings.generalThemePreset, terminalThemeDark ? 'dark' : 'light')
+      : resolveTerminalThemePreset(currentSettings.terminalThemePreset, terminalThemeDark ? 'dark' : 'light');
+    
+    const terminalFontFamily = toTerminalFontFamily(currentSettings.terminal.fontName);
 
     // Create terminal instance
     const xterm = new XTerm({
       cursorBlink: true,
-      fontSize: settings.terminal.fontSize,
-      fontFamily:
-        `"${terminalFont}", "JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`,
+      fontSize: currentSettings.terminal.fontSize,
+      fontFamily: terminalFontFamily,
       allowProposedApi: true,
       convertEol: true,
       rows: 30,
       cols: 120,
       scrollback: 1000,
-      theme: {
-        background: surfaceElevated,
-        foreground: textColor,
-        cursor: textColor,
-        black: '#000000',
-        red: '#cd3131',
-        green: terminalThemeDark ? '#0dbc79' : '#00bc00',
-        yellow: terminalThemeDark ? '#e5e510' : '#949800',
-        blue: terminalThemeDark ? '#2472c8' : '#0451a5',
-        magenta: terminalThemeDark ? '#bc3fbc' : '#bc05bc',
-        cyan: terminalThemeDark ? '#11a8cd' : '#0598bc',
-        white: terminalThemeDark ? '#e5e5e5' : '#555555',
-        brightBlack: '#666666',
-        brightRed: terminalThemeDark ? '#f14c4c' : '#cd3131',
-        brightGreen: terminalThemeDark ? '#23d18b' : '#14ce14',
-        brightYellow: terminalThemeDark ? '#f5f543' : '#b5ba00',
-        brightBlue: terminalThemeDark ? '#3b8eea' : '#0451a5',
-        brightMagenta: terminalThemeDark ? '#d670d6' : '#bc05bc',
-        brightCyan: terminalThemeDark ? '#29b8db' : '#0598bc',
-        brightWhite: terminalThemeDark ? '#ffffff' : '#a5a5a5',
-      },
+      theme: terminalPalette,
     });
 
-    // Add addons
+    // Add fit addon (can be loaded before open)
     const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon();
-
     xterm.loadAddon(fitAddon);
-    xterm.loadAddon(webLinksAddon);
 
-    // Open terminal in DOM
-    xterm.open(terminalRef.current);
+    // Wait for container to have stable dimensions before opening terminal.
+    // Guard with cancellation flags so stale rAF callbacks cannot open disposed terminals.
+    let lastWidth = 0;
+    let stableCount = 0;
+    let cancelled = false;
+    let opened = false;
+    let stableWidthRafId: number | null = null;
+
+    const waitForStableWidth = () => {
+      if (cancelled || opened) return;
+
+      const currentWidth = terminalRef.current?.offsetWidth || 0;
+      if (currentWidth > 0 && currentWidth === lastWidth) {
+        stableCount++;
+        if (stableCount >= 2) {
+          // Width is stable, open terminal
+          openTerminal();
+          return;
+        }
+      } else {
+        stableCount = 0;
+        lastWidth = currentWidth;
+      }
+      stableWidthRafId = requestAnimationFrame(waitForStableWidth);
+    };
+
+    const openTerminal = () => {
+      if (cancelled || opened || !terminalRef.current) return;
+      opened = true;
+      
+      // Open terminal in DOM
+      xterm.open(terminalRef.current);
+      
+      // Load web links addon after open; if addon internals mismatch, keep terminal usable.
+      try {
+        const webLinksAddon = new WebLinksAddon();
+        xterm.loadAddon(webLinksAddon);
+      } catch (error) {
+        console.warn('WebLinksAddon failed to load; continuing without clickable links.', error);
+      }
+      
+      // Force viewport background to match theme (xterm doesn't always set this correctly)
+      const viewport = terminalRef.current.querySelector('.xterm-viewport') as HTMLElement | null;
+      if (viewport && terminalPalette.background) {
+        viewport.style.backgroundColor = terminalPalette.background;
+      }
+      
+      // Fit immediately after open
+      try {
+        fitAddon.fit();
+      } catch (e) {
+        // ignore
+      }
+      
+      xterm.focus();
+    };
+
+    // Start waiting for stable width
+    waitForStableWidth();
     
     xtermRef.current = xterm;
     fitAddonRef.current = fitAddon;
 
-    // Fit multiple times to ensure proper sizing before connection
-    const performInitialFit = () => {
-      requestAnimationFrame(() => {
-        fitAddon.fit();
-        // Fit again to handle any layout shifts
-        requestAnimationFrame(() => {
-          fitAddon.fit();
-        });
-      });
-    };
-    
-    performInitialFit();
-    xterm.focus();
-
-    // Connect WebSocket for shell
-    const wsBase = isDesktopRuntime()
-      ? getDesktopWebSocketBase()
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
-    const wsUrl = `${wsBase}/api/exec?namespace=${encodeURIComponent(
-      namespace
-    )}&pod=${encodeURIComponent(podName)}${containerName ? `&container=${encodeURIComponent(containerName)}` : ''}`;
-
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      xterm.writeln('\x1b[1;32m✓ Connected to pod shell\x1b[0m');
-      xterm.writeln(`\x1b[1;36mPod:\x1b[0m ${namespace}/${podName}`);
-      if (containerName) {
-        xterm.writeln(`\x1b[1;36mContainer:\x1b[0m ${containerName}`);
+    // Fit terminal to container size
+    const doFit = () => {
+      if (fitAddonRef.current && terminalRef.current && terminalRef.current.offsetWidth > 0) {
+        try {
+          fitAddonRef.current.fit();
+        } catch (e) {
+          // ignore fit errors
+        }
       }
-      xterm.writeln('');
-      // Auto-focus terminal after connection
-      xterm.focus();
-      
-      // Ensure terminal is properly sized before sending dimensions
-      fitAddon.fit();
-      setTimeout(() => {
-        fitAddon.fit();
-        sendResize();
-      }, 50);
-      setTimeout(() => {
-        fitAddon.fit();
-        sendResize();
-      }, 150);
+    };
 
-      if (namespace === 'node') {
+    let sawShellOutput = false;
+    let connectionAttempt = 0;
+    let hasConnectedOnce = false;
+    let reconnectTimer: number | null = null;
+    let idlePromptTimer: number | null = null;
+
+    const nudgePromptIfIdle = () => {
+      const currentWs = wsRef.current;
+      if (currentWs?.readyState === WebSocket.OPEN && !sawShellOutput) {
+        currentWs.send('\n');
+      }
+    };
+
+    const buildExecWsUrl = () => {
+      const wsBase = isDesktopRuntime()
+        ? getDesktopWebSocketBase()
+        : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
+      return `${wsBase}/api/exec?namespace=${encodeURIComponent(
+        namespace
+      )}&pod=${encodeURIComponent(podName)}${containerName ? `&container=${encodeURIComponent(containerName)}` : ''}`;
+    };
+
+    const connectSocket = async () => {
+      if (cancelled) return;
+
+      if (isDesktopRuntime()) {
+        await refreshDesktopBackendPortFromSidecar();
+        if (cancelled) return;
+      }
+
+      const ws = new WebSocket(buildExecWsUrl());
+      wsRef.current = ws;
+      let opened = false;
+      let connectionClosed = false;
+
+      if (idlePromptTimer !== null) {
+        window.clearTimeout(idlePromptTimer);
+      }
+      idlePromptTimer = window.setTimeout(() => {
+        nudgePromptIfIdle();
+      }, 1200);
+
+      ws.onopen = () => {
+        if (cancelled) {
+          ws.close();
+          return;
+        }
+
+        opened = true;
+        hasConnectedOnce = true;
+        connectionAttempt = 0;
+        xterm.writeln('\x1b[1;32m✓ Connected to pod shell\x1b[0m');
+        xterm.writeln(`\x1b[1;36mPod:\x1b[0m ${namespace}/${podName}`);
+        if (containerName) {
+          xterm.writeln(`\x1b[1;36mContainer:\x1b[0m ${containerName}`);
+        }
+        xterm.writeln('');
+        xterm.focus();
+
+        // Ensure terminal is properly sized before sending dimensions
+        doFit();
         setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send('\n');
-          }
+          doFit();
+          sendResize();
+        }, 50);
+        setTimeout(() => {
+          doFit();
+          sendResize();
+        }, 150);
+
+        // Prompt can be delayed on some shells/containers until first input.
+        setTimeout(() => {
+          nudgePromptIfIdle();
         }, 180);
-      }
 
-      if (initialCommand && initialCommand.trim().length > 0) {
-        setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(`${initialCommand.trim()}\n`);
+        if (namespace === 'node') {
+          setTimeout(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send('\n');
+            }
+          }, 180);
+        }
+
+        if (initialCommand && initialCommand.trim().length > 0) {
+          setTimeout(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(`${initialCommand.trim()}\n`);
+            }
+          }, 220);
+        }
+      };
+
+      ws.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          if (event.data.length > 0) {
+            sawShellOutput = true;
           }
-        }, 220);
-      }
+          xterm.write(event.data);
+        }
+      };
+
+      ws.onerror = () => {
+        if (!connectionClosed) {
+          xterm.writeln('\x1b[1;31m✗ Connection error\x1b[0m');
+        }
+      };
+
+      ws.onclose = () => {
+        connectionClosed = true;
+        if (idlePromptTimer !== null) {
+          window.clearTimeout(idlePromptTimer);
+          idlePromptTimer = null;
+        }
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+        }
+
+        if (!cancelled && !opened && !hasConnectedOnce && connectionAttempt < 2) {
+          connectionAttempt += 1;
+          const retryDelayMs = connectionAttempt === 1 ? 250 : 700;
+          xterm.writeln(`\r\n\x1b[90m[Reconnecting terminal (${connectionAttempt}/2)...]\x1b[0m`);
+          reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = null;
+            void connectSocket();
+          }, retryDelayMs);
+          return;
+        }
+
+        xterm.writeln('\r\n\x1b[90m[Session ended]\x1b[0m');
+      };
     };
 
-    ws.onmessage = (event) => {
-      if (typeof event.data === 'string') {
-        xterm.write(event.data);
-      }
-    };
-
-    ws.onerror = () => {
-      xterm.writeln('\x1b[1;31m✗ WebSocket error\x1b[0m');
-    };
-
-    ws.onclose = () => {
-      xterm.writeln('\r\n\x1b[1;33m✗ Connection closed\x1b[0m');
-    };
+    void connectSocket();
 
     // Send terminal input directly to shell (pass-through mode)
     xterm.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
+      const currentWs = wsRef.current;
+      if (currentWs?.readyState === WebSocket.OPEN) {
+        currentWs.send(data);
       }
     });
 
     const handleFocus = () => {
       xterm.focus();
+      doFit();
+      sendResize();
+      nudgePromptIfIdle();
+    };
+
+    const handleGlobalPointerDown = () => {
+      doFit();
+      sendResize();
+      nudgePromptIfIdle();
+    };
+
+    const handlePanelTabActivated = () => {
+      // Activation event fires after tab visibility/layout changes.
+      window.setTimeout(() => {
+        if (!terminalRef.current || terminalRef.current.offsetWidth <= 0) return;
+        doFit();
+        sendResize();
+        nudgePromptIfIdle();
+      }, 0);
     };
 
     terminalRef.current.addEventListener('mousedown', handleFocus);
+    window.addEventListener('pointerdown', handleGlobalPointerDown, true);
+    window.addEventListener('panel:tab-activated', handlePanelTabActivated);
 
     // Observe container size changes for responsive terminal
-    const resizeObserver = new ResizeObserver(() => {
-      handleResize();
+    const resizeObserver = new ResizeObserver((entries) => {
+      // Only handle resize if container has valid dimensions
+      const entry = entries[0];
+      if (entry && entry.contentRect.width > 0) {
+        handleResize();
+      }
     });
 
     if (terminalRef.current) {
       resizeObserver.observe(terminalRef.current);
+      // Immediate fit after observer attached
+      doFit();
     }
 
     // Additional resize attempts to handle initial layout
     const layoutTimers = [
       window.setTimeout(() => {
-        if (fitAddonRef.current) {
-          fitAddonRef.current.fit();
-          sendResize();
-        }
-      }, 250),
+        doFit();
+        sendResize();
+      }, 100),
       window.setTimeout(() => {
-        if (fitAddonRef.current) {
-          fitAddonRef.current.fit();
-          sendResize();
-        }
+        doFit();
+        sendResize();
+      }, 200),
+      window.setTimeout(() => {
+        doFit();
+        sendResize();
+      }, 350),
+      window.setTimeout(() => {
+        doFit();
+        sendResize();
       }, 500),
+      // Additional fit for panels that may become visible later
+      window.setTimeout(() => {
+        doFit();
+        sendResize();
+      }, 1000),
     ];
 
     window.addEventListener('resize', handleResize);
 
     return () => {
+      cancelled = true;
+      if (stableWidthRafId !== null) {
+        window.cancelAnimationFrame(stableWidthRafId);
+      }
       if (resizeTimeoutRef.current) {
         window.clearTimeout(resizeTimeoutRef.current);
       }
+      if (idlePromptTimer !== null) {
+        window.clearTimeout(idlePromptTimer);
+      }
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+      }
       terminalRef.current?.removeEventListener('mousedown', handleFocus);
+      window.removeEventListener('pointerdown', handleGlobalPointerDown, true);
+      window.removeEventListener('panel:tab-activated', handlePanelTabActivated);
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
       layoutTimers.forEach((timer) => window.clearTimeout(timer));
-      ws.close();
+
+      // Avoid browser warning: "WebSocket is closed before the connection is established".
+      // Never call close() while CONNECTING; onopen handles cancelled instances.
+      const currentWs = wsRef.current;
+      if (currentWs?.readyState === WebSocket.OPEN || currentWs?.readyState === WebSocket.CLOSING) {
+        currentWs.close();
+      }
+      wsRef.current = null;
+
       xterm.dispose();
     };
+  // Only reconnect when connection params change, not when settings change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [podName, namespace, containerName, initialCommand]);
+
+  // Update terminal theme/font when settings change (without reconnecting)
+  useEffect(() => {
+    const xterm = xtermRef.current;
+    if (!xterm) return;
+
+    const terminalThemeDark = settings.terminal.theme === 'auto'
+      ? !!theme?.isDark
+      : settings.terminal.theme === 'dark';
+    
+    const terminalPalette = settings.terminal.theme === 'auto'
+      ? getAppThemeTerminalPalette(settings.generalThemePreset, terminalThemeDark ? 'dark' : 'light')
+      : resolveTerminalThemePreset(settings.terminalThemePreset, terminalThemeDark ? 'dark' : 'light');
+    
+    const terminalFontFamily = toTerminalFontFamily(settings.terminal.fontName);
+
+    xterm.options.theme = terminalPalette;
+    xterm.options.fontSize = settings.terminal.fontSize;
+    xterm.options.fontFamily = terminalFontFamily;
+
+    // Force update xterm viewport background (xterm doesn't auto-update inline styles)
+    const viewport = terminalRef.current?.querySelector('.xterm-viewport') as HTMLElement | null;
+    if (viewport && terminalPalette.background) {
+      viewport.style.backgroundColor = terminalPalette.background;
+    }
+
+    // Refit after font changes
+    if (fitAddonRef.current) {
+      try {
+        fitAddonRef.current.fit();
+      } catch (e) {
+        // ignore
+      }
+    }
   }, [
-    podName,
-    namespace,
-    containerName,
-    initialCommand,
     theme?.isDark,
     settings.terminal.fontName,
     settings.terminal.fontSize,
     settings.terminal.theme,
+    settings.terminalThemePreset,
+    settings.generalThemePreset,
   ]);
+
+  // Resolve terminal background color based on theme mode
+  const terminalBgMode = settings.terminal.theme === 'auto' 
+    ? (theme?.isDark ? 'dark' : 'light') 
+    : settings.terminal.theme;
+  const terminalBgColor = settings.terminal.theme === 'auto'
+    ? getAppThemeTerminalPalette(settings.generalThemePreset, terminalBgMode).background
+    : resolveTerminalThemePreset(settings.terminalThemePreset, terminalBgMode).background;
 
   return (
     <div
       ref={terminalRef}
-      className="w-full h-full bg-surface-elevated rounded-md"
+      className="terminal-container w-full h-full bg-surface-elevated rounded-md"
       style={{ 
+        background: terminalBgColor,
         minHeight: '200px',
         position: 'relative',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        boxSizing: 'border-box',
       }}
     />
   );

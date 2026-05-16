@@ -40,19 +40,19 @@ export const BackupLifecycleToaster = () => {
       // In that case, emit both start and end notifications so users still get lifecycle feedback.
       if (!hasPrevious) {
         if (SUCCESS_END_PHASES.has(current)) {
-          toast.info(`Backup started: ${backup.name}`);
+          toast(`Backup started: ${backup.name}`);
           toast.success(`Backup completed: ${backup.name}`);
           continue;
         }
         if (ERROR_END_PHASES.has(current)) {
-          toast.info(`Backup started: ${backup.name}`);
+          toast(`Backup started: ${backup.name}`);
           toast.error(`Backup failed: ${backup.name}`);
           continue;
         }
       }
 
       if ((!previous || !START_PHASES.has(previous)) && START_PHASES.has(current)) {
-        toast.info(`Backup started: ${backup.name}`);
+        toast(`Backup started: ${backup.name}`);
         continue;
       }
 

@@ -10,16 +10,36 @@ use kube::{
     core::{ApiResource, DynamicObject, GroupVersionKind},
     Api, Client, Config,
 };
+use std::fs;
 use std::collections::HashMap;
 use std::env;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::time::{timeout, Duration};
 use tracing::warn;
 
 static NODE_DISK_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
+static POD_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
+static NODE_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
+const EXEC_PROVIDER_LOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
+
+fn is_metrics_api_unavailable(err: &kube::Error) -> bool {
+    match err {
+        kube::Error::Api(api_err) => api_err.code == 404 || api_err.code == 403,
+        _ => {
+            let normalized = err.to_string().to_lowercase();
+            normalized.contains("404 page not found")
+                || normalized.contains("status code 404")
+                || normalized.contains("status code: 404")
+                || normalized.contains("status code 403")
+                || normalized.contains("status code: 403")
+        }
+    }
+}
 
 fn is_kubelet_stats_proxy_unavailable(err: &kube::Error) -> bool {
     match err {
-        kube::Error::Api(api_err) => api_err.code == 403 || api_err.code == 404,
+        kube::Error::Api(api_err) => api_err.code == 403 || api_err.code == 404 || api_err.code == 503,
         _ => {
             // Some clusters/proxies return plain-text 404 responses ("404 page not found")
             // that kube-rs cannot parse into an API error payload.
@@ -29,6 +49,9 @@ fn is_kubelet_stats_proxy_unavailable(err: &kube::Error) -> bool {
                 || normalized.contains("status code: 404")
                 || normalized.contains("status code 403")
                 || normalized.contains("status code: 403")
+                || normalized.contains("status code 503")
+                || normalized.contains("status code: 503")
+                || normalized.contains("service unavailable")
         }
     }
 }
@@ -74,12 +97,164 @@ fn default_placeholder_user_message() -> String {
     "Kubernetes credentials are not available. Check your kubeconfig/context and re-authenticate, then restart the app.".to_string()
 }
 
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+fn resolve_exec_command_path(command: &str) -> Option<String> {
+    let cmd = command.trim();
+    if cmd.is_empty() {
+        return None;
+    }
+
+    if cmd.contains('/') {
+        let p = PathBuf::from(cmd);
+        return is_executable_file(&p).then(|| p.to_string_lossy().to_string());
+    }
+
+    let mut search_paths: Vec<PathBuf> = env::var_os("PATH")
+        .map(|raw| env::split_paths(&raw).collect())
+        .unwrap_or_default();
+
+    for candidate in [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ] {
+        let p = PathBuf::from(candidate);
+        if !search_paths.iter().any(|existing| existing == &p) {
+            search_paths.push(p);
+        }
+    }
+
+    if let Ok(home) = env::var("HOME") {
+        let local = PathBuf::from(&home).join(".local/bin");
+        if !search_paths.iter().any(|existing| existing == &local) {
+            search_paths.push(local);
+        }
+        let gcloud = PathBuf::from(home).join("google-cloud-sdk/bin");
+        if !search_paths.iter().any(|existing| existing == &gcloud) {
+            search_paths.push(gcloud);
+        }
+    }
+
+    for dir in search_paths {
+        let candidate = dir.join(cmd);
+        if is_executable_file(&candidate) {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    if cmd == "kubectl" {
+        for candidate in [
+            "/usr/local/bin/kubectl",
+            "/opt/homebrew/bin/kubectl",
+            "/Applications/OrbStack.app/Contents/MacOS/xbin/kubectl",
+            "/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin/kubectl",
+            "/Applications/Docker.app/Contents/Resources/bin/kubectl",
+        ] {
+            let p = PathBuf::from(candidate);
+            if is_executable_file(&p) {
+                return Some(p.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn read_effective_kubeconfig() -> anyhow::Result<Kubeconfig> {
+    let configured_paths = env::var_os("KUBECONFIG")
+        .map(|raw| {
+            env::split_paths(&raw)
+                .filter(|p| p.exists())
+                .collect::<Vec<PathBuf>>()
+        })
+        .unwrap_or_default();
+
+    if let Some(path) = configured_paths.first() {
+        return Kubeconfig::read_from(path)
+            .or_else(|_| Kubeconfig::read())
+            .map_err(|e| anyhow::anyhow!("failed to read kubeconfig: {e}"));
+    }
+
+    Kubeconfig::read().map_err(|e| anyhow::anyhow!("failed to read default kubeconfig: {e}"))
+}
+
+fn rewrite_exec_command_to_absolute(kc: &mut Kubeconfig, context_name: Option<&str>) {
+    let user_name = {
+        let ctx_name = context_name.or_else(|| kc.current_context.as_deref());
+        ctx_name.and_then(|n| {
+            kc.contexts
+                .iter()
+                .find(|c| c.name == n)
+                .and_then(|c| c.context.as_ref())
+                .map(|c| c.user.clone())
+        })
+    };
+
+    if let Some(ref uname) = user_name {
+        for named_auth in &mut kc.auth_infos {
+            if named_auth.name == *uname {
+                if let Some(ref mut ai) = named_auth.auth_info {
+                    if let Some(ref mut exec) = ai.exec {
+                        if let Some(command) = exec.command.as_deref() {
+                            if let Some(resolved) = resolve_exec_command_path(command) {
+                                exec.command = Some(resolved);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn try_load_kube_config_with_resolved_exec(
+    options: &KubeConfigOptions,
+) -> anyhow::Result<Config> {
+    let mut kc = read_effective_kubeconfig()?;
+    rewrite_exec_command_to_absolute(&mut kc, options.context.as_deref());
+    Config::from_custom_kubeconfig(kc, options)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to load kubeconfig with resolved exec command: {e}"))
+}
+
+    fn is_missing_exec_error(message: &str) -> bool {
+        let err_text = message.to_lowercase();
+        err_text.contains("unable to run auth exec")
+        || err_text.contains("no such file or directory")
+        || (err_text.contains("auth exec") && err_text.contains("os error 2"))
+    }
+
 pub fn kube_list_warning_response(resource_name: &str, err: &kube::Error) -> Option<Response> {
     if let kube::Error::Api(api_err) = err {
-        if api_err.code == 403 || api_err.code == 404 {
+        if api_err.code == 403 || api_err.code == 404 || api_err.code == 503 {
             let warning = if api_err.code == 403 {
                 format!(
                     "Limited access: no permission to list {}. The app will continue without this resource.",
+                    resource_name
+                )
+            } else if api_err.code == 503 {
+                format!(
+                    "{} is temporarily unavailable (503). Retrying in background.",
                     resource_name
                 )
             } else {
@@ -141,30 +316,89 @@ pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, KubeClien
         // to main() — the HTTP server must start so the Tauri sidecar health probe
         // passes and the cluster switch is not rolled back.
         match tokio::time::timeout(
-            std::time::Duration::from_secs(8),
+            EXEC_PROVIDER_LOAD_TIMEOUT,
             Config::from_kubeconfig(&options),
         )
         .await
         {
             Ok(Ok(cfg)) => match Client::try_from(cfg) {
                 Ok(c) => return Ok((c, KubeClientStatus::default())),
-                Err(e) => warn!(
-                    "Kubernetes client build failed for context '{}': {}. \
-                     Starting with placeholder client.",
-                    ctx, e
-                ),
+                Err(e) => {
+                    if is_missing_exec_error(&e.to_string()) {
+                        match tokio::time::timeout(
+                            EXEC_PROVIDER_LOAD_TIMEOUT,
+                            try_load_kube_config_with_resolved_exec(&options),
+                        )
+                        .await
+                        {
+                            Ok(Ok(resolved_cfg)) => match Client::try_from(resolved_cfg) {
+                                Ok(c) => return Ok((c, KubeClientStatus::default())),
+                                Err(inner) => warn!(
+                                    "Resolved exec command for context '{}', but client build still failed: {}. \
+                                     Starting with placeholder client.",
+                                    ctx, inner
+                                ),
+                            },
+                            Ok(Err(inner)) => warn!(
+                                "Kubeconfig fallback with resolved exec command failed for context '{}': {}",
+                                ctx, inner
+                            ),
+                            Err(_) => warn!(
+                                "Kubeconfig fallback with resolved exec command timed out for context '{}'.",
+                                ctx
+                            ),
+                        }
+                    }
+
+                    warn!(
+                        "Kubernetes client build failed for context '{}': {}. \
+                         Starting with placeholder client.",
+                        ctx, e
+                    )
+                }
             },
-            Ok(Err(e)) => warn!(
-                "Kubeconfig load failed for context '{}': {}. \
-                 Exec credential may be unavailable (OIDC server down, plugin missing, etc.). \
-                 Starting with placeholder client — API calls will fail with auth errors \
-                 until credentials are available.",
-                ctx, e
-            ),
+            Ok(Err(e)) => {
+                let missing_exec = is_missing_exec_error(&e.to_string());
+
+                if missing_exec {
+                    match tokio::time::timeout(
+                        EXEC_PROVIDER_LOAD_TIMEOUT,
+                        try_load_kube_config_with_resolved_exec(&options),
+                    )
+                    .await
+                    {
+                        Ok(Ok(cfg)) => match Client::try_from(cfg) {
+                            Ok(c) => return Ok((c, KubeClientStatus::default())),
+                            Err(inner) => warn!(
+                                "Resolved exec command for context '{}', but client build still failed: {}. \
+                                 Starting with placeholder client.",
+                                ctx, inner
+                            ),
+                        },
+                        Ok(Err(inner)) => warn!(
+                            "Kubeconfig fallback with resolved exec command failed for context '{}': {}",
+                            ctx, inner
+                        ),
+                        Err(_) => warn!(
+                            "Kubeconfig fallback with resolved exec command timed out for context '{}'.",
+                            ctx
+                        ),
+                    }
+                }
+
+                warn!(
+                    "Kubeconfig load failed for context '{}': {}. \
+                     Exec credential may be unavailable (OIDC server down, plugin missing, etc.). \
+                     Starting with placeholder client — API calls will fail with auth errors \
+                     until credentials are available.",
+                    ctx, e
+                )
+            }
             Err(_) => warn!(
-                "Kubeconfig load timed out (>8 s) for context '{}'. \
+                "Kubeconfig load timed out (>{} s) for context '{}'. \
                  Exec credential plugin is slow or unresponsive. \
                  Starting with placeholder client.",
+                EXEC_PROVIDER_LOAD_TIMEOUT.as_secs(),
                 ctx
             ),
         }
@@ -213,16 +447,7 @@ pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, KubeClien
 /// It exists solely to let the HTTP server start and respond to health probes even
 /// when exec credential plugins are temporarily unavailable.
 async fn build_placeholder_client(context_name: Option<&str>) -> anyhow::Result<Client> {
-    let kubeconfig_path = env::var("KUBECONFIG")
-        .ok()
-        .map(|s| std::path::PathBuf::from(s.trim().to_string()))
-        .filter(|p| p.exists());
-
-    let mut kubeconfig = match kubeconfig_path {
-        Some(ref path) => Kubeconfig::read_from(path)
-            .or_else(|_| Kubeconfig::read()),
-        None => Kubeconfig::read(),
-    };
+    let mut kubeconfig = read_effective_kubeconfig();
 
     if let Ok(ref mut kc) = kubeconfig {
         // Find the user entry for the target context and strip exec credentials
@@ -390,13 +615,22 @@ pub fn format_binary_bytes(bytes: f64) -> String {
 pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (String, String)> {
     let mut metrics_map: HashMap<(String, String), (String, String)> = HashMap::new();
 
+    if !POD_METRICS_SUPPORTED.load(Ordering::Relaxed) {
+        return metrics_map;
+    }
+
     let pod_metrics_resource =
         ApiResource::from_gvk(&GroupVersionKind::gvk("metrics.k8s.io", "v1beta1", "PodMetrics"));
     let metrics_api: Api<DynamicObject> = Api::all_with(client, &pod_metrics_resource);
 
     let metrics_list = match metrics_api.list(&ListParams::default()).await {
         Ok(list) => list,
-        Err(_) => return metrics_map,
+        Err(err) => {
+            if is_metrics_api_unavailable(&err) {
+                POD_METRICS_SUPPORTED.store(false, Ordering::Relaxed);
+            }
+            return metrics_map;
+        }
     };
 
     for metric in metrics_list.items {
@@ -464,13 +698,22 @@ pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (Str
 pub async fn fetch_node_metrics(client: Client) -> HashMap<String, (String, String)> {
     let mut metrics_map: HashMap<String, (String, String)> = HashMap::new();
 
+    if !NODE_METRICS_SUPPORTED.load(Ordering::Relaxed) {
+        return metrics_map;
+    }
+
     let node_metrics_resource =
         ApiResource::from_gvk(&GroupVersionKind::gvk("metrics.k8s.io", "v1beta1", "NodeMetrics"));
     let metrics_api: Api<DynamicObject> = Api::all_with(client, &node_metrics_resource);
 
     let metrics_list = match metrics_api.list(&ListParams::default()).await {
         Ok(list) => list,
-        Err(_) => return metrics_map,
+        Err(err) => {
+            if is_metrics_api_unavailable(&err) {
+                NODE_METRICS_SUPPORTED.store(false, Ordering::Relaxed);
+            }
+            return metrics_map;
+        }
     };
 
     for metric in metrics_list.items {
@@ -526,17 +769,24 @@ pub async fn fetch_node_disk_metrics(
             Err(_) => return Ok(None),
         };
 
-        let summary = match client.request::<serde_json::Value>(request).await {
-            Ok(summary) => summary,
-            Err(err) if is_kubelet_stats_proxy_unavailable(&err) => {
-                NODE_DISK_METRICS_SUPPORTED.store(false, Ordering::Relaxed);
-                warn!(
-                    "Disabling node disk metrics collection because kubelet stats proxy is unavailable: {}",
-                    err
-                );
+        // Timeout individual node requests to 2 seconds to prevent slow/unresponsive kubelets from blocking list
+        let summary = match timeout(
+            Duration::from_secs(2),
+            client.request::<serde_json::Value>(request)
+        ).await {
+            Ok(Ok(summary)) => summary,
+            Ok(Err(err)) if is_kubelet_stats_proxy_unavailable(&err) => {
+                let was_supported = NODE_DISK_METRICS_SUPPORTED.swap(false, Ordering::Relaxed);
+                if was_supported {
+                    warn!(
+                        "Disabling node disk metrics collection because kubelet stats proxy is unavailable: {}",
+                        err
+                    );
+                }
                 return Err(());
             }
-            Err(_) => return Ok(None),
+            Ok(Err(_)) => return Ok(None),
+            Err(_) => return Ok(None), // Timeout — skip this node's disk metrics
         };
 
         let fs = match summary.get("node").and_then(|node| node.get("fs")) {

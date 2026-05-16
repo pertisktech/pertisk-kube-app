@@ -1,4 +1,6 @@
-import { Pencil, Trash2 } from './Icons';
+import { useState } from 'react';
+import { toast } from 'react-toastify';
+import { Loader, Pencil, RefreshCw, Trash2 } from './Icons';
 import type { DaemonSet } from '../types';
 import { getStatusColor, timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
@@ -9,6 +11,7 @@ interface DaemonSetDetailPanelProps {
   daemonSet: DaemonSet;
   onClose: () => void;
   onOpenYamlEditor?: (daemonSet: DaemonSet) => void;
+  onRestart?: (namespace: string, name: string) => Promise<void>;
   onDelete?: (namespace: string, name: string) => Promise<void>;
 }
 
@@ -20,8 +23,23 @@ const getStatusTextClass = (status: string) => {
   return 'text-text-secondary';
 };
 
-export const DaemonSetDetailPanel = ({ daemonSet, onClose, onOpenYamlEditor, onDelete }: DaemonSetDetailPanelProps) => {
+export const DaemonSetDetailPanel = ({ daemonSet, onClose, onOpenYamlEditor, onRestart, onDelete }: DaemonSetDetailPanelProps) => {
+  const [isRestarting, setIsRestarting] = useState(false);
   const selectorEntries = Object.entries(daemonSet.node_selector || {});
+
+  const handleRestart = async () => {
+    if (!onRestart || isRestarting) return;
+    setIsRestarting(true);
+    try {
+      await onRestart(daemonSet.namespace, daemonSet.name);
+      toast.success(`Restart triggered for DaemonSet ${daemonSet.namespace}/${daemonSet.name}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to restart DaemonSet');
+    } finally {
+      setIsRestarting(false);
+    }
+  };
+
   return (
     <ResourceDetailPanelLayout
       title={daemonSet.name}
@@ -33,6 +51,13 @@ export const DaemonSetDetailPanel = ({ daemonSet, onClose, onOpenYamlEditor, onD
       ]}
       actions={
         <>
+          <PanelActionButton
+            icon={isRestarting ? Loader : RefreshCw}
+            iconClassName={isRestarting ? 'h-4 w-4 shrink-0 animate-spin' : 'h-4 w-4 shrink-0'}
+            label={isRestarting ? 'Restarting...' : 'Restart'}
+            onClick={handleRestart}
+            disabled={isRestarting || !onRestart}
+          />
           <PanelActionButton icon={Pencil} label="Edit YAML" onClick={() => onOpenYamlEditor?.(daemonSet)} />
           <PanelActionButton icon={Trash2} label="Delete" danger onClick={() => onDelete?.(daemonSet.namespace, daemonSet.name)} />
         </>

@@ -91,6 +91,12 @@ pub struct HelmChartsQuery {
 }
 
 #[derive(Deserialize)]
+pub struct HelmReleasesQuery {
+    /// Optional comma-separated namespace filter. When omitted, all namespaces are included.
+    pub namespaces: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct HelmRepositoryIndex {
     entries: Option<HashMap<String, Vec<HelmRepositoryIndexEntry>>>,
 }
@@ -99,7 +105,7 @@ struct HelmRepositoryIndex {
 struct HelmRepositoryIndexEntry {
     version: Option<String>,
     #[serde(rename = "appVersion")]
-    appVersion: Option<String>,
+    app_version: Option<String>,
     description: Option<String>,
 }
 
@@ -213,7 +219,18 @@ fn helm_chart_response(data: Vec<HelmChartItem>, warnings: Vec<String>, refreshi
 
 // ── Helm Releases ─────────────────────────────────────────────────────────────
 
-pub async fn list_helm_releases(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn list_helm_releases(
+    Query(query): Query<HelmReleasesQuery>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let namespace_filter: Option<HashSet<String>> = query.namespaces.as_ref().map(|raw| {
+        raw.split(',')
+            .map(str::trim)
+            .filter(|ns| !ns.is_empty())
+            .map(ToString::to_string)
+            .collect()
+    });
+
     let client = state.client.clone();
     let api: Api<Secret> = Api::all(client);
     let lp = ListParams::default().labels("owner=helm");
@@ -244,6 +261,13 @@ pub async fn list_helm_releases(State(state): State<AppState>) -> impl IntoRespo
                     .clone()
                     .unwrap_or_else(|| "default".to_string());
 
+                // Skip if namespace doesn't match filter
+                if let Some(ref ns_filter) = namespace_filter {
+                    if !ns_filter.contains(&namespace) {
+                        continue;
+                    }
+                }
+
                 // Try to decode the Helm release JSON from the secret data
                 let (chart, chart_version, app_version, updated) =
                     decode_helm_release_data(&secret).unwrap_or_else(|| {
@@ -253,7 +277,7 @@ pub async fn list_helm_releases(State(state): State<AppState>) -> impl IntoRespo
                             .as_ref()
                             .map(|t| t.0.to_rfc3339())
                             .unwrap_or_default();
-                        (name.clone(), "-".to_string(), "-".to_string(), ts)
+                        ("-".to_string(), "-".to_string(), "-".to_string(), ts)
                     });
 
                 let item = HelmReleaseItem {
@@ -543,7 +567,7 @@ async fn fetch_helm_charts_from_repositories(repo_urls: Vec<String>) -> (Vec<Hel
                                 name: chart_name,
                                 description: latest.description.unwrap_or_default(),
                                 version: latest.version.unwrap_or_else(|| "-".to_string()),
-                                app_version: latest.appVersion.unwrap_or_else(|| "-".to_string()),
+                                app_version: latest.app_version.unwrap_or_else(|| "-".to_string()),
                                 repository: display_repo_name.clone(),
                                 repository_url: repo_url.clone(),
                                 artifact_hub_url,

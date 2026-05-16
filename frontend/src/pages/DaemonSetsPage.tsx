@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
-import { Trash2 } from '../components/Icons';
+import { toast } from 'react-toastify';
+import { Loader, RefreshCw, Trash2 } from '../components/Icons';
 import { useRealtimeDaemonSets } from '../hooks/useRealtimeResources';
 import { useNamespace } from '../context/NamespaceContext';
 import { DaemonSetDetailPanel, DataTable, ConfirmDialog } from '../components';
@@ -8,7 +9,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import type { DaemonSet } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
-import { deleteDaemonSet, useDaemonSets } from '../hooks/useKubernetes';
+import { deleteDaemonSet, restartDaemonSet, useDaemonSets } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
 type DaemonSetSortKey =
@@ -64,12 +65,14 @@ export const DaemonSetsPage = () => {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<{ keys: string[]; label: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRestartingSelected, setIsRestartingSelected] = useState(false);
   const [sortState, setSortState] = useState<{ key: DaemonSetSortKey; direction: 'asc' | 'desc' }>({
     key: 'age',
     direction: 'desc',
   });
 
-  // Merge realtime + REST so replica counters stay fresh when watch stream lags.
+  // Merge realtime + REST so replica counters stay fresh.
+  // Realtime data is preferred since it's more up-to-date.
   const data = useMemo(() => {
     const realtime = realtimeDaemonSets ?? [];
     const api = apiDaemonSets ?? [];
@@ -77,24 +80,25 @@ export const DaemonSetsPage = () => {
     if (realtime.length === 0) return api;
     if (api.length === 0) return realtime;
 
-    const realtimeByKey = new Map(realtime.map((item) => [`${item.namespace}/${item.name}`, item]));
-    const merged = api.map((item) => {
+    const apiByKey = new Map(api.map((item) => [`${item.namespace}/${item.name}`, item]));
+    const merged = realtime.map((item) => {
       const key = `${item.namespace}/${item.name}`;
-      const fromRealtime = realtimeByKey.get(key);
-      if (!fromRealtime) return item;
+      const fromApi = apiByKey.get(key);
+      if (!fromApi) return item;
 
       return {
-        ...fromRealtime,
-        status: item.status ?? fromRealtime.status,
-        desired: item.desired ?? fromRealtime.desired,
-        current: item.current ?? fromRealtime.current,
-        ready: item.ready ?? fromRealtime.ready,
-        available: item.available ?? fromRealtime.available,
-        node_selector: item.node_selector ?? fromRealtime.node_selector,
+        ...fromApi,
+        ...item,
+        status: item.status ?? fromApi.status,
+        desired: item.desired ?? fromApi.desired,
+        current: item.current ?? fromApi.current,
+        ready: item.ready ?? fromApi.ready,
+        available: item.available ?? fromApi.available,
+        node_selector: item.node_selector ?? fromApi.node_selector,
       };
     });
 
-    for (const item of realtime) {
+    for (const item of api) {
       const key = `${item.namespace}/${item.name}`;
       if (!merged.some((existing) => `${existing.namespace}/${existing.name}` === key)) {
         merged.push(item);
@@ -152,6 +156,24 @@ export const DaemonSetsPage = () => {
       keys: selectedRows,
       label: selectedRows.length === 1 ? selectedRows[0].split('/')[1] : `${selectedRows.length} daemonsets`,
     });
+  };
+
+  const handleRestartSelected = async () => {
+    if (selectedRows.length === 0 || isRestartingSelected) return;
+    setIsRestartingSelected(true);
+    const results = await Promise.allSettled(
+      selectedRows.map((key) => {
+        const [ns, name] = key.split('/');
+        return restartDaemonSet(ns, name);
+      })
+    );
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length === 0) {
+      toast.success(`Restarted ${selectedRows.length} daemonset${selectedRows.length > 1 ? 's' : ''}.`);
+    } else {
+      toast.error(`${failed.length} restart${failed.length > 1 ? 's' : ''} failed.`);
+    }
+    setIsRestartingSelected(false);
   };
 
   const handleConfirmDelete = async () => {
@@ -323,6 +345,7 @@ if (selectedNamespaces.length > 0) {
             daemonSet={selectedDaemonSet}
             onClose={() => setPanelOpen(false)}
             onOpenYamlEditor={handleOpenYamlEditorFromPanel}
+            onRestart={restartDaemonSet}
             onDelete={handleDeleteSingle}
           />
         </>
@@ -334,6 +357,15 @@ if (selectedNamespaces.length > 0) {
             {selectedRows.length} selected
           </span>
           <div className="w-px h-4 bg-border" />
+          <button
+            type="button"
+            onClick={() => void handleRestartSelected()}
+            disabled={isRestartingSelected}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 font-medium transition-colors disabled:opacity-50"
+          >
+            {isRestartingSelected ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {isRestartingSelected ? 'Restarting...' : 'Restart'}
+          </button>
           <button
             type="button"
             onClick={handleDeleteSelected}
