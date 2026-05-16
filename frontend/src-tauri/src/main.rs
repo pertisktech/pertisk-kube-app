@@ -2435,9 +2435,23 @@ fn list_omni_clusters(
     ];
 
     let resolved_home = resolve_home_dir();
+    let omni_context = find_omni_context(&omni_url);
+    let siderov1_keys_dir = resolve_siderov1_keys_dir();
 
     if let Some(home) = &resolved_home {
         app_log(format!("[omni] list-clusters resolved HOME={}", home.display()));
+    }
+    if let Some((cfg_path, ctx_name)) = &omni_context {
+        app_log(format!(
+            "[omni] list-clusters using --omniconfig={} --context={}",
+            cfg_path.display(),
+            ctx_name
+        ));
+    } else {
+        app_log("[omni] list-clusters: no matching context found, using OMNI_ENDPOINT fallback".to_string());
+    }
+    if let Some(keys_dir) = &siderov1_keys_dir {
+        app_log(format!("[omni] list-clusters using --siderov1-keys-dir={}", keys_dir.display()));
     }
 
     let mut last_error = String::new();
@@ -2447,11 +2461,30 @@ fn list_omni_clusters(
 
     for args in arg_variants {
         let cmd_label = format!("omnictl {}", args.join(" "));
-        let omnictl_cmd = build_shell_command(&omnictl_bin.to_string_lossy(), &args);
+        let mut omnictl_args = Vec::new();
+        match &omni_context {
+            Some((cfg_path, ctx_name)) => {
+                omnictl_args.push("--omniconfig".to_string());
+                omnictl_args.push(cfg_path.to_string_lossy().to_string());
+                omnictl_args.push("--context".to_string());
+                omnictl_args.push(ctx_name.clone());
+            }
+            None => {
+                // Keep fallback behavior when no usable omniconfig/context exists.
+                omnictl_args.push("--omniconfig".to_string());
+                omnictl_args.push("/tmp/.pertisk-omni-no-context-placeholder".to_string());
+            }
+        }
+        if let Some(keys_dir) = &siderov1_keys_dir {
+            omnictl_args.push("--siderov1-keys-dir".to_string());
+            omnictl_args.push(keys_dir.to_string_lossy().to_string());
+        }
+        omnictl_args.extend(args.clone());
+
+        let omnictl_cmd = build_shell_command(&omnictl_bin.to_string_lossy(), &omnictl_args);
         let shell_cmd = format!(
-            "OMNI_ENDPOINT={} OMNICONFIG={} {}",
+            "OMNI_ENDPOINT={} {}",
             shell_quote(&omni_url),
-            shell_quote("/tmp/.pertisk-omni-no-context-placeholder"),
             omnictl_cmd
         );
         let shell = env_value("SHELL").unwrap_or_else(|| "/bin/zsh".to_string());
@@ -2461,8 +2494,19 @@ fn list_omni_clusters(
         let mut cmd = Command::new(&shell);
         cmd.args(["-lc", &shell_cmd]).stdin(Stdio::null());
 
+        if let Some(path) = sidecar_path() {
+            cmd.env("PATH", path);
+        }
+
         if let Some(home) = &resolved_home {
             cmd.env("HOME", home);
+        }
+        if let Some(keys_dir) = &siderov1_keys_dir {
+            cmd.env("SIDEROV1_KEYS_DIR", keys_dir);
+        }
+
+        for key in ["HOME", "USER", "LOGNAME", "SHELL", "OMNICONFIG", "TALOSCONFIG", "KUBECONFIG", "SIDEROV1_KEYS_DIR"] {
+            forward_env_if_present(&mut cmd, key);
         }
 
         let output = match cmd.output() {
