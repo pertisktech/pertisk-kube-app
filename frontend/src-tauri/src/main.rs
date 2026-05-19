@@ -2255,10 +2255,10 @@ fn omni_update_kubeconfig(
     
     let shell = env_value("SHELL").unwrap_or_else(|| "/bin/zsh".to_string());
     
-    app_log(format!("[omni] running via shell: {} -lc [command]", shell));
+    app_log(format!("[omni] running via shell: {} -ilc [command]", shell));
 
     let mut cmd = Command::new(&shell);
-    cmd.args(["-lc", &shell_cmd]).stdin(Stdio::null());
+    cmd.args(["-ilc", &shell_cmd]).stdin(Stdio::null());
 
     if let Some(path) = sidecar_path() {
         cmd.env("PATH", path);
@@ -2459,25 +2459,59 @@ fn list_omni_clusters(
 
     let mut first_successful_empty: Option<Vec<serde_json::Value>> = None;
 
+    #[derive(Clone)]
+    struct OmniAuthAttempt {
+        use_context: bool,
+        use_keys_dir: bool,
+        label: &'static str,
+    }
+
+    let mut auth_attempts: Vec<OmniAuthAttempt> = Vec::new();
+    if omni_context.is_some() {
+        if siderov1_keys_dir.is_some() {
+            auth_attempts.push(OmniAuthAttempt {
+                use_context: true,
+                use_keys_dir: true,
+                label: "context+keys",
+            });
+        }
+        auth_attempts.push(OmniAuthAttempt {
+            use_context: true,
+            use_keys_dir: false,
+            label: "context-only",
+        });
+    }
+
+    // Always try endpoint-only mode as a fallback. This avoids stale or mismatched
+    // local context/keys causing invalid-signature auth failures.
+    auth_attempts.push(OmniAuthAttempt {
+        use_context: false,
+        use_keys_dir: false,
+        label: "endpoint-only",
+    });
+
     for args in arg_variants {
+        for auth_attempt in &auth_attempts {
         let cmd_label = format!("omnictl {}", args.join(" "));
         let mut omnictl_args = Vec::new();
-        match &omni_context {
-            Some((cfg_path, ctx_name)) => {
+        if auth_attempt.use_context {
+            if let Some((cfg_path, ctx_name)) = &omni_context {
                 omnictl_args.push("--omniconfig".to_string());
                 omnictl_args.push(cfg_path.to_string_lossy().to_string());
                 omnictl_args.push("--context".to_string());
                 omnictl_args.push(ctx_name.clone());
             }
-            None => {
-                // Keep fallback behavior when no usable omniconfig/context exists.
-                omnictl_args.push("--omniconfig".to_string());
-                omnictl_args.push("/tmp/.pertisk-omni-no-context-placeholder".to_string());
-            }
+        } else {
+            // Keep fallback behavior when no usable omniconfig/context exists.
+            omnictl_args.push("--omniconfig".to_string());
+            omnictl_args.push("/tmp/.pertisk-omni-no-context-placeholder".to_string());
         }
-        if let Some(keys_dir) = &siderov1_keys_dir {
+
+        if auth_attempt.use_keys_dir {
+            if let Some(keys_dir) = &siderov1_keys_dir {
             omnictl_args.push("--siderov1-keys-dir".to_string());
             omnictl_args.push(keys_dir.to_string_lossy().to_string());
+            }
         }
         omnictl_args.extend(args.clone());
 
@@ -2489,10 +2523,13 @@ fn list_omni_clusters(
         );
         let shell = env_value("SHELL").unwrap_or_else(|| "/bin/zsh".to_string());
 
-        app_log(format!("[omni] list-clusters cmd={} -lc {}", shell, shell_cmd));
+        app_log(format!(
+            "[omni] list-clusters auth-attempt={} cmd={} -ilc {}",
+            auth_attempt.label, shell, shell_cmd
+        ));
 
         let mut cmd = Command::new(&shell);
-        cmd.args(["-lc", &shell_cmd]).stdin(Stdio::null());
+        cmd.args(["-ilc", &shell_cmd]).stdin(Stdio::null());
 
         if let Some(path) = sidecar_path() {
             cmd.env("PATH", path);
@@ -2501,8 +2538,10 @@ fn list_omni_clusters(
         if let Some(home) = &resolved_home {
             cmd.env("HOME", home);
         }
-        if let Some(keys_dir) = &siderov1_keys_dir {
+        if auth_attempt.use_keys_dir {
+            if let Some(keys_dir) = &siderov1_keys_dir {
             cmd.env("SIDEROV1_KEYS_DIR", keys_dir);
+            }
         }
 
         for key in ["HOME", "USER", "LOGNAME", "SHELL", "OMNICONFIG", "TALOSCONFIG", "KUBECONFIG", "SIDEROV1_KEYS_DIR"] {
@@ -2512,7 +2551,7 @@ fn list_omni_clusters(
         let output = match cmd.output() {
             Ok(v) => v,
             Err(e) => {
-                last_error = format!("failed to run omnictl cluster list via '{shell} -lc': {e}");
+                last_error = format!("failed to run omnictl cluster list via '{shell} -ilc': {e}");
                 continue;
             }
         };
@@ -2609,6 +2648,7 @@ fn list_omni_clusters(
             cmd_label,
             preview(&stdout, 400)
         ));
+        }
     }
 
     let msg = if last_error.is_empty() {
