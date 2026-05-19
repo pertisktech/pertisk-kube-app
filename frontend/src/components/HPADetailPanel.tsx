@@ -3,6 +3,7 @@ import type { HPA } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
+import classNames from 'classnames';
 
 interface HPADetailPanelProps {
   hpa: HPA;
@@ -29,7 +30,7 @@ export const HPADetailPanel = ({ hpa, onClose, onOpenYamlEditor, onDelete }: HPA
   >
     <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{hpa.name}</DrawerItem>
-    <DrawerItem name="Namespace">{hpa.namespace}</DrawerItem>
+    <DrawerItem name="Namespace" className={classNames({ 'text-left': hpa.namespace.length > 20 })}>{hpa.namespace}</DrawerItem>
     <DrawerItem name="Reference">{hpa.reference ?? '-'}</DrawerItem>
     <DrawerItem name="Replicas">{`Current: ${hpa.current_replicas} / Desired: ${hpa.desired_replicas}`}</DrawerItem>
     <DrawerItem name="Min/Max Replicas">{`${hpa.min_replicas} / ${hpa.max_replicas}`}</DrawerItem>

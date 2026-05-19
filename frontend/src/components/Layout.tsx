@@ -65,6 +65,7 @@ import { isDesktopRuntime } from '../utils/desktopBridge';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { APP_VERSION } from '../utils/version';
 import { DesktopSettingsPage } from '../pages/DesktopSettingsPage';
+import classNames from 'classnames';
 
 const appWindow = getCurrentWindow();
 
@@ -1861,10 +1862,21 @@ export const Layout = () => {
                     >
                       <span className="flex items-start justify-between gap-3">
                         <span className="min-w-0">
-                          <span className={cn('block truncate text-sm font-medium', selectedClusterItem ? 'text-text' : 'text-text-secondary')}>
+                          <span
+                            className={classNames(
+                              'block truncate text-sm font-medium',
+                              selectedClusterItem ? 'text-text' : 'text-text-secondary',
+                              { 'text-left': (selectedClusterItem?.namespace?.length ?? 0) > 20 }
+                            )}
+                          >
                             {selectedClusterItem?.context ?? (clusterImportTab === 'cloud' ? 'Select a cloud cluster' : 'Select a kubeconfig context')}
                           </span>
-                          <span className="block truncate text-xs text-text-secondary">
+                          <span
+                            className={classNames(
+                              'block truncate text-xs text-text-secondary',
+                              'text-left' // Always force left alignment for the second line
+                            )}
+                          >
                             {selectedClusterItem
                               ? `cluster: ${selectedClusterItem.cluster ?? '-'}${selectedClusterItem.namespace ? ` • ns: ${selectedClusterItem.namespace}` : ''}`
                               : (clusterImportTab === 'cloud' ? 'Search and choose from imported provider clusters.' : 'Search and choose from local kubeconfig contexts.')}
@@ -2791,7 +2803,7 @@ export const Layout = () => {
                   )}
                 >
                   <Database size={14} className="flex-shrink-0" />
-                  <span className="max-w-40 truncate">
+                  <span className="max-w-40 truncate text-left">
                     {selectedNamespaces.length === 0
                       ? 'All Namespaces'
                       : selectedNamespaces.length === 1
@@ -2844,7 +2856,7 @@ export const Layout = () => {
                           checked={selectedNamespaces.includes(ns)}
                           onChange={() => toggleNamespace(ns)}
                         />
-                        <span>{ns}</span>
+                        <span className="text-left w-full">{ns}</span>
                       </button>
                     ))}
                   </div>

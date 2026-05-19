@@ -41,3 +41,4 @@ temp/
 certs/
 .tmp/
 frontend/src-tauri/bundle-resources/
+node_modules/

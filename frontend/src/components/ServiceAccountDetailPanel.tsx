@@ -3,6 +3,7 @@ import type { ServiceAccount } from '../types';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
+import classNames from 'classnames';
 
 interface ServiceAccountDetailPanelProps {
   serviceAccount: ServiceAccount;
@@ -29,7 +30,7 @@ export const ServiceAccountDetailPanel = ({ serviceAccount: sa, onClose, onOpenY
   >
     <DrawerTitle>Property</DrawerTitle>
     <DrawerItem name="Name">{sa.name}</DrawerItem>
-    <DrawerItem name="Namespace">{sa.namespace}</DrawerItem>
+    <DrawerItem name="Namespace" className={classNames({ 'text-left': sa.namespace.length > 20 })}>{sa.namespace}</DrawerItem>
     <DrawerItem name="Secrets">{sa.secrets ?? '-'}</DrawerItem>
     <DrawerItem name="Age">{timeAgo(sa.age)}</DrawerItem>
     <DrawerLabelsAnnotations labels={sa.labels} annotations={sa.annotations} />
