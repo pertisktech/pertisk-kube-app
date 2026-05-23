@@ -850,12 +850,38 @@ function transformHPA(raw: any): HPA {
   const spec = raw.spec || {};
   const status = raw.status || {};
   const ref = spec.scaleTargetRef ? `${spec.scaleTargetRef.kind}/${spec.scaleTargetRef.name}` : '-';
+  const specMetrics = Array.isArray(spec.metrics) ? spec.metrics : [];
+  const currentMetrics = Array.isArray(status.currentMetrics) ? status.currentMetrics : [];
+  const formatMetricTarget = (resourceMetric: any): string | undefined => {
+    const target = resourceMetric?.target;
+    if (!target) return undefined;
+    if (typeof target.averageUtilization === 'number') return `${target.averageUtilization}%`;
+    if (target.averageValue) return String(target.averageValue);
+    if (target.value) return String(target.value);
+    return undefined;
+  };
+  const formatMetricCurrent = (resourceMetric: any): string | undefined => {
+    const current = resourceMetric?.current;
+    if (!current) return undefined;
+    if (typeof current.averageUtilization === 'number') return `${current.averageUtilization}%`;
+    if (current.averageValue) return String(current.averageValue);
+    if (current.value) return String(current.value);
+    return undefined;
+  };
+  const cpuSpecMetric = specMetrics.find((m: any) => m?.resource?.name === 'cpu');
+  const memorySpecMetric = specMetrics.find((m: any) => m?.resource?.name === 'memory');
+  const cpuCurrentMetric = currentMetrics.find((m: any) => m?.resource?.name === 'cpu');
+  const memoryCurrentMetric = currentMetrics.find((m: any) => m?.resource?.name === 'memory');
   const targets = status.currentMetrics?.length ?? 0;
   return {
     name: metadata.name || '',
     namespace: metadata.namespace || 'default',
     reference: ref,
     targets,
+    cpu_target: formatMetricTarget(cpuSpecMetric?.resource),
+    cpu_current: formatMetricCurrent(cpuCurrentMetric?.resource),
+    memory_target: formatMetricTarget(memorySpecMetric?.resource),
+    memory_current: formatMetricCurrent(memoryCurrentMetric?.resource),
     current_replicas: status.currentReplicas ?? 0,
     desired_replicas: status.desiredReplicas ?? spec.minReplicas ?? 0,
     min_replicas: spec.minReplicas ?? 0,

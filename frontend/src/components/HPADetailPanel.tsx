@@ -12,6 +12,11 @@ interface HPADetailPanelProps {
   onDelete?: (namespace: string, name: string) => Promise<void>;
 }
 
+const formatMetricPair = (current?: string, target?: string): string => {
+  if (!current && !target) return '-';
+  return `${current ?? '-'} / ${target ?? '-'}`;
+};
+
 export const HPADetailPanel = ({ hpa, onClose, onOpenYamlEditor, onDelete }: HPADetailPanelProps) => (
   <ResourceDetailPanelLayout
     title={hpa.name}
@@ -35,6 +40,12 @@ export const HPADetailPanel = ({ hpa, onClose, onOpenYamlEditor, onDelete }: HPA
     <DrawerItem name="Replicas">{`Current: ${hpa.current_replicas} / Desired: ${hpa.desired_replicas}`}</DrawerItem>
     <DrawerItem name="Min/Max Replicas">{`${hpa.min_replicas} / ${hpa.max_replicas}`}</DrawerItem>
     <DrawerItem name="Targets">{hpa.targets ?? '-'}</DrawerItem>
+    {formatMetricPair(hpa.cpu_current, hpa.cpu_target) !== '-' && (
+      <DrawerItem name="CPU Metric (Current / Target)">{formatMetricPair(hpa.cpu_current, hpa.cpu_target)}</DrawerItem>
+    )}
+    {formatMetricPair(hpa.memory_current, hpa.memory_target) !== '-' && (
+      <DrawerItem name="Memory Metric (Current / Target)">{formatMetricPair(hpa.memory_current, hpa.memory_target)}</DrawerItem>
+    )}
     <DrawerItem name="Age">{timeAgo(hpa.age)}</DrawerItem>
     <DrawerLabelsAnnotations labels={hpa.labels} annotations={hpa.annotations} />
   </ResourceDetailPanelLayout>

@@ -238,6 +238,26 @@ pub async fn list_limitranges(State(state): State<AppState>) -> impl IntoRespons
 pub async fn list_hpa(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
 
+    let format_metric_target = |target: &k8s_openapi::api::autoscaling::v2::MetricTarget| {
+        if let Some(utilization) = target.average_utilization {
+            return Some(format!("{}%", utilization));
+        }
+        if let Some(quantity) = target.average_value.as_ref() {
+            return Some(quantity.0.clone());
+        }
+        target.value.as_ref().map(|quantity| quantity.0.clone())
+    };
+
+    let format_metric_current = |current: &k8s_openapi::api::autoscaling::v2::MetricValueStatus| {
+        if let Some(utilization) = current.average_utilization {
+            return Some(format!("{}%", utilization));
+        }
+        if let Some(quantity) = current.average_value.as_ref() {
+            return Some(quantity.0.clone());
+        }
+        current.value.as_ref().map(|quantity| quantity.0.clone())
+    };
+
     let api: Api<HorizontalPodAutoscaler> = Api::all(state.client);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
@@ -258,6 +278,69 @@ pub async fn list_hpa(State(state): State<AppState>) -> impl IntoResponse {
                         .and_then(|s| s.metrics.as_ref())
                         .map(|m| m.len())
                         .unwrap_or(0);
+
+                    let cpu_target = spec
+                        .and_then(|s| s.metrics.as_ref())
+                        .and_then(|metrics| {
+                            metrics
+                                .iter()
+                                .find_map(|metric| {
+                                    metric.resource.as_ref().and_then(|resource| {
+                                        if resource.name == "cpu" {
+                                            format_metric_target(&resource.target)
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                })
+                        });
+                    let memory_target = spec
+                        .and_then(|s| s.metrics.as_ref())
+                        .and_then(|metrics| {
+                            metrics
+                                .iter()
+                                .find_map(|metric| {
+                                    metric.resource.as_ref().and_then(|resource| {
+                                        if resource.name == "memory" {
+                                            format_metric_target(&resource.target)
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                })
+                        });
+
+                    let cpu_current = status
+                        .and_then(|s| s.current_metrics.as_ref())
+                        .and_then(|metrics| {
+                            metrics
+                                .iter()
+                                .find_map(|metric| {
+                                    metric.resource.as_ref().and_then(|resource| {
+                                        if resource.name == "cpu" {
+                                            format_metric_current(&resource.current)
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                })
+                        });
+                    let memory_current = status
+                        .and_then(|s| s.current_metrics.as_ref())
+                        .and_then(|metrics| {
+                            metrics
+                                .iter()
+                                .find_map(|metric| {
+                                    metric.resource.as_ref().and_then(|resource| {
+                                        if resource.name == "memory" {
+                                            format_metric_current(&resource.current)
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                })
+                        });
+
                     let current_replicas = status.and_then(|s| s.current_replicas).unwrap_or(0);
                     let desired_replicas = status.map(|s| s.desired_replicas).unwrap_or(0);
                     let age = hpa
@@ -283,6 +366,10 @@ pub async fn list_hpa(State(state): State<AppState>) -> impl IntoResponse {
                         namespace,
                         reference,
                         targets,
+                        cpu_target,
+                        cpu_current,
+                        memory_target,
+                        memory_current,
                         current_replicas,
                         desired_replicas,
                         min_replicas,

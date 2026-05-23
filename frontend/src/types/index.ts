@@ -424,6 +424,10 @@ export interface HPA {
   namespace: string;
   reference: string;
   targets: number;
+  cpu_target?: string;
+  cpu_current?: string;
+  memory_target?: string;
+  memory_current?: string;
   current_replicas: number;
   desired_replicas: number;
   min_replicas: number;

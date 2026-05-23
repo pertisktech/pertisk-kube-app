@@ -286,6 +286,14 @@ pub struct HPAItem {
     pub namespace: String,
     pub reference: String,
     pub targets: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_current: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_current: Option<String>,
     pub current_replicas: i32,
     pub desired_replicas: i32,
     pub min_replicas: i32,

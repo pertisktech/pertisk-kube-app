@@ -18,6 +18,11 @@ const getHpaStatus = (hpa: HPA): 'Scaling Up' | 'Scaling Down' | 'Stable' => {
   return 'Stable';
 };
 
+const formatMetricPair = (current?: string, target?: string): string => {
+  if (!current && !target) return '-';
+  return `${current ?? '-'} / ${target ?? '-'}`;
+};
+
 const sanitizeHPAYamlForEdit = (yamlText: string) => {
   try {
     const parsed = YAML.parse(yamlText) as Record<string, unknown> | null;
@@ -174,7 +179,19 @@ export const HPAPage = () => {
     },
     {
       header: 'Targets',
-      accessor: 'targets' as const,
+      accessor: (hpa: HPA) => {
+        const cpu = formatMetricPair(hpa.cpu_current, hpa.cpu_target);
+        const memory = formatMetricPair(hpa.memory_current, hpa.memory_target);
+        if (cpu === '-' && memory === '-') {
+          return <span className="text-text-secondary">-</span>;
+        }
+        return (
+          <div className="text-xs leading-5 text-text-secondary">
+            {cpu !== '-' && <div>CPU: {cpu}</div>}
+            {memory !== '-' && <div>Memory: {memory}</div>}
+          </div>
+        );
+      },
       width: '15%',
       sortable: true,
       sortKey: 'targets',
