@@ -16,6 +16,7 @@ import {
   X,
   LayoutDashboard,
   Server,
+  Cpu,
   Network,
   Database,
   Archive,
@@ -38,6 +39,30 @@ import {
   Layers,
   LayoutGrid,
   Share2,
+  FolderTree,
+  Package,
+  Rocket,
+  Ship,
+  Workflow,
+  Plug,
+  LogIn,
+  Tag,
+  ShieldAlert,
+  Forward,
+  UserCog,
+  UserCheck,
+  Link as LinkIcon,
+  Link2,
+  FilePenLine,
+  FileCheck,
+  CalendarClock,
+  Repeat,
+  Layers3,
+  DatabaseZap,
+  TrendingUp,
+  Briefcase,
+  Container,
+  Cog,
 } from './Icons';
 import { SidecarLogsPanel } from './SidecarLogsPanel';
 import { cn } from '../utils';
@@ -75,7 +100,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
-  { label: 'Nodes', path: '/nodes', icon: Network },
+  { label: 'Nodes', path: '/nodes', icon: Cpu },
 ];
 
 const BOTTOM_NAV_ITEMS: NavItem[] = [
@@ -86,7 +111,7 @@ const BOTTOM_NAV_ITEMS: NavItem[] = [
 const NAMESPACE_ITEM: NavItem = {
   label: 'Namespace',
   path: '/namespaces',
-  icon: Database,
+  icon: FolderTree,
 };
 
 const EVENTS_ITEM: NavItem = {
@@ -123,31 +148,31 @@ const CLUSTER_IMPORT_TABS = [
 ] as const;
 
 const HELM_ITEMS: NavItem[] = [
-  { label: 'Charts', path: '/helm/charts', icon: Archive },
-  { label: 'Releases', path: '/helm/releases', icon: Boxes },
+  { label: 'Charts', path: '/helm/charts', icon: Package },
+  { label: 'Releases', path: '/helm/releases', icon: Ship },
 ];
 
 const ACCESS_CONTROL_ITEMS: NavItem[] = [
-  { label: 'Service Accounts', path: '/access-control/serviceaccounts', icon: KeyRound },
+  { label: 'Service Accounts', path: '/access-control/serviceaccounts', icon: UserCog },
   { label: 'Cluster Roles', path: '/access-control/clusterroles', icon: Shield },
-  { label: 'Roles', path: '/access-control/roles', icon: Shield },
-  { label: 'Cluster Role Bindings', path: '/access-control/clusterrolebindings', icon: Boxes },
-  { label: 'Role Bindings', path: '/access-control/rolebindings', icon: Boxes },
+  { label: 'Roles', path: '/access-control/roles', icon: UserCheck },
+  { label: 'Cluster Role Bindings', path: '/access-control/clusterrolebindings', icon: LinkIcon },
+  { label: 'Role Bindings', path: '/access-control/rolebindings', icon: Link2 },
 ];
 
 const NETWORK_ITEMS: NavItem[] = [
-  { label: 'Services', path: '/network/services', icon: Network },
-  { label: 'Endpoints', path: '/network/endpoints', icon: Network },
-  { label: 'Ingresses', path: '/network/ingresses', icon: Globe },
-  { label: 'Ingress Classes', path: '/network/ingressclasses', icon: Globe },
-  { label: 'Network Policies', path: '/network/networkpolicies', icon: Shield },
-  { label: 'Port Forwarding', path: '/network/portforwarding', icon: RotateCw },
+  { label: 'Services', path: '/network/services', icon: Workflow },
+  { label: 'Endpoints', path: '/network/endpoints', icon: Plug },
+  { label: 'Ingresses', path: '/network/ingresses', icon: LogIn },
+  { label: 'Ingress Classes', path: '/network/ingressclasses', icon: Tag },
+  { label: 'Network Policies', path: '/network/networkpolicies', icon: ShieldAlert },
+  { label: 'Port Forwarding', path: '/network/portforwarding', icon: Forward },
 ];
 
 const STORAGE_ITEMS: NavItem[] = [
   { label: 'PVC', path: '/storage/pvc', icon: HardDrive },
-  { label: 'PV', path: '/storage/pv', icon: HardDrive },
-  { label: 'Storage Classes', path: '/storage/storageclasses', icon: Database },
+  { label: 'PV', path: '/storage/pv', icon: DatabaseZap },
+  { label: 'Storage Classes', path: '/storage/storageclasses', icon: Layers3 },
 ];
 
 function getErrorMessage(err: unknown): string | null {
@@ -173,24 +198,24 @@ const CONFIG_ITEMS: NavItem[] = [
   { label: 'Secrets', path: '/config/secrets', icon: KeyRound },
   { label: 'Resource Quotas', path: '/config/resourcequotas', icon: Gauge },
   { label: 'Limit Ranges', path: '/config/limitranges', icon: SlidersHorizontal },
-  { label: 'HPA', path: '/config/hpa', icon: Gauge },
+  { label: 'HPA', path: '/config/hpa', icon: TrendingUp },
   { label: 'PDB', path: '/config/pdb', icon: Shield },
   { label: 'Priority Classes', path: '/config/priorityclasses', icon: Flag },
-  { label: 'Runtime Classes', path: '/config/runtimeclasses', icon: Settings },
+  { label: 'Runtime Classes', path: '/config/runtimeclasses', icon: Cog },
   { label: 'Leases', path: '/config/leases', icon: Timer },
-  { label: 'MWC', path: '/config/mwc', icon: Shield },
-  { label: 'VWC', path: '/config/vwc', icon: Shield },
+  { label: 'MWC', path: '/config/mwc', icon: FilePenLine },
+  { label: 'VWC', path: '/config/vwc', icon: FileCheck },
 ];
 
 const WORKLOAD_ITEMS: NavItem[] = [
   { label: 'Overview', path: '/workloads', icon: LayoutGrid },
-  { label: 'Pods', path: '/pods', icon: Copy },
-  { label: 'Deployment', path: '/deployments', icon: Archive },
-  { label: 'StatefulSet', path: '/statefulsets', icon: Archive },
-  { label: 'DaemonSet', path: '/daemonsets', icon: RotateCw },
-  { label: 'ReplicaSet', path: '/replicasets', icon: Boxes },
-  { label: 'Jobs', path: '/jobs', icon: Clock },
-  { label: 'CronJob', path: '/cronjobs', icon: Clock },
+  { label: 'Pods', path: '/pods', icon: Container },
+  { label: 'Deployment', path: '/deployments', icon: Rocket },
+  { label: 'StatefulSet', path: '/statefulsets', icon: Database },
+  { label: 'DaemonSet', path: '/daemonsets', icon: Repeat },
+  { label: 'ReplicaSet', path: '/replicasets', icon: Copy },
+  { label: 'Jobs', path: '/jobs', icon: Briefcase },
+  { label: 'CronJob', path: '/cronjobs', icon: CalendarClock },
 ];
 
 interface BreadcrumbItem {
