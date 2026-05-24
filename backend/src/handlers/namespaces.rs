@@ -1,10 +1,13 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{header, StatusCode},
     response::IntoResponse,
     Json,
 };
-use kube::{api::{DeleteParams, ListParams}, Api};
+use kube::{
+    api::{DeleteParams, ListParams, Patch, PatchParams},
+    Api,
+};
 use tracing::{error, info};
 
 use crate::models::*;
@@ -93,6 +96,92 @@ pub async fn delete_namespace(
         Err(err) => {
             error!("Error deleting namespace {}: {:?}", name, err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn get_namespace_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Namespace;
+
+    let api: Api<Namespace> = Api::all(state.client);
+    match api.get(&name).await {
+        Ok(ns) => match serde_yaml::to_string(&ns) {
+            Ok(yaml) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                yaml,
+            )
+                .into_response(),
+            Err(err) => {
+                error!("Failed to serialize namespace YAML {}: {:?}", name, err);
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            error!("Error getting namespace YAML {}: {:?}", name, err);
+            StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
+pub async fn update_namespace_yaml(
+    Path(name): Path<String>,
+    State(state): State<AppState>,
+    body: String,
+) -> impl IntoResponse {
+    use k8s_openapi::api::core::v1::Namespace;
+
+    let mut ns: Namespace = match serde_yaml::from_str(&body) {
+        Ok(ns) => ns,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Invalid YAML: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    ns.metadata.name = Some(name.clone());
+
+    let api: Api<Namespace> = Api::all(state.client);
+    let patch_value = match serde_json::to_value(&ns) {
+        Ok(value) => value,
+        Err(err) => {
+            error!("Failed converting namespace YAML to JSON {}: {:?}", name, err);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let patch_params = PatchParams::apply("pertisk-kube-web").force();
+    match api
+        .patch(&name, &patch_params, &Patch::Apply(patch_value))
+        .await
+    {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "message": "Namespace updated successfully"
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            error!("Error updating namespace YAML {}: {:?}", name, err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to update namespace: {}", err),
+                })),
+            )
+                .into_response()
         }
     }
 }

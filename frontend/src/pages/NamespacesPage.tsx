@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import YAML from 'yaml';
 import { ScrollText, Trash2 } from '../components/Icons';
 import { useRealtimeNamespaces } from '../hooks/useRealtimeResources';
 import { DataTable } from '../components/DataTable';
@@ -7,7 +8,28 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { Namespace } from '../types';
 import { timeAgo } from '../utils';
 import { deleteNamespace } from '../hooks/useKubernetes';
+import { getAuthToken } from '../utils/auth';
 import { openPanelTab } from '../components/BottomPanel';
+import { toast } from 'react-toastify';
+
+const sanitizeYamlForEdit = (yamlText: string) => {
+  try {
+    const parsed = YAML.parse(yamlText) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== 'object') return yamlText;
+    const metadata = parsed.metadata as Record<string, unknown> | undefined;
+    if (metadata) {
+      delete metadata.managedFields; delete metadata.resourceVersion; delete metadata.uid;
+      delete metadata.generation; delete metadata.creationTimestamp; delete metadata.selfLink;
+      const annotations = metadata.annotations as Record<string, unknown> | undefined;
+      if (annotations) {
+        delete annotations['kubectl.kubernetes.io/last-applied-configuration'];
+        if (Object.keys(annotations).length === 0) delete metadata.annotations;
+      }
+    }
+    delete parsed.status;
+    return YAML.stringify(parsed, { lineWidth: 0 });
+  } catch { return yamlText; }
+};
 
 type NamespaceSortKey = 'name' | 'status' | 'age';
 
@@ -41,6 +63,26 @@ export const NamespacesPage = () => {
   const handleDeleteSingle = async (name: string) => {
     setConfirmDelete({ keys: [name], label: name });
     setPanelOpen(false);
+  };
+
+  const handleOpenYamlEditorFromPanel = async (ns: Namespace) => {
+    setPanelOpen(false);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/namespaces/${encodeURIComponent(ns.name)}/yaml`, {
+        headers: token ? { Authorization: token } : {},
+      });
+      if (!res.ok) throw new Error(`Failed to load YAML (${res.status} ${res.statusText})`);
+      const yaml = await res.text();
+      openPanelTab({
+        type: 'yaml-editor',
+        yamlContent: sanitizeYamlForEdit(yaml),
+        title: ns.name,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`Could not load YAML for namespace ${ns.name}: ${message}`);
+    }
   };
 
   const handleDeleteSelected = () => {
@@ -202,6 +244,7 @@ export const NamespacesPage = () => {
             namespace={selectedNamespace}
             onClose={() => setPanelOpen(false)}
             getStatusClass={getStatusClass}
+            onOpenYamlEditor={handleOpenYamlEditorFromPanel}
             onDelete={handleDeleteSingle}
           />
         </>

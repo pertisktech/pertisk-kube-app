@@ -198,6 +198,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/cronjobs/:namespace/:name", delete(delete_cronjob))
         .route("/namespaces/:name", delete(delete_namespace))
+        .route(
+            "/namespaces/:name/yaml",
+            get(get_namespace_yaml).put(update_namespace_yaml),
+        )
         .route("/configmaps", get(list_configmaps))
         .route(
             "/configmaps/:namespace/:name/yaml",
