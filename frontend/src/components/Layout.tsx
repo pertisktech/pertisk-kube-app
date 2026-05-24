@@ -21,7 +21,6 @@ import {
   Database,
   Archive,
   Copy,
-  Clock,
   RotateCw,
   Boxes,
   Settings,
