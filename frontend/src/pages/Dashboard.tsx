@@ -14,6 +14,7 @@ import {
   Cpu,
   HardDrive,
   Monitor,
+  Loader,
   CheckCircle,
   XCircle,
   AlertCircle,
@@ -143,7 +144,7 @@ export const Dashboard = () => {
   }, [realtimeNodes, apiNodes]);
 
   const nodesLoading = realtimeNodesLoading || apiNodesLoading;
-  const isLoading = dashLoading || realtimeNodesLoading || apiNodesLoading || podsLoading;
+  const overviewLoading = dashLoading || nodesLoading || podsLoading;
 
   const sortedNodes = useMemo(() => {
     const list = [...(nodes ?? [])];
@@ -162,12 +163,6 @@ export const Dashboard = () => {
     });
     return list;
   }, [nodes]);
-
-  if (isLoading) {
-    return (
-      <LoadingState message="Loading dashboard..." size={32} className="h-96" />
-    );
-  }
 
   const totalNodeCount = nodes?.length || 0;
   const readyNodeCount =
@@ -264,7 +259,12 @@ export const Dashboard = () => {
             <h2 className="text-2xl font-bold text-text">Cluster Overview</h2>
           </div>
           <div className="flex items-center gap-2">
-            {healthStatus === 'healthy' ? (
+            {overviewLoading ? (
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-hover text-text-secondary">
+                <Loader size={16} className="animate-spin" />
+                <span className="text-sm font-medium">Loading</span>
+              </div>
+            ) : healthStatus === 'healthy' ? (
               <div className="flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: 'var(--color-status-ready-bg)', color: 'var(--color-status-ready)' }}>
                 <CheckCircle size={16} />
                 <span className="text-sm font-medium">Healthy</span>
@@ -283,238 +283,242 @@ export const Dashboard = () => {
           </div>
         </div>
 
-        <div className="space-y-4">
-          {/* Cluster Info */}
-          <div className="flex items-center justify-between text-sm text-text-secondary">
-            <span>
-              <span className="font-medium text-text">
-                {dashboard?.cluster_name || 'kubernetes-cluster'}
+        {overviewLoading ? (
+          <LoadingState message="Loading cluster overview..." size={32} className="h-96" />
+        ) : (
+          <div className="space-y-4">
+            {/* Cluster Info */}
+            <div className="flex items-center justify-between text-sm text-text-secondary">
+              <span>
+                <span className="font-medium text-text">
+                  {dashboard?.cluster_name || 'kubernetes-cluster'}
+                </span>
+                {' • '}
+                <span className="text-dashboard-info" title={dashboard?.api_endpoint || ''}>
+                  {dashboard?.api_endpoint
+                    ? dashboard.api_endpoint.length > 40
+                      ? dashboard.api_endpoint.substring(0, 40) + '...'
+                      : dashboard.api_endpoint
+                    : 'Unknown'}
+                </span>
+                {' • '}
+                <span className="font-medium text-text">
+                  {dashboard?.kube_version || 'Unknown'}
+                </span>
               </span>
-              {' • '}
-              <span className="text-dashboard-info" title={dashboard?.api_endpoint || ''}>
-                {dashboard?.api_endpoint
-                  ? dashboard.api_endpoint.length > 40
-                    ? dashboard.api_endpoint.substring(0, 40) + '...'
-                    : dashboard.api_endpoint
-                  : 'Unknown'}
-              </span>
-              {' • '}
-              <span className="font-medium text-text">
-                {dashboard?.kube_version || 'Unknown'}
-              </span>
-            </span>
-            <span>Updated {new Date().toLocaleTimeString()}</span>
-          </div>
+              <span>Updated {new Date().toLocaleTimeString()}</span>
+            </div>
 
-          {/* Single-row metric strip (6 sections): 3 capacity pies + 3 usage gauges */}
-          <div className="mt-6">
-            <div className="grid grid-cols-6 gap-3">
-              {/* CPU pie */}
-              <div className="bg-bg border border-border rounded-xl p-3 min-w-0 flex flex-col items-center chart-theme-text">
-              <div className="flex items-center gap-2 mb-3">
-                <Cpu size={20} className="text-dashboard-metric-primary" />
-                <span className="font-semibold text-text">CPU Capacity</span>
-              </div>
-              <div className="w-full h-36 min-h-[144px]">
-                <ResponsiveContainer width="100%" height={144} minHeight={144}>
-                  <PieChart>
-                    <Pie
-                      data={[
-                        { name: 'Used', value: Math.max(0, usedCPU) || 0.01, color: CHART_USED },
-                        {
-                          name: 'Available',
-                          value: Math.max(0, totalCPU - usedCPU) || (totalCPU || 0.01),
-                          color: CHART_AVAILABLE,
-                        },
-                      ]}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={34}
-                      outerRadius={52}
-                      paddingAngle={0}
-                      dataKey="value"
-                    >
-                      {[{ color: CHART_USED }, { color: CHART_AVAILABLE }].map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'var(--color-surface)',
-                        color: 'var(--color-text)',
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                        border: '1px solid var(--color-border)',
-                      }}
-                      formatter={(value, name) => [`${formatCPU(Number(value ?? 0))} cores`, String(name ?? '')]}
-                      labelFormatter={() => `Total: ${formatCPU(totalCPU)} cores`}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <p className="text-xs text-text-secondary mt-2">
-                {formatCPU(usedCPU)} / {formatCPU(totalCPU)} cores
-              </p>
-              </div>
+            {/* Single-row metric strip (6 sections): 3 capacity pies + 3 usage gauges */}
+            <div className="mt-6">
+              <div className="grid grid-cols-6 gap-3">
+                {/* CPU pie */}
+                <div className="bg-bg border border-border rounded-xl p-3 min-w-0 flex flex-col items-center chart-theme-text">
+                <div className="flex items-center gap-2 mb-3">
+                  <Cpu size={20} className="text-dashboard-metric-primary" />
+                  <span className="font-semibold text-text">CPU Capacity</span>
+                </div>
+                <div className="w-full h-36 min-h-[144px]">
+                  <ResponsiveContainer width="100%" height={144} minHeight={144}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: 'Used', value: Math.max(0, usedCPU) || 0.01, color: CHART_USED },
+                          {
+                            name: 'Available',
+                            value: Math.max(0, totalCPU - usedCPU) || (totalCPU || 0.01),
+                            color: CHART_AVAILABLE,
+                          },
+                        ]}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={34}
+                        outerRadius={52}
+                        paddingAngle={0}
+                        dataKey="value"
+                      >
+                        {[{ color: CHART_USED }, { color: CHART_AVAILABLE }].map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'var(--color-surface)',
+                          color: 'var(--color-text)',
+                          borderRadius: '8px',
+                          padding: '10px 12px',
+                          border: '1px solid var(--color-border)',
+                        }}
+                        formatter={(value, name) => [`${formatCPU(Number(value ?? 0))} cores`, String(name ?? '')]}
+                        labelFormatter={() => `Total: ${formatCPU(totalCPU)} cores`}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="text-xs text-text-secondary mt-2">
+                  {formatCPU(usedCPU)} / {formatCPU(totalCPU)} cores
+                </p>
+                </div>
 
-              {/* Memory pie */}
-              <div className="bg-bg border border-border rounded-xl p-3 min-w-0 flex flex-col items-center chart-theme-text">
-              <div className="flex items-center gap-2 mb-3">
-                <HardDrive size={20} className="text-dashboard-metric-secondary" />
-                <span className="font-semibold text-text">Memory Capacity</span>
-              </div>
-              <div className="w-full h-36 min-h-[144px]">
-                <ResponsiveContainer width="100%" height={144} minHeight={144}>
-                  <PieChart>
-                    <Pie
-                      data={[
-                        { name: 'Used', value: Math.max(0, usedMemory) || 0.01, color: CHART_USED },
-                        {
-                          name: 'Available',
-                          value: Math.max(0, totalMemory - usedMemory) || (totalMemory || 0.01),
-                          color: CHART_AVAILABLE,
-                        },
-                      ]}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={34}
-                      outerRadius={52}
-                      paddingAngle={0}
-                      dataKey="value"
-                    >
-                      {[{ color: CHART_USED }, { color: CHART_AVAILABLE }].map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'var(--color-surface)',
-                        color: 'var(--color-text)',
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                        border: '1px solid var(--color-border)',
-                      }}
-                      formatter={(value, name) => [formatMemory(Number(value ?? 0)), String(name ?? '')]}
-                      labelFormatter={() => `Total: ${formatMemory(totalMemory)}`}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <p className="text-xs text-text-secondary mt-2">
-                {formatMemory(usedMemory)} / {formatMemory(totalMemory)}
-              </p>
-              </div>
+                {/* Memory pie */}
+                <div className="bg-bg border border-border rounded-xl p-3 min-w-0 flex flex-col items-center chart-theme-text">
+                <div className="flex items-center gap-2 mb-3">
+                  <HardDrive size={20} className="text-dashboard-metric-secondary" />
+                  <span className="font-semibold text-text">Memory Capacity</span>
+                </div>
+                <div className="w-full h-36 min-h-[144px]">
+                  <ResponsiveContainer width="100%" height={144} minHeight={144}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: 'Used', value: Math.max(0, usedMemory) || 0.01, color: CHART_USED },
+                          {
+                            name: 'Available',
+                            value: Math.max(0, totalMemory - usedMemory) || (totalMemory || 0.01),
+                            color: CHART_AVAILABLE,
+                          },
+                        ]}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={34}
+                        outerRadius={52}
+                        paddingAngle={0}
+                        dataKey="value"
+                      >
+                        {[{ color: CHART_USED }, { color: CHART_AVAILABLE }].map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'var(--color-surface)',
+                          color: 'var(--color-text)',
+                          borderRadius: '8px',
+                          padding: '10px 12px',
+                          border: '1px solid var(--color-border)',
+                        }}
+                        formatter={(value, name) => [formatMemory(Number(value ?? 0)), String(name ?? '')]}
+                        labelFormatter={() => `Total: ${formatMemory(totalMemory)}`}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="text-xs text-text-secondary mt-2">
+                  {formatMemory(usedMemory)} / {formatMemory(totalMemory)}
+                </p>
+                </div>
 
-              {/* Pods pie */}
-              <div className="bg-bg border border-border rounded-xl p-3 min-w-0 flex flex-col items-center chart-theme-text">
-              <div className="flex items-center gap-2 mb-3">
-                <Box size={20} className="text-dashboard-metric-tertiary" />
-                <span className="font-semibold text-text">Pods Capacity</span>
-              </div>
-              <div className="w-full h-36 min-h-[144px]">
-                <ResponsiveContainer width="100%" height={144} minHeight={144}>
-                  <PieChart>
-                    <Pie
-                      data={[
-                        { name: 'Used', value: podCount || 0.01, color: CHART_USED },
-                        {
-                          name: 'Available',
-                          value: Math.max(0, (totalPodsAllocatable || 1) - podCount) || 0.01,
-                          color: CHART_AVAILABLE,
-                        },
-                      ]}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={34}
-                      outerRadius={52}
-                      paddingAngle={0}
-                      dataKey="value"
-                    >
-                      {[{ color: CHART_USED }, { color: CHART_AVAILABLE }].map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'var(--color-surface)',
-                        color: 'var(--color-text)',
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                        border: '1px solid var(--color-border)',
-                      }}
-                      formatter={(value, name) => [
-                        `${Math.round(Number(value ?? 0))} pods`,
-                        String(name ?? ''),
-                      ]}
-                      labelFormatter={() => `Capacity: ${totalPodsAllocatable} pods`}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <p className="text-xs text-text-secondary mt-2">
-                {podCount} / {totalPodsAllocatable || 0} pods
-              </p>
-              </div>
+                {/* Pods pie */}
+                <div className="bg-bg border border-border rounded-xl p-3 min-w-0 flex flex-col items-center chart-theme-text">
+                <div className="flex items-center gap-2 mb-3">
+                  <Box size={20} className="text-dashboard-metric-tertiary" />
+                  <span className="font-semibold text-text">Pods Capacity</span>
+                </div>
+                <div className="w-full h-36 min-h-[144px]">
+                  <ResponsiveContainer width="100%" height={144} minHeight={144}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: 'Used', value: podCount || 0.01, color: CHART_USED },
+                          {
+                            name: 'Available',
+                            value: Math.max(0, (totalPodsAllocatable || 1) - podCount) || 0.01,
+                            color: CHART_AVAILABLE,
+                          },
+                        ]}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={34}
+                        outerRadius={52}
+                        paddingAngle={0}
+                        dataKey="value"
+                      >
+                        {[{ color: CHART_USED }, { color: CHART_AVAILABLE }].map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'var(--color-surface)',
+                          color: 'var(--color-text)',
+                          borderRadius: '8px',
+                          padding: '10px 12px',
+                          border: '1px solid var(--color-border)',
+                        }}
+                        formatter={(value, name) => [
+                          `${Math.round(Number(value ?? 0))} pods`,
+                          String(name ?? ''),
+                        ]}
+                        labelFormatter={() => `Capacity: ${totalPodsAllocatable} pods`}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="text-xs text-text-secondary mt-2">
+                  {podCount} / {totalPodsAllocatable || 0} pods
+                </p>
+                </div>
 
-              {/* CPU usage gauge */}
-              <div className="bg-bg border border-border rounded-xl p-3 min-w-0 transition-all hover:shadow-md">
-                <GaugeChart
-                  value={Math.round(cpuUsagePercent)}
-                  color="var(--color-dashboard-metric-primary)"
-                  label="CPU Usage"
-                  used={`${formatCPU(usedCPU)} cores`}
-                  total={`${formatCPU(totalCPU)} cores`}
-                  icon={<Cpu size={20} className="text-dashboard-metric-primary" />}
-                />
-              </div>
+                {/* CPU usage gauge */}
+                <div className="bg-bg border border-border rounded-xl p-3 min-w-0 transition-all hover:shadow-md">
+                  <GaugeChart
+                    value={Math.round(cpuUsagePercent)}
+                    color="var(--color-dashboard-metric-primary)"
+                    label="CPU Usage"
+                    used={`${formatCPU(usedCPU)} cores`}
+                    total={`${formatCPU(totalCPU)} cores`}
+                    icon={<Cpu size={20} className="text-dashboard-metric-primary" />}
+                  />
+                </div>
 
-              {/* Memory usage gauge */}
-              <div className="bg-bg border border-border rounded-xl p-3 min-w-0 transition-all hover:shadow-md">
-                <GaugeChart
-                  value={Math.round(memoryUsagePercent)}
-                  color="var(--color-dashboard-metric-secondary)"
-                  label="Memory Usage"
-                  used={formatMemory(usedMemory)}
-                  total={formatMemory(totalMemory)}
-                  icon={<HardDrive size={20} className="text-dashboard-metric-secondary" />}
-                />
-              </div>
+                {/* Memory usage gauge */}
+                <div className="bg-bg border border-border rounded-xl p-3 min-w-0 transition-all hover:shadow-md">
+                  <GaugeChart
+                    value={Math.round(memoryUsagePercent)}
+                    color="var(--color-dashboard-metric-secondary)"
+                    label="Memory Usage"
+                    used={formatMemory(usedMemory)}
+                    total={formatMemory(totalMemory)}
+                    icon={<HardDrive size={20} className="text-dashboard-metric-secondary" />}
+                  />
+                </div>
 
-              {/* Disk usage gauge */}
-              <div className="bg-bg border border-border rounded-xl p-3 min-w-0 transition-all hover:shadow-md">
-                <GaugeChart
-                  value={Math.round(diskUsagePercent)}
-                  color="var(--color-dashboard-metric-tertiary)"
-                  label="Disk Usage"
-                  used={formatMemory(usedDisk)}
-                  total={formatMemory(totalDisk)}
-                  icon={<HardDrive size={20} className="text-dashboard-metric-tertiary" />}
-                />
+                {/* Disk usage gauge */}
+                <div className="bg-bg border border-border rounded-xl p-3 min-w-0 transition-all hover:shadow-md">
+                  <GaugeChart
+                    value={Math.round(diskUsagePercent)}
+                    color="var(--color-dashboard-metric-tertiary)"
+                    label="Disk Usage"
+                    used={formatMemory(usedDisk)}
+                    total={formatMemory(totalDisk)}
+                    icon={<HardDrive size={20} className="text-dashboard-metric-tertiary" />}
+                  />
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Nodes summary line below overview metrics */}
-          <div className="mt-4 pt-4 border-t border-border flex items-center gap-4 text-sm text-text-secondary">
-            <span className="flex items-center gap-1.5">
-              <Server size={14} className="text-dashboard-metric-quaternary" />
-              Nodes:{' '}
-              <span style={{
-                color: nodeHealthPercent === 100
-                  ? 'var(--color-status-ready)'
-                  : nodeHealthPercent >= 80
-                    ? 'var(--color-dashboard-warning)'
-                    : 'var(--color-dashboard-danger)',
-                fontWeight: 600,
-              }}>
-                {readyNodeCount}/{totalNodeCount} ready
+            {/* Nodes summary line below overview metrics */}
+            <div className="mt-4 pt-4 border-t border-border flex items-center gap-4 text-sm text-text-secondary">
+              <span className="flex items-center gap-1.5">
+                <Server size={14} className="text-dashboard-metric-quaternary" />
+                Nodes:{' '}
+                <span style={{
+                  color: nodeHealthPercent === 100
+                    ? 'var(--color-status-ready)'
+                    : nodeHealthPercent >= 80
+                      ? 'var(--color-dashboard-warning)'
+                      : 'var(--color-dashboard-danger)',
+                  fontWeight: 600,
+                }}>
+                  {readyNodeCount}/{totalNodeCount} ready
+                </span>
               </span>
-            </span>
-            <span>
-              {dashboard?.cluster_name || 'kubernetes-cluster'} • {dashboard?.kube_version || 'Unknown'}
-            </span>
+              <span>
+                {dashboard?.cluster_name || 'kubernetes-cluster'} • {dashboard?.kube_version || 'Unknown'}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Nodes — dashboard card grid */}
