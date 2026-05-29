@@ -145,7 +145,7 @@ export const ResourceDetailPanelLayout = ({
   children,
 }: ResourceDetailPanelLayoutProps) => {
   const useBaseStyle = kind != null;
-  const titleClass = titleFullText ? 'text-lg font-bold break-words' : 'text-lg font-bold truncate';
+  const titleClass = titleFullText ? 'text-base font-semibold break-words' : 'text-base font-semibold truncate';
   const { data: eventsData = [] } = useRealtimeEvents();
 
   const keyInfoItems = keyInfo.length > 0 ? keyInfo : statusCards.map((c) => ({ label: c.label, value: c.value }));
@@ -183,7 +183,7 @@ export const ResourceDetailPanelLayout = ({
               {useBaseStyle && KindIcon ? (
                 <div className="flex items-center gap-2">
                   <KindIcon size={18} className="text-[var(--color-primary)] flex-shrink-0" />
-                  <h2 className="text-sm font-semibold truncate" style={{ color: 'var(--color-muted)' }}>{kind}</h2>
+                  <h2 className="text-xs font-semibold truncate" style={{ color: 'var(--color-muted)' }}>{kind}</h2>
                 </div>
               ) : null}
               <h2 className={`${titleClass} mt-1`} style={{ color: 'var(--color-text)' }} title={titleFullText ? undefined : title}>
@@ -208,11 +208,11 @@ export const ResourceDetailPanelLayout = ({
             </div>
           </div>
           {keyInfoItems.length > 0 && (
-            <div className="flex items-center gap-3 text-sm mt-3 pt-3 border-t border-border">
+            <div className="flex items-center gap-3 text-xs mt-3 pt-3 border-t border-border">
               {keyInfoItems.map((item, idx) => (
                 <div key={idx} className="flex-1 min-w-0">
                   <p className="mb-1" style={{ color: 'var(--color-text-secondary)' }}>{item.label}</p>
-                  <p className="font-medium truncate" style={{ color: 'var(--color-text)' }}>{item.value}</p>
+                  <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>{item.value}</p>
                 </div>
               ))}
             </div>
@@ -221,7 +221,7 @@ export const ResourceDetailPanelLayout = ({
 
         {/* Content: Freelens-style drawer content — scrollable, same padding as drawer-content */}
         <div
-          className="ResourceDetailPanel-content flex-1 min-h-0 overflow-auto overflow-x-hidden text-sm"
+          className="ResourceDetailPanel-content flex-1 min-h-0 overflow-auto overflow-x-hidden text-[13px]"
           style={{
             padding: 'var(--drawer-content-spacing, 1.5rem)',
             color: 'var(--color-text)',

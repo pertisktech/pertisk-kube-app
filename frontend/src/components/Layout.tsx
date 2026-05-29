@@ -2155,7 +2155,7 @@ export const Layout = () => {
         <div
           className={cn(
             'flex h-[45px] min-h-[45px] items-center border-b border-border shrink-0',
-            sidebarCollapsed ? 'justify-center px-2' : 'justify-between px-4'
+            sidebarCollapsed ? 'justify-between px-2' : 'justify-between px-3'
           )}
         >
           <div className="flex items-center gap-3 min-w-0">
@@ -2163,15 +2163,15 @@ export const Layout = () => {
               <>
                 <Link
                   to="/"
-                  className="flex items-center gap-3 min-w-0 rounded-lg transition-colors hover:bg-hover px-4 py-1"
+                  className="flex items-center gap-2.5 min-w-0 rounded-lg transition-colors hover:bg-hover px-3 py-1"
                   aria-label="PTKublet home"
                 >
                   <img
                     src="/favicon.svg"
                     alt=""
-                    className="h-8 w-8 shrink-0"
+                    className="h-7 w-7 shrink-0"
                   />
-                  <h1 className="truncate text-[1.05rem] font-[650] tracking-[-0.02em] text-text">PTKublet</h1>
+                  <h1 className="truncate text-[0.98rem] font-[650] tracking-[-0.02em] text-text">PTKublet</h1>
                 </Link>
               </>
             )}
@@ -2179,10 +2179,10 @@ export const Layout = () => {
           <div className={cn('flex items-center gap-1', !sidebarCollapsed && 'ml-auto')}>
             <button
               onClick={() => setSidebarCollapsed((previous) => !previous)}
-              className="hidden md:inline-flex p-2 hover:bg-hover rounded text-text-secondary"
+              className="hidden md:inline-flex p-1.5 hover:bg-hover rounded text-text-secondary"
               title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
-              {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+              {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
             </button>
             <button
               onClick={() => setSidebarOpen(false)}
@@ -2193,7 +2193,7 @@ export const Layout = () => {
           </div>
         </div>
 
-        <div className="flex-1 p-4 overflow-y-auto">
+        <div className="flex-1 p-3 overflow-y-auto">
           <nav className="flex flex-col gap-2">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
@@ -2204,7 +2204,7 @@ export const Layout = () => {
                   to={item.path}
                   onClick={() => setSidebarOpen(false)}
                   className={cn(
-                    'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                    'flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-colors text-[13px] font-medium',
                     'order-1',
                     sidebarCollapsed && 'justify-center px-2',
                     active
@@ -2213,6 +2213,7 @@ export const Layout = () => {
                   )}
                   title={item.label}
                 >
+                  {!sidebarCollapsed && <span className="h-4 w-4 shrink-0" aria-hidden="true" />}
                   <Icon size={18} className="flex-shrink-0" />
                   {!sidebarCollapsed && <span>{item.label}</span>}
                 </Link>
@@ -2229,7 +2230,7 @@ export const Layout = () => {
                   setConfigOpen((previous) => !previous);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                  'w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-colors text-[13px] font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveConfig
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -2237,16 +2238,13 @@ export const Layout = () => {
                 )}
                 title="Config"
               >
-                <Settings size={18} className="flex-shrink-0" />
                 {!sidebarCollapsed && (
                   <>
-                    <span className="flex-1 text-left">Config</span>
-                    <ChevronDown
-                      size={16}
-                      className={cn('transition-transform', configOpen && 'rotate-180')}
-                    />
+                    {configOpen ? <ChevronDown size={16} className="flex-shrink-0" /> : <ChevronRight size={16} className="flex-shrink-0" />}
                   </>
                 )}
+                <Settings size={18} className="flex-shrink-0" />
+                {!sidebarCollapsed && <span className="flex-1 text-left">Config</span>}
               </button>
 
               {!sidebarCollapsed && configOpen && (
@@ -2260,13 +2258,14 @@ export const Layout = () => {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
+                          'flex items-center gap-2.5 px-3 py-1.5 pl-8 rounded-lg transition-colors text-[11px] font-medium',
                           active
                             ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
                         )}
                         title={item.label}
                       >
+                        <span className="h-4 w-4 shrink-0" aria-hidden="true" />
                         <Icon size={16} className="flex-shrink-0" />
                         <span>{item.label}</span>
                       </Link>
@@ -2286,7 +2285,7 @@ export const Layout = () => {
                   setNetworkOpen((previous) => !previous);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                  'w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-colors text-[13px] font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveNetwork
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -2294,16 +2293,13 @@ export const Layout = () => {
                 )}
                 title="Networks"
               >
-                <Globe size={18} className="flex-shrink-0" />
                 {!sidebarCollapsed && (
                   <>
-                    <span className="flex-1 text-left">Networks</span>
-                    <ChevronDown
-                      size={16}
-                      className={cn('transition-transform', networkOpen && 'rotate-180')}
-                    />
+                    {networkOpen ? <ChevronDown size={16} className="flex-shrink-0" /> : <ChevronRight size={16} className="flex-shrink-0" />}
                   </>
                 )}
+                <Globe size={18} className="flex-shrink-0" />
+                {!sidebarCollapsed && <span className="flex-1 text-left">Networks</span>}
               </button>
 
               {!sidebarCollapsed && networkOpen && (
@@ -2317,13 +2313,14 @@ export const Layout = () => {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
+                          'flex items-center gap-2.5 px-3 py-1.5 pl-8 rounded-lg transition-colors text-[11px] font-medium',
                           active
                             ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
                         )}
                         title={item.label}
                       >
+                        <span className="h-4 w-4 shrink-0" aria-hidden="true" />
                         <Icon size={16} className="flex-shrink-0" />
                         <span>{item.label}</span>
                       </Link>
@@ -2343,7 +2340,7 @@ export const Layout = () => {
                   setStorageOpen((previous) => !previous);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                  'w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-colors text-[13px] font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveStorage
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -2351,16 +2348,13 @@ export const Layout = () => {
                 )}
                 title="Storage"
               >
-                <HardDrive size={18} className="flex-shrink-0" />
                 {!sidebarCollapsed && (
                   <>
-                    <span className="flex-1 text-left">Storage</span>
-                    <ChevronDown
-                      size={16}
-                      className={cn('transition-transform', storageOpen && 'rotate-180')}
-                    />
+                    {storageOpen ? <ChevronDown size={16} className="flex-shrink-0" /> : <ChevronRight size={16} className="flex-shrink-0" />}
                   </>
                 )}
+                <HardDrive size={18} className="flex-shrink-0" />
+                {!sidebarCollapsed && <span className="flex-1 text-left">Storage</span>}
               </button>
 
               {!sidebarCollapsed && storageOpen && (
@@ -2374,13 +2368,14 @@ export const Layout = () => {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
+                          'flex items-center gap-2.5 px-3 py-1.5 pl-8 rounded-lg transition-colors text-[11px] font-medium',
                           active
                             ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
                         )}
                         title={item.label}
                       >
+                        <span className="h-4 w-4 shrink-0" aria-hidden="true" />
                         <Icon size={16} className="flex-shrink-0" />
                         <span>{item.label}</span>
                       </Link>
@@ -2400,7 +2395,7 @@ export const Layout = () => {
                   setWorkloadsOpen((previous) => !previous);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                  'w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-colors text-[13px] font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveWorkload
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -2408,16 +2403,13 @@ export const Layout = () => {
                 )}
                 title="Workloads"
               >
-                <Archive size={18} className="flex-shrink-0" />
                 {!sidebarCollapsed && (
                   <>
-                    <span className="flex-1 text-left">Workloads</span>
-                    <ChevronDown
-                      size={16}
-                      className={cn('transition-transform', workloadsOpen && 'rotate-180')}
-                    />
+                    {workloadsOpen ? <ChevronDown size={16} className="flex-shrink-0" /> : <ChevronRight size={16} className="flex-shrink-0" />}
                   </>
                 )}
+                <Archive size={18} className="flex-shrink-0" />
+                {!sidebarCollapsed && <span className="flex-1 text-left">Workloads</span>}
               </button>
 
               {!sidebarCollapsed && workloadsOpen && (
@@ -2431,13 +2423,14 @@ export const Layout = () => {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
+                          'flex items-center gap-2.5 px-3 py-1.5 pl-8 rounded-lg transition-colors text-[11px] font-medium',
                           active
                             ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
                         )}
                         title={item.label}
                       >
+                        <span className="h-4 w-4 shrink-0" aria-hidden="true" />
                         <Icon size={16} className="flex-shrink-0" />
                         <span>{item.label}</span>
                       </Link>
@@ -2451,7 +2444,7 @@ export const Layout = () => {
               to={NAMESPACE_ITEM.path}
               onClick={() => setSidebarOpen(false)}
               className={cn(
-                'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                'flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-colors text-[13px] font-medium',
                 'order-6',
                 sidebarCollapsed && 'justify-center px-2',
                 isActive(NAMESPACE_ITEM.path)
@@ -2460,6 +2453,7 @@ export const Layout = () => {
               )}
               title={NAMESPACE_ITEM.label}
             >
+              {!sidebarCollapsed && <span className="h-4 w-4 shrink-0" aria-hidden="true" />}
               <NAMESPACE_ITEM.icon size={18} className="flex-shrink-0" />
               {!sidebarCollapsed && <span>{NAMESPACE_ITEM.label}</span>}
             </Link>
@@ -2468,7 +2462,7 @@ export const Layout = () => {
               to={EVENTS_ITEM.path}
               onClick={() => setSidebarOpen(false)}
               className={cn(
-                'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                'flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-colors text-[13px] font-medium',
                 'order-7',
                 sidebarCollapsed && 'justify-center px-2',
                 isActive(EVENTS_ITEM.path)
@@ -2477,6 +2471,7 @@ export const Layout = () => {
               )}
               title={EVENTS_ITEM.label}
             >
+              {!sidebarCollapsed && <span className="h-4 w-4 shrink-0" aria-hidden="true" />}
               <EVENTS_ITEM.icon size={18} className="flex-shrink-0" />
               {!sidebarCollapsed && <span>{EVENTS_ITEM.label}</span>}
             </Link>
@@ -2491,7 +2486,7 @@ export const Layout = () => {
                   setHelmOpen((previous) => !previous);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                  'w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-colors text-[13px] font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveHelm
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -2499,16 +2494,13 @@ export const Layout = () => {
                 )}
                 title="Helm"
               >
-                <Boxes size={18} className="flex-shrink-0" />
                 {!sidebarCollapsed && (
                   <>
-                    <span className="flex-1 text-left">Helm</span>
-                    <ChevronDown
-                      size={16}
-                      className={cn('transition-transform', helmOpen && 'rotate-180')}
-                    />
+                    {helmOpen ? <ChevronDown size={16} className="flex-shrink-0" /> : <ChevronRight size={16} className="flex-shrink-0" />}
                   </>
                 )}
+                <Boxes size={18} className="flex-shrink-0" />
+                {!sidebarCollapsed && <span className="flex-1 text-left">Helm</span>}
               </button>
 
               {!sidebarCollapsed && helmOpen && (
@@ -2522,13 +2514,14 @@ export const Layout = () => {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
+                          'flex items-center gap-2.5 px-3 py-1.5 pl-8 rounded-lg transition-colors text-[11px] font-medium',
                           active
                             ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
                         )}
                         title={item.label}
                       >
+                        <span className="h-4 w-4 shrink-0" aria-hidden="true" />
                         <Icon size={16} className="flex-shrink-0" />
                         <span>{item.label}</span>
                       </Link>
@@ -2548,7 +2541,7 @@ export const Layout = () => {
                   setAccessControlOpen((previous) => !previous);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                  'w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-colors text-[13px] font-medium',
                   sidebarCollapsed && 'justify-center px-2',
                   hasActiveAccessControl
                     ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -2556,16 +2549,13 @@ export const Layout = () => {
                 )}
                 title="Access Control"
               >
-                <Shield size={18} className="flex-shrink-0" />
                 {!sidebarCollapsed && (
                   <>
-                    <span className="flex-1 text-left">Access Control</span>
-                    <ChevronDown
-                      size={16}
-                      className={cn('transition-transform', accessControlOpen && 'rotate-180')}
-                    />
+                    {accessControlOpen ? <ChevronDown size={16} className="flex-shrink-0" /> : <ChevronRight size={16} className="flex-shrink-0" />}
                   </>
                 )}
+                <Shield size={18} className="flex-shrink-0" />
+                {!sidebarCollapsed && <span className="flex-1 text-left">Access Control</span>}
               </button>
 
               {!sidebarCollapsed && accessControlOpen && (
@@ -2579,13 +2569,14 @@ export const Layout = () => {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
+                          'flex items-center gap-2.5 px-3 py-1.5 pl-8 rounded-lg transition-colors text-[11px] font-medium',
                           active
                             ? 'bg-hover text-[var(--color-primary)] font-semibold'
                             : 'text-text-secondary hover:bg-hover hover:text-text'
                         )}
                         title={item.label}
                       >
+                        <span className="h-4 w-4 shrink-0" aria-hidden="true" />
                         <Icon size={16} className="flex-shrink-0" />
                         <span>{item.label}</span>
                       </Link>
@@ -2604,7 +2595,7 @@ export const Layout = () => {
                     setCustomResourcesOpen((p) => !p);
                   }}
                   className={cn(
-                    'w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                    'w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-colors text-[13px] font-medium',
                     sidebarCollapsed && 'justify-center px-2',
                     hasActiveCustomResources
                       ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -2612,28 +2603,25 @@ export const Layout = () => {
                   )}
                   title="Custom Resources"
                 >
-                  <Layers size={18} className="flex-shrink-0" />
                   {!sidebarCollapsed && (
                     <>
-                      <span className="flex-1 text-left">Custom Resources</span>
-                      <ChevronDown
-                        size={16}
-                        className={cn('transition-transform', customResourcesOpen && 'rotate-180')}
-                      />
+                      {customResourcesOpen ? <ChevronDown size={16} className="flex-shrink-0" /> : <ChevronRight size={16} className="flex-shrink-0" />}
                     </>
                   )}
+                  <Layers size={18} className="flex-shrink-0" />
+                  {!sidebarCollapsed && <span className="flex-1 text-left">Custom Resources</span>}
                 </button>
 
                 {!sidebarCollapsed && customResourcesOpen && (
                   <div className="space-y-1">
                     {(!crdsHasFetched || crdsLoading || (!crdsEmptyListConfirmed && crdGroups.length === 0)) && (
-                      <div className="flex items-center gap-3 px-4 py-2 pl-7 text-[13px] text-text-secondary">
+                      <div className="flex items-center gap-2.5 px-3 py-1.5 pl-6 text-[11px] text-text-secondary">
                         <Layers size={16} className="flex-shrink-0" />
                         Loading custom resources...
                       </div>
                     )}
                     {crdsEmptyListConfirmed && crdGroups.length === 0 && (
-                      <div className="flex items-center gap-3 px-4 py-2 pl-7 text-[13px] text-text-secondary">
+                      <div className="flex items-center gap-2.5 px-3 py-1.5 pl-6 text-[11px] text-text-secondary">
                         <Layers size={16} className="flex-shrink-0" />
                         No custom resources found
                       </div>
@@ -2653,15 +2641,12 @@ export const Layout = () => {
                                 return next;
                               });
                             }}
-                            className="w-full flex items-center gap-3 px-4 py-2 pl-7 rounded-lg transition-colors text-[13px] font-medium text-text-secondary hover:bg-hover hover:text-text text-left"
+                            className="w-full flex items-center gap-2.5 px-3 py-1.5 pl-6 rounded-lg transition-colors text-[12px] font-medium text-text-secondary hover:bg-hover hover:text-text text-left"
                             title={group}
                           >
+                            {isGroupExpanded ? <ChevronDown size={16} className="flex-shrink-0" /> : <ChevronRight size={16} className="flex-shrink-0" />}
                             <Layers size={16} className="flex-shrink-0" />
                             <span className="flex-1 text-left truncate">{group}</span>
-                            <ChevronDown
-                              size={16}
-                              className={cn('flex-shrink-0 transition-transform', isGroupExpanded && 'rotate-180')}
-                            />
                           </button>
                           {isGroupExpanded && (
                             <div className="space-y-0.5">
@@ -2674,13 +2659,14 @@ export const Layout = () => {
                                     to={crdPath}
                                     onClick={() => setSidebarOpen(false)}
                                     className={cn(
-                                      'flex items-center gap-3 px-4 py-2 pl-10 rounded-lg transition-colors text-[12px] font-medium',
+                                      'flex items-center gap-2.5 px-3 py-1.5 pl-8 rounded-lg transition-colors text-[11px] font-medium',
                                       active
                                         ? 'bg-hover text-[var(--color-primary)] font-semibold'
                                         : 'text-text-secondary hover:bg-hover hover:text-text'
                                     )}
                                     title={crd.name}
                                   >
+                                    <span className="h-4 w-4 shrink-0" aria-hidden="true" />
                                     <FileText size={16} className="flex-shrink-0" />
                                     <span className="truncate">{crd.kind}</span>
                                   </Link>
@@ -2704,7 +2690,7 @@ export const Layout = () => {
                   to={item.path}
                   onClick={() => setSidebarOpen(false)}
                   className={cn(
-                    'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-[14px] font-medium',
+                    'flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-colors text-[13px] font-medium',
                     'order-11',
                     sidebarCollapsed && 'justify-center px-2',
                     active
@@ -2713,6 +2699,7 @@ export const Layout = () => {
                   )}
                   title={item.label}
                 >
+                  {!sidebarCollapsed && <span className="h-4 w-4 shrink-0" aria-hidden="true" />}
                   <Icon size={18} className="flex-shrink-0" />
                   {!sidebarCollapsed && <span>{item.label}</span>}
                 </Link>
@@ -2727,7 +2714,7 @@ export const Layout = () => {
             to="/desktop/settings"
             onClick={() => setSidebarOpen(false)}
             className={cn(
-              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+              'flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors',
               sidebarCollapsed && 'justify-center px-2',
               isActive('/desktop/settings')
                 ? 'bg-hover text-[var(--color-primary)] font-semibold'
@@ -2735,6 +2722,7 @@ export const Layout = () => {
             )}
             title="Settings"
           >
+            {!sidebarCollapsed && <span className="h-4 w-4 shrink-0" aria-hidden="true" />}
             <Settings size={18} className="flex-shrink-0" />
             {!sidebarCollapsed && <span>Settings</span>}
           </Link>
@@ -2900,7 +2888,7 @@ export const Layout = () => {
         )}
 
         {/* Content */}
-        <main className="flex-1 overflow-auto bg-bg p-4 min-h-0">
+        <main className="flex-1 overflow-auto bg-bg p-4 min-h-0 text-[14px] leading-5">
           <Suspense fallback={null}>
             <Outlet />
           </Suspense>
