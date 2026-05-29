@@ -605,7 +605,7 @@ pub struct CustomResourceItem {
     pub manifest: serde_json::Value,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct DashboardSummary {
     pub namespaces: usize,
     pub pods: usize,

@@ -3684,61 +3684,107 @@ pub async fn get_dashboard_summary(State(state): State<AppState>) -> impl IntoRe
     let cronjobs_api: Api<CronJob> = Api::all(client.clone());
     let events_api: Api<Event> = Api::all(client.clone());
 
-    let result = async {
-        let namespaces = namespaces_api.list(&ListParams::default()).await?.items.len();
-        let pods = pods_api.list(&ListParams::default()).await?.items.len();
-        let deployments = deployments_api.list(&ListParams::default()).await?.items.len();
-        let statefulsets = statefulsets_api.list(&ListParams::default()).await?.items.len();
-        let daemonsets = daemonsets_api.list(&ListParams::default()).await?.items.len();
-        let replicasets = replicasets_api.list(&ListParams::default()).await?.items.len();
-        let jobs = jobs_api.list(&ListParams::default()).await?.items.len();
-        let cronjobs = cronjobs_api.list(&ListParams::default()).await?.items.len();
-        let events = events_api.list(&ListParams::default()).await?.items.len();
+    let dashboard_list_timeout_ms: u64 = env::var("DASHBOARD_LIST_TIMEOUT_MS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(4500);
+    let timeout = std::time::Duration::from_millis(dashboard_list_timeout_ms);
+    let cached_summary = state.dashboard_summary_cache.read().await.clone();
 
-        // Get cluster version info
-        let kube_version = client.apiserver_version().await.ok().map(|v| v.git_version);
-        
-        // Try to get cluster name from kubeconfig or default
-        let cluster_name = Some(env::var("CLUSTER_NAME").unwrap_or_else(|_| {
-            let kubeconfig = env::var("KUBECONFIG").unwrap_or_else(|_| "~/.kube/config".to_string());
-            if kubeconfig.contains("talos") {
-                "talos-cluster".to_string()
-            } else if kubeconfig.contains("omni") {
-                "omni-cluster".to_string()
-            } else {
-                "kubernetes-cluster".to_string()
+    macro_rules! count_list_with_timeout {
+        ($resource:literal, $api:expr, $fallback:expr) => {
+            async {
+                match tokio::time::timeout(timeout, $api.list(&ListParams::default())).await {
+                    Ok(Ok(list)) => list.items.len(),
+                    Ok(Err(err)) => {
+                        warn!(resource = $resource, error = %err, "Dashboard summary list failed; falling back to 0");
+                        $fallback
+                    }
+                    Err(_) => {
+                        warn!(resource = $resource, timeout_ms = dashboard_list_timeout_ms, "Dashboard summary list timed out; falling back to 0");
+                        $fallback
+                    }
+                }
             }
-        }));
-
-        // Get API endpoint from environment or default
-        let api_endpoint = Some(env::var("KUBERNETES_SERVICE_HOST")
-            .unwrap_or_else(|_| "kubernetes.default.svc.cluster.local".to_string()));
-
-
-        Ok::<DashboardSummary, kube::Error>(DashboardSummary {
-            namespaces,
-            pods,
-            deployments,
-            statefulsets,
-            daemonsets,
-            replicasets,
-            jobs,
-            cronjobs,
-            events,
-            cluster_name,
-            api_endpoint,
-            kube_version,
-        })
+        };
     }
-    .await;
 
-    match result {
-        Ok(summary) => (StatusCode::OK, Json(summary)).into_response(),
-        Err(err) => {
-            error!("Error building dashboard summary: {:?}", err);
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    let (
+        namespaces,
+        pods,
+        deployments,
+        statefulsets,
+        daemonsets,
+        replicasets,
+        jobs,
+        cronjobs,
+        events,
+        kube_version,
+    ) = tokio::join!(
+        count_list_with_timeout!("namespaces", namespaces_api, cached_summary.as_ref().map(|s| s.namespaces).unwrap_or(0)),
+        count_list_with_timeout!("pods", pods_api, cached_summary.as_ref().map(|s| s.pods).unwrap_or(0)),
+        count_list_with_timeout!("deployments", deployments_api, cached_summary.as_ref().map(|s| s.deployments).unwrap_or(0)),
+        count_list_with_timeout!("statefulsets", statefulsets_api, cached_summary.as_ref().map(|s| s.statefulsets).unwrap_or(0)),
+        count_list_with_timeout!("daemonsets", daemonsets_api, cached_summary.as_ref().map(|s| s.daemonsets).unwrap_or(0)),
+        count_list_with_timeout!("replicasets", replicasets_api, cached_summary.as_ref().map(|s| s.replicasets).unwrap_or(0)),
+        count_list_with_timeout!("jobs", jobs_api, cached_summary.as_ref().map(|s| s.jobs).unwrap_or(0)),
+        count_list_with_timeout!("cronjobs", cronjobs_api, cached_summary.as_ref().map(|s| s.cronjobs).unwrap_or(0)),
+        count_list_with_timeout!("events", events_api, cached_summary.as_ref().map(|s| s.events).unwrap_or(0)),
+        async {
+            match tokio::time::timeout(timeout, client.apiserver_version()).await {
+                Ok(Ok(version)) => Some(version.git_version),
+                Ok(Err(err)) => {
+                    warn!(error = %err, "Failed to fetch API server version for dashboard summary");
+                    cached_summary.as_ref().and_then(|s| s.kube_version.clone())
+                }
+                Err(_) => {
+                    warn!(timeout_ms = dashboard_list_timeout_ms, "API server version request timed out for dashboard summary");
+                    cached_summary.as_ref().and_then(|s| s.kube_version.clone())
+                }
+            }
         }
+    );
+
+    // Try to get cluster name from kubeconfig or default
+    let cluster_name = Some(env::var("CLUSTER_NAME").unwrap_or_else(|_| {
+        let kubeconfig = env::var("KUBECONFIG").unwrap_or_else(|_| "~/.kube/config".to_string());
+        if kubeconfig.contains("talos") {
+            "talos-cluster".to_string()
+        } else if kubeconfig.contains("omni") {
+            "omni-cluster".to_string()
+        } else {
+            "kubernetes-cluster".to_string()
+        }
+    }));
+
+    // Get API endpoint from environment or default
+    let api_endpoint = Some(
+        env::var("KUBERNETES_SERVICE_HOST")
+            .unwrap_or_else(|_| "kubernetes.default.svc.cluster.local".to_string()),
+    );
+
+    let summary = DashboardSummary {
+        namespaces,
+        pods,
+        deployments,
+        statefulsets,
+        daemonsets,
+        replicasets,
+        jobs,
+        cronjobs,
+        events,
+        cluster_name,
+        api_endpoint,
+        kube_version,
+    };
+
+    {
+        let mut cache = state.dashboard_summary_cache.write().await;
+        *cache = Some(summary.clone());
     }
+
+    (StatusCode::OK, Json(summary)).into_response()
 }
 
 pub async fn delete_pod(

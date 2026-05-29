@@ -118,7 +118,7 @@ export const Dashboard = () => {
   const { data: dashboard, isLoading: dashLoading } = useDashboard({ refetchInterval: 10_000 });
   const { data: realtimeNodes, isLoading: realtimeNodesLoading } = useRealtimeNodes();
   const { data: apiNodes, isLoading: apiNodesLoading } = useNodes({ refetchInterval: 10_000 });
-  const { data: pods = [], isLoading: podsLoading } = useRealtimePods<Pod>({ enabled: true });
+  const { data: pods = [] } = useRealtimePods<Pod>({ enabled: true });
 
   const nodes = useMemo(() => {
     if (!realtimeNodes?.length) return apiNodes ?? [];
@@ -143,8 +143,9 @@ export const Dashboard = () => {
     });
   }, [realtimeNodes, apiNodes]);
 
-  const nodesLoading = realtimeNodesLoading || apiNodesLoading;
-  const overviewLoading = dashLoading || nodesLoading || podsLoading;
+  const nodesLoading = (realtimeNodesLoading || apiNodesLoading) && (nodes?.length ?? 0) === 0;
+  const hasFallbackOverviewData = (nodes?.length ?? 0) > 0 || (pods?.length ?? 0) > 0;
+  const overviewLoading = dashLoading && !dashboard && !hasFallbackOverviewData;
 
   const sortedNodes = useMemo(() => {
     const list = [...(nodes ?? [])];

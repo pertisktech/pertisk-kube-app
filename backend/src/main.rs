@@ -51,6 +51,7 @@ pub struct AppState {
     pub port_forward_state: Option<Arc<handlers::portforward::PortForwardState>>,
     pub workload_metric_history: Arc<RwLock<Vec<WorkloadMetricSnapshot>>>,
     pub helm_charts_cache: Arc<RwLock<handlers::helm::HelmChartsCache>>,
+    pub dashboard_summary_cache: Arc<RwLock<Option<DashboardSummary>>>,
     /// True when the kube client is a placeholder (exec credential failed at startup).
     /// Used by the frontend to surface a "Login Required" banner.
     pub auth_placeholder: bool,
@@ -94,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
         port_forward_state,
         workload_metric_history: Arc::new(RwLock::new(Vec::new())),
         helm_charts_cache: Arc::new(RwLock::new(handlers::helm::HelmChartsCache::default())),
+        dashboard_summary_cache: Arc::new(RwLock::new(None)),
         auth_placeholder: kube_status.is_placeholder,
         auth_message: kube_status.user_message,
     };
