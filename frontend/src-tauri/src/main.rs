@@ -46,7 +46,9 @@ struct BackendState {
 
 const DEFAULT_PORT: u16 = 15222;
 const DEFAULT_GRPC_PORT: u16 = 50051;
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
+// Keep startup timeout above backend exec-provider kubeconfig timeout (25s)
+// so slow credential plugins do not trigger false sidecar-start failures.
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
 const CLUSTER_VERIFY_TIMEOUT: Duration = Duration::from_secs(40);
 const RESTART_BACKOFF: Duration = Duration::from_secs(2);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);

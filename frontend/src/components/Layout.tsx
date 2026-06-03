@@ -89,7 +89,14 @@ import { APP_VERSION } from '../utils/version';
 import { DesktopSettingsPage } from '../pages/DesktopSettingsPage';
 import classNames from 'classnames';
 
-const appWindow = getCurrentWindow();
+const appWindow = (() => {
+  if (!isDesktopRuntime()) return null;
+  try {
+    return getCurrentWindow();
+  } catch {
+    return null;
+  }
+})();
 
 interface NavItem {
   label: string;
@@ -806,20 +813,28 @@ export const Layout = () => {
     }
   };
 
+  const refreshKubeconfigSources = async (preferredPath?: string) => {
+    const candidates = await listDesktopKubeconfigCandidates();
+    const merged = new Set(candidates);
+    if (kubeconfigInput) merged.add(kubeconfigInput);
+    if (kubeconfigPath) merged.add(kubeconfigPath);
+
+    const sorted = Array.from(merged).sort((a, b) => a.localeCompare(b));
+    setKubeconfigCandidates(sorted);
+
+    const targetPath = (preferredPath ?? (kubeconfigInput || kubeconfigPath)).trim();
+    await refreshClustersForKubeconfig(targetPath);
+
+    if (targetPath) {
+      setKubeconfigInput(targetPath);
+    }
+  };
+
   const handleManualClusterRefresh = async () => {
     try {
-      const candidates = await listDesktopKubeconfigCandidates();
-      const merged = new Set(candidates);
-      if (kubeconfigInput) merged.add(kubeconfigInput);
-      if (kubeconfigPath) merged.add(kubeconfigPath);
-      const sorted = Array.from(merged).sort((a, b) => a.localeCompare(b));
-      setKubeconfigCandidates(sorted);
-
       const refreshPath = clusterImportTab === 'cloud' ? '' : (kubeconfigInput || kubeconfigPath);
-      await refreshClustersForKubeconfig(refreshPath);
-      if (refreshPath.trim()) {
-        setKubeconfigInput(refreshPath);
-      } else {
+      await refreshKubeconfigSources(refreshPath);
+      if (!refreshPath.trim()) {
         setKubeconfigInput('');
       }
     } catch (err) {
@@ -1080,6 +1095,27 @@ export const Layout = () => {
   useEffect(() => {
     if (!desktopMode) return;
     if (clusterImportTab !== 'kubeconfig') return;
+    if (!showKubeconfigModal) return;
+
+    void refreshKubeconfigSources();
+  }, [desktopMode, clusterImportTab, showKubeconfigModal]);
+
+  useEffect(() => {
+    if (!desktopMode) return;
+    if (!showKubeconfigModal) return;
+    if (clusterImportTab !== 'kubeconfig') return;
+
+    const onFocus = () => {
+      void refreshKubeconfigSources();
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [desktopMode, showKubeconfigModal, clusterImportTab]);
+
+  useEffect(() => {
+    if (!desktopMode) return;
+    if (clusterImportTab !== 'kubeconfig') return;
 
     const source = kubeconfigInput || kubeconfigPath;
     void refreshClustersForKubeconfig(source);
@@ -1315,12 +1351,13 @@ export const Layout = () => {
 
   const handleDesktopTitleBarMouseDown = (e: React.MouseEvent) => {
     if (e.buttons !== 1) return;
+    if (!appWindow) return;
     const target = e.target as HTMLElement;
     if (target.closest('button, a, input, select, textarea, [role="button"]')) return;
     if (e.detail === 2) {
-      appWindow.toggleMaximize();
+      void appWindow.toggleMaximize();
     } else {
-      appWindow.startDragging();
+      void appWindow.startDragging();
     }
   };
 
