@@ -40,6 +40,7 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYamlEditor, onD
   const { data: resources = [], isLoading: resourcesLoading } = useHelmReleaseResources(release.namespace, release.name);
   const [rollingBackRev, setRollingBackRev] = useState<number | null>(null);
   const [rollbackConfirmRev, setRollbackConfirmRev] = useState<number | null>(null);
+  const orderedHistory = [...history].sort((a, b) => b.revision - a.revision);
 
   const handleRollback = async (revision: number) => {
     if (revision === release.revision) return;
@@ -154,7 +155,7 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYamlEditor, onD
               </tr>
             </thead>
             <tbody>
-              {[...history].reverse().map((rev) => {
+              {orderedHistory.map((rev) => {
                 const isCurrent = rev.revision === release.revision;
                 const isRollingBack = rollingBackRev === rev.revision;
                 return (

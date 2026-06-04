@@ -1587,7 +1587,8 @@ export const useHelmReleases = (namespaces?: string[]) => {
       const data = (await res.json()) as ApiResponse<HelmRelease>;
       return data.data;
     },
-    refetchInterval: 30_000,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
   });
 };
 
@@ -1731,6 +1732,8 @@ export const useHelmReleaseHistory = (namespace: string, name: string) => {
     queryKey: ['helm-release-history', namespace, name],
     queryFn: () => getHelmReleaseHistory(namespace, name),
     enabled: !!namespace && !!name,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
   });
 };
 
