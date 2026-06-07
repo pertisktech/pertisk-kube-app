@@ -3,6 +3,7 @@ import YAML from 'yaml';
 import { Trash2 } from '../components/Icons';
 import { useRealtimeRoles } from '../hooks/useRealtimeResources';
 import { deleteRole } from '../hooks/useKubernetes';
+import { namespacedResourceKey, useSyncSelectedRealtimeItem } from '../hooks/useSyncSelectedRealtimeItem';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, RoleDetailPanel, ConfirmDialog } from '../components';
 import type { Role } from '../types';
@@ -73,6 +74,14 @@ export const RolesPage = () => {
     });
   }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
+  useSyncSelectedRealtimeItem(
+    data,
+    panelOpen && selectedItem ? namespacedResourceKey(selectedItem) : null,
+    selectedItem,
+    setSelectedItem,
+    namespacedResourceKey,
+    panelOpen,
+  );
 
   const handleOpenYamlEditorFromPanel = async (item: Role) => {
     setPanelOpen(false);

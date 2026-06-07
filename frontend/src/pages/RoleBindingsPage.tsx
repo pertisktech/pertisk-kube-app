@@ -3,6 +3,7 @@ import YAML from 'yaml';
 import { Trash2 } from '../components/Icons';
 import { useRealtimeRoleBindings } from '../hooks/useRealtimeResources';
 import { deleteRoleBinding } from '../hooks/useKubernetes';
+import { namespacedResourceKey, useSyncSelectedRealtimeItem } from '../hooks/useSyncSelectedRealtimeItem';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, RoleBindingDetailPanel, ConfirmDialog } from '../components';
 import type { RoleBinding } from '../types';
@@ -74,6 +75,14 @@ export const RoleBindingsPage = () => {
     });
   }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
+  useSyncSelectedRealtimeItem(
+    data,
+    panelOpen && selectedItem ? namespacedResourceKey(selectedItem) : null,
+    selectedItem,
+    setSelectedItem,
+    namespacedResourceKey,
+    panelOpen,
+  );
 
   const handleOpenYamlEditorFromPanel = async (item: RoleBinding) => {
     setPanelOpen(false);

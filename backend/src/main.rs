@@ -336,6 +336,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/crds/:crd_name/resources/:name/yaml", get(get_custom_resource_yaml))
         .route("/crds/:crd_name/resources/:name", delete(delete_custom_resource))
         .route("/helm/releases", get(list_helm_releases))
+        .route("/helmreleases", get(list_helm_releases))
         .route("/helm/charts", get(list_helm_charts))
         .route("/helm/repositories/check", get(check_helm_repository))
         .route("/helm/charts/versions", get(get_helm_chart_versions))

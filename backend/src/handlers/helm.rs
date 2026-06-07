@@ -219,6 +219,171 @@ fn helm_chart_response(data: Vec<HelmChartItem>, warnings: Vec<String>, refreshi
 
 // ── Helm Releases ─────────────────────────────────────────────────────────────
 
+pub fn merge_helm_release(existing: &mut HelmReleaseItem, incoming: &HelmReleaseItem) {
+    if incoming.revision >= existing.revision {
+        *existing = incoming.clone();
+    }
+}
+
+pub fn helm_release_item_from_secret(secret: &Secret) -> Option<HelmReleaseItem> {
+    let labels = secret.metadata.labels.as_ref()?;
+    if labels.get("owner").map(String::as_str) != Some("helm") {
+        return None;
+    }
+
+    let name = labels.get("name").cloned().unwrap_or_default();
+    if name.is_empty() {
+        return None;
+    }
+
+    let status = labels
+        .get("status")
+        .cloned()
+        .unwrap_or_else(|| "unknown".to_string());
+    let revision: i64 = labels
+        .get("version")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let namespace = secret
+        .metadata
+        .namespace
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
+
+    let (chart, chart_version, app_version, updated) =
+        decode_helm_release_data(secret).unwrap_or_else(|| {
+            let ts = secret
+                .metadata
+                .creation_timestamp
+                .as_ref()
+                .map(|t| t.0.to_rfc3339())
+                .unwrap_or_default();
+            ("-".to_string(), "-".to_string(), "-".to_string(), ts)
+        });
+
+    Some(HelmReleaseItem {
+        name,
+        namespace,
+        chart,
+        revision,
+        chart_version,
+        app_version,
+        status,
+        updated,
+    })
+}
+
+pub fn aggregate_helm_releases_from_secrets(
+    secrets: impl IntoIterator<Item = Secret>,
+    namespace_filter: Option<&HashSet<String>>,
+) -> Vec<HelmReleaseItem> {
+    let mut releases: HashMap<(String, String), HelmReleaseItem> = HashMap::new();
+
+    for secret in secrets {
+        let Some(item) = helm_release_item_from_secret(&secret) else {
+            continue;
+        };
+
+        if let Some(ns_filter) = namespace_filter {
+            if !ns_filter.contains(&item.namespace) {
+                continue;
+            }
+        }
+
+        let key = (item.name.clone(), item.namespace.clone());
+        releases
+            .entry(key)
+            .and_modify(|existing| merge_helm_release(existing, &item))
+            .or_insert(item);
+    }
+
+    let mut items: Vec<HelmReleaseItem> = releases.into_values().collect();
+    items.sort_by(|a, b| a.namespace.cmp(&b.namespace).then(a.name.cmp(&b.name)));
+    items
+}
+
+#[derive(Default)]
+pub struct HelmReleaseAggregator {
+    revisions: HashMap<(String, String, i64), HelmReleaseItem>,
+}
+
+impl HelmReleaseAggregator {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn load_initial(&mut self, secrets: Vec<Secret>) -> Vec<HelmReleaseItem> {
+        self.revisions.clear();
+        for secret in secrets {
+            if let Some(item) = helm_release_item_from_secret(&secret) {
+                self.revisions.insert(
+                    (item.name.clone(), item.namespace.clone(), item.revision),
+                    item,
+                );
+            }
+        }
+        self.all_releases()
+    }
+
+    pub fn ingest_secret(&mut self, secret: &Secret) -> Option<(String, HelmReleaseItem)> {
+        let item = helm_release_item_from_secret(secret)?;
+        self.revisions.insert(
+            (item.name.clone(), item.namespace.clone(), item.revision),
+            item.clone(),
+        );
+        let release = self.aggregate_for(&item.name, &item.namespace)?;
+        Some((helm_release_key(&item.namespace, &item.name), release))
+    }
+
+    pub fn remove_secret(&mut self, secret: &Secret) -> Option<(String, Option<HelmReleaseItem>)> {
+        let labels = secret.metadata.labels.as_ref()?;
+        let name = labels.get("name")?.clone();
+        if name.is_empty() {
+            return None;
+        }
+        let namespace = secret
+            .metadata
+            .namespace
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
+        let revision: i64 = labels
+            .get("version")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+
+        self.revisions
+            .remove(&(name.clone(), namespace.clone(), revision));
+        let key = helm_release_key(&namespace, &name);
+        Some((key, self.aggregate_for(&name, &namespace)))
+    }
+
+    fn aggregate_for(&self, name: &str, namespace: &str) -> Option<HelmReleaseItem> {
+        self.revisions
+            .values()
+            .filter(|item| item.name == name && item.namespace == namespace)
+            .max_by_key(|item| item.revision)
+            .cloned()
+    }
+
+    fn all_releases(&self) -> Vec<HelmReleaseItem> {
+        let mut releases: HashMap<(String, String), HelmReleaseItem> = HashMap::new();
+        for item in self.revisions.values() {
+            let key = (item.name.clone(), item.namespace.clone());
+            releases
+                .entry(key)
+                .and_modify(|existing| merge_helm_release(existing, item))
+                .or_insert_with(|| item.clone());
+        }
+        let mut items: Vec<HelmReleaseItem> = releases.into_values().collect();
+        items.sort_by(|a, b| a.namespace.cmp(&b.namespace).then(a.name.cmp(&b.name)));
+        items
+    }
+}
+
+pub fn helm_release_key(namespace: &str, name: &str) -> String {
+    format!("{namespace}/{name}")
+}
+
 pub async fn list_helm_releases(
     Query(query): Query<HelmReleasesQuery>,
     State(state): State<AppState>,
@@ -237,73 +402,10 @@ pub async fn list_helm_releases(
 
     match api.list(&lp).await {
         Ok(list) => {
-            // Group by (release-name, namespace) and keep only the highest revision
-            let mut releases: HashMap<(String, String), HelmReleaseItem> = HashMap::new();
-
-            for secret in list.items {
-                let labels = secret.metadata.labels.as_ref();
-
-                let name = labels
-                    .and_then(|l| l.get("name"))
-                    .cloned()
-                    .unwrap_or_default();
-                let status = labels
-                    .and_then(|l| l.get("status"))
-                    .cloned()
-                    .unwrap_or_else(|| "unknown".to_string());
-                let revision: i64 = labels
-                    .and_then(|l| l.get("version"))
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(0);
-                let namespace = secret
-                    .metadata
-                    .namespace
-                    .clone()
-                    .unwrap_or_else(|| "default".to_string());
-
-                // Skip if namespace doesn't match filter
-                if let Some(ref ns_filter) = namespace_filter {
-                    if !ns_filter.contains(&namespace) {
-                        continue;
-                    }
-                }
-
-                // Try to decode the Helm release JSON from the secret data
-                let (chart, chart_version, app_version, updated) =
-                    decode_helm_release_data(&secret).unwrap_or_else(|| {
-                        let ts = secret
-                            .metadata
-                            .creation_timestamp
-                            .as_ref()
-                            .map(|t| t.0.to_rfc3339())
-                            .unwrap_or_default();
-                        ("-".to_string(), "-".to_string(), "-".to_string(), ts)
-                    });
-
-                let item = HelmReleaseItem {
-                    name: name.clone(),
-                    namespace: namespace.clone(),
-                    chart,
-                    revision,
-                    chart_version,
-                    app_version,
-                    status,
-                    updated,
-                };
-
-                let key = (name, namespace);
-                releases
-                    .entry(key)
-                    .and_modify(|existing| {
-                        if revision > existing.revision {
-                            *existing = item.clone();
-                        }
-                    })
-                    .or_insert(item);
-            }
-
-            let mut items: Vec<HelmReleaseItem> = releases.into_values().collect();
-            items.sort_by(|a, b| a.namespace.cmp(&b.namespace).then(a.name.cmp(&b.name)));
+            let items = aggregate_helm_releases_from_secrets(
+                list.items,
+                namespace_filter.as_ref(),
+            );
             let total = items.len();
 
             (

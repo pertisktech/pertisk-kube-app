@@ -39,6 +39,7 @@ import {
   Vwc,
   CustomResource,
   Crd,
+  HelmRelease,
 } from '../types';
 
 interface WebSocketMessage {
@@ -64,8 +65,18 @@ const shouldIgnoreRealtimeError = (message?: string): boolean => {
   return normalized.includes('watch stream failed') && normalized.includes('forbidden');
 };
 
+const isTransientK8sListError = (message?: string): boolean => {
+  if (!message) return false;
+  const normalized = message.toLowerCase();
+  return normalized.includes('toomanyrequests')
+    || normalized.includes('storage is (re)initializing')
+    || normalized.includes('code: 429')
+    || normalized.includes('temporarily unavailable');
+};
+
 const isTransientRealtimeConnectivityError = (message?: string): boolean => {
   if (!message) return false;
+  if (isTransientK8sListError(message)) return true;
   const normalized = message.toLowerCase();
   return normalized.includes('client error (connect)')
     || normalized.includes('connecterror')
@@ -283,13 +294,20 @@ const openRealtimeSharedSocket = () => {
   void connect();
 };
 
+const realtimeSnapshotUrl = (resourceType: string): string => {
+  if (resourceType === 'helmreleases') {
+    return '/api/helm/releases';
+  }
+  return `/api/${resourceType}`;
+};
+
 const fetchRealtimeResourceSnapshot = async <T>(
   resourceType: string,
   transformFn: (raw: any) => T,
   signal: AbortSignal,
 ): Promise<T[]> => {
   const token = getAuthToken();
-  const response = await fetch(`/api/${resourceType}`, {
+  const response = await fetch(realtimeSnapshotUrl(resourceType), {
     cache: 'no-store',
     signal,
     headers: token ? { Authorization: token } : undefined,
@@ -1202,7 +1220,29 @@ function transformVwc(raw: any): Vwc {
   };
 }
 
+function isCustomResourceItemShape(raw: unknown): raw is CustomResource {
+  return !!raw
+    && typeof raw === 'object'
+    && typeof (raw as CustomResource).name === 'string'
+    && (raw as CustomResource).name.length > 0
+    && ('spec' in (raw as object) || 'manifest' in (raw as object));
+}
+
 function transformCustomResource(raw: any): CustomResource {
+  if (isCustomResourceItemShape(raw)) {
+    const manifest = (raw.manifest && typeof raw.manifest === 'object') ? raw.manifest : raw;
+    return {
+      name: raw.name,
+      namespace: raw.namespace ?? null,
+      created_at: raw.created_at ?? null,
+      spec: raw.spec ?? {},
+      status: raw.status ?? null,
+      labels: raw.labels,
+      annotations: raw.annotations,
+      manifest,
+    };
+  }
+
   const manifest = (raw?.manifest && typeof raw.manifest === 'object')
     ? raw.manifest
     : (raw && typeof raw === 'object' ? raw : null);
@@ -1339,9 +1379,9 @@ function createRealtimeHook<T>(
 
       // Node watches can intermittently miss DELETED events when API watch is unstable.
       // Periodically reconcile nodes from REST snapshot so removals are reflected quickly.
-      if (resourceType === 'nodes') {
+      if (resourceType === 'nodes' || resourceType === 'crds') {
         reconcileInterval = setInterval(() => {
-          if (aborted) return;
+          if (aborted || document.hidden) return;
 
           const reconcileAbortController = new AbortController();
           void fetchRealtimeResourceSnapshot(resourceType, transformFn, reconcileAbortController.signal)
@@ -1356,7 +1396,7 @@ function createRealtimeHook<T>(
             .catch(() => {
               // Keep existing realtime state if reconcile snapshot fails.
             });
-        }, 3000);
+        }, resourceType === 'crds' ? 12_000 : 3000);
       }
 
       const unsubscribe = subscribeRealtimeResource(resourceType, (message) => {
@@ -1386,6 +1426,13 @@ function createRealtimeHook<T>(
           if (action === 'DELETED') {
             // For deletions, extract key directly from raw metadata to avoid transform errors
             const itemKey = (() => {
+              if (resourceType === 'helmreleases') {
+                const release = rawItem as { namespace?: string; name?: string };
+                if (release.namespace && release.name) {
+                  return `${release.namespace}/${release.name}`;
+                }
+                return undefined;
+              }
               if (resourceType === 'nodes') {
                 return (rawItem as any)?.metadata?.name;
               } else if (resourceType === 'namespaces' || resourceType === 'events') {
@@ -1682,9 +1729,62 @@ export const useRealtimeCrds = createRealtimeHook<Crd>(
   (item) => item.name
 );
 
+function transformHelmRelease(raw: unknown): HelmRelease {
+  return raw as HelmRelease;
+}
+
+export const useRealtimeHelmReleases = createRealtimeHook<HelmRelease>(
+  'helmreleases',
+  'Helm Releases',
+  transformHelmRelease,
+  (item) => `${item.namespace}/${item.name}`,
+);
+
 function getCustomResourceKey(item: CustomResource): string {
   return item.namespace ? `${item.namespace}/${item.name}` : item.name;
 }
+
+const fetchCustomResourceSnapshot = async (
+  crdName: string,
+  signal: AbortSignal,
+): Promise<CustomResource[]> => {
+  const token = getAuthToken();
+  const response = await fetch(`/api/crds/${encodeURIComponent(crdName)}/resources`, {
+    cache: 'no-store',
+    signal,
+    headers: token ? { Authorization: token } : undefined,
+  });
+
+  const payload = await response.json().catch(() => ({})) as {
+    data?: unknown[];
+    warnings?: string[];
+    error?: string;
+    message?: string;
+  };
+
+  if (!response.ok) {
+    const detail = payload.error || payload.message || response.statusText;
+    throw new Error(detail || `Failed to fetch initial customresources/${crdName} snapshot`);
+  }
+
+  const items = Array.isArray(payload?.data) ? payload.data : [];
+
+  return items.map((raw) => {
+    if (isCustomResourceItemShape(raw)) {
+      return transformCustomResource(raw);
+    }
+    const looksLikeRawK8sObject =
+      raw
+      && typeof raw === 'object'
+      && raw !== null
+      && typeof (raw as { metadata?: unknown }).metadata === 'object'
+      && (raw as { metadata?: unknown }).metadata !== null;
+    if (looksLikeRawK8sObject) {
+      return transformCustomResource(raw);
+    }
+    return raw as CustomResource;
+  });
+};
 
 /** Realtime list for a custom resource kind by CRD name (e.g. "crontabs.stable.example.com"). */
 export function useRealtimeCustomResources(crdName: string | null): {
@@ -1695,7 +1795,30 @@ export function useRealtimeCustomResources(crdName: string | null): {
   const [data, setData] = useState<CustomResource[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [clusterSwitchVersion, setClusterSwitchVersion] = useState(0);
   const resourceType = crdName ? `customresources/${crdName}` : '';
+
+  useEffect(() => {
+    const handleClusterSwitched = () => {
+      setData([]);
+      setError(null);
+      setIsLoading(true);
+      setClusterSwitchVersion((v) => v + 1);
+    };
+
+    const handleResourcesRefresh = () => {
+      setError(null);
+      setIsLoading(true);
+      setClusterSwitchVersion((v) => v + 1);
+    };
+
+    window.addEventListener('cluster:switched', handleClusterSwitched);
+    window.addEventListener('resources:refresh', handleResourcesRefresh);
+    return () => {
+      window.removeEventListener('cluster:switched', handleClusterSwitched);
+      window.removeEventListener('resources:refresh', handleResourcesRefresh);
+    };
+  }, []);
 
   useEffect(() => {
     setData([]);
@@ -1707,203 +1830,120 @@ export function useRealtimeCustomResources(crdName: string | null): {
       return;
     }
 
-    let ws: WebSocket | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-    let connectTimeout: ReturnType<typeof setTimeout> | null = null;
-    let pollInterval: ReturnType<typeof setInterval> | null = null;
-    let snapshotTimeout: ReturnType<typeof setTimeout> | null = null;
     let emptyListTimeout: ReturnType<typeof setTimeout> | null = null;
-    let closingIntentional = false;
-    let disposed = false;
-    let reconnectAttempts = 0;
-    let hasReceivedRealtime = false;
+    let reconcileInterval: ReturnType<typeof setInterval> | null = null;
+    let aborted = false;
+    let receivedRealtimeEvent = false;
+    const abortController = new AbortController();
 
-    const loadSnapshot = async () => {
-      try {
-        // Custom resources use different REST endpoint: /api/crds/:crd_name/resources
-        const token = getAuthToken();
-        const response = await fetch(`/api/crds/${encodeURIComponent(crdName)}/resources`, {
-          cache: 'no-store',
-          headers: token ? { Authorization: token } : undefined,
-        });
-        if (!response.ok) {
-          throw new Error(`Failed to fetch initial ${resourceType} snapshot`);
-        }
-        const payload = await response.json() as { data?: any[] };
-        const items = Array.isArray(payload?.data) ? payload.data : [];
-        const snapshot = items.map((raw) => {
-          const looksLikeRawK8sObject =
-            raw
-            && typeof raw === 'object'
-            && raw !== null
-            && typeof (raw as { metadata?: unknown }).metadata === 'object'
-            && (raw as { metadata?: unknown }).metadata !== null;
-          if (looksLikeRawK8sObject) {
-            return transformCustomResource(raw);
-          }
-          return raw as CustomResource;
-        });
-        if (disposed || hasReceivedRealtime) {
+    void fetchCustomResourceSnapshot(crdName, abortController.signal)
+      .then((snapshot) => {
+        if (aborted || receivedRealtimeEvent) {
           return;
         }
         setData(snapshot);
         setIsLoading(false);
         setError(null);
-      } catch (err) {
-        if (disposed) {
+      })
+      .catch((fetchError) => {
+        if (aborted) {
           return;
         }
-        const message = err instanceof Error ? err.message : 'Failed to fetch initial resources';
+        const message = fetchError instanceof Error ? fetchError.message : 'Failed to fetch initial resources';
+        if (isTransientK8sListError(message)) {
+          setError(null);
+          return;
+        }
         if (isRealtimeDebug()) {
           console.warn(`Initial snapshot fetch failed for custom resource ${resourceType}:`, message);
         }
-      }
-    };
+      });
 
-    void loadSnapshot();
+    const RECONCILE_MS = 12_000;
+    reconcileInterval = setInterval(() => {
+      if (aborted || document.hidden) return;
 
-    if (isDesktopDevRealtimePollingMode()) {
-      pollInterval = setInterval(() => {
-        void loadSnapshot();
-      }, 4000);
-
-      return () => {
-        disposed = true;
-        if (pollInterval) clearInterval(pollInterval);
-      };
-    }
-
-    const connect = () => {
-      const connectNow = async () => {
-        try {
-          if (isDesktopRuntime()) {
-            await refreshDesktopBackendPortFromSidecar();
-          }
-
-        const wsUrl = isDesktopRuntime()
-          ? `${getDesktopWebSocketBase()}/ws`
-          : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
-        ws = new WebSocket(wsUrl);
-        ws.onopen = () => {
-          if (disposed || closingIntentional) {
-            ws?.close();
-            return;
-          }
+      const reconcileAbortController = new AbortController();
+      void fetchCustomResourceSnapshot(crdName, reconcileAbortController.signal)
+        .then((snapshot) => {
+          if (aborted) return;
+          setData((prev) => (JSON.stringify(prev) === JSON.stringify(snapshot) ? prev : snapshot));
+          setIsLoading(false);
           setError(null);
-          reconnectAttempts = 0;
-          ws!.send(JSON.stringify({ type: 'subscribe', resource: resourceType }));
-        };
-        ws.onmessage = (event) => {
-          try {
-            const message: WebSocketMessage = JSON.parse(event.data);
-            if (message.type === 'resource_update' && message.resource === resourceType && message.data) {
-              hasReceivedRealtime = true;
-              if (emptyListTimeout) {
-                clearTimeout(emptyListTimeout);
-                emptyListTimeout = null;
-              }
-              setIsLoading(false);
-              const action = (message.action || '').toUpperCase();
-              const item = transformCustomResource(message.data);
-              const itemKey = getCustomResourceKey(item);
-              if (action === 'ADDED' || action === 'MODIFIED') {
-                setData((prev) => {
-                  const idx = prev.findIndex((p) => getCustomResourceKey(p) === itemKey);
-                  if (idx >= 0) {
-                    if (JSON.stringify(prev[idx]) === JSON.stringify(item)) return prev;
-                    const next = [...prev];
-                    next[idx] = item;
-                    return next;
-                  }
-                  return [...prev, item];
-                });
-              } else if (action === 'DELETED') {
-                setData((prev) => prev.filter((p) => getCustomResourceKey(p) !== itemKey));
-              }
-            } else if (message.type === 'subscribed' && message.resource === resourceType) {
-              emptyListTimeout = setTimeout(() => {
-                emptyListTimeout = null;
-                setIsLoading(false);
-              }, 2000);
-            } else if (message.type === 'error') {
-              if (shouldIgnoreRealtimeError(message.message)) {
-                if (isRealtimeDebug()) {
-                  console.warn('Ignoring realtime permission error for custom resource:', message.message);
-                }
-                return;
-              }
-              if (isTransientRealtimeConnectivityError(message.message)) {
-                if (isRealtimeDebug()) {
-                  console.warn('Transient custom resource connectivity issue; retrying in background:', message.message);
-                }
-                setError(null);
-                return;
-              }
-              setError(message.message || 'Unknown error');
-            }
-          } catch (e) {
-            console.error('Custom resource message parse error:', e);
-          }
-        };
-        ws.onerror = () => {
-          if (disposed || closingIntentional) {
-            return;
-          }
-          if (import.meta.env.DEV && ws && ws.readyState !== WebSocket.OPEN) {
-            return;
-          }
-          // Don't set error here — onclose fires immediately after and handles reconnection.
-        };
-        ws.onclose = () => {
-          if (disposed || closingIntentional) {
-            return;
-          }
-          reconnectAttempts += 1;
-          reconnectTimeout = setTimeout(connect, reconnectDelayForResource(resourceType, reconnectAttempts));
-        };
-        } catch (err) {
-          if (disposed || closingIntentional) {
-            return;
-          }
-          setError('Failed to connect');
-          reconnectAttempts += 1;
-          reconnectTimeout = setTimeout(connect, reconnectDelayForResource(resourceType, reconnectAttempts));
+        })
+        .catch(() => {
+          // Keep existing realtime state if reconcile snapshot fails.
+        });
+    }, RECONCILE_MS);
+
+    const unsubscribe = subscribeRealtimeResource(resourceType, (message) => {
+      if (message.type === 'resource_update' && message.resource === resourceType) {
+        receivedRealtimeEvent = true;
+        if (emptyListTimeout) {
+          clearTimeout(emptyListTimeout);
+          emptyListTimeout = null;
         }
-      };
+        setIsLoading(false);
 
-      void connectNow();
-    };
-    // Same StrictMode-safe connect deferral as the generic realtime hook.
-    connectTimeout = setTimeout(connect, connectDelayForResource(resourceType));
+        const action = message.action?.toUpperCase();
+        const rawItem = message.data;
+        if (!rawItem) return;
 
-    snapshotTimeout = setInterval(() => {
-      if (!hasReceivedRealtime) {
-        void loadSnapshot();
+        if (action === 'DELETED') {
+          const item = transformCustomResource(rawItem);
+          const itemKey = getCustomResourceKey(item);
+          setData((prev) => prev.filter((p) => getCustomResourceKey(p) !== itemKey));
+          return;
+        }
+
+        if (action === 'ADDED' || action === 'MODIFIED') {
+          const item = transformCustomResource(rawItem);
+          const itemKey = getCustomResourceKey(item);
+          setData((prev) => {
+            const existingIndex = prev.findIndex((p) => getCustomResourceKey(p) === itemKey);
+            if (existingIndex >= 0) {
+              if (JSON.stringify(prev[existingIndex]) === JSON.stringify(item)) {
+                return prev;
+              }
+              const updated = [...prev];
+              updated[existingIndex] = item;
+              return updated;
+            }
+            return [...prev, item];
+          });
+        }
+        return;
       }
-    }, 5000);
+
+      if (message.type === 'subscribed' && message.resource === resourceType) {
+        if (isRealtimeDebug()) console.log(`Subscribed to custom resource ${resourceType}`);
+        emptyListTimeout = setTimeout(() => {
+          emptyListTimeout = null;
+          setIsLoading(false);
+        }, 2000);
+        return;
+      }
+
+      if (message.type === 'error') {
+        if (shouldIgnoreRealtimeError(message.message)) {
+          return;
+        }
+        if (isTransientRealtimeConnectivityError(message.message)) {
+          setError(null);
+          return;
+        }
+        setError(message.message || 'Unknown error');
+      }
+    });
 
     return () => {
-      disposed = true;
-      closingIntentional = true;
-      if (connectTimeout) clearTimeout(connectTimeout);
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      if (snapshotTimeout) clearInterval(snapshotTimeout);
+      aborted = true;
+      abortController.abort();
       if (emptyListTimeout) clearTimeout(emptyListTimeout);
-      if (ws) {
-        if (ws.readyState === WebSocket.CONNECTING) {
-          const socket = ws;
-          ws.onmessage = null;
-          ws.onerror = null;
-          ws.onclose = null;
-          ws.onopen = () => {
-            socket.close();
-          };
-        } else if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CLOSING) {
-          ws.close();
-        }
-      }
+      if (reconcileInterval) clearInterval(reconcileInterval);
+      unsubscribe();
     };
-  }, [crdName, resourceType]);
+  }, [crdName, resourceType, clusterSwitchVersion]);
 
   return { data, isLoading, error };
 }

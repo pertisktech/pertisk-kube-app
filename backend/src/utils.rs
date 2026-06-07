@@ -246,10 +246,24 @@ async fn try_load_kube_config_with_resolved_exec(
 
 pub fn kube_list_warning_response(resource_name: &str, err: &kube::Error) -> Option<Response> {
     if let kube::Error::Api(api_err) = err {
-        if api_err.code == 403 || api_err.code == 404 || api_err.code == 503 {
+        let message_lower = api_err.message.to_lowercase();
+        let is_storage_reinitializing = message_lower.contains("storage is (re)initializing")
+            || message_lower.contains("toomanyrequests");
+
+        if api_err.code == 403
+            || api_err.code == 404
+            || api_err.code == 429
+            || api_err.code == 503
+            || is_storage_reinitializing
+        {
             let warning = if api_err.code == 403 {
                 format!(
                     "Limited access: no permission to list {}. The app will continue without this resource.",
+                    resource_name
+                )
+            } else if api_err.code == 429 || is_storage_reinitializing {
+                format!(
+                    "{} is temporarily unavailable (API server busy). Retrying in background.",
                     resource_name
                 )
             } else if api_err.code == 503 {

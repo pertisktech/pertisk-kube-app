@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Box, Loader, Pencil, RotateCw, Trash2 } from './Icons';
 import type { HelmRelease } from '../types';
@@ -41,9 +41,13 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYamlEditor, onD
   const [rollingBackRev, setRollingBackRev] = useState<number | null>(null);
   const [rollbackConfirmRev, setRollbackConfirmRev] = useState<number | null>(null);
   const orderedHistory = [...history].sort((a, b) => b.revision - a.revision);
+  const currentRevision = useMemo(() => {
+    if (orderedHistory.length > 0) return orderedHistory[0].revision;
+    return release.revision;
+  }, [orderedHistory, release.revision]);
 
   const handleRollback = async (revision: number) => {
-    if (revision === release.revision) return;
+    if (revision === currentRevision) return;
     setRollingBackRev(revision);
     try {
       await rollbackHelmRelease(release.namespace, release.name, revision);
@@ -73,7 +77,7 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYamlEditor, onD
     keyInfo={[
       { label: 'Namespace', value: release.namespace },
       { label: 'Chart', value: release.chart !== '-' ? release.chart : release.name },
-      { label: 'Revision', value: String(release.revision ?? '-') },
+      { label: 'Revision', value: String(currentRevision ?? '-') },
     ]}
     actions={
       <>
@@ -95,7 +99,7 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYamlEditor, onD
     <DrawerItem name="Namespace">{release.namespace}</DrawerItem>
     <DrawerItem name="Version">{release.chart_version ?? '—'}</DrawerItem>
     <DrawerItem name="App Version">{release.app_version ?? '—'}</DrawerItem>
-    <DrawerItem name="Revision">{release.revision ?? '—'}</DrawerItem>
+    <DrawerItem name="Revision">{currentRevision ?? '—'}</DrawerItem>
 
     <DrawerTitle>Resources</DrawerTitle>
     <div className="space-y-2">
@@ -156,7 +160,7 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYamlEditor, onD
             </thead>
             <tbody>
               {orderedHistory.map((rev) => {
-                const isCurrent = rev.revision === release.revision;
+                const isCurrent = rev.revision === currentRevision;
                 const isRollingBack = rollingBackRev === rev.revision;
                 return (
                   <tr

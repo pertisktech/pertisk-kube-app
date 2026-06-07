@@ -3,6 +3,7 @@ import YAML from 'yaml';
 import { Trash2 } from '../components/Icons';
 import { useRealtimeServiceAccounts } from '../hooks/useRealtimeResources';
 import { deleteServiceAccount } from '../hooks/useKubernetes';
+import { namespacedResourceKey, useSyncSelectedRealtimeItem } from '../hooks/useSyncSelectedRealtimeItem';
 import { useNamespace } from '../context/NamespaceContext';
 import { DataTable, ServiceAccountDetailPanel, ConfirmDialog } from '../components';
 import type { ServiceAccount } from '../types';
@@ -73,6 +74,14 @@ export const ServiceAccountsPage = () => {
     });
   }, [data, sortState, selectedNamespaces, resourceNameFilter]);
 
+  useSyncSelectedRealtimeItem(
+    data,
+    panelOpen && selectedItem ? namespacedResourceKey(selectedItem) : null,
+    selectedItem,
+    setSelectedItem,
+    namespacedResourceKey,
+    panelOpen,
+  );
 
   const handleOpenYamlEditorFromPanel = async (item: ServiceAccount) => {
     setPanelOpen(false);

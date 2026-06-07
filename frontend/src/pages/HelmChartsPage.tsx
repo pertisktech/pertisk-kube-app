@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Star } from '../components/Icons';
-import { useHelmCharts, useHelmReleases } from '../hooks/useKubernetes';
+import { useHelmCharts } from '../hooks/useKubernetes';
+import { useRealtimeHelmReleases } from '../hooks/useRealtimeResources';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
 import { DataTable } from '../components/DataTable';
 import { HelmChartDetailPanel } from '../components/HelmChartDetailPanel';
@@ -33,7 +34,7 @@ export const HelmChartsPage = () => {
   const data = chartResponse?.charts ?? [];
   const chartWarnings = chartResponse?.warnings ?? [];
   const chartsRefreshing = chartResponse?.refreshing === true;
-  const { data: releases } = useHelmReleases();
+  const { data: releases } = useRealtimeHelmReleases();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRepository, setSelectedRepository] = useState<string>('all');
   const [sortState, setSortState] = useState<{ key: ChartSortKey; direction: 'asc' | 'desc' }>({

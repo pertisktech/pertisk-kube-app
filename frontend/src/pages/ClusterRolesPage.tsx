@@ -3,6 +3,7 @@ import YAML from 'yaml';
 import { Trash2 } from '../components/Icons';
 import { useRealtimeClusterRoles } from '../hooks/useRealtimeResources';
 import { deleteClusterRole } from '../hooks/useKubernetes';
+import { clusterResourceKey, useSyncSelectedRealtimeItem } from '../hooks/useSyncSelectedRealtimeItem';
 import { DataTable, ClusterRoleDetailPanel, ConfirmDialog } from '../components';
 import type { ClusterRole } from '../types';
 import { getAuthToken } from '../utils/auth';
@@ -62,6 +63,14 @@ export const ClusterRolesPage = () => {
     });
   }, [data, sortState]);
 
+  useSyncSelectedRealtimeItem(
+    data,
+    panelOpen && selectedItem ? clusterResourceKey(selectedItem) : null,
+    selectedItem,
+    setSelectedItem,
+    clusterResourceKey,
+    panelOpen,
+  );
 
   const handleOpenYamlEditorFromPanel = async (item: ClusterRole) => {
     setPanelOpen(false);

@@ -4,6 +4,7 @@ import YAML from 'yaml';
 import { ChevronDown, Layers, Pencil, Trash2 } from '../components/Icons';
 import { deleteCustomResource } from '../hooks/useKubernetes';
 import { useRealtimeCrds, useRealtimeCustomResources } from '../hooks/useRealtimeResources';
+import { useSyncSelectedRealtimeItem } from '../hooks/useSyncSelectedRealtimeItem';
 import { DataTable } from '../components';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ResourceDetailPanelLayout, PanelActionButton } from '../components/ResourceDetailPanelLayout';
@@ -273,6 +274,9 @@ const DetailPanel = ({
 
 type SortKey = 'name' | 'namespace' | 'age' | string;
 
+const customResourceKey = (item: CustomResource) =>
+  item.namespace ? `${item.namespace}/${item.name}` : item.name;
+
 export const CustomResourcesPage = () => {
   const { crdName } = useParams<{ crdName: string }>();
   const decodedCrdName = crdName ? decodeURIComponent(crdName) : '';
@@ -305,6 +309,15 @@ export const CustomResourcesPage = () => {
     setSelectedItem(null);
     setConfirmDelete(null);
   }, [decodedCrdName]);
+
+  useSyncSelectedRealtimeItem(
+    rawData,
+    panelOpen && selectedItem ? customResourceKey(selectedItem) : null,
+    selectedItem,
+    setSelectedItem,
+    customResourceKey,
+    panelOpen,
+  );
 
   const handleEditYaml = async (item: CustomResource) => {
     setPanelOpen(false);

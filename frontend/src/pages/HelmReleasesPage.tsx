@@ -3,7 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import YAML from 'yaml';
 import { toast } from 'react-toastify';
 import { Trash2 } from '../components/Icons';
-import { useHelmReleases, deleteHelmRelease, getHelmReleaseYaml } from '../hooks/useKubernetes';
+import { deleteHelmRelease, getHelmReleaseYaml } from '../hooks/useKubernetes';
+import { useRealtimeHelmReleases } from '../hooks/useRealtimeResources';
 import { DataTable } from '../components/DataTable';
 import { HelmReleaseDetailPanel } from '../components/HelmReleaseDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -179,7 +180,11 @@ const getLifecycleDescription = (status: string): string => {
 export const HelmReleasesPage = () => {
   const queryClient = useQueryClient();
   const { selectedNamespaces } = useNamespace();
-  const { data, isLoading, error } = useHelmReleases(selectedNamespaces.length > 0 ? selectedNamespaces : undefined);
+  const { data: allReleases = [], isLoading, error } = useRealtimeHelmReleases();
+  const data = useMemo(() => {
+    if (selectedNamespaces.length === 0) return allReleases;
+    return allReleases.filter((release) => selectedNamespaces.includes(release.namespace));
+  }, [allReleases, selectedNamespaces]);
   const [selectedRelease, setSelectedRelease] = useState<HelmRelease | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -202,8 +207,25 @@ export const HelmReleasesPage = () => {
     const updated = data.find(
       (r) => r.name === selectedRelease.name && r.namespace === selectedRelease.namespace,
     );
-    setSelectedRelease(updated ?? data[0]);
-  }, [data]);
+    if (!updated) {
+      setSelectedRelease(data[0]);
+      return;
+    }
+    if (
+      updated.revision !== selectedRelease.revision
+      || updated.status !== selectedRelease.status
+      || updated.chart_version !== selectedRelease.chart_version
+      || updated.updated !== selectedRelease.updated
+    ) {
+      setSelectedRelease(updated);
+      void queryClient.invalidateQueries({
+        queryKey: ['helm-release-history', updated.namespace, updated.name],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['helm-release-resources', updated.namespace, updated.name],
+      });
+    }
+  }, [data, selectedRelease, queryClient]);
 
   const handleOpenYaml = async (release: HelmRelease) => {
     setPanelOpen(false);

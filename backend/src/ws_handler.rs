@@ -26,6 +26,8 @@ use tokio::{
 };
 use tracing::{error, info, warn};
 
+use crate::handlers::crd::list_custom_resources_for_crd;
+use crate::handlers::helm::HelmReleaseAggregator;
 use crate::{models::CustomResourceItem, AppState};
 
 fn custom_resource_from_dynamic(obj: DynamicObject) -> CustomResourceItem {
@@ -938,6 +940,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     "priorityclasses" => watch_priorityclasses(state_clone, tx_clone).await,
                                     "runtimeclasses" => watch_runtimeclasses(state_clone, tx_clone).await,
                                     "leases" => watch_leases(state_clone, tx_clone).await,
+                                    "helmreleases" => watch_helmreleases(state_clone, tx_clone).await,
                                     "mwc" => watch_mwcs(state_clone, tx_clone).await,
                                     "vwc" => watch_vwcs(state_clone, tx_clone).await,
                                     "crds" => watch_crds(state_clone, tx_clone).await,
@@ -1270,6 +1273,150 @@ async fn watch_nodes(
 }
 
 // Generic macro to create watch functions for any K8s resource type
+async fn watch_helmreleases(
+    state: AppState,
+    tx: tokio::sync::mpsc::Sender<ServerMessage>,
+) {
+    use k8s_openapi::api::core::v1::Secret;
+    use kube::runtime::watcher::Event;
+
+    if let Some(message) = placeholder_error_message(&state) {
+        let _ = tx.send(ServerMessage::Error { message }).await;
+        return;
+    }
+
+    let client = state.client.clone();
+    let api: Api<Secret> = Api::all(client);
+    let list_params = ListParams::default().labels("owner=helm");
+    let watch_config = watcher::Config::default().labels("owner=helm");
+    let mut aggregator = HelmReleaseAggregator::new();
+
+    info!("Fetching initial helm releases list...");
+    match api.list(&list_params).await {
+        Ok(list) => {
+            let releases = aggregator.load_initial(list.items);
+            info!("Sending {} helm releases", releases.len());
+            for item in releases {
+                let item_data = serde_json::to_value(&item).unwrap_or_default();
+                let msg = ServerMessage::ResourceUpdate {
+                    resource: "helmreleases".to_string(),
+                    action: "ADDED".to_string(),
+                    data: item_data,
+                };
+                if tx.send(msg).await.is_err() {
+                    return;
+                }
+            }
+        }
+        Err(e) => {
+            if is_forbidden_or_missing_api(&e) {
+                warn!("Skipping helm releases watch initialization due to unavailable/forbidden API: {}", e);
+                return;
+            }
+            error!("Failed to fetch initial helm releases list: {}", e);
+            let msg = ServerMessage::Error {
+                message: format!("Failed to fetch initial helm releases: {}", e),
+            };
+            let _ = tx.send(msg).await;
+            return;
+        }
+    }
+
+    let mut retry_attempt: u32 = 0;
+    loop {
+        info!("Starting helmreleases watch stream...");
+        let mut stream = std::pin::Pin::from(Box::new(watcher(api.clone(), watch_config.clone())));
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(event) => {
+                    retry_attempt = 0;
+                    match event {
+                        Event::Applied(secret) => {
+                            if let Some((_key, release)) = aggregator.ingest_secret(&secret) {
+                                let item_data = serde_json::to_value(&release).unwrap_or_default();
+                                let msg = ServerMessage::ResourceUpdate {
+                                    resource: "helmreleases".to_string(),
+                                    action: "MODIFIED".to_string(),
+                                    data: item_data,
+                                };
+                                if tx.send(msg).await.is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                        Event::Deleted(secret) => {
+                            if let Some((_key, release)) = aggregator.remove_secret(&secret) {
+                                if let Some(release) = release {
+                                    let item_data = serde_json::to_value(&release).unwrap_or_default();
+                                    let msg = ServerMessage::ResourceUpdate {
+                                        resource: "helmreleases".to_string(),
+                                        action: "MODIFIED".to_string(),
+                                        data: item_data,
+                                    };
+                                    if tx.send(msg).await.is_err() {
+                                        return;
+                                    }
+                                } else if let Some(item) =
+                                    crate::handlers::helm::helm_release_item_from_secret(&secret)
+                                {
+                                    let item_data = serde_json::json!({
+                                        "name": item.name,
+                                        "namespace": item.namespace,
+                                    });
+                                    let msg = ServerMessage::ResourceUpdate {
+                                        resource: "helmreleases".to_string(),
+                                        action: "DELETED".to_string(),
+                                        data: item_data,
+                                    };
+                                    if tx.send(msg).await.is_err() {
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                        Event::Restarted(secrets) => {
+                            let releases = aggregator.load_initial(secrets);
+                            for item in releases {
+                                let item_data = serde_json::to_value(&item).unwrap_or_default();
+                                let msg = ServerMessage::ResourceUpdate {
+                                    resource: "helmreleases".to_string(),
+                                    action: "MODIFIED".to_string(),
+                                    data: item_data,
+                                };
+                                if tx.send(msg).await.is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    if is_forbidden_or_missing_watch_api(&e) {
+                        warn!("Stopping helm releases watch due to unavailable/forbidden API: {}", e);
+                        return;
+                    }
+                    error!("Watch error for helmreleases: {}", e);
+                    let msg = ServerMessage::Error {
+                        message: format!("Watch error: {}", e),
+                    };
+                    let _ = tx.send(msg).await;
+                    break;
+                }
+            }
+        }
+
+        retry_attempt = retry_attempt.saturating_add(1);
+        let backoff_secs = std::cmp::min(10, retry_attempt);
+        warn!(
+            "helmreleases watch stream ended; reconnecting in {}s (attempt {})",
+            backoff_secs,
+            retry_attempt
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(backoff_secs as u64)).await;
+    }
+}
+
 macro_rules! create_watch_fn {
     ($fn_name:ident, $resource_type:ty, $resource_name:expr) => {
         async fn $fn_name(
@@ -1588,76 +1735,119 @@ async fn watch_custom_resources(
     let gvk = GroupVersionKind::gvk(&spec.group, &storage_version, &names.kind);
     let ar = ApiResource::from_gvk_with_plural(&gvk, &names.plural);
 
-    let api: Api<DynamicObject> = Api::all_with(client, &ar);
+    let api: Api<DynamicObject> = Api::all_with(client.clone(), &ar);
+
     info!("Fetching initial custom resource list for {}...", resource_name);
-    match api.list(&ListParams::default()).await {
-        Ok(list) => {
-            for item in list.items {
+    match list_custom_resources_for_crd(client.clone(), crd_name, None).await {
+        Ok(items) => {
+            for item in items {
                 let item_data = serde_json::to_value(&item).unwrap_or_default();
-                if tx.send(ServerMessage::ResourceUpdate {
-                    resource: resource_name.to_string(),
-                    action: "ADDED".to_string(),
-                    data: item_data,
-                }).await.is_err() {
+                if tx
+                    .send(ServerMessage::ResourceUpdate {
+                        resource: resource_name.to_string(),
+                        action: "ADDED".to_string(),
+                        data: item_data,
+                    })
+                    .await
+                    .is_err()
+                {
                     return;
                 }
             }
         }
         Err(e) => {
             if is_forbidden_or_missing_api(&e) {
-                warn!("Skipping custom resource watch initialization for {} due to unavailable/forbidden API: {}", crd_name, e);
+                warn!(
+                    "Skipping custom resource watch initialization for {} due to unavailable/forbidden API: {}",
+                    crd_name, e
+                );
                 return;
             }
             error!("Failed to list custom resources for {}: {}", crd_name, e);
-            let _ = tx.send(ServerMessage::Error { message: format!("List failed: {}", e) }).await;
+            let _ = tx
+                .send(ServerMessage::Error {
+                    message: format!("List failed: {}", e),
+                })
+                .await;
             return;
         }
     }
-    info!("Starting custom resource watch stream for {}", resource_name);
-    let stream = watcher(api, Default::default());
-    tokio::pin!(stream);
-    while let Some(result) = stream.next().await {
-        match result {
-            Ok(event) => {
-                use kube::runtime::watcher::Event;
-                let (action, item_opt) = match event {
-                    Event::Applied(item) => ("MODIFIED", Some(item)),
-                    Event::Deleted(item) => ("DELETED", Some(item)),
-                    Event::Restarted(items) => {
-                        for item in items {
-                            let item_data = serde_json::to_value(&item).unwrap_or_default();
-                            if tx.send(ServerMessage::ResourceUpdate {
-                                resource: resource_name.to_string(),
-                                action: "MODIFIED".to_string(),
-                                data: item_data,
-                            }).await.is_err() {
-                                return;
+
+    let mut retry_attempt: u32 = 0;
+    loop {
+        info!("Starting custom resource watch stream for {}", resource_name);
+        let mut stream = std::pin::Pin::from(Box::new(watcher(api.clone(), Default::default())));
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(event) => {
+                    retry_attempt = 0;
+                    use kube::runtime::watcher::Event;
+                    let (action, item_opt) = match event {
+                        Event::Applied(item) => ("MODIFIED", Some(item)),
+                        Event::Deleted(item) => ("DELETED", Some(item)),
+                        Event::Restarted(items) => {
+                            for item in items {
+                                let item_data =
+                                    serde_json::to_value(custom_resource_from_dynamic(item))
+                                        .unwrap_or_default();
+                                if tx
+                                    .send(ServerMessage::ResourceUpdate {
+                                        resource: resource_name.to_string(),
+                                        action: "MODIFIED".to_string(),
+                                        data: item_data,
+                                    })
+                                    .await
+                                    .is_err()
+                                {
+                                    return;
+                                }
                             }
+                            continue;
                         }
-                        continue;
-                    }
-                };
-                if let Some(item) = item_opt {
-                    let item_data = serde_json::to_value(&item).unwrap_or_default();
-                    if tx.send(ServerMessage::ResourceUpdate {
-                        resource: resource_name.to_string(),
-                        action: action.to_string(),
-                        data: item_data,
-                    }).await.is_err() {
-                        break;
+                    };
+                    if let Some(item) = item_opt {
+                        let item_data =
+                            serde_json::to_value(custom_resource_from_dynamic(item)).unwrap_or_default();
+                        if tx
+                            .send(ServerMessage::ResourceUpdate {
+                                resource: resource_name.to_string(),
+                                action: action.to_string(),
+                                data: item_data,
+                            })
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
                     }
                 }
-            }
-            Err(e) => {
-                if is_forbidden_or_missing_watch_api(&e) {
-                    warn!("Stopping custom resource watch for {} due to unavailable/forbidden API: {}", resource_name, e);
+                Err(e) => {
+                    if is_forbidden_or_missing_watch_api(&e) {
+                        warn!(
+                            "Stopping custom resource watch for {} due to unavailable/forbidden API: {}",
+                            resource_name, e
+                        );
+                        return;
+                    }
+                    error!("Watch error for {}: {}", resource_name, e);
+                    let _ = tx
+                        .send(ServerMessage::Error {
+                            message: format!("Watch error: {}", e),
+                        })
+                        .await;
                     break;
                 }
-                error!("Watch error for {}: {}", resource_name, e);
-                let _ = tx.send(ServerMessage::Error { message: format!("Watch error: {}", e) }).await;
-                break;
             }
         }
+
+        retry_attempt = retry_attempt.saturating_add(1);
+        let backoff_secs = std::cmp::min(10, retry_attempt);
+        warn!(
+            "Custom resource watch stream for {} ended; reconnecting in {}s (attempt {})",
+            resource_name, backoff_secs, retry_attempt
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(backoff_secs as u64)).await;
     }
 }
 

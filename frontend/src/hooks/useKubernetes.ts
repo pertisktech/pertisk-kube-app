@@ -1569,6 +1569,13 @@ export const deleteCustomResource = (crdName: string, name: string, namespace?: 
   return apiDelete(`/crds/${encodeURIComponent(crdName)}/resources/${encodeURIComponent(name)}${params}`);
 };
 
+const HELM_QUERY_OPTIONS = {
+  staleTime: 0,
+  refetchInterval: 2_000,
+  refetchIntervalInBackground: true,
+  refetchOnWindowFocus: true,
+} as const;
+
 export const useHelmReleases = (namespaces?: string[]) => {
   const normalizedNamespaces = (namespaces ?? [])
     .map((ns) => ns.trim())
@@ -1587,8 +1594,7 @@ export const useHelmReleases = (namespaces?: string[]) => {
       const data = (await res.json()) as ApiResponse<HelmRelease>;
       return data.data;
     },
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: true,
+    ...HELM_QUERY_OPTIONS,
   });
 };
 
@@ -1732,8 +1738,7 @@ export const useHelmReleaseHistory = (namespace: string, name: string) => {
     queryKey: ['helm-release-history', namespace, name],
     queryFn: () => getHelmReleaseHistory(namespace, name),
     enabled: !!namespace && !!name,
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: true,
+    ...HELM_QUERY_OPTIONS,
   });
 };
 
@@ -1753,6 +1758,7 @@ export const useHelmReleaseResources = (namespace: string, name: string) => {
       return Array.isArray(json.data) ? json.data : [];
     },
     enabled: !!namespace && !!name,
+    ...HELM_QUERY_OPTIONS,
   });
 };
 
