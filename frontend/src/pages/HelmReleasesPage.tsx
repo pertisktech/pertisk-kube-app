@@ -420,7 +420,7 @@ export const HelmReleasesPage = () => {
         columns={columns}
         data={sortedReleases}
         isLoading={isLoading}
-        error={error?.message ?? null}
+        error={error ?? null}
         autoFitContent={false}
         rowKey={(row) => `${row.namespace}/${row.name}`}
         onRowClick={(row) => {

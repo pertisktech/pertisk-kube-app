@@ -86,25 +86,6 @@ const isTransientRealtimeConnectivityError = (message?: string): boolean => {
     || normalized.includes('failed to fetch initial');
 };
 
-const stableHash = (input: string): number => {
-  let hash = 0;
-  for (let i = 0; i < input.length; i += 1) {
-    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
-  }
-  return hash;
-};
-
-const connectDelayForResource = (resourceType: string): number => {
-  const bucket = stableHash(resourceType) % 8;
-  return 120 + bucket * 90;
-};
-
-const reconnectDelayForResource = (resourceType: string, attempt: number): number => {
-  const jitter = (stableHash(resourceType) % 5) * 120;
-  const backoff = Math.min(5000, Math.max(0, attempt - 1) * 700);
-  return 1200 + backoff + jitter;
-};
-
 type RealtimeMessageListener = (message: WebSocketMessage) => void;
 
 const realtimeResourceListeners = new Map<string, Set<RealtimeMessageListener>>();
@@ -1230,7 +1211,9 @@ function isCustomResourceItemShape(raw: unknown): raw is CustomResource {
 
 function transformCustomResource(raw: any): CustomResource {
   if (isCustomResourceItemShape(raw)) {
-    const manifest = (raw.manifest && typeof raw.manifest === 'object') ? raw.manifest : raw;
+    const manifest = ((raw.manifest && typeof raw.manifest === 'object')
+      ? raw.manifest
+      : raw) as Record<string, unknown>;
     return {
       name: raw.name,
       namespace: raw.namespace ?? null,
@@ -1259,7 +1242,16 @@ function transformCustomResource(raw: any): CustomResource {
   const status = (raw.data && raw.data.status) != null ? raw.data.status : (raw.status != null ? raw.status : null);
   const labels = ((metadata.labels ?? manifestMetadata.labels) as Record<string, string> | undefined) ?? undefined;
   const annotations = ((metadata.annotations ?? manifestMetadata.annotations) as Record<string, string> | undefined) ?? undefined;
-  return { name, namespace, created_at, spec, status, labels, annotations, manifest };
+  return {
+    name,
+    namespace,
+    created_at,
+    spec,
+    status,
+    labels,
+    annotations,
+    manifest: manifest as Record<string, unknown> | null,
+  };
 }
 
 function transformCrd(raw: any): Crd {
