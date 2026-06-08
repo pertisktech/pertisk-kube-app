@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { getAuthToken } from '../utils/auth';
+import { isFetchConnectionError } from './useRealtimeResources';
 import { getDesktopWebSocketBase, isDesktopRuntime } from '../utils/desktopBridge';
 
 export type ResourceType = 'pods' | 'deployments' | 'services' | 'nodes';
@@ -596,7 +597,9 @@ export const useRealtimePods = <T>(options: UseRealtimePodsOptions = {}) => {
         return merged as T[];
       });
     } catch (syncError) {
-      console.error('[useRealtimePods] Failed to sync pod details:', syncError);
+      if (!isFetchConnectionError(syncError) && isRealtimeDebug()) {
+        console.warn('[useRealtimePods] Failed to sync pod details:', syncError);
+      }
       // Network interruptions are transient; keep background retry active
       // without surfacing hard table errors.
       setError(null);

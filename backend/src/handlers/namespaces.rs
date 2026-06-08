@@ -17,11 +17,11 @@ use crate::AppState;
 pub async fn list_namespaces(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Namespace;
 
-    if state.auth_placeholder {
+    if state.is_auth_placeholder() {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({
-                "error": state.auth_message.clone().unwrap_or_else(|| {
+                "error": state.auth_user_message().await.unwrap_or_else(|| {
                     "Kubernetes cluster configuration is not available.".to_string()
                 })
             })),
@@ -29,7 +29,7 @@ pub async fn list_namespaces(State(state): State<AppState>) -> impl IntoResponse
             .into_response();
     }
 
-    let api: Api<Namespace> = Api::all(state.client.clone());
+    let api: Api<Namespace> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<NamespaceItem> = list
@@ -87,7 +87,7 @@ pub async fn delete_namespace(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Namespace;
-    let api: Api<Namespace> = Api::all(state.client);
+    let api: Api<Namespace> = Api::all(state.kube_client().await);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted namespace {}", name);
@@ -106,7 +106,7 @@ pub async fn get_namespace_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Namespace;
 
-    let api: Api<Namespace> = Api::all(state.client);
+    let api: Api<Namespace> = Api::all(state.kube_client().await);
     match api.get(&name).await {
         Ok(ns) => match serde_yaml::to_string(&ns) {
             Ok(yaml) => (
@@ -150,7 +150,7 @@ pub async fn update_namespace_yaml(
 
     ns.metadata.name = Some(name.clone());
 
-    let api: Api<Namespace> = Api::all(state.client);
+    let api: Api<Namespace> = Api::all(state.kube_client().await);
     let patch_value = match serde_json::to_value(&ns) {
         Ok(value) => value,
         Err(err) => {

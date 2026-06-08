@@ -83,7 +83,25 @@ const isTransientRealtimeConnectivityError = (message?: string): boolean => {
     || normalized.includes('network is unreachable')
     || normalized.includes('timedout')
     || normalized.includes('timed out')
-    || normalized.includes('failed to fetch initial');
+    || normalized.includes('failed to fetch initial')
+    || normalized.includes('load failed')
+    || normalized.includes('failed to fetch')
+    || normalized.includes('could not connect')
+    || normalized.includes('networkerror')
+    || normalized.includes('network request failed');
+};
+
+export const isFetchConnectionError = (error: unknown): boolean => {
+  if (error instanceof TypeError) {
+    return isTransientRealtimeConnectivityError(error.message);
+  }
+  if (error instanceof Error) {
+    return isTransientRealtimeConnectivityError(error.message);
+  }
+  if (typeof error === 'string') {
+    return isTransientRealtimeConnectivityError(error);
+  }
+  return false;
 };
 
 type RealtimeMessageListener = (message: WebSocketMessage) => void;
@@ -1363,6 +1381,10 @@ function createRealtimeHook<T>(
           if (aborted) {
             return;
           }
+          if (isFetchConnectionError(fetchError)) {
+            setError(null);
+            return;
+          }
           const message = fetchError instanceof Error ? fetchError.message : 'Failed to fetch initial resources';
           if (isRealtimeDebug()) {
             console.warn(`Initial snapshot fetch failed for ${displayName}:`, message);
@@ -1839,6 +1861,10 @@ export function useRealtimeCustomResources(crdName: string | null): {
       })
       .catch((fetchError) => {
         if (aborted) {
+          return;
+        }
+        if (isFetchConnectionError(fetchError)) {
+          setError(null);
           return;
         }
         const message = fetchError instanceof Error ? fetchError.message : 'Failed to fetch initial resources';

@@ -13,7 +13,7 @@ use crate::{utils::kube_list_warning_response, AppState};
 pub async fn list_services(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Service;
 
-    let api: Api<Service> = Api::all(state.client);
+    let api: Api<Service> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<ServiceItem> = list
@@ -125,7 +125,7 @@ pub async fn list_services(State(state): State<AppState>) -> impl IntoResponse {
 pub async fn list_endpoints(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Endpoints;
 
-    let api: Api<Endpoints> = Api::all(state.client);
+    let api: Api<Endpoints> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<EndpointItem> = list
@@ -218,7 +218,7 @@ pub async fn list_endpoints(State(state): State<AppState>) -> impl IntoResponse 
 pub async fn list_ingresses(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::networking::v1::Ingress;
 
-    let api: Api<Ingress> = Api::all(state.client);
+    let api: Api<Ingress> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<IngressItem> = list
@@ -330,7 +330,7 @@ pub async fn list_ingresses(State(state): State<AppState>) -> impl IntoResponse 
 pub async fn list_ingressclasses(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::networking::v1::IngressClass;
 
-    let api: Api<IngressClass> = Api::all(state.client);
+    let api: Api<IngressClass> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<IngressClassItem> = list
@@ -407,7 +407,7 @@ pub async fn list_ingressclasses(State(state): State<AppState>) -> impl IntoResp
 pub async fn list_networkpolicies(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::networking::v1::NetworkPolicy;
 
-    let api: Api<NetworkPolicy> = Api::all(state.client);
+    let api: Api<NetworkPolicy> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<NetworkPolicyItem> = list
@@ -507,7 +507,7 @@ pub async fn get_service_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Service;
 
-    let api: Api<Service> = Api::namespaced(state.client, &namespace);
+    let api: Api<Service> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(obj) => match serde_yaml::to_string(&obj) {
             Ok(yaml) => (
@@ -555,7 +555,7 @@ pub async fn update_service_yaml(
     obj.metadata.name = Some(name.clone());
     obj.metadata.namespace = Some(namespace.clone());
 
-    let api: Api<Service> = Api::namespaced(state.client, &namespace);
+    let api: Api<Service> = Api::namespaced(state.kube_client().await, &namespace);
     let patch_value = match serde_json::to_value(&obj) {
         Ok(v) => v,
         Err(err) => {
@@ -597,7 +597,7 @@ pub async fn get_endpoint_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Endpoints;
 
-    let api: Api<Endpoints> = Api::namespaced(state.client, &namespace);
+    let api: Api<Endpoints> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(obj) => match serde_yaml::to_string(&obj) {
             Ok(yaml) => (
@@ -645,7 +645,7 @@ pub async fn update_endpoint_yaml(
     obj.metadata.name = Some(name.clone());
     obj.metadata.namespace = Some(namespace.clone());
 
-    let api: Api<Endpoints> = Api::namespaced(state.client, &namespace);
+    let api: Api<Endpoints> = Api::namespaced(state.kube_client().await, &namespace);
     let patch_value = match serde_json::to_value(&obj) {
         Ok(v) => v,
         Err(err) => {
@@ -687,7 +687,7 @@ pub async fn get_ingress_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::networking::v1::Ingress;
 
-    let api: Api<Ingress> = Api::namespaced(state.client, &namespace);
+    let api: Api<Ingress> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(obj) => match serde_yaml::to_string(&obj) {
             Ok(yaml) => (
@@ -735,7 +735,7 @@ pub async fn update_ingress_yaml(
     obj.metadata.name = Some(name.clone());
     obj.metadata.namespace = Some(namespace.clone());
 
-    let api: Api<Ingress> = Api::namespaced(state.client, &namespace);
+    let api: Api<Ingress> = Api::namespaced(state.kube_client().await, &namespace);
     let patch_value = match serde_json::to_value(&obj) {
         Ok(v) => v,
         Err(err) => {
@@ -777,7 +777,7 @@ pub async fn get_ingressclass_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::networking::v1::IngressClass;
 
-    let api: Api<IngressClass> = Api::all(state.client);
+    let api: Api<IngressClass> = Api::all(state.kube_client().await);
     match api.get(&name).await {
         Ok(obj) => match serde_yaml::to_string(&obj) {
             Ok(yaml) => (
@@ -821,7 +821,7 @@ pub async fn update_ingressclass_yaml(
 
     obj.metadata.name = Some(name.clone());
 
-    let api: Api<IngressClass> = Api::all(state.client);
+    let api: Api<IngressClass> = Api::all(state.kube_client().await);
     let patch_value = match serde_json::to_value(&obj) {
         Ok(v) => v,
         Err(err) => {
@@ -860,7 +860,7 @@ pub async fn get_networkpolicy_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::networking::v1::NetworkPolicy;
 
-    let api: Api<NetworkPolicy> = Api::namespaced(state.client, &namespace);
+    let api: Api<NetworkPolicy> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(obj) => match serde_yaml::to_string(&obj) {
             Ok(yaml) => (
@@ -911,7 +911,7 @@ pub async fn update_networkpolicy_yaml(
     obj.metadata.name = Some(name.clone());
     obj.metadata.namespace = Some(namespace.clone());
 
-    let api: Api<NetworkPolicy> = Api::namespaced(state.client, &namespace);
+    let api: Api<NetworkPolicy> = Api::namespaced(state.kube_client().await, &namespace);
     let patch_value = match serde_json::to_value(&obj) {
         Ok(v) => v,
         Err(err) => {
@@ -956,7 +956,7 @@ pub async fn delete_service(
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Service;
 
-    let api: Api<Service> = Api::namespaced(state.client, &namespace);
+    let api: Api<Service> = Api::namespaced(state.kube_client().await, &namespace);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted service {}/{}", namespace, name);
@@ -975,7 +975,7 @@ pub async fn delete_endpoint(
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Endpoints;
 
-    let api: Api<Endpoints> = Api::namespaced(state.client, &namespace);
+    let api: Api<Endpoints> = Api::namespaced(state.kube_client().await, &namespace);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted endpoint {}/{}", namespace, name);
@@ -994,7 +994,7 @@ pub async fn delete_ingress(
 ) -> impl IntoResponse {
     use k8s_openapi::api::networking::v1::Ingress;
 
-    let api: Api<Ingress> = Api::namespaced(state.client, &namespace);
+    let api: Api<Ingress> = Api::namespaced(state.kube_client().await, &namespace);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted ingress {}/{}", namespace, name);
@@ -1013,7 +1013,7 @@ pub async fn delete_ingressclass(
 ) -> impl IntoResponse {
     use k8s_openapi::api::networking::v1::IngressClass;
 
-    let api: Api<IngressClass> = Api::all(state.client);
+    let api: Api<IngressClass> = Api::all(state.kube_client().await);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted ingressclass {}", name);
@@ -1032,7 +1032,7 @@ pub async fn delete_networkpolicy(
 ) -> impl IntoResponse {
     use k8s_openapi::api::networking::v1::NetworkPolicy;
 
-    let api: Api<NetworkPolicy> = Api::namespaced(state.client, &namespace);
+    let api: Api<NetworkPolicy> = Api::namespaced(state.kube_client().await, &namespace);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted networkpolicy {}/{}", namespace, name);

@@ -69,10 +69,10 @@ fn is_forbidden_or_missing_watch_api(err: &watcher::Error) -> bool {
     }
 }
 
-fn placeholder_error_message(state: &AppState) -> Option<String> {
-    if state.auth_placeholder {
+async fn placeholder_error_message(state: &AppState) -> Option<String> {
+    if state.is_auth_placeholder() {
         Some(
-            state.auth_message.clone().unwrap_or_else(|| {
+            state.auth_user_message().await.unwrap_or_else(|| {
                 "Kubernetes cluster configuration is not available. Add kubeconfig and restart the app."
                     .to_string()
             }),
@@ -1001,12 +1001,12 @@ async fn watch_pods(
     use k8s_openapi::api::core::v1::Pod;
     use kube::api::ListParams;
 
-    if let Some(message) = placeholder_error_message(&state) {
+    if let Some(message) = placeholder_error_message(&state).await {
         let _ = tx.send(ServerMessage::Error { message }).await;
         return;
     }
 
-    let client = state.client.clone();
+    let client = state.kube_client().await;
 
     let api: Api<Pod> = Api::all(client);
     
@@ -1148,12 +1148,12 @@ async fn watch_nodes(
     use k8s_openapi::api::core::v1::Node;
     use kube::api::ListParams;
 
-    if let Some(message) = placeholder_error_message(&state) {
+    if let Some(message) = placeholder_error_message(&state).await {
         let _ = tx.send(ServerMessage::Error { message }).await;
         return;
     }
 
-    let client = state.client.clone();
+    let client = state.kube_client().await;
     let api: Api<Node> = Api::all(client);
 
     info!("Fetching initial node list...");
@@ -1280,12 +1280,12 @@ async fn watch_helmreleases(
     use k8s_openapi::api::core::v1::Secret;
     use kube::runtime::watcher::Event;
 
-    if let Some(message) = placeholder_error_message(&state) {
+    if let Some(message) = placeholder_error_message(&state).await {
         let _ = tx.send(ServerMessage::Error { message }).await;
         return;
     }
 
-    let client = state.client.clone();
+    let client = state.kube_client().await;
     let api: Api<Secret> = Api::all(client);
     let list_params = ListParams::default().labels("owner=helm");
     let watch_config = watcher::Config::default().labels("owner=helm");
@@ -1425,12 +1425,12 @@ macro_rules! create_watch_fn {
         ) {
             use kube::api::ListParams;
 
-            if let Some(message) = placeholder_error_message(&state) {
+            if let Some(message) = placeholder_error_message(&state).await {
                 let _ = tx.send(ServerMessage::Error { message }).await;
                 return;
             }
 
-            let client = state.client.clone();
+            let client = state.kube_client().await;
 
             let api: Api<$resource_type> = Api::all(client);
             
@@ -1598,12 +1598,12 @@ async fn watch_dynamic_cluster_resource(
     ar: ApiResource,
     resource_name: &str,
 ) {
-    if let Some(message) = placeholder_error_message(&state) {
+    if let Some(message) = placeholder_error_message(&state).await {
         let _ = tx.send(ServerMessage::Error { message }).await;
         return;
     }
 
-    let client = state.client.clone();
+    let client = state.kube_client().await;
 
     let api: Api<DynamicObject> = Api::all_with(client, &ar);
     info!("Fetching initial {} list...", resource_name);
@@ -1707,12 +1707,12 @@ async fn watch_custom_resources(
     resource_name: &str,
     crd_name: &str,
 ) {
-    if let Some(message) = placeholder_error_message(&state) {
+    if let Some(message) = placeholder_error_message(&state).await {
         let _ = tx.send(ServerMessage::Error { message }).await;
         return;
     }
 
-    let client = state.client.clone();
+    let client = state.kube_client().await;
 
     let crd_api: Api<CustomResourceDefinition> = Api::all(client.clone());
     let crd = match crd_api.get(crd_name).await {

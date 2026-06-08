@@ -2019,7 +2019,7 @@ async fn run_due_schedules(client: kube::Client) {
 pub fn start_backup_scheduler_worker(state: AppState) {
     tokio::spawn(async move {
         loop {
-            run_due_schedules(state.client.clone()).await;
+            run_due_schedules(state.kube_client().await).await;
             sleep(Duration::from_secs(30)).await;
         }
     });
@@ -2192,7 +2192,7 @@ async fn apply_s3_and_schedule(client: kube::Client, settings: &BackupSettings) 
 }
 
 pub async fn get_backup_settings(State(state): State<AppState>) -> impl IntoResponse {
-    let settings = load_settings(state.client.clone()).await;
+    let settings = load_settings(state.kube_client().await).await;
     (StatusCode::OK, Json(settings)).into_response()
 }
 
@@ -2200,7 +2200,7 @@ pub async fn save_backup_settings(
     State(state): State<AppState>,
     Json(settings): Json<BackupSettings>,
 ) -> impl IntoResponse {
-    match persist_settings(state.client.clone(), &settings).await {
+    match persist_settings(state.kube_client().await, &settings).await {
         Ok(()) => (StatusCode::OK, Json(json!({"success": true}))).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -2214,7 +2214,7 @@ pub async fn save_backup_s3_config(
     State(state): State<AppState>,
     Json(req): Json<S3ConfigRequest>,
 ) -> impl IntoResponse {
-    let mut settings = load_settings(state.client.clone()).await;
+    let mut settings = load_settings(state.kube_client().await).await;
     settings.storage_location_name = req.storage_location_name;
     settings.credentials_secret_name = req.credentials_secret_name;
     settings.s3_bucket = req.s3_bucket;
@@ -2226,7 +2226,7 @@ pub async fn save_backup_s3_config(
     settings.aws_access_key_id = req.aws_access_key_id;
     settings.aws_secret_access_key = req.aws_secret_access_key;
 
-    match persist_settings(state.client.clone(), &settings).await {
+    match persist_settings(state.kube_client().await, &settings).await {
         Ok(()) => (StatusCode::OK, Json(json!({"success": true}))).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -2237,8 +2237,8 @@ pub async fn save_backup_s3_config(
 }
 
 pub async fn apply_backup_settings(State(state): State<AppState>) -> impl IntoResponse {
-    let settings = load_settings(state.client.clone()).await;
-    match apply_s3_and_schedule(state.client.clone(), &settings).await {
+    let settings = load_settings(state.kube_client().await).await;
+    match apply_s3_and_schedule(state.kube_client().await, &settings).await {
         Ok(message) => (
             StatusCode::OK,
             Json(json!({"success": true, "message": message})),
@@ -2256,10 +2256,10 @@ pub async fn run_manual_backup(
     State(state): State<AppState>,
     Json(req): Json<ManualBackupRequest>,
 ) -> impl IntoResponse {
-    let settings = load_settings(state.client.clone()).await;
+    let settings = load_settings(state.kube_client().await).await;
     let runtime_namespace = SETTINGS_NAMESPACE;
     let backups_api: Api<DynamicObject> =
-        Api::namespaced_with(state.client.clone(), runtime_namespace, &backup_crd_resource("Backup"));
+        Api::namespaced_with(state.kube_client().await, runtime_namespace, &backup_crd_resource("Backup"));
 
     let backup_name = req.name.unwrap_or_else(|| {
         format!(
@@ -2322,7 +2322,7 @@ pub async fn run_restore(
 
     let runtime_namespace = SETTINGS_NAMESPACE;
     let restores_api: Api<DynamicObject> =
-        Api::namespaced_with(state.client.clone(), runtime_namespace, &backup_crd_resource("Restore"));
+        Api::namespaced_with(state.kube_client().await, runtime_namespace, &backup_crd_resource("Restore"));
 
     let restore_name = req.restore_name.unwrap_or_else(|| {
         format!(
@@ -2369,9 +2369,9 @@ pub async fn run_restore(
                     req.backup_name
                 );
 
-                let settings = load_settings(state.client.clone()).await;
+                let settings = load_settings(state.kube_client().await).await;
                 match restore_from_s3_snapshot(
-                    state.client.clone(),
+                    state.kube_client().await,
                     &settings,
                     &req.backup_name,
                     &include_namespaces,
@@ -2468,7 +2468,7 @@ pub async fn create_backup_schedule(
             .into_response();
     }
 
-    if let Err(e) = ensure_namespace(state.client.clone(), SETTINGS_NAMESPACE).await {
+    if let Err(e) = ensure_namespace(state.kube_client().await, SETTINGS_NAMESPACE).await {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"success": false, "message": e})),
@@ -2476,7 +2476,7 @@ pub async fn create_backup_schedule(
             .into_response();
     }
 
-    let mut schedules = load_stored_schedules(state.client.clone()).await;
+    let mut schedules = load_stored_schedules(state.kube_client().await).await;
     let schedule_name = req.name.trim().to_string();
     let now = Utc::now().to_rfc3339();
     let include_namespaces = req.include_namespaces.unwrap_or_default();
@@ -2504,7 +2504,7 @@ pub async fn create_backup_schedule(
         });
     }
 
-    match persist_stored_schedules(state.client.clone(), &schedules).await {
+    match persist_stored_schedules(state.kube_client().await, &schedules).await {
         Ok(()) => (
             StatusCode::OK,
             Json(json!({"success": true, "name": schedule_name, "message": "Backup schedule saved"})),
@@ -2530,11 +2530,11 @@ pub async fn delete_backup_schedule(
             .into_response();
     }
 
-    let mut schedules = load_stored_schedules(state.client.clone()).await;
+    let mut schedules = load_stored_schedules(state.kube_client().await).await;
     let before = schedules.len();
     schedules.retain(|s| s.name != name.trim());
 
-    match persist_stored_schedules(state.client.clone(), &schedules).await {
+    match persist_stored_schedules(state.kube_client().await, &schedules).await {
         Ok(()) => (
             StatusCode::OK,
             Json(json!({
@@ -2563,7 +2563,7 @@ pub async fn run_backup_schedule_manual(
             .into_response();
     }
 
-    match trigger_schedule_run(state.client.clone(), name.trim(), true).await {
+    match trigger_schedule_run(state.kube_client().await, name.trim(), true).await {
         Ok(run_name) => (
             StatusCode::OK,
             Json(json!({
@@ -2601,7 +2601,7 @@ pub async fn delete_backup_run(
             .into_response();
     }
 
-    match delete_backup_runs_by_names(state.client.clone(), &[backup_name.to_string()]).await {
+    match delete_backup_runs_by_names(state.kube_client().await, &[backup_name.to_string()]).await {
         Ok((deleted_count, warnings)) => {
             let message = if warnings.is_empty() {
                 format!(
@@ -2644,8 +2644,8 @@ pub async fn download_backup_run(
             .into_response();
     }
 
-    let settings = load_settings(state.client.clone()).await;
-    let object_key = load_stored_backup_runs(state.client.clone())
+    let settings = load_settings(state.kube_client().await).await;
+    let object_key = load_stored_backup_runs(state.kube_client().await)
         .await
         .into_iter()
         .find(|run| run.name.trim() == backup_name)
@@ -2692,7 +2692,7 @@ pub async fn delete_backup_runs_bulk(
             .into_response();
     }
 
-    match delete_backup_runs_by_names(state.client.clone(), &req.names).await {
+    match delete_backup_runs_by_names(state.kube_client().await, &req.names).await {
         Ok((deleted_count, warnings)) => {
             let message = if warnings.is_empty() {
                 format!(
@@ -2725,7 +2725,7 @@ pub async fn delete_backup_runs_bulk(
 }
 
 pub async fn get_backup_overview(State(state): State<AppState>) -> impl IntoResponse {
-    let mut merged_backups: HashMap<String, BackupRecord> = load_stored_backup_runs(state.client.clone())
+    let mut merged_backups: HashMap<String, BackupRecord> = load_stored_backup_runs(state.kube_client().await)
         .await
         .into_iter()
         .map(|r| {
@@ -2761,7 +2761,7 @@ pub async fn get_backup_overview(State(state): State<AppState>) -> impl IntoResp
     if now_epoch >= retry_at {
         let runtime_namespace = SETTINGS_NAMESPACE;
         let backups_api: Api<DynamicObject> =
-            Api::namespaced_with(state.client.clone(), runtime_namespace, &backup_crd_resource("Backup"));
+            Api::namespaced_with(state.kube_client().await, runtime_namespace, &backup_crd_resource("Backup"));
 
         match backups_api.list(&ListParams::default()).await {
             Ok(list) => {
@@ -2854,7 +2854,7 @@ pub async fn get_backup_overview(State(state): State<AppState>) -> impl IntoResp
             .any(|record| record.size_bytes.is_none());
 
     if should_load_s3_metadata {
-        let settings = load_settings(state.client.clone()).await;
+        let settings = load_settings(state.kube_client().await).await;
         for record in load_backup_runs_from_s3(&settings).await {
             if let Some(existing) = merged_backups.get_mut(&record.name) {
                 if existing.size_bytes.is_none() {
@@ -2870,7 +2870,7 @@ pub async fn get_backup_overview(State(state): State<AppState>) -> impl IntoResp
 
     backups.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
-    let schedules: Vec<ScheduleRecord> = load_stored_schedules(state.client.clone())
+    let schedules: Vec<ScheduleRecord> = load_stored_schedules(state.kube_client().await)
         .await
         .into_iter()
         .map(|s| ScheduleRecord {

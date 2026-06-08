@@ -22,6 +22,8 @@ static NODE_DISK_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
 static POD_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
 static NODE_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
 const EXEC_PROVIDER_LOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
+const EXEC_PROVIDER_RESOLVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+const EXEC_PROVIDER_BACKGROUND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
 fn is_metrics_api_unavailable(err: &kube::Error) -> bool {
     match err {
@@ -313,144 +315,178 @@ pub async fn load_kube_client() -> anyhow::Result<Client> {
     load_kube_client_with_status().await.map(|(c, _)| c)
 }
 
-/// Returns `(client, status)`.
-/// `status.is_placeholder = true` means credentials/configuration were not available at startup.
-pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, KubeClientStatus)> {
-    let context = env::var("KUBE_CONTEXT").ok().filter(|s| !s.trim().is_empty());
+fn resolve_effective_kube_context() -> Option<String> {
+    if let Some(ctx) = env::var("KUBE_CONTEXT").ok().filter(|s| !s.trim().is_empty()) {
+        return Some(ctx);
+    }
 
-    if let Some(ref ctx) = context {
-        let options = KubeConfigOptions {
-            context: Some(ctx.clone()),
-            ..Default::default()
+    read_effective_kubeconfig()
+        .ok()
+        .and_then(|kc| kc.current_context.clone())
+        .filter(|s| !s.trim().is_empty())
+}
+
+fn placeholder_status_for_context(_context_name: Option<&str>) -> KubeClientStatus {
+    KubeClientStatus {
+        is_placeholder: true,
+        user_message: Some(default_placeholder_user_message()),
+    }
+}
+
+async fn try_build_client_from_config(cfg: Config) -> Result<Client, String> {
+    tokio::task::spawn_blocking(move || Client::try_from(cfg).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("client build task failed: {e}"))?
+}
+
+async fn try_build_client_from_options(options: &KubeConfigOptions) -> Result<Client, String> {
+    let cfg = Config::from_kubeconfig(options)
+        .await
+        .map_err(|e| e.to_string())?;
+    try_build_client_from_config(cfg).await
+}
+
+async fn try_build_client_with_resolved_exec(options: &KubeConfigOptions) -> Result<Client, String> {
+    let cfg = try_load_kube_config_with_resolved_exec(options)
+        .await
+        .map_err(|e| e.to_string())?;
+    try_build_client_from_config(cfg).await
+}
+
+async fn try_load_client_for_context_with_timeout(
+    ctx: &str,
+    load_timeout: std::time::Duration,
+    resolve_timeout: std::time::Duration,
+) -> Option<Client> {
+    let options = KubeConfigOptions {
+        context: Some(ctx.to_string()),
+        ..Default::default()
+    };
+
+    // Config::from_kubeconfig and Client::try_from can both invoke exec-credential plugins.
+    // Keep the entire build inside one timeout so startup cannot hang past the sidecar probe.
+    match timeout(load_timeout, try_build_client_from_options(&options)).await {
+        Ok(Ok(client)) => return Some(client),
+        Ok(Err(e)) => {
+            if !is_missing_exec_error(&e) {
+                warn!(
+                    "Kubernetes client init failed for context '{}': {}. \
+                     Exec credential may be unavailable.",
+                    ctx, e
+                );
+                return None;
+            }
+        }
+        Err(_) => {
+            warn!(
+                "Kubernetes client init timed out (>{} s) for context '{}'. \
+                 Exec credential plugin is slow or unresponsive.",
+                EXEC_PROVIDER_LOAD_TIMEOUT.as_secs(),
+                ctx
+            );
+            return None;
+        }
+    }
+
+    match timeout(resolve_timeout, try_build_client_with_resolved_exec(&options)).await {
+        Ok(Ok(client)) => Some(client),
+        Ok(Err(e)) => {
+            warn!(
+                "Resolved exec command for context '{}' failed: {}.",
+                ctx, e
+            );
+            None
+        }
+        Err(_) => {
+            warn!(
+                "Resolved exec command timed out for context '{}'.",
+                ctx
+            );
+            None
+        }
+    }
+}
+
+async fn try_load_client_for_context(ctx: &str) -> Option<Client> {
+    try_load_client_for_context_with_timeout(
+        ctx,
+        EXEC_PROVIDER_LOAD_TIMEOUT,
+        EXEC_PROVIDER_RESOLVE_TIMEOUT,
+    )
+    .await
+}
+
+pub async fn upgrade_kube_client_in_background(
+    client: std::sync::Arc<tokio::sync::RwLock<Client>>,
+    auth_placeholder: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    auth_message: std::sync::Arc<tokio::sync::RwLock<Option<String>>>,
+) {
+    use std::sync::atomic::Ordering;
+    use tracing::info;
+
+    const MAX_ATTEMPTS: u32 = 18;
+    const RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+
+    for attempt in 1..=MAX_ATTEMPTS {
+        if !auth_placeholder.load(Ordering::Relaxed) {
+            return;
+        }
+
+        tokio::time::sleep(RETRY_INTERVAL).await;
+
+        let Some(ctx) = resolve_effective_kube_context() else {
+            continue;
         };
-        // Exec-credential plugins (kubectl-oidc-login, omnictl, aws eks get-token,
-        // kubelogin, gke-gcloud-auth-plugin, etc.) are invoked eagerly by kube-rs
-        // during config loading. They may fail immediately (OIDC server down, 502,
-        // connection refused) or hang. Either way we must NOT let the error propagate
-        // to main() — the HTTP server must start so the Tauri sidecar health probe
-        // passes and the cluster switch is not rolled back.
-        match tokio::time::timeout(
-            EXEC_PROVIDER_LOAD_TIMEOUT,
-            Config::from_kubeconfig(&options),
+
+        if let Some(upgraded) = try_load_client_for_context_with_timeout(
+            &ctx,
+            EXEC_PROVIDER_BACKGROUND_TIMEOUT,
+            EXEC_PROVIDER_RESOLVE_TIMEOUT,
         )
         .await
         {
-            Ok(Ok(cfg)) => match Client::try_from(cfg) {
-                Ok(c) => return Ok((c, KubeClientStatus::default())),
-                Err(e) => {
-                    if is_missing_exec_error(&e.to_string()) {
-                        match tokio::time::timeout(
-                            EXEC_PROVIDER_LOAD_TIMEOUT,
-                            try_load_kube_config_with_resolved_exec(&options),
-                        )
-                        .await
-                        {
-                            Ok(Ok(resolved_cfg)) => match Client::try_from(resolved_cfg) {
-                                Ok(c) => return Ok((c, KubeClientStatus::default())),
-                                Err(inner) => warn!(
-                                    "Resolved exec command for context '{}', but client build still failed: {}. \
-                                     Starting with placeholder client.",
-                                    ctx, inner
-                                ),
-                            },
-                            Ok(Err(inner)) => warn!(
-                                "Kubeconfig fallback with resolved exec command failed for context '{}': {}",
-                                ctx, inner
-                            ),
-                            Err(_) => warn!(
-                                "Kubeconfig fallback with resolved exec command timed out for context '{}'.",
-                                ctx
-                            ),
-                        }
-                    }
-
-                    warn!(
-                        "Kubernetes client build failed for context '{}': {}. \
-                         Starting with placeholder client.",
-                        ctx, e
-                    )
-                }
-            },
-            Ok(Err(e)) => {
-                let missing_exec = is_missing_exec_error(&e.to_string());
-
-                if missing_exec {
-                    match tokio::time::timeout(
-                        EXEC_PROVIDER_LOAD_TIMEOUT,
-                        try_load_kube_config_with_resolved_exec(&options),
-                    )
-                    .await
-                    {
-                        Ok(Ok(cfg)) => match Client::try_from(cfg) {
-                            Ok(c) => return Ok((c, KubeClientStatus::default())),
-                            Err(inner) => warn!(
-                                "Resolved exec command for context '{}', but client build still failed: {}. \
-                                 Starting with placeholder client.",
-                                ctx, inner
-                            ),
-                        },
-                        Ok(Err(inner)) => warn!(
-                            "Kubeconfig fallback with resolved exec command failed for context '{}': {}",
-                            ctx, inner
-                        ),
-                        Err(_) => warn!(
-                            "Kubeconfig fallback with resolved exec command timed out for context '{}'.",
-                            ctx
-                        ),
-                    }
-                }
-
-                warn!(
-                    "Kubeconfig load failed for context '{}': {}. \
-                     Exec credential may be unavailable (OIDC server down, plugin missing, etc.). \
-                     Starting with placeholder client — API calls will fail with auth errors \
-                     until credentials are available.",
-                    ctx, e
-                )
-            }
-            Err(_) => warn!(
-                "Kubeconfig load timed out (>{} s) for context '{}'. \
-                 Exec credential plugin is slow or unresponsive. \
-                 Starting with placeholder client.",
-                EXEC_PROVIDER_LOAD_TIMEOUT.as_secs(),
+            *client.write().await = upgraded;
+            auth_placeholder.store(false, Ordering::Relaxed);
+            *auth_message.write().await = None;
+            info!(
+                "Kubernetes client upgraded from placeholder to authenticated credentials for context '{}'",
                 ctx
-            ),
+            );
+            return;
         }
 
-        // Exec credential failed. Build a client from the same kubeconfig but with
-        // the exec plugin stripped out. The server starts, health probes pass, and
-        // API calls return 401/403 until the user's credentials are working.
-        return build_placeholder_client(Some(ctx)).await.map(|c| {
-            (
-                c,
-                KubeClientStatus {
-                    is_placeholder: true,
-                    user_message: Some(default_placeholder_user_message()),
-                },
-            )
+        warn!(
+            "Background Kubernetes credential upgrade attempt {}/{} failed for context '{}'",
+            attempt, MAX_ATTEMPTS, ctx
+        );
+    }
+}
+
+/// Returns `(client, status)`.
+/// `status.is_placeholder = true` means credentials/configuration were not available at startup.
+pub async fn load_kube_client_with_status() -> anyhow::Result<(Client, KubeClientStatus)> {
+    let context = resolve_effective_kube_context();
+
+    if let Some(ref ctx) = context {
+        // Exec-credential plugins are invoked eagerly by kube-rs during config loading.
+        // They may hang for a long time; cap startup wait and fall back to a placeholder
+        // client so the HTTP server can bind and sidecar health probes pass.
+        if let Some(client) = try_load_client_for_context(ctx).await {
+            return Ok((client, KubeClientStatus::default()));
+        }
+
+        return build_placeholder_client(Some(ctx)).await.map(|client| {
+            (client, placeholder_status_for_context(Some(ctx)))
         });
     }
 
-    // No explicit KUBE_CONTEXT — use system default; fall back to placeholder on failure.
-    match Client::try_default().await {
-        Ok(c) => Ok((c, KubeClientStatus::default())),
-        Err(e) => {
-            warn!(
-                "Default Kubernetes client init failed ({}). \
-                 Starting with placeholder client.",
-                e
-            );
-            build_placeholder_client(None).await.map(|c| {
-                (
-                    c,
-                    KubeClientStatus {
-                        is_placeholder: true,
-                        user_message: Some(default_placeholder_user_message()),
-                    },
-                )
-            })
-        }
-    }
+    // No kube context in env/kubeconfig — skip Client::try_default() because it can block on
+    // exec-credential plugins without yielding, which prevents startup timeouts from firing.
+    warn!("No Kubernetes context configured; starting with placeholder client.");
+
+    build_placeholder_client(None)
+        .await
+        .map(|client| (client, placeholder_status_for_context(None)))
 }
 
 /// Build a Kubernetes client that points at the correct API server but carries NO auth

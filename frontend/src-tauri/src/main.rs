@@ -48,8 +48,8 @@ const DEFAULT_PORT: u16 = 15222;
 const DEFAULT_GRPC_PORT: u16 = 50051;
 // Keep startup timeout above backend exec-provider kubeconfig timeout (25s)
 // so slow credential plugins do not trigger false sidecar-start failures.
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
-const CLUSTER_VERIFY_TIMEOUT: Duration = Duration::from_secs(40);
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
+const CLUSTER_VERIFY_TIMEOUT: Duration = Duration::from_secs(45);
 const RESTART_BACKOFF: Duration = Duration::from_secs(2);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 const PORT_SCAN_LIMIT: u16 = 200;
@@ -466,6 +466,7 @@ fn configure_sidecar_environment(command: &mut Command) {
         "OMNICONFIG",
         "TALOSCONFIG",
         "OMNI_ENDPOINT",
+        "SIDEROV1_KEYS_DIR",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
         "XDG_CACHE_HOME",
@@ -596,13 +597,26 @@ fn wait_for_cluster_verification(port: u16, timeout: Duration) -> bool {
     let start = Instant::now();
 
     while start.elapsed() < timeout {
+        // Use /api/auth-status instead of /api/namespaces. During Omni/AWS/GCP cluster
+        // switches the backend may start with a placeholder kube client while exec
+        // credentials load; protected list endpoints return 503 in that window, which
+        // caused false "cluster not reachable" rollbacks even though the sidecar was healthy.
+        if let Some(status) = probe_backend_status(port, "/api/auth-status") {
+            if status == 200 {
+                return true;
+            }
+        }
+
+        // Fallback for older backends: treat auth/RBAC/unavailable responses as reachable.
         if let Some(status) = probe_backend_status(port, "/api/namespaces") {
-            // Consider any non-5xx response as "cluster reachable enough".
-            // This avoids rejecting valid contexts that have restricted RBAC (e.g., 403).
+            if status == 401 || status == 403 || status == 503 {
+                return true;
+            }
             if status < 500 {
                 return true;
             }
         }
+
         thread::sleep(Duration::from_millis(300));
     }
 

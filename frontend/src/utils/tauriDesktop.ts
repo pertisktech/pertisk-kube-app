@@ -1,4 +1,11 @@
-import { getDesktopBackendOrigin, getDesktopBackendPort, isDesktopRuntime, setDesktopBackendPort } from './desktopBridge';
+import {
+  getDesktopBackendOrigin,
+  getDesktopBackendPort,
+  isDesktopRuntime,
+  refreshDesktopBackendPortFromSidecar,
+  resetSidecarStartupGate,
+  setDesktopBackendPort,
+} from './desktopBridge';
 
 export interface DesktopSidecarConfig {
   backendBin: string | null;
@@ -191,7 +198,7 @@ export async function awsEksUpdateKubeconfig(
 
 export async function waitDesktopClusterSwitchResult(
   expectedContext: string,
-  timeoutMs: number = 65_000
+  timeoutMs: number = 95_000
 ): Promise<DesktopClusterSwitchResult> {
   if (!isDesktopRuntime()) {
     return { success: true };
@@ -212,6 +219,8 @@ export async function waitDesktopClusterSwitchResult(
     if (status.lastSuccess === true) {
       const requested = (status.requestedContext || '').trim();
       if (!normalizedExpected || !requested || requested === normalizedExpected) {
+        await refreshDesktopBackendPortFromSidecar();
+        resetSidecarStartupGate();
         return { success: true };
       }
     }

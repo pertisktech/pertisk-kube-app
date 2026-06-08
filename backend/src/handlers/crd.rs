@@ -51,7 +51,7 @@ pub struct NamespaceQuery {
 }
 
 pub async fn list_crds(State(state): State<AppState>) -> impl IntoResponse {
-    let api: Api<CustomResourceDefinition> = Api::all(state.client);
+    let api: Api<CustomResourceDefinition> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<CrdItem> = list
@@ -244,7 +244,7 @@ pub async fn list_custom_resources(
     Path(crd_name): Path<String>,
     Query(query): Query<NamespaceQuery>,
 ) -> impl IntoResponse {
-    let client = state.client;
+    let client = state.kube_client().await;
 
     let crd_api: Api<CustomResourceDefinition> = Api::all(client.clone());
     let crd = match crd_api.get(&crd_name).await {
@@ -310,7 +310,7 @@ pub async fn get_custom_resource_yaml(
     Path((crd_name, name)): Path<(String, String)>,
     Query(query): Query<NamespaceQuery>,
 ) -> impl IntoResponse {
-    let client = state.client;
+    let client = state.kube_client().await;
 
     let crd_api: Api<CustomResourceDefinition> = Api::all(client.clone());
     let crd = match crd_api.get(&crd_name).await {
@@ -380,7 +380,7 @@ pub async fn delete_custom_resource(
     Path((crd_name, name)): Path<(String, String)>,
     Query(query): Query<NamespaceQuery>,
 ) -> impl IntoResponse {
-    let client = state.client;
+    let client = state.kube_client().await;
 
     let crd_api: Api<CustomResourceDefinition> = Api::all(client.clone());
     let crd = match crd_api.get(&crd_name).await {

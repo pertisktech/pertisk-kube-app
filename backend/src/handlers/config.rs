@@ -16,7 +16,7 @@ use crate::{utils::kube_list_warning_response, AppState};
 pub async fn list_configmaps(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::ConfigMap;
 
-    let api: Api<ConfigMap> = Api::all(state.client);
+    let api: Api<ConfigMap> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<ConfigMapItem> = list
@@ -70,7 +70,7 @@ pub async fn list_configmaps(State(state): State<AppState>) -> impl IntoResponse
 pub async fn list_secrets(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Secret;
 
-    let api: Api<Secret> = Api::all(state.client);
+    let api: Api<Secret> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<SecretItem> = list
@@ -126,7 +126,7 @@ pub async fn list_secrets(State(state): State<AppState>) -> impl IntoResponse {
 pub async fn list_resourcequotas(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::ResourceQuota;
 
-    let api: Api<ResourceQuota> = Api::all(state.client);
+    let api: Api<ResourceQuota> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<ResourceQuotaItem> = list
@@ -180,7 +180,7 @@ pub async fn list_resourcequotas(State(state): State<AppState>) -> impl IntoResp
 pub async fn list_limitranges(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::LimitRange;
 
-    let api: Api<LimitRange> = Api::all(state.client);
+    let api: Api<LimitRange> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<LimitRangeItem> = list
@@ -258,7 +258,7 @@ pub async fn list_hpa(State(state): State<AppState>) -> impl IntoResponse {
         current.value.as_ref().map(|quantity| quantity.0.clone())
     };
 
-    let api: Api<HorizontalPodAutoscaler> = Api::all(state.client);
+    let api: Api<HorizontalPodAutoscaler> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<HPAItem> = list
@@ -396,7 +396,7 @@ pub async fn list_hpa(State(state): State<AppState>) -> impl IntoResponse {
 pub async fn list_pdb(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::policy::v1::PodDisruptionBudget;
 
-    let api: Api<PodDisruptionBudget> = Api::all(state.client);
+    let api: Api<PodDisruptionBudget> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<PDBItem> = list
@@ -466,7 +466,7 @@ pub async fn list_pdb(State(state): State<AppState>) -> impl IntoResponse {
 pub async fn list_priorityclasses(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::scheduling::v1::PriorityClass;
 
-    let api: Api<PriorityClass> = Api::all(state.client);
+    let api: Api<PriorityClass> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<PriorityClassItem> = list
@@ -520,7 +520,7 @@ pub async fn list_priorityclasses(State(state): State<AppState>) -> impl IntoRes
 pub async fn list_runtimeclasses(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::node::v1::RuntimeClass;
 
-    let api: Api<RuntimeClass> = Api::all(state.client);
+    let api: Api<RuntimeClass> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<RuntimeClassItem> = list
@@ -578,7 +578,7 @@ pub async fn list_runtimeclasses(State(state): State<AppState>) -> impl IntoResp
 pub async fn list_leases(State(state): State<AppState>) -> impl IntoResponse {
     use k8s_openapi::api::coordination::v1::Lease;
 
-    let api: Api<Lease> = Api::all(state.client);
+    let api: Api<Lease> = Api::all(state.kube_client().await);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<LeaseItem> = list
@@ -642,7 +642,7 @@ pub async fn get_configmap_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::ConfigMap;
 
-    let api: Api<ConfigMap> = Api::namespaced(state.client, &namespace);
+    let api: Api<ConfigMap> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(configmap) => match serde_yaml::to_string(&configmap) {
             Ok(yaml) => (
@@ -672,7 +672,7 @@ pub async fn get_configmap_data(
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::ConfigMap;
 
-    let api: Api<ConfigMap> = Api::namespaced(state.client, &namespace);
+    let api: Api<ConfigMap> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(configmap) => {
             let data = configmap
@@ -713,7 +713,7 @@ pub async fn update_configmap_yaml(
     configmap.metadata.name = Some(name.clone());
     configmap.metadata.namespace = Some(namespace.clone());
 
-    let api: Api<ConfigMap> = Api::namespaced(state.client, &namespace);
+    let api: Api<ConfigMap> = Api::namespaced(state.kube_client().await, &namespace);
     let patch_value = match serde_json::to_value(&configmap) {
         Ok(value) => value,
         Err(err) => {
@@ -754,7 +754,7 @@ pub async fn delete_configmap(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::ConfigMap;
-    let api: Api<ConfigMap> = Api::namespaced(state.client, &namespace);
+    let api: Api<ConfigMap> = Api::namespaced(state.kube_client().await, &namespace);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted configmap {}/{}", namespace, name);
@@ -773,7 +773,7 @@ pub async fn get_secret_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Secret;
 
-    let api: Api<Secret> = Api::namespaced(state.client, &namespace);
+    let api: Api<Secret> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(secret) => match serde_yaml::to_string(&secret) {
             Ok(yaml) => (
@@ -816,7 +816,7 @@ pub async fn get_secret_data(
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Secret;
 
-    let api: Api<Secret> = Api::namespaced(state.client, &namespace);
+    let api: Api<Secret> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(secret) => {
             let mut decoded = serde_json::Map::new();
@@ -885,7 +885,7 @@ pub async fn update_secret_yaml(
     secret.metadata.name = Some(name.clone());
     secret.metadata.namespace = Some(namespace.clone());
 
-    let api: Api<Secret> = Api::namespaced(state.client, &namespace);
+    let api: Api<Secret> = Api::namespaced(state.kube_client().await, &namespace);
     let patch_value = match serde_json::to_value(&secret) {
         Ok(value) => value,
         Err(err) => {
@@ -926,7 +926,7 @@ pub async fn delete_secret(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Secret;
-    let api: Api<Secret> = Api::namespaced(state.client, &namespace);
+    let api: Api<Secret> = Api::namespaced(state.kube_client().await, &namespace);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted secret {}/{}", namespace, name);
@@ -945,7 +945,7 @@ pub async fn get_resourcequota_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::ResourceQuota;
 
-    let api: Api<ResourceQuota> = Api::namespaced(state.client, &namespace);
+    let api: Api<ResourceQuota> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(resourcequota) => match serde_yaml::to_string(&resourcequota) {
             Ok(yaml) => (
@@ -993,7 +993,7 @@ pub async fn update_resourcequota_yaml(
     resourcequota.metadata.name = Some(name.clone());
     resourcequota.metadata.namespace = Some(namespace.clone());
 
-    let api: Api<ResourceQuota> = Api::namespaced(state.client, &namespace);
+    let api: Api<ResourceQuota> = Api::namespaced(state.kube_client().await, &namespace);
     let patch_value = match serde_json::to_value(&resourcequota) {
         Ok(value) => value,
         Err(err) => {
@@ -1034,7 +1034,7 @@ pub async fn delete_resourcequota(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::ResourceQuota;
-    let api: Api<ResourceQuota> = Api::namespaced(state.client, &namespace);
+    let api: Api<ResourceQuota> = Api::namespaced(state.kube_client().await, &namespace);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted resourcequota {}/{}", namespace, name);
@@ -1053,7 +1053,7 @@ pub async fn get_limitrange_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::LimitRange;
 
-    let api: Api<LimitRange> = Api::namespaced(state.client, &namespace);
+    let api: Api<LimitRange> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(limitrange) => match serde_yaml::to_string(&limitrange) {
             Ok(yaml) => (
@@ -1101,7 +1101,7 @@ pub async fn update_limitrange_yaml(
     limitrange.metadata.name = Some(name.clone());
     limitrange.metadata.namespace = Some(namespace.clone());
 
-    let api: Api<LimitRange> = Api::namespaced(state.client, &namespace);
+    let api: Api<LimitRange> = Api::namespaced(state.kube_client().await, &namespace);
     let patch_value = match serde_json::to_value(&limitrange) {
         Ok(value) => value,
         Err(err) => {
@@ -1142,7 +1142,7 @@ pub async fn delete_limitrange(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::LimitRange;
-    let api: Api<LimitRange> = Api::namespaced(state.client, &namespace);
+    let api: Api<LimitRange> = Api::namespaced(state.kube_client().await, &namespace);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted limitrange {}/{}", namespace, name);
@@ -1161,7 +1161,7 @@ pub async fn get_hpa_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
 
-    let api: Api<HorizontalPodAutoscaler> = Api::namespaced(state.client, &namespace);
+    let api: Api<HorizontalPodAutoscaler> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(hpa) => match serde_yaml::to_string(&hpa) {
             Ok(yaml) => (
@@ -1209,7 +1209,7 @@ pub async fn update_hpa_yaml(
     hpa.metadata.name = Some(name.clone());
     hpa.metadata.namespace = Some(namespace.clone());
 
-    let api: Api<HorizontalPodAutoscaler> = Api::namespaced(state.client, &namespace);
+    let api: Api<HorizontalPodAutoscaler> = Api::namespaced(state.kube_client().await, &namespace);
     let patch_value = match serde_json::to_value(&hpa) {
         Ok(value) => value,
         Err(err) => {
@@ -1250,7 +1250,7 @@ pub async fn delete_hpa(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
-    let api: Api<HorizontalPodAutoscaler> = Api::namespaced(state.client, &namespace);
+    let api: Api<HorizontalPodAutoscaler> = Api::namespaced(state.kube_client().await, &namespace);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted hpa {}/{}", namespace, name);
@@ -1269,7 +1269,7 @@ pub async fn get_pdb_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::policy::v1::PodDisruptionBudget;
 
-    let api: Api<PodDisruptionBudget> = Api::namespaced(state.client, &namespace);
+    let api: Api<PodDisruptionBudget> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(pdb) => match serde_yaml::to_string(&pdb) {
             Ok(yaml) => (
@@ -1317,7 +1317,7 @@ pub async fn update_pdb_yaml(
     pdb.metadata.name = Some(name.clone());
     pdb.metadata.namespace = Some(namespace.clone());
 
-    let api: Api<PodDisruptionBudget> = Api::namespaced(state.client, &namespace);
+    let api: Api<PodDisruptionBudget> = Api::namespaced(state.kube_client().await, &namespace);
     let patch_value = match serde_json::to_value(&pdb) {
         Ok(value) => value,
         Err(err) => {
@@ -1358,7 +1358,7 @@ pub async fn delete_pdb(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     use k8s_openapi::api::policy::v1::PodDisruptionBudget;
-    let api: Api<PodDisruptionBudget> = Api::namespaced(state.client, &namespace);
+    let api: Api<PodDisruptionBudget> = Api::namespaced(state.kube_client().await, &namespace);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted pdb {}/{}", namespace, name);
@@ -1377,7 +1377,7 @@ pub async fn get_priorityclass_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::scheduling::v1::PriorityClass;
 
-    let api: Api<PriorityClass> = Api::all(state.client);
+    let api: Api<PriorityClass> = Api::all(state.kube_client().await);
     match api.get(&name).await {
         Ok(priorityclass) => match serde_yaml::to_string(&priorityclass) {
             Ok(yaml) => (
@@ -1424,7 +1424,7 @@ pub async fn update_priorityclass_yaml(
 
     priorityclass.metadata.name = Some(name.clone());
 
-    let api: Api<PriorityClass> = Api::all(state.client);
+    let api: Api<PriorityClass> = Api::all(state.kube_client().await);
     let patch_value = match serde_json::to_value(&priorityclass) {
         Ok(value) => value,
         Err(err) => {
@@ -1465,7 +1465,7 @@ pub async fn delete_priorityclass(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     use k8s_openapi::api::scheduling::v1::PriorityClass;
-    let api: Api<PriorityClass> = Api::all(state.client);
+    let api: Api<PriorityClass> = Api::all(state.kube_client().await);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted priorityclass {}", name);
@@ -1484,7 +1484,7 @@ pub async fn get_runtimeclass_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::node::v1::RuntimeClass;
 
-    let api: Api<RuntimeClass> = Api::all(state.client);
+    let api: Api<RuntimeClass> = Api::all(state.kube_client().await);
     match api.get(&name).await {
         Ok(runtimeclass) => match serde_yaml::to_string(&runtimeclass) {
             Ok(yaml) => (
@@ -1531,7 +1531,7 @@ pub async fn update_runtimeclass_yaml(
 
     runtimeclass.metadata.name = Some(name.clone());
 
-    let api: Api<RuntimeClass> = Api::all(state.client);
+    let api: Api<RuntimeClass> = Api::all(state.kube_client().await);
     let patch_value = match serde_json::to_value(&runtimeclass) {
         Ok(value) => value,
         Err(err) => {
@@ -1572,7 +1572,7 @@ pub async fn delete_runtimeclass(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     use k8s_openapi::api::node::v1::RuntimeClass;
-    let api: Api<RuntimeClass> = Api::all(state.client);
+    let api: Api<RuntimeClass> = Api::all(state.kube_client().await);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted runtimeclass {}", name);
@@ -1591,7 +1591,7 @@ pub async fn get_lease_yaml(
 ) -> impl IntoResponse {
     use k8s_openapi::api::coordination::v1::Lease;
 
-    let api: Api<Lease> = Api::namespaced(state.client, &namespace);
+    let api: Api<Lease> = Api::namespaced(state.kube_client().await, &namespace);
     match api.get(&name).await {
         Ok(lease) => match serde_yaml::to_string(&lease) {
             Ok(yaml) => (
@@ -1639,7 +1639,7 @@ pub async fn update_lease_yaml(
     lease.metadata.name = Some(name.clone());
     lease.metadata.namespace = Some(namespace.clone());
 
-    let api: Api<Lease> = Api::namespaced(state.client, &namespace);
+    let api: Api<Lease> = Api::namespaced(state.kube_client().await, &namespace);
     let patch_value = match serde_json::to_value(&lease) {
         Ok(value) => value,
         Err(err) => {
@@ -1680,7 +1680,7 @@ pub async fn delete_lease(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     use k8s_openapi::api::coordination::v1::Lease;
-    let api: Api<Lease> = Api::namespaced(state.client, &namespace);
+    let api: Api<Lease> = Api::namespaced(state.kube_client().await, &namespace);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted lease {}/{}", namespace, name);
@@ -1777,7 +1777,7 @@ fn dynamic_object_to_vwc_item(obj: &DynamicObject) -> VwcItem {
 
 pub async fn list_mwcs(State(state): State<AppState>) -> impl IntoResponse {
     let ar = mwc_api_resource();
-    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    let api: Api<DynamicObject> = Api::all_with(state.kube_client().await, &ar);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<MwcItem> = list.items.iter().map(dynamic_object_to_mwc_item).collect();
@@ -1799,7 +1799,7 @@ pub async fn get_mwc_yaml(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let ar = mwc_api_resource();
-    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    let api: Api<DynamicObject> = Api::all_with(state.kube_client().await, &ar);
     match api.get(&name).await {
         Ok(obj) => match serde_yaml::to_string(&obj.data) {
             Ok(yaml) => (
@@ -1822,7 +1822,7 @@ pub async fn get_mwc_yaml(
 
 pub async fn update_mwc_yaml(Path(name): Path<String>, State(state): State<AppState>, body: String) -> impl IntoResponse {
     let ar = mwc_api_resource();
-    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    let api: Api<DynamicObject> = Api::all_with(state.kube_client().await, &ar);
     let data: serde_json::Value = match serde_yaml::from_str(&body) {
         Ok(v) => v,
         Err(err) => {
@@ -1865,7 +1865,7 @@ pub async fn update_mwc_yaml(Path(name): Path<String>, State(state): State<AppSt
 
 pub async fn delete_mwc(Path(name): Path<String>, State(state): State<AppState>) -> impl IntoResponse {
     let ar = mwc_api_resource();
-    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    let api: Api<DynamicObject> = Api::all_with(state.kube_client().await, &ar);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted MutatingWebhookConfiguration {}", name);
@@ -1880,7 +1880,7 @@ pub async fn delete_mwc(Path(name): Path<String>, State(state): State<AppState>)
 
 pub async fn list_vwcs(State(state): State<AppState>) -> impl IntoResponse {
     let ar = vwc_api_resource();
-    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    let api: Api<DynamicObject> = Api::all_with(state.kube_client().await, &ar);
     match api.list(&ListParams::default()).await {
         Ok(list) => {
             let items: Vec<VwcItem> = list.items.iter().map(dynamic_object_to_vwc_item).collect();
@@ -1902,7 +1902,7 @@ pub async fn get_vwc_yaml(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let ar = vwc_api_resource();
-    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    let api: Api<DynamicObject> = Api::all_with(state.kube_client().await, &ar);
     match api.get(&name).await {
         Ok(obj) => match serde_yaml::to_string(&obj.data) {
             Ok(yaml) => (
@@ -1925,7 +1925,7 @@ pub async fn get_vwc_yaml(
 
 pub async fn update_vwc_yaml(Path(name): Path<String>, State(state): State<AppState>, body: String) -> impl IntoResponse {
     let ar = vwc_api_resource();
-    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    let api: Api<DynamicObject> = Api::all_with(state.kube_client().await, &ar);
     let data: serde_json::Value = match serde_yaml::from_str(&body) {
         Ok(v) => v,
         Err(err) => {
@@ -1968,7 +1968,7 @@ pub async fn update_vwc_yaml(Path(name): Path<String>, State(state): State<AppSt
 
 pub async fn delete_vwc(Path(name): Path<String>, State(state): State<AppState>) -> impl IntoResponse {
     let ar = vwc_api_resource();
-    let api: Api<DynamicObject> = Api::all_with(state.client, &ar);
+    let api: Api<DynamicObject> = Api::all_with(state.kube_client().await, &ar);
     match api.delete(&name, &DeleteParams::default()).await {
         Ok(_) => {
             info!("Deleted ValidatingWebhookConfiguration {}", name);

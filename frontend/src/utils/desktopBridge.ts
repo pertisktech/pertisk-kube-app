@@ -5,10 +5,13 @@ type WindowWithTauri = Window & {
 
 const DESKTOP_PORT_STORAGE_KEY = "pertisk-desktop-backend-port";
 const DEFAULT_DESKTOP_PORT = 15222;
-const INITIAL_PORT_REFRESH_WAIT_MS = 1200;
+const BACKEND_STARTUP_WAIT_MS = 60_000;
+const BACKEND_RESTART_WAIT_MS = 30_000;
+const BACKEND_HEALTH_POLL_MS = 300;
 
 let desktopBackendOrigin = buildBackendOrigin(readPersistedPort());
-let initialPortRefreshReady: Promise<void> | null = null;
+let sidecarStartupReady: Promise<void> | null = null;
+let nativeFetchRef: typeof window.fetch | null = null;
 
 function readPersistedPort(): number {
   try {
@@ -101,20 +104,64 @@ function isDesktopApiRequest(input: RequestInfo | URL): boolean {
   return parsed.pathname.startsWith('/api');
 }
 
-function ensureInitialDesktopPortRefreshStarted(): Promise<void> {
-  if (initialPortRefreshReady) {
-    return initialPortRefreshReady;
+async function probeBackendHealthAt(
+  nativeFetch: typeof window.fetch,
+  healthUrl: string,
+): Promise<boolean> {
+  try {
+    const response = await nativeFetch(healthUrl, { cache: 'no-store' });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForBackendHealthAt(
+  nativeFetch: typeof window.fetch,
+  healthUrl: string,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (await probeBackendHealthAt(nativeFetch, healthUrl)) {
+      return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, BACKEND_HEALTH_POLL_MS));
+  }
+}
+
+async function waitForBackendHealth(
+  nativeFetch: typeof window.fetch,
+  timeoutMs: number,
+): Promise<void> {
+  await waitForBackendHealthAt(
+    nativeFetch,
+    `${getDesktopBackendOrigin()}/api/health`,
+    timeoutMs,
+  );
+}
+
+async function waitForSidecarStartup(nativeFetch: typeof window.fetch): Promise<void> {
+  await refreshDesktopBackendPortFromSidecar().catch(() => undefined);
+  await waitForBackendHealth(nativeFetch, BACKEND_STARTUP_WAIT_MS);
+}
+
+function ensureSidecarStartupReady(): Promise<void> {
+  if (!nativeFetchRef) {
+    return Promise.resolve();
   }
 
-  const refreshPromise = refreshDesktopBackendPortFromSidecar()
-    .then(() => undefined)
-    .catch(() => undefined);
-  const timeoutPromise = new Promise<void>((resolve) => {
-    window.setTimeout(resolve, INITIAL_PORT_REFRESH_WAIT_MS);
-  });
+  if (!sidecarStartupReady) {
+    sidecarStartupReady = waitForSidecarStartup(nativeFetchRef);
+  }
 
-  initialPortRefreshReady = Promise.race([refreshPromise, timeoutPromise]);
-  return initialPortRefreshReady;
+  return sidecarStartupReady;
+}
+
+export function resetSidecarStartupGate(): void {
+  sidecarStartupReady = null;
+  devStartupReady = null;
 }
 
 function isRetriableDesktopApiRequest(method: string): boolean {
@@ -146,20 +193,42 @@ function rewriteWsUrl(rawUrl: string): string {
   return parsed.toString();
 }
 
+let devStartupReady: Promise<void> | null = null;
+
+function ensureDevBackendStartupReady(nativeFetch: typeof window.fetch): Promise<void> {
+  if (!devStartupReady) {
+    devStartupReady = waitForBackendHealthAt(nativeFetch, '/api/health', BACKEND_STARTUP_WAIT_MS);
+  }
+  return devStartupReady;
+}
+
 export function installDesktopBridge(): void {
+  const nativeFetch = window.fetch.bind(window);
+
   if (!isDesktopRuntime()) {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (isDesktopApiRequest(input)) {
+        await ensureDevBackendStartupReady(nativeFetch);
+      }
+      return nativeFetch(input, init);
+    };
     return;
   }
 
-  // Refresh from native sidecar config early so stale persisted ports don't keep
-  // WebSocket/API calls pointed at an old backend instance.
-  void ensureInitialDesktopPortRefreshStarted();
+  nativeFetchRef = nativeFetch;
 
-  const nativeFetch = window.fetch.bind(window);
+  // Block the first API traffic until the sidecar health probe passes so startup
+  // doesn't spam connection errors while kube credentials initialize.
+  void ensureSidecarStartupReady();
+
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const isApiRequest = isDesktopApiRequest(input);
     if (isApiRequest) {
-      await ensureInitialDesktopPortRefreshStarted();
+      await ensureSidecarStartupReady();
     }
 
     const inputMethod = input instanceof Request ? input.method : undefined;
@@ -195,10 +264,9 @@ export function installDesktopBridge(): void {
         throw error;
       }
 
-      const refreshed = await refreshDesktopBackendPortFromSidecar();
-      if (!refreshed) {
-        throw error;
-      }
+      resetSidecarStartupGate();
+      await refreshDesktopBackendPortFromSidecar().catch(() => false);
+      await waitForBackendHealth(nativeFetch, BACKEND_RESTART_WAIT_MS);
 
       const retryTarget = buildTarget();
       return nativeFetch(retryTarget, init);

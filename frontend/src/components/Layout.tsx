@@ -883,7 +883,7 @@ export const Layout = () => {
       // Clear stale old-cluster content immediately while switch is in progress.
       window.dispatchEvent(new CustomEvent('cluster:switched'));
 
-      const switchResult = await waitDesktopClusterSwitchResult(nextContext, 65_000);
+      const switchResult = await waitDesktopClusterSwitchResult(nextContext, 95_000);
       if (!switchResult.success) {
         throw new Error(switchResult.message || 'Cluster switch failed. Previous cluster was restored.');
       }

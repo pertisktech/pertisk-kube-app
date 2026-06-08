@@ -8,7 +8,16 @@ use axum::{
     Json, Router,
 };
 use kube::Client;
-use std::{env, net::SocketAddr, path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    env,
+    net::SocketAddr,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
 use tokio::sync::RwLock;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -44,7 +53,7 @@ use models::*;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub client: Client,
+    pub client: Arc<RwLock<Client>>,
     pub username: String,
     pub password: String,
     pub jwt_secret: String,
@@ -54,8 +63,22 @@ pub struct AppState {
     pub dashboard_summary_cache: Arc<RwLock<Option<DashboardSummary>>>,
     /// True when the kube client is a placeholder (exec credential failed at startup).
     /// Used by the frontend to surface a "Login Required" banner.
-    pub auth_placeholder: bool,
-    pub auth_message: Option<String>,
+    pub auth_placeholder: Arc<AtomicBool>,
+    pub auth_message: Arc<RwLock<Option<String>>>,
+}
+
+impl AppState {
+    pub async fn kube_client(&self) -> Client {
+        self.client.read().await.clone()
+    }
+
+    pub fn is_auth_placeholder(&self) -> bool {
+        self.auth_placeholder.load(Ordering::Relaxed)
+    }
+
+    pub async fn auth_user_message(&self) -> Option<String> {
+        self.auth_message.read().await.clone()
+    }
 }
 
 #[tokio::main]
@@ -87,8 +110,21 @@ async fn main() -> anyhow::Result<()> {
     // and causes cluster-switch failures when any forward takes several seconds to re-establish.
     let pf_state_for_restore = port_forward_state.as_ref().map(Arc::clone);
 
+    let shared_client = Arc::new(RwLock::new(client));
+    let auth_placeholder = Arc::new(AtomicBool::new(kube_status.is_placeholder));
+    let auth_message = Arc::new(RwLock::new(kube_status.user_message));
+
+    if kube_status.is_placeholder {
+        let client_ref = Arc::clone(&shared_client);
+        let placeholder_ref = Arc::clone(&auth_placeholder);
+        let message_ref = Arc::clone(&auth_message);
+        tokio::spawn(async move {
+            utils::upgrade_kube_client_in_background(client_ref, placeholder_ref, message_ref).await;
+        });
+    }
+
     let state = AppState {
-        client,
+        client: shared_client,
         username,
         password,
         jwt_secret,
@@ -96,8 +132,8 @@ async fn main() -> anyhow::Result<()> {
         workload_metric_history: Arc::new(RwLock::new(Vec::new())),
         helm_charts_cache: Arc::new(RwLock::new(handlers::helm::HelmChartsCache::default())),
         dashboard_summary_cache: Arc::new(RwLock::new(None)),
-        auth_placeholder: kube_status.is_placeholder,
-        auth_message: kube_status.user_message,
+        auth_placeholder,
+        auth_message,
     };
 
     let cors = CorsLayer::new()
@@ -379,8 +415,8 @@ async fn main() -> anyhow::Result<()> {
     let config_js = static_dir.join("config.js");
     let favicon_svg = static_dir.join("favicon.svg");
 
-    // Clone client for gRPC server before moving state
-    let grpc_client = state.client.clone();
+    // Share kube client with gRPC server so background credential upgrades apply there too.
+    let grpc_client = Arc::clone(&state.client);
 
     let app = Router::new()
         .route("/ws", get(ws_handler::ws_handler))  // WebSocket endpoint
@@ -480,13 +516,13 @@ async fn auth_status(State(state): State<AppState>) -> impl IntoResponse {
         placeholder: bool,
         message: Option<String>,
     }
-    let (ok, message) = if state.auth_placeholder {
+    let (ok, message) = if state.is_auth_placeholder() {
         (
             false,
             Some(
                 state
-                    .auth_message
-                    .clone()
+                    .auth_user_message()
+                    .await
                     .unwrap_or_else(|| {
                         "Kubernetes credentials are not available. Check kubeconfig/context and try again.".to_string()
                     }),
@@ -499,14 +535,14 @@ async fn auth_status(State(state): State<AppState>) -> impl IntoResponse {
         StatusCode::OK,
         Json(AuthStatusResponse {
             ok,
-            placeholder: state.auth_placeholder,
+            placeholder: state.is_auth_placeholder(),
             message,
         }),
     )
 }
 
 async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
-    if state.auth_placeholder {
+    if state.is_auth_placeholder() {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(HealthResponse {
@@ -516,7 +552,7 @@ async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
             .into_response();
     }
 
-    match state.client.apiserver_version().await {
+    match state.kube_client().await.apiserver_version().await {
         Ok(_) => {
             let body = HealthResponse {
                 status: "ready".into(),

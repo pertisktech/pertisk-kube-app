@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from './context/ThemeContext';
 import { FeatureSettingsProvider } from './context/FeatureSettingsContext';
 import { App } from './App';
-import { installDesktopBridge } from './utils/desktopBridge';
+import { installDesktopBridge, resetSidecarStartupGate } from './utils/desktopBridge';
 import './index.css';
 import 'react-toastify/dist/ReactToastify.css';
 import './styles/theme.css';
@@ -26,7 +26,12 @@ const queryClient = new QueryClient({
 
 if (typeof window !== 'undefined') {
   window.addEventListener('cluster:switched', () => {
+    resetSidecarStartupGate();
     queryClient.clear();
+  });
+
+  window.addEventListener('backend:restarting', () => {
+    resetSidecarStartupGate();
   });
 }
 
