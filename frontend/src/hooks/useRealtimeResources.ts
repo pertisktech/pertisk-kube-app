@@ -50,6 +50,11 @@ interface WebSocketMessage {
   message?: string;
 }
 
+/** Re-fetch realtime resource snapshots (helm releases, pods, etc.). */
+export const dispatchResourcesRefresh = () => {
+  window.dispatchEvent(new CustomEvent('resources:refresh'));
+};
+
 /** Show WebSocket debug logs in Vite dev or when running on localhost (e.g. local run with built app). */
 const isRealtimeDebug = (): boolean =>
   typeof window !== 'undefined' &&
@@ -1391,9 +1396,15 @@ function createRealtimeHook<T>(
           }
         });
 
-      // Node watches can intermittently miss DELETED events when API watch is unstable.
-      // Periodically reconcile nodes from REST snapshot so removals are reflected quickly.
-      if (resourceType === 'nodes' || resourceType === 'crds') {
+      // Some watches can miss events when the API watch is unstable. Periodically reconcile
+      // from REST snapshots so status/version changes are reflected quickly.
+      const reconcileIntervalMs =
+        resourceType === 'crds' ? 12_000
+        : resourceType === 'helmreleases' ? 2_000
+        : resourceType === 'nodes' ? 3_000
+        : null;
+
+      if (reconcileIntervalMs !== null) {
         reconcileInterval = setInterval(() => {
           if (aborted || document.hidden) return;
 
@@ -1410,7 +1421,7 @@ function createRealtimeHook<T>(
             .catch(() => {
               // Keep existing realtime state if reconcile snapshot fails.
             });
-        }, resourceType === 'crds' ? 12_000 : 3000);
+        }, reconcileIntervalMs);
       }
 
       const unsubscribe = subscribeRealtimeResource(resourceType, (message) => {

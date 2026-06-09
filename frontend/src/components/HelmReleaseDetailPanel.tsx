@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Box, Loader, Pencil, RotateCw, Trash2 } from './Icons';
 import type { HelmRelease } from '../types';
+import { dispatchResourcesRefresh } from '../hooks/useRealtimeResources';
 import { useHelmReleaseHistory, useHelmReleaseResources, rollbackHelmRelease } from '../hooks/useKubernetes';
 import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
@@ -41,10 +42,19 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYamlEditor, onD
   const [rollingBackRev, setRollingBackRev] = useState<number | null>(null);
   const [rollbackConfirmRev, setRollbackConfirmRev] = useState<number | null>(null);
   const orderedHistory = [...history].sort((a, b) => b.revision - a.revision);
-  const currentRevision = useMemo(() => {
-    if (orderedHistory.length > 0) return orderedHistory[0].revision;
-    return release.revision;
-  }, [orderedHistory, release.revision]);
+  const latestHistory = orderedHistory[0];
+  const currentRevision = latestHistory?.revision ?? release.revision;
+  const displayRelease = useMemo(() => {
+    if (!latestHistory) return release;
+    return {
+      ...release,
+      status: latestHistory.status,
+      revision: latestHistory.revision,
+      updated: latestHistory.updated,
+      app_version: latestHistory.app_version || release.app_version,
+      chart: latestHistory.chart || release.chart,
+    };
+  }, [release, latestHistory]);
 
   const handleRollback = async (revision: number) => {
     if (revision === currentRevision) return;
@@ -54,6 +64,7 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYamlEditor, onD
       toast.success(`Rolled back to revision ${revision}`);
       void queryClient.invalidateQueries({ queryKey: ['helm-releases'] });
       void queryClient.invalidateQueries({ queryKey: ['helm-release-history', release.namespace, release.name] });
+      dispatchResourcesRefresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Rollback failed');
     } finally {
@@ -73,10 +84,10 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYamlEditor, onD
     kind="Release"
     kindIcon={Box}
     title={release.name}
-    status={release.status}
+    status={displayRelease.status}
     keyInfo={[
-      { label: 'Namespace', value: release.namespace },
-      { label: 'Chart', value: release.chart !== '-' ? release.chart : release.name },
+      { label: 'Namespace', value: displayRelease.namespace },
+      { label: 'Chart', value: displayRelease.chart !== '-' ? displayRelease.chart : displayRelease.name },
       { label: 'Revision', value: String(currentRevision ?? '-') },
     ]}
     actions={
@@ -89,16 +100,16 @@ export const HelmReleaseDetailPanel = ({ release, onClose, onOpenYamlEditor, onD
   >
     <DrawerTitle>Release lifecycle</DrawerTitle>
     <DrawerItem name="Status">
-      <StatusBadge status={release.status} />
+      <StatusBadge status={displayRelease.status} />
     </DrawerItem>
     <p className="text-xs py-1" style={{ color: 'var(--color-muted)' }}>
-      {getLifecycleDescription(release.status)}
+      {getLifecycleDescription(displayRelease.status)}
     </p>
-    <DrawerItem name="Chart">{release.chart !== '-' ? release.chart : release.name}</DrawerItem>
-    <DrawerItem name="Updated">{release.updated ? `${timeAgo(release.updated)} (${release.updated})` : '—'}</DrawerItem>
-    <DrawerItem name="Namespace">{release.namespace}</DrawerItem>
-    <DrawerItem name="Version">{release.chart_version ?? '—'}</DrawerItem>
-    <DrawerItem name="App Version">{release.app_version ?? '—'}</DrawerItem>
+    <DrawerItem name="Chart">{displayRelease.chart !== '-' ? displayRelease.chart : displayRelease.name}</DrawerItem>
+    <DrawerItem name="Updated">{displayRelease.updated ? `${timeAgo(displayRelease.updated)} (${displayRelease.updated})` : '—'}</DrawerItem>
+    <DrawerItem name="Namespace">{displayRelease.namespace}</DrawerItem>
+    <DrawerItem name="Version">{displayRelease.chart_version ?? '—'}</DrawerItem>
+    <DrawerItem name="App Version">{displayRelease.app_version ?? '—'}</DrawerItem>
     <DrawerItem name="Revision">{currentRevision ?? '—'}</DrawerItem>
 
     <DrawerTitle>Resources</DrawerTitle>

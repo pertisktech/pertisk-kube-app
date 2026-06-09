@@ -193,3 +193,5 @@ export const Container = Lucide.Container;
 export const Cog = Lucide.Cog;
 export const KanbanSquare = Lucide.KanbanSquare;
 export const GitBranch = Lucide.GitBranch;
+export const Search = Lucide.Search;
+export const Replace = Lucide.Replace;

@@ -1,8 +1,7 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Query,
-        State,
+        Path, Query, State,
     },
     response::Response,
 };
@@ -223,6 +222,13 @@ pub struct ExecQuery {
     pub container: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct PodLogsQuery {
+    pub container: Option<String>,
+    pub tail_lines: Option<i64>,
+    pub follow: Option<bool>,
+}
+
 fn parse_resize_message(text: &str) -> Option<(u16, u16)> {
     let json = serde_json::from_str::<serde_json::Value>(text).ok()?;
     if json.get("type").and_then(|value| value.as_str()) != Some("resize") {
@@ -274,6 +280,94 @@ pub async fn exec_ws_handler(
     );
 
     ws.on_upgrade(move |socket| handle_exec_socket(socket, query))
+}
+
+pub async fn pod_logs_ws_handler(
+    ws: WebSocketUpgrade,
+    Path((namespace, name)): Path<(String, String)>,
+    Query(query): Query<PodLogsQuery>,
+    State(state): State<AppState>,
+) -> Response {
+    info!(
+        "New pod logs websocket request: namespace={}, pod={}, container={:?}",
+        namespace, name, query.container
+    );
+
+    ws.on_upgrade(move |socket| handle_pod_logs_socket(socket, namespace, name, query, state))
+}
+
+async fn handle_pod_logs_socket(
+    socket: WebSocket,
+    namespace: String,
+    pod_name: String,
+    query: PodLogsQuery,
+    state: AppState,
+) {
+    use futures_util::AsyncBufReadExt;
+    use k8s_openapi::api::core::v1::Pod;
+    use kube::api::LogParams;
+
+    if let Some(message) = placeholder_error_message(&state).await {
+        let (mut sender, _) = socket.split();
+        let _ = sender
+            .send(Message::Text(format!("[error] {message}")))
+            .await;
+        return;
+    }
+
+    let api: Api<Pod> = Api::namespaced(state.kube_client().await, &namespace);
+    let follow = query.follow.unwrap_or(true);
+    let log_params = LogParams {
+        container: query.container.clone(),
+        tail_lines: query.tail_lines.or(Some(200)),
+        timestamps: true,
+        follow,
+        ..Default::default()
+    };
+
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+
+    let mut log_stream = match api.log_stream(&pod_name, &log_params).await {
+        Ok(stream) => stream,
+        Err(err) => {
+            let _ = ws_sender
+                .send(Message::Text(format!(
+                    "[error] Failed to open log stream: {err}"
+                )))
+                .await;
+            return;
+        }
+    };
+
+    let send_task = tokio::spawn(async move {
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match log_stream.read_line(&mut line).await {
+                Ok(0) => break,
+                Ok(_) => {
+                    if ws_sender.send(Message::Text(line.clone())).await.is_err() {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    let _ = ws_sender
+                        .send(Message::Text(format!("[error] Log stream error: {err}")))
+                        .await;
+                    break;
+                }
+            }
+        }
+    });
+
+    while let Some(msg) = ws_receiver.next().await {
+        match msg {
+            Ok(Message::Close(_)) | Err(_) => break,
+            _ => {}
+        }
+    }
+
+    send_task.abort();
 }
 
 async fn spawn_exec_shell(

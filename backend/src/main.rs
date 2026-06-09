@@ -421,6 +421,10 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/ws", get(ws_handler::ws_handler))  // WebSocket endpoint
         .route("/api/exec", get(ws_handler::exec_ws_handler))
+        .route(
+            "/api/pods/:namespace/:name/logs/ws",
+            get(ws_handler::pod_logs_ws_handler),
+        )
         .nest("/api", api)
         .nest_service("/assets", ServeDir::new(assets_dir))
         .route_service("/config.js", ServeFile::new(config_js))

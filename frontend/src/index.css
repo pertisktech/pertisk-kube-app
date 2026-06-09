@@ -589,6 +589,120 @@ body,
   opacity: 0.35;
 }
 
+/* YAML editor — Ace find/replace searchbox (ext-searchbox) */
+.yaml-editor-pane .ace_search {
+  background-color: var(--color-surface-elevated) !important;
+  color: var(--color-text-secondary) !important;
+  border: 1px solid var(--color-border) !important;
+  border-top: 0 none !important;
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-sans);
+  padding: 6px 8px 4px 6px;
+}
+
+.yaml-editor-pane .ace_search_field {
+  background-color: var(--color-bg) !important;
+  color: var(--color-text) !important;
+  border: 1px solid var(--color-border) !important;
+  border-right: 0 none !important;
+  font-family: var(--font-sans);
+}
+
+.yaml-editor-pane .ace_search_field::placeholder {
+  color: var(--color-muted);
+  opacity: 1;
+}
+
+.yaml-editor-pane .ace_searchbtn {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  border-left: 1px solid var(--color-border) !important;
+  color: var(--color-text-secondary) !important;
+}
+
+.yaml-editor-pane .ace_searchbtn:last-child {
+  border-right: 1px solid var(--color-border) !important;
+}
+
+.yaml-editor-pane .ace_searchbtn:hover:not(:disabled) {
+  background-color: var(--color-hover) !important;
+  color: var(--color-text) !important;
+}
+
+.yaml-editor-pane .ace_searchbtn:disabled {
+  background: var(--color-surface) !important;
+  opacity: 0.45;
+}
+
+.yaml-editor-pane .ace_searchbtn.prev:after,
+.yaml-editor-pane .ace_searchbtn.next:after {
+  border-color: var(--color-text-secondary);
+}
+
+.yaml-editor-pane .ace_searchbtn_close {
+  background: none !important;
+  color: var(--color-text-secondary) !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  top: 8px;
+  right: 6px;
+}
+
+.yaml-editor-pane .ace_searchbtn_close::after {
+  content: "×";
+  font-size: 18px;
+  line-height: 1;
+  color: var(--color-text-secondary);
+}
+
+.yaml-editor-pane .ace_searchbtn_close:hover {
+  background-color: var(--color-hover) !important;
+}
+
+.yaml-editor-pane .ace_searchbtn_close:hover::after {
+  color: var(--color-text);
+}
+
+.yaml-editor-pane .ace_button {
+  color: var(--color-text-secondary) !important;
+  border: 1px solid var(--color-border) !important;
+  background: transparent;
+  border-radius: var(--radius-xs);
+}
+
+.yaml-editor-pane .ace_button:hover {
+  background-color: var(--color-hover) !important;
+  color: var(--color-text) !important;
+  opacity: 1;
+}
+
+.yaml-editor-pane .ace_button:active {
+  background-color: color-mix(in srgb, var(--color-hover) 80%, var(--color-border)) !important;
+}
+
+.yaml-editor-pane .ace_button.checked {
+  border-color: var(--color-primary) !important;
+  color: var(--color-primary) !important;
+  background-color: color-mix(in srgb, var(--color-primary) 14%, transparent) !important;
+  opacity: 1;
+}
+
+.yaml-editor-pane .ace_search_options {
+  color: var(--color-text-secondary);
+}
+
+.yaml-editor-pane .ace_search_counter {
+  color: var(--color-muted);
+  font-family: var(--font-sans);
+}
+
+.yaml-editor-pane .ace_search_form.ace_nomatch {
+  outline: 1px solid var(--color-icon-danger) !important;
+}
+
 /* Workload overview charts — use theme text color so labels are visible in dark/light mode */
 .chart-theme-text text {
   fill: var(--color-text) !important;

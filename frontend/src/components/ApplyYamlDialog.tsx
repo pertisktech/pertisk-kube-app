@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import AceEditor from 'react-ace';
-import 'ace-builds/src-noconflict/mode-yaml';
-import 'ace-builds/src-noconflict/theme-github';
-import 'ace-builds/src-noconflict/theme-tomorrow_night';
 import { X } from './Icons';
-import { useTheme } from '../context/ThemeContext';
-import { useFeatureSettings } from '../context/FeatureSettingsContext';
+import { YamlAceEditor } from './YamlAceEditor';
 import { getAuthToken } from '../utils/auth';
 
 const dispatchResourcesRefresh = () => {
@@ -51,8 +46,6 @@ const splitYamlDocuments = (yamlText: string): string[] => {
 };
 
 export const ApplyYamlDialog = ({ onClose }: ApplyYamlDialogProps) => {
-  const theme = useTheme();
-  const { settings } = useFeatureSettings();
   const [yaml, setYaml] = useState(DEFAULT_YAML);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,24 +133,10 @@ export const ApplyYamlDialog = ({ onClose }: ApplyYamlDialogProps) => {
 
         {/* Editor */}
         <div className="yaml-editor-pane flex-1 overflow-hidden">
-          <AceEditor
-            mode="yaml"
-            theme={(settings.yamlEditor.theme === 'auto' ? !!theme?.isDark : settings.yamlEditor.theme === 'dark') ? 'tomorrow_night' : 'github'}
+          <YamlAceEditor
             name="apply-yaml-editor"
             value={yaml}
             onChange={setYaml}
-            width="100%"
-            height="100%"
-            fontSize={settings.yamlEditor.fontSize}
-            showPrintMargin={false}
-            setOptions={{
-              useWorker: false,
-              wrap: false,
-              tabSize: 2,
-              showLineNumbers: true,
-            }}
-            editorProps={{ $blockScrolling: true }}
-            style={{ fontFamily: settings.yamlEditor.fontName }}
           />
         </div>
 

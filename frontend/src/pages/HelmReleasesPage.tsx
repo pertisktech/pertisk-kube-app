@@ -4,7 +4,7 @@ import YAML from 'yaml';
 import { toast } from 'react-toastify';
 import { Trash2 } from '../components/Icons';
 import { deleteHelmRelease, getHelmReleaseYaml } from '../hooks/useKubernetes';
-import { useRealtimeHelmReleases } from '../hooks/useRealtimeResources';
+import { dispatchResourcesRefresh, useRealtimeHelmReleases } from '../hooks/useRealtimeResources';
 import { DataTable } from '../components/DataTable';
 import { HelmReleaseDetailPanel } from '../components/HelmReleaseDetailPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -284,6 +284,7 @@ export const HelmReleasesPage = () => {
           : `${confirmDelete.keys.length} releases uninstalled.`,
       );
       void queryClient.invalidateQueries({ queryKey: ['helm-releases'] });
+      dispatchResourcesRefresh();
       setSelectedRows([]);
       setConfirmDelete(null);
       setPanelOpen(false);

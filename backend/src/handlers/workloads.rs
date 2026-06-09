@@ -1699,8 +1699,15 @@ pub async fn get_pod_yaml(
     }
 }
 
+#[derive(Deserialize)]
+pub struct PodLogsRestQuery {
+    pub container: Option<String>,
+    pub tail_lines: Option<i64>,
+}
+
 pub async fn get_pod_logs(
     Path((namespace, name)): Path<(String, String)>,
+    Query(query): Query<PodLogsRestQuery>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     use k8s_openapi::api::core::v1::Pod;
@@ -1709,7 +1716,8 @@ pub async fn get_pod_logs(
     let api: Api<Pod> = Api::namespaced(state.kube_client().await, &namespace);
     
     let log_params = LogParams {
-        tail_lines: Some(1000),
+        container: query.container.clone(),
+        tail_lines: query.tail_lines.or(Some(1000)),
         timestamps: true,
         ..Default::default()
     };

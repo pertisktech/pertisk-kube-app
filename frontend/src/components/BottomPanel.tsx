@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CSSProperties } from 'react';
-import AceEditor from 'react-ace';
-import 'ace-builds/src-noconflict/mode-yaml';
-import 'ace-builds/src-noconflict/theme-github';
-import 'ace-builds/src-noconflict/theme-tomorrow_night';
 import {
   ArrowDown,
   Circle,
@@ -15,6 +11,8 @@ import {
   Loader,
   Maximize2,
   Minimize2,
+  Pause,
+  Play,
   Plus,
   RotateCw,
   ScrollText,
@@ -23,6 +21,7 @@ import {
   Upload,
   X,
 } from './Icons';
+import { YamlAceEditor } from './YamlAceEditor';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import YAML from 'yaml';
@@ -30,11 +29,11 @@ import { toast } from 'react-toastify';
 import { Terminal as TerminalComponent } from './Terminal';
 import { PodFileTransfer } from './PodFileTransfer';
 import { getHelmChartReadme, getHelmChartValues, getHelmReleaseValues, installHelmChart, useHelmChartVersions, useNamespaces, useNodes, usePods } from '../hooks/useKubernetes';
+import { dispatchResourcesRefresh as refreshRealtimeResources } from '../hooks/useRealtimeResources';
 import { getAuthToken } from '../utils/auth';
-import { isDesktopRuntime } from '../utils/desktopBridge';
+import { getDesktopWebSocketBase, isDesktopRuntime, refreshDesktopBackendPortFromSidecar } from '../utils/desktopBridge';
 import { cn } from '../utils';
 import { Checkbox } from './Checkbox';
-import { useTheme } from '../context/ThemeContext';
 import { useFeatureSettings } from '../context/FeatureSettingsContext';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -676,7 +675,6 @@ const InstallChartTabContent = ({
   };
   onInstallSuccess?: () => void;
 }) => {
-  const theme = useTheme();
   const { settings } = useFeatureSettings();
   const queryClient = useQueryClient();
   const { data: namespaces } = useNamespaces();
@@ -784,6 +782,7 @@ const InstallChartTabContent = ({
       });
       toast.success(`Release '${installRelease}' installed in namespace '${namespace}'.`);
       void queryClient.invalidateQueries({ queryKey: ['helm-releases'] });
+      refreshRealtimeResources();
       onInstallSuccess?.();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Install failed';
@@ -937,22 +936,11 @@ const InstallChartTabContent = ({
               valuesError ? 'border-red-500' : 'border-border'
             )}
           >
-            <AceEditor
-              mode="yaml"
-              theme={(settings.yamlEditor.theme === 'auto' ? !!theme?.isDark : settings.yamlEditor.theme === 'dark') ? 'tomorrow_night' : 'github'}
+            <YamlAceEditor
               value={valuesYaml}
               onChange={(value) => handleValuesChange(value)}
               readOnly={valuesLoading}
-              width="100%"
-              height="100%"
-              showPrintMargin={false}
-              setOptions={{ useWorker: false, tabSize: 2 }}
-              editorProps={{ $blockScrolling: true }}
-              style={{
-                fontSize: settings.yamlEditor.fontSize,
-                fontFamily: settings.yamlEditor.fontName,
-                minHeight: 200,
-              }}
+              minHeight={200}
             />
           </div>
         </div>
@@ -1030,19 +1018,44 @@ function getValuesYamlError(yamlStr: string): string | null {
 
 // ── LogViewer ────────────────────────────────────────────────────────────────
 
-const LogViewer = ({ namespace, podName }: { namespace: string; podName: string }) => {
+const LogViewer = ({
+  namespace,
+  podName,
+  containerName,
+}: {
+  namespace: string;
+  podName: string;
+  containerName?: string;
+}) => {
   const [logs, setLogs] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [realtime, setRealtime] = useState(true);
+  const [connected, setConnected] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectKeyRef = useRef(0);
 
-  const fetchLogs = useCallback(async () => {
+  const buildLogWsUrl = useCallback(() => {
+    const wsBase = isDesktopRuntime()
+      ? getDesktopWebSocketBase()
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
+    const params = new URLSearchParams({ follow: 'true', tail_lines: '200' });
+    if (containerName) params.set('container', containerName);
+    return `${wsBase}/api/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/logs/ws?${params}`;
+  }, [namespace, podName, containerName]);
+
+  const fetchLogsSnapshot = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const token = getAuthToken();
+      const params = new URLSearchParams();
+      if (containerName) params.set('container', containerName);
+      const query = params.toString();
       const res = await fetch(
-        `/api/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/logs`,
+        `/api/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/logs${query ? `?${query}` : ''}`,
         { headers: token ? { Authorization: token } : undefined }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1053,31 +1066,136 @@ const LogViewer = ({ namespace, podName }: { namespace: string; podName: string 
     } finally {
       setLoading(false);
     }
-  }, [namespace, podName]);
+  }, [namespace, podName, containerName]);
+
+  const closeStream = useCallback(() => {
+    wsRef.current?.close();
+    wsRef.current = null;
+    setConnected(false);
+  }, []);
+
+  const connectStream = useCallback(async () => {
+    reconnectKeyRef.current += 1;
+    const attempt = reconnectKeyRef.current;
+    closeStream();
+    setLoading(true);
+    setError(null);
+
+    if (isDesktopRuntime()) {
+      await refreshDesktopBackendPortFromSidecar();
+      if (attempt !== reconnectKeyRef.current) return;
+    }
+
+    const ws = new WebSocket(buildLogWsUrl());
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      if (attempt !== reconnectKeyRef.current) {
+        ws.close();
+        return;
+      }
+      setLoading(false);
+      setConnected(true);
+    };
+
+    ws.onmessage = (event) => {
+      const chunk = typeof event.data === 'string' ? event.data : '';
+      if (!chunk) return;
+      setLogs((previous) => previous + chunk);
+    };
+
+    ws.onerror = () => {
+      if (attempt === reconnectKeyRef.current) {
+        setError('Log stream connection failed');
+      }
+    };
+
+    ws.onclose = () => {
+      if (attempt === reconnectKeyRef.current) {
+        setConnected(false);
+        setLoading(false);
+      }
+    };
+  }, [buildLogWsUrl, closeStream]);
 
   useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+    setLogs('');
+    setError(null);
+
+    if (realtime) {
+      void connectStream();
+      return () => {
+        reconnectKeyRef.current += 1;
+        closeStream();
+      };
+    }
+
+    void fetchLogsSnapshot();
+    return () => {
+      closeStream();
+    };
+  }, [realtime, connectStream, fetchLogsSnapshot, closeStream]);
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView();
-  }, [logs]);
+    if (autoScroll) {
+      logsEndRef.current?.scrollIntoView();
+    }
+  }, [logs, autoScroll]);
+
+  const handleReload = () => {
+    if (realtime) {
+      setLogs('');
+      void connectStream();
+      return;
+    }
+    void fetchLogsSnapshot();
+  };
 
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center gap-2 px-3 py-1 border-b border-border flex-shrink-0 bg-surface">
         <span className="text-xs font-mono text-text-secondary">
           {namespace}/{podName}
+          {containerName ? ` (${containerName})` : ''}
         </span>
-        <button
-          type="button"
-          onClick={fetchLogs}
-          disabled={loading}
-          title="Reload logs"
-          className="ml-auto p-1 hover:bg-hover rounded text-text-secondary disabled:opacity-40"
-        >
-          <RotateCw size={13} className={cn(loading && 'animate-spin')} />
-        </button>
+        {realtime ? (
+          <span className="inline-flex items-center gap-1 text-[10px] text-text-secondary">
+            <Circle
+              size={8}
+              className={cn(connected ? 'text-green-500 fill-green-500' : 'text-amber-500 fill-amber-500')}
+            />
+            {connected ? 'Live' : loading ? 'Connecting…' : 'Disconnected'}
+          </span>
+        ) : null}
+        <div className="ml-auto flex items-center gap-2">
+          <label className="flex items-center gap-1 text-[10px] text-text-secondary cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={autoScroll}
+              onChange={(e) => setAutoScroll(e.target.checked)}
+              className="accent-primary"
+            />
+            Auto-scroll
+          </label>
+          <button
+            type="button"
+            onClick={() => setRealtime((previous) => !previous)}
+            title={realtime ? 'Pause realtime stream' : 'Resume realtime stream'}
+            className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] text-text-secondary hover:bg-hover"
+          >
+            {realtime ? <Pause size={11} /> : <Play size={11} />}
+            {realtime ? 'Pause' : 'Live'}
+          </button>
+          <button
+            type="button"
+            onClick={handleReload}
+            disabled={loading}
+            title={realtime ? 'Reconnect stream' : 'Reload logs'}
+            className="p-1 hover:bg-hover rounded text-text-secondary disabled:opacity-40"
+          >
+            <RotateCw size={13} className={cn(loading && 'animate-spin')} />
+          </button>
+        </div>
       </div>
       {error ? (
         <p className="p-4 text-sm text-red-500">{error}</p>
@@ -1102,8 +1220,6 @@ const YamlEditorTab = ({
   title?: string;
   onContentChange: (content: string) => void;
 }) => {
-  const theme = useTheme();
-  const { settings } = useFeatureSettings();
   const [yaml, setYaml] = useState(initialContent);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [selectedKinds, setSelectedKinds] = useState<string[]>(['Deployment']);
@@ -1156,9 +1272,12 @@ const YamlEditorTab = ({
   }, []);
 
   return (
-    <div className="yaml-editor-pane h-full flex flex-col bg-surface-elevated">
-      <div className="flex items-center justify-between gap-2 px-3 py-1 border-b border-white/10 flex-shrink-0 bg-surface-elevated">
-        <span className="text-xs text-white/50">{title ?? 'New Resource'}</span>
+    <YamlAceEditor
+      className="yaml-editor-pane h-full bg-surface-elevated"
+      value={yaml}
+      onChange={handleChange}
+      toolbarLeft={<span className="text-xs text-text-secondary">{title ?? 'New Resource'}</span>}
+      toolbarRight={(
         <div ref={templateMenuRef} className="relative">
           <button
             type="button"
@@ -1219,25 +1338,8 @@ const YamlEditorTab = ({
             </div>
           )}
         </div>
-      </div>
-      <div className="flex-1 overflow-hidden">
-        <AceEditor
-          mode="yaml"
-          theme={(settings.yamlEditor.theme === 'auto' ? !!theme?.isDark : settings.yamlEditor.theme === 'dark') ? 'tomorrow_night' : 'github'}
-          value={yaml}
-          onChange={handleChange}
-          width="100%"
-          height="100%"
-          showPrintMargin={false}
-          setOptions={{ useWorker: false, tabSize: 2 }}
-          editorProps={{ $blockScrolling: true }}
-          style={{
-            fontSize: settings.yamlEditor.fontSize,
-            fontFamily: settings.yamlEditor.fontName,
-          }}
-        />
-      </div>
-    </div>
+      )}
+    />
   );
 };
 
@@ -1360,7 +1462,13 @@ const TabContent = ({
           />
         );
       }
-      return <LogViewer namespace={tab.target.namespace} podName={tab.target.podName} />;
+      return (
+        <LogViewer
+          namespace={tab.target.namespace}
+          podName={tab.target.podName}
+          containerName={tab.target.containerName}
+        />
+      );
 
     case 'host-shell':
       return <TerminalComponent podName="host" namespace="host" initialCommand={tab.initialCommand} />;
