@@ -1831,6 +1831,8 @@ async fn watch_custom_resources(
 
     let api: Api<DynamicObject> = Api::all_with(client.clone(), &ar);
 
+    let enrich_gateways = crate::handlers::crd::is_gateway_api_gateway(&spec.group, &names.kind);
+
     info!("Fetching initial custom resource list for {}...", resource_name);
     match list_custom_resources_for_crd(client.clone(), crd_name, None).await {
         Ok(items) => {
@@ -1882,9 +1884,19 @@ async fn watch_custom_resources(
                         Event::Deleted(item) => ("DELETED", Some(item)),
                         Event::Restarted(items) => {
                             for item in items {
-                                let item_data =
-                                    serde_json::to_value(custom_resource_from_dynamic(item))
-                                        .unwrap_or_default();
+                                let cr_item = custom_resource_from_dynamic(item);
+                                let cr_item = if enrich_gateways {
+                                    crate::handlers::crd::finalize_custom_resource_item(
+                                        client.clone(),
+                                        &spec.group,
+                                        &names.kind,
+                                        cr_item,
+                                    )
+                                    .await
+                                } else {
+                                    cr_item
+                                };
+                                let item_data = serde_json::to_value(&cr_item).unwrap_or_default();
                                 if tx
                                     .send(ServerMessage::ResourceUpdate {
                                         resource: resource_name.to_string(),
@@ -1901,8 +1913,19 @@ async fn watch_custom_resources(
                         }
                     };
                     if let Some(item) = item_opt {
-                        let item_data =
-                            serde_json::to_value(custom_resource_from_dynamic(item)).unwrap_or_default();
+                        let cr_item = custom_resource_from_dynamic(item);
+                        let cr_item = if enrich_gateways {
+                            crate::handlers::crd::finalize_custom_resource_item(
+                                client.clone(),
+                                &spec.group,
+                                &names.kind,
+                                cr_item,
+                            )
+                            .await
+                        } else {
+                            cr_item
+                        };
+                        let item_data = serde_json::to_value(&cr_item).unwrap_or_default();
                         if tx
                             .send(ServerMessage::ResourceUpdate {
                                 resource: resource_name.to_string(),

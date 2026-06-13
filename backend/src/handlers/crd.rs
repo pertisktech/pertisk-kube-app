@@ -6,7 +6,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use k8s_openapi::api::core::v1::Namespace;
+use k8s_openapi::api::core::v1::{Namespace, Service};
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use kube::{
     api::{ApiResource, DeleteParams, DynamicObject, GroupVersionKind, ListParams},
@@ -43,6 +43,219 @@ fn custom_resource_from_dynamic(obj: DynamicObject) -> CustomResourceItem {
         annotations,
         manifest,
     }
+}
+
+fn gateway_has_status_addresses(status: Option<&serde_json::Value>) -> bool {
+    status
+        .and_then(|value| value.get("addresses"))
+        .and_then(|value| value.as_array())
+        .is_some_and(|addresses| !addresses.is_empty())
+}
+
+fn load_balancer_addresses_from_service(service: &Service) -> Vec<serde_json::Value> {
+    service
+        .status
+        .as_ref()
+        .and_then(|status| status.load_balancer.as_ref())
+        .and_then(|lb| lb.ingress.as_ref())
+        .map(|ingress| {
+            ingress
+                .iter()
+                .filter_map(|entry| {
+                    if let Some(ip) = entry.ip.as_ref().filter(|value| !value.is_empty()) {
+                        Some(serde_json::json!({
+                            "type": "IPAddress",
+                            "value": ip,
+                        }))
+                    } else if let Some(hostname) = entry.hostname.as_ref().filter(|value| !value.is_empty()) {
+                        Some(serde_json::json!({
+                            "type": "Hostname",
+                            "value": hostname,
+                        }))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn gateway_class_name(item: &CustomResourceItem) -> Option<&str> {
+    item.spec
+        .get("gatewayClassName")
+        .and_then(|value| value.as_str())
+        .or_else(|| {
+            item.manifest
+                .get("spec")
+                .and_then(|spec| spec.get("gatewayClassName"))
+                .and_then(|value| value.as_str())
+        })
+}
+
+fn service_matches_gateway(
+    service: &Service,
+    gateway_name: &str,
+    namespace: &str,
+    gateway_class_name: Option<&str>,
+) -> bool {
+    let service_namespace = service.metadata.namespace.as_deref().unwrap_or("default");
+    if service_namespace != namespace {
+        return false;
+    }
+
+    if service.metadata.name.as_deref() == Some(gateway_name) {
+        return true;
+    }
+
+    if let Some(class_name) = gateway_class_name {
+        if service.metadata.name.as_deref() == Some(class_name) {
+            return true;
+        }
+    }
+
+    service
+        .metadata
+        .labels
+        .as_ref()
+        .and_then(|labels| labels.get("gateway.networking.k8s.io/gateway-name"))
+        .is_some_and(|value| value == gateway_name)
+}
+
+fn pick_service_for_gateway<'a>(
+    services: &'a [Service],
+    gateway_name: &str,
+    namespace: &str,
+    gateway_class_name: Option<&str>,
+) -> Option<&'a Service> {
+    if let Some(service) = services
+        .iter()
+        .find(|service| service_matches_gateway(service, gateway_name, namespace, gateway_class_name))
+    {
+        return Some(service);
+    }
+
+    services.iter().find(|service| {
+        service.metadata.namespace.as_deref().unwrap_or("default") == namespace
+            && service.metadata.name.as_deref() == Some(namespace)
+    }).or_else(|| {
+        let lb_services: Vec<&Service> = services
+            .iter()
+            .filter(|service| {
+                service.metadata.namespace.as_deref().unwrap_or("default") == namespace
+                    && service.spec.as_ref().is_some_and(|spec| {
+                        spec.type_.as_deref() == Some("LoadBalancer")
+                    })
+                    && !load_balancer_addresses_from_service(service).is_empty()
+            })
+            .collect();
+        if lb_services.len() == 1 {
+            lb_services.into_iter().next()
+        } else {
+            None
+        }
+    })
+}
+
+fn inject_gateway_status_addresses(item: &mut CustomResourceItem, addresses: Vec<serde_json::Value>) {
+    let addresses_value = serde_json::Value::Array(addresses);
+
+    match item.status.as_mut() {
+        Some(status) if status.is_object() => {
+            status
+                .as_object_mut()
+                .expect("status object")
+                .insert("addresses".to_string(), addresses_value.clone());
+        }
+        _ => {
+            item.status = Some(serde_json::json!({ "addresses": addresses_value.clone() }));
+        }
+    }
+
+    if let Some(manifest) = item.manifest.as_object_mut() {
+        match manifest.get_mut("status") {
+            Some(status) if status.is_object() => {
+                status
+                    .as_object_mut()
+                    .expect("manifest status object")
+                    .insert("addresses".to_string(), addresses_value);
+            }
+            _ => {
+                manifest.insert("status".to_string(), serde_json::json!({ "addresses": addresses_value }));
+            }
+        }
+    }
+}
+
+async fn enrich_gateway_addresses(
+    client: Client,
+    items: &mut [CustomResourceItem],
+) -> Result<(), kube::Error> {
+    if items.is_empty() {
+        return Ok(());
+    }
+
+    let namespaces: Vec<String> = items
+        .iter()
+        .filter(|item| !gateway_has_status_addresses(item.status.as_ref()))
+        .filter_map(|item| item.namespace.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    if namespaces.is_empty() {
+        return Ok(());
+    }
+
+    let mut services = Vec::new();
+    for namespace in namespaces {
+        let api: Api<Service> = Api::namespaced(client.clone(), &namespace);
+        match api.list(&ListParams::default()).await {
+            Ok(list) => services.extend(list.items),
+            Err(err) if is_list_forbidden(&err) => continue,
+            Err(err) => return Err(err),
+        }
+    }
+
+    for item in items.iter_mut() {
+        if gateway_has_status_addresses(item.status.as_ref()) {
+            continue;
+        }
+        let namespace = item.namespace.as_deref().unwrap_or("default");
+        let gateway_class = gateway_class_name(item);
+        let Some(service) =
+            pick_service_for_gateway(&services, &item.name, namespace, gateway_class)
+        else {
+            continue;
+        };
+        let addresses = load_balancer_addresses_from_service(service);
+        if addresses.is_empty() {
+            continue;
+        }
+        inject_gateway_status_addresses(item, addresses);
+    }
+
+    Ok(())
+}
+
+pub fn is_gateway_api_gateway(group: &str, kind: &str) -> bool {
+    group == "gateway.networking.k8s.io" && kind == "Gateway"
+}
+
+pub async fn finalize_custom_resource_item(
+    client: Client,
+    group: &str,
+    kind: &str,
+    item: CustomResourceItem,
+) -> CustomResourceItem {
+    if !is_gateway_api_gateway(group, kind) {
+        return item;
+    }
+    let mut batch = vec![item];
+    if enrich_gateway_addresses(client, &mut batch).await.is_ok() {
+        return batch.remove(0);
+    }
+    batch.remove(0)
 }
 
 #[derive(Deserialize)]
@@ -236,7 +449,19 @@ pub async fn list_custom_resources_for_crd(
         .unwrap_or_default();
     let gvk = GroupVersionKind::gvk(&spec.group, &storage_version, &names.kind);
     let ar = ApiResource::from_gvk_with_plural(&gvk, &names.plural);
-    list_custom_resource_items(client, &ar, crd_name, &spec.scope, namespace).await
+    let mut items =
+        list_custom_resource_items(client.clone(), &ar, crd_name, &spec.scope, namespace).await?;
+
+    if is_gateway_api_gateway(&spec.group, &names.kind) {
+        if let Err(err) = enrich_gateway_addresses(client, &mut items).await {
+            warn!(
+                "Failed to enrich Gateway addresses from Services for {}: {}",
+                crd_name, err
+            );
+        }
+    }
+
+    Ok(items)
 }
 
 pub async fn list_custom_resources(
@@ -425,5 +650,68 @@ pub async fn delete_custom_resource(
             error!("Error deleting custom resource {} ({}): {:?}", name, crd_name, err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
+    }
+}
+
+#[cfg(test)]
+mod gateway_address_tests {
+    use super::*;
+    use k8s_openapi::api::core::v1::{LoadBalancerIngress, LoadBalancerStatus, Service, ServiceSpec, ServiceStatus};
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+
+    fn lb_service(name: &str, namespace: &str, ips: &[&str]) -> Service {
+        Service {
+            metadata: ObjectMeta {
+                name: Some(name.to_string()),
+                namespace: Some(namespace.to_string()),
+                ..Default::default()
+            },
+            spec: Some(ServiceSpec {
+                type_: Some("LoadBalancer".to_string()),
+                ..Default::default()
+            }),
+            status: Some(ServiceStatus {
+                load_balancer: Some(LoadBalancerStatus {
+                    ingress: Some(
+                        ips.iter()
+                            .map(|ip| LoadBalancerIngress {
+                                ip: Some((*ip).to_string()),
+                                ..Default::default()
+                            })
+                            .collect(),
+                    ),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn matches_pertisk_eproxy_service_by_gateway_class_name() {
+        let services = vec![lb_service(
+            "pertisk-eproxy",
+            "pertisk-eproxy",
+            &[
+                "10.1.1.83",
+                "2405:9800:b900:f3ba:c39:b0af:fc26:d226",
+            ],
+        )];
+
+        let picked = pick_service_for_gateway(
+            &services,
+            "pertisk-gateway",
+            "pertisk-eproxy",
+            Some("pertisk-eproxy"),
+        )
+        .expect("service should match gatewayClassName");
+
+        let addresses = load_balancer_addresses_from_service(picked);
+        assert_eq!(addresses.len(), 2);
+        assert_eq!(addresses[0]["value"], "10.1.1.83");
+        assert_eq!(
+            addresses[1]["value"],
+            "2405:9800:b900:f3ba:c39:b0af:fc26:d226"
+        );
     }
 }

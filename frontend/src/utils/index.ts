@@ -335,6 +335,34 @@ function convertToIndexNotation(key: string, firstItem = false): string {
 }
 
 /**
+ * Merge manifest and item status for JSONPath evaluation.
+ * Enriched fields (e.g. Gateway addresses from LoadBalancer Services) may exist only on item.status.
+ */
+export function mergeResourceStatus(manifestStatus: unknown, itemStatus: unknown): Record<string, unknown> {
+  const manifest =
+    manifestStatus && typeof manifestStatus === 'object' && !Array.isArray(manifestStatus)
+      ? (manifestStatus as Record<string, unknown>)
+      : {};
+  const item =
+    itemStatus && typeof itemStatus === 'object' && !Array.isArray(itemStatus)
+      ? (itemStatus as Record<string, unknown>)
+      : {};
+
+  const merged: Record<string, unknown> = { ...manifest, ...item };
+
+  const manifestAddresses = manifest.addresses;
+  const itemAddresses = item.addresses;
+  const manifestHasAddresses = Array.isArray(manifestAddresses) && manifestAddresses.length > 0;
+  const itemHasAddresses = Array.isArray(itemAddresses) && itemAddresses.length > 0;
+
+  if (!manifestHasAddresses && itemHasAddresses) {
+    merged.addresses = itemAddresses;
+  }
+
+  return merged;
+}
+
+/**
  * Resolve a Kubernetes/CRD JSONPath from an object (Freelens-compatible).
  * Uses @astronautlabs/jsonpath and kubectl path conversion so paths like
  * .spec.addresses[0].ip, .metadata.labels, and keys with - or / work.
@@ -347,8 +375,10 @@ export function safeJsonPathValue(obj: unknown, path: string): unknown {
     const normalizedPath = convertKubectlJsonPathToNodeJsonPath(trimmed);
     const parsed = JSONPath.parse(normalizedPath);
     const isSlice = parsed.some(
-      (exp: { expression?: { type?: string } }) =>
-        exp.expression?.type === 'slice' || exp.expression?.type === 'wildcard'
+      (exp: { expression?: { type?: string } }) => {
+        const type = exp.expression?.type;
+        return type === 'slice' || type === 'wildcard' || type === 'filter';
+      },
     );
     const value = JSONPath.query(obj as object, JSONPath.stringify(parsed), isSlice ? Infinity : 1);
     if (isSlice) return value;
@@ -360,8 +390,12 @@ export function safeJsonPathValue(obj: unknown, path: string): unknown {
 
 /** Format a value for display in CRD printer columns (like kubectl). */
 export function formatJsonValue(value: unknown): string {
-  if (value == null) return '';
-  if (Array.isArray(value)) return value.map(formatJsonValue).join(', ');
+  if (value == null) return '-';
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '-';
+    return value.map(formatJsonValue).join(', ');
+  }
   if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
+  const text = String(value).trim();
+  return text.length > 0 ? text : '-';
 }

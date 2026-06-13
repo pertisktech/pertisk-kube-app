@@ -11,7 +11,7 @@ import { ResourceDetailPanelLayout, PanelActionButton } from '../components/Reso
 import { DrawerItem, DrawerTitle, DrawerParamToggler, DrawerLabelsAnnotations } from '../components/drawer';
 import { useNamespace } from '../context/NamespaceContext';
 import { openPanelTab } from '../components/BottomPanel';
-import { timeAgo, safeJsonPathValue, formatJsonValue, matchesResourceNameFilter } from '../utils';
+import { timeAgo, safeJsonPathValue, formatJsonValue, mergeResourceStatus, matchesResourceNameFilter } from '../utils';
 import { getAuthToken } from '../utils/auth';
 import type { CustomResource, Crd, CrdPrinterColumn } from '../types';
 
@@ -21,19 +21,32 @@ import type { CustomResource, Crd, CrdPrinterColumn } from '../types';
  * so CRD printer column paths like .metadata.labels, .spec.addresses, .status.conditions resolve.
  */
 function resourceObjectForJsonPath(item: CustomResource): Record<string, unknown> {
+  const metadata = {
+    name: item.name,
+    namespace: item.namespace ?? '',
+    creationTimestamp: item.created_at ?? null,
+    labels: item.labels ?? {},
+    annotations: item.annotations ?? {},
+  };
+
   if (item.manifest && typeof item.manifest === 'object') {
-    return item.manifest;
+    const manifest = item.manifest as Record<string, unknown>;
+    const manifestMetadata =
+      typeof manifest.metadata === 'object' && manifest.metadata !== null
+        ? (manifest.metadata as Record<string, unknown>)
+        : {};
+    return {
+      ...manifest,
+      metadata: { ...manifestMetadata, ...metadata },
+      spec: manifest.spec ?? item.spec ?? {},
+      status: mergeResourceStatus(manifest.status, item.status),
+    };
   }
+
   return {
-    metadata: {
-      name: item.name,
-      namespace: item.namespace ?? '',
-      creationTimestamp: item.created_at ?? null,
-      labels: item.labels ?? {},
-      annotations: item.annotations ?? {},
-    },
+    metadata,
     spec: item.spec ?? {},
-    status: item.status ?? {},
+    status: mergeResourceStatus(undefined, item.status),
   };
 }
 
