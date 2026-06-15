@@ -15,6 +15,7 @@ use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySyste
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::io::{Read, Write};
 use std::process::Stdio;
@@ -220,6 +221,46 @@ pub struct ExecQuery {
     pub namespace: String,
     pub pod: String,
     pub container: Option<String>,
+}
+
+fn exec_target_label(query: &ExecQuery) -> String {
+    match &query.container {
+        Some(container) => format!("{}/{}:{}", query.namespace, query.pod, container),
+        None => format!("{}/{}", query.namespace, query.pod),
+    }
+}
+
+fn append_exec_output_log(buffer: &Mutex<String>, chunk: &str) {
+    const MAX_EXEC_OUTPUT_LOG: usize = 4096;
+    if let Ok(mut log) = buffer.lock() {
+        log.push_str(chunk);
+        if log.len() > MAX_EXEC_OUTPUT_LOG {
+            let drop_bytes = log.len() - MAX_EXEC_OUTPUT_LOG;
+            log.drain(..drop_bytes);
+        }
+    }
+}
+
+fn summarize_exec_output(output: &str) -> String {
+    let cleaned: String = output
+        .chars()
+        .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
+        .collect();
+    let trimmed = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    if trimmed.len() > 500 {
+        format!("{}...", &trimmed[..500])
+    } else {
+        trimmed
+    }
+}
+
+fn looks_like_kubectl_exec_failure(output: &str) -> bool {
+    let lower = output.to_ascii_lowercase();
+    lower.contains("error:")
+        || lower.contains("unhandled error")
+        || lower.contains("websocket: close")
+        || lower.contains("upgrade request required")
+        || lower.contains("unable to use a tty")
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -773,6 +814,11 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
     let session = match spawn_exec_shell(&query, &tx).await {
         Some(session) => session,
         None => {
+            error!(
+                target = %exec_target_label(&query),
+                kube_context = ?active_kube_context(),
+                "Exec shell session failed to start"
+            );
             ws_send_task.abort();
             return;
         }
@@ -780,7 +826,7 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
 
     match session {
         ShellSession::Pty { master, reader, writer } => {
-            handle_pty_session(ws_receiver, master, reader, writer, tx.clone()).await;
+            handle_pty_session(ws_receiver, master, reader, writer, tx.clone(), &query).await;
         }
         ShellSession::Piped { mut child, mut stdin, stdout, stderr } => {
             // Keep live shell output byte-faithful to avoid line-break corruption in chunked streams.
@@ -886,8 +932,9 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
     ws_send_task.abort();
 
     info!(
-        "Exec websocket closed: namespace={}, pod={}, container={:?}",
-        query.namespace, query.pod, query.container
+        target = %exec_target_label(&query),
+        kube_context = ?active_kube_context(),
+        "Exec websocket closed"
     );
 }
 
@@ -897,23 +944,43 @@ async fn handle_pty_session(
     mut reader: Box<dyn std::io::Read + Send>,
     mut writer: Box<dyn std::io::Write + Send>,
     tx: tokio::sync::mpsc::Sender<String>,
+    query: &ExecQuery,
 ) {
+    let target = exec_target_label(query);
+    let kube_context = active_kube_context();
+    let saw_output = Arc::new(AtomicBool::new(false));
+    let saw_output_reader = Arc::clone(&saw_output);
+    let output_log = Arc::new(Mutex::new(String::new()));
+    let output_log_reader = Arc::clone(&output_log);
+    let tx_for_reader = tx.clone();
     // PTY output reading task (blocking I/O in separate thread)
     let read_task = tokio::task::spawn_blocking(move || {
         let mut buffer = [0u8; 4096];
-        
+        let mut read_error: Option<String> = None;
+
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(n) => {
+                    saw_output_reader.store(true, Ordering::Relaxed);
                     let output = String::from_utf8_lossy(&buffer[..n]).to_string();
-                    if tx.blocking_send(output).is_err() {
+                    append_exec_output_log(&output_log_reader, &output);
+                    if tx_for_reader.blocking_send(output).is_err() {
                         break;
                     }
                 }
-                Err(_) => break,
+                Err(err) => {
+                    saw_output_reader.store(true, Ordering::Relaxed);
+                    read_error = Some(err.to_string());
+                    let _ = tx_for_reader.blocking_send(format!(
+                        "\r\n\u{1b}[1;31mkubectl exec stream error: {}\u{1b}[0m\r\n",
+                        err
+                    ));
+                    break;
+                }
             }
         }
+        read_error
     });
 
     // Handle WebSocket messages
@@ -960,7 +1027,54 @@ async fn handle_pty_session(
         }
     }
 
-    read_task.abort();
+    let read_error = match read_task.await {
+        Ok(err) => err,
+        Err(join_err) => {
+            error!(
+                target = %target,
+                kube_context = ?kube_context,
+                join_error = %join_err,
+                "kubectl exec PTY read task panicked or was cancelled"
+            );
+            Some(join_err.to_string())
+        }
+    };
+    let output_snippet = output_log
+        .lock()
+        .map(|log| summarize_exec_output(&log))
+        .unwrap_or_default();
+
+    if let Some(err) = read_error {
+        error!(
+            target = %target,
+            kube_context = ?kube_context,
+            read_error = %err,
+            output = %output_snippet,
+            "kubectl exec PTY read failed"
+        );
+    } else if !saw_output.load(Ordering::Relaxed) {
+        error!(
+            target = %target,
+            kube_context = ?kube_context,
+            "kubectl exec produced no output before session ended; \
+             common causes: Omni/API proxy WebSocket exec breakage, RBAC, or pod not running"
+        );
+        let _ = tx
+            .send(
+                "\r\n\u{1b}[1;31m✗ kubectl exec failed immediately.\u{1b}[0m\r\n\
+                 \u{1b}[90mIf this cluster uses Omni behind pertisk-eproxy, check that the proxy \
+                 forwards WebSocket exec streams (Host header + channel.k8s.io subprotocol).\u{1b}[0m\r\n"
+                    .to_string(),
+            )
+            .await;
+    } else if looks_like_kubectl_exec_failure(&output_snippet) {
+        error!(
+            target = %target,
+            kube_context = ?kube_context,
+            detail = %output_snippet,
+            "kubectl exec failed"
+        );
+    }
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState) {

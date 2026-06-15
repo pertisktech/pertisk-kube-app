@@ -296,14 +296,33 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
         }
       };
 
-      ws.onerror = () => {
+      ws.onerror = (event) => {
+        console.error('[Terminal] exec websocket error', {
+          namespace,
+          podName,
+          containerName,
+          url: buildExecWsUrl(),
+          event,
+        });
         if (!connectionClosed) {
           xterm.writeln('\x1b[1;31m✗ Connection error\x1b[0m');
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         connectionClosed = true;
+        if (!event.wasClean || !sawShellOutput) {
+          console.error('[Terminal] exec websocket closed', {
+            namespace,
+            podName,
+            containerName,
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+            sawShellOutput,
+            url: buildExecWsUrl(),
+          });
+        }
         if (idlePromptTimer !== null) {
           window.clearTimeout(idlePromptTimer);
           idlePromptTimer = null;
