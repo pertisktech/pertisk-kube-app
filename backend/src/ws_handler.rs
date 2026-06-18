@@ -26,6 +26,8 @@ use tokio::{
 };
 use tracing::{error, info, warn};
 
+use kube::api::{AttachParams, AttachedProcess, TerminalSize};
+
 use crate::handlers::crd::list_custom_resources_for_crd;
 use crate::handlers::helm::HelmReleaseAggregator;
 use crate::{models::CustomResourceItem, AppState};
@@ -231,12 +233,13 @@ fn exec_target_label(query: &ExecQuery) -> String {
 }
 
 fn append_exec_output_log(buffer: &Mutex<String>, chunk: &str) {
-    const MAX_EXEC_OUTPUT_LOG: usize = 4096;
+    const MAX_EXEC_OUTPUT_LOG_CHARS: usize = 4096;
     if let Ok(mut log) = buffer.lock() {
         log.push_str(chunk);
-        if log.len() > MAX_EXEC_OUTPUT_LOG {
-            let drop_bytes = log.len() - MAX_EXEC_OUTPUT_LOG;
-            log.drain(..drop_bytes);
+        let char_count = log.chars().count();
+        if char_count > MAX_EXEC_OUTPUT_LOG_CHARS {
+            let skip = char_count - MAX_EXEC_OUTPUT_LOG_CHARS;
+            *log = log.chars().skip(skip).collect();
         }
     }
 }
@@ -247,8 +250,10 @@ fn summarize_exec_output(output: &str) -> String {
         .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
         .collect();
     let trimmed = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
-    if trimmed.len() > 500 {
-        format!("{}...", &trimmed[..500])
+    let char_count = trimmed.chars().count();
+    if char_count > 500 {
+        let truncated: String = trimmed.chars().take(500).collect();
+        format!("{truncated}...")
     } else {
         trimmed
     }
@@ -301,6 +306,9 @@ enum ShellSession {
         stdout: ChildStdout,
         stderr: ChildStderr,
     },
+    KubeExec {
+        attached: AttachedProcess,
+    },
 }
 
 pub async fn ws_handler(
@@ -314,13 +322,14 @@ pub async fn ws_handler(
 pub async fn exec_ws_handler(
     ws: WebSocketUpgrade,
     Query(query): Query<ExecQuery>,
+    State(state): State<AppState>,
 ) -> Response {
     info!(
         "New exec websocket request: namespace={}, pod={}, container={:?}",
         query.namespace, query.pod, query.container
     );
 
-    ws.on_upgrade(move |socket| handle_exec_socket(socket, query))
+    ws.on_upgrade(move |socket| handle_exec_socket(socket, query, state))
 }
 
 pub async fn pod_logs_ws_handler(
@@ -411,8 +420,62 @@ async fn handle_pod_logs_socket(
     send_task.abort();
 }
 
+async fn spawn_kube_exec_shell(
+    query: &ExecQuery,
+    state: &AppState,
+    tx: &tokio::sync::mpsc::Sender<String>,
+) -> Option<ShellSession> {
+    use k8s_openapi::api::core::v1::Pod;
+
+    if let Some(message) = placeholder_error_message(state).await {
+        let _ = tx
+            .send(format!("\r\n\u{1b}[1;31m{message}\u{1b}[0m\r\n"))
+            .await;
+        return None;
+    }
+
+    info!(
+        "Starting kube exec shell: namespace={}, pod={}, container={:?}",
+        query.namespace, query.pod, query.container
+    );
+
+    let api: Api<Pod> = Api::namespaced(state.kube_client().await, &query.namespace);
+    let mut attach_params = AttachParams {
+        stdin: true,
+        stdout: true,
+        stderr: true,
+        tty: true,
+        ..Default::default()
+    };
+    if let Some(container) = &query.container {
+        attach_params.container = Some(container.clone());
+    }
+
+    let command = [
+        "/bin/sh".to_string(),
+        "-lc".to_string(),
+        PREFERRED_SHELL_SCRIPT.to_string(),
+    ];
+    match api.exec(&query.pod, command, &attach_params).await {
+        Ok(attached) => {
+            info!("kube exec session opened successfully");
+            Some(ShellSession::KubeExec { attached })
+        }
+        Err(err) => {
+            warn!(
+                target = %exec_target_label(query),
+                kube_context = ?active_kube_context(),
+                error = %err,
+                "kube exec failed; falling back to kubectl subprocess"
+            );
+            None
+        }
+    }
+}
+
 async fn spawn_exec_shell(
     query: &ExecQuery,
+    state: &AppState,
     tx: &tokio::sync::mpsc::Sender<String>,
 ) -> Option<ShellSession> {
     info!(
@@ -558,7 +621,11 @@ async fn spawn_exec_shell(
             stderr,
         })
     } else {
-        // Normal case: kubectl exec to pod with PTY so zsh/p10k get a real terminal
+        if let Some(session) = spawn_kube_exec_shell(query, state, tx).await {
+            return Some(session);
+        }
+
+        // Fallback: kubectl exec via local PTY when native kube exec is unavailable.
         let pty_system = NativePtySystem::default();
         let pair = match pty_system.openpty(PtySize {
             rows: 30,
@@ -601,8 +668,11 @@ async fn spawn_exec_shell(
         cmd.arg("-lc");
         cmd.arg(PREFERRED_SHELL_SCRIPT);
         cmd.env("TERM", "xterm-256color");
-        // Ensure kubectl in the exec session targets the correct cluster.
-        if let Ok(kubeconfig) = env::var("KUBECONFIG") {
+        // Ensure kubectl in the exec session targets the correct cluster/context,
+        // including Omni contexts merged into ~/.kube/config.
+        if let Some(kubeconfig) = kubeconfig_with_context_override() {
+            cmd.env("KUBECONFIG", kubeconfig);
+        } else if let Ok(kubeconfig) = env::var("KUBECONFIG") {
             if !kubeconfig.trim().is_empty() {
                 cmd.env("KUBECONFIG", kubeconfig);
             }
@@ -799,7 +869,7 @@ fn spawn_output_tasks(
     (stdout_task, stderr_task)
 }
 
-async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
+async fn handle_exec_socket(socket: WebSocket, query: ExecQuery, state: AppState) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(256);
 
@@ -811,7 +881,7 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
         }
     });
 
-    let session = match spawn_exec_shell(&query, &tx).await {
+    let session = match spawn_exec_shell(&query, &state, &tx).await {
         Some(session) => session,
         None => {
             error!(
@@ -827,6 +897,9 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
     match session {
         ShellSession::Pty { master, reader, writer } => {
             handle_pty_session(ws_receiver, master, reader, writer, tx.clone(), &query).await;
+        }
+        ShellSession::KubeExec { attached } => {
+            handle_kube_exec_session(ws_receiver, attached, tx.clone(), &query).await;
         }
         ShellSession::Piped { mut child, mut stdin, stdout, stderr } => {
             // Keep live shell output byte-faithful to avoid line-break corruption in chunked streams.
@@ -860,7 +933,7 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
 
                             let _ = tx.send("\r\n^C\r\n".to_string()).await;
 
-                            match spawn_exec_shell(&query, &tx).await {
+                            match spawn_exec_shell(&query, &state, &tx).await {
                                 Some(ShellSession::Piped { child: new_child, stdin: new_stdin, stdout: new_stdout, stderr: new_stderr }) => {
                                     child = new_child;
                                     stdin = new_stdin;
@@ -936,6 +1009,157 @@ async fn handle_exec_socket(socket: WebSocket, query: ExecQuery) {
         kube_context = ?active_kube_context(),
         "Exec websocket closed"
     );
+}
+
+async fn handle_kube_exec_session(
+    mut ws_receiver: futures_util::stream::SplitStream<WebSocket>,
+    mut attached: AttachedProcess,
+    tx: tokio::sync::mpsc::Sender<String>,
+    query: &ExecQuery,
+) {
+    let target = exec_target_label(query);
+    let kube_context = active_kube_context();
+    let saw_output = Arc::new(AtomicBool::new(false));
+    let saw_output_stdout = Arc::clone(&saw_output);
+    let saw_output_stderr = Arc::clone(&saw_output);
+
+    let mut stdin = match attached.stdin() {
+        Some(stdin) => stdin,
+        None => {
+            error!(
+                target = %target,
+                kube_context = ?kube_context,
+                "kube exec session missing stdin"
+            );
+            attached.abort();
+            return;
+        }
+    };
+    let mut terminal_size = attached.terminal_size();
+
+    let mut stdout_task = attached.stdout().map(|mut stdout| {
+        let tx_stdout = tx.clone();
+        let saw_output_stdout = Arc::clone(&saw_output_stdout);
+        tokio::spawn(async move {
+            let mut buffer = [0_u8; 4096];
+            loop {
+                match stdout.read(&mut buffer).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        saw_output_stdout.store(true, Ordering::Relaxed);
+                        let output = String::from_utf8_lossy(&buffer[..n]).to_string();
+                        if tx_stdout.send(output).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(err) => {
+                        saw_output_stdout.store(true, Ordering::Relaxed);
+                        let _ = tx_stdout
+                            .send(format!(
+                                "\r\n\u{1b}[1;31mkube exec stdout error: {}\u{1b}[0m\r\n",
+                                err
+                            ))
+                            .await;
+                        break;
+                    }
+                }
+            }
+        })
+    });
+
+    let mut stderr_task = attached.stderr().map(|mut stderr| {
+        let tx_stderr = tx.clone();
+        let saw_output_stderr = Arc::clone(&saw_output_stderr);
+        tokio::spawn(async move {
+            let mut buffer = [0_u8; 4096];
+            loop {
+                match stderr.read(&mut buffer).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        saw_output_stderr.store(true, Ordering::Relaxed);
+                        let output = String::from_utf8_lossy(&buffer[..n]).to_string();
+                        if tx_stderr.send(output).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(err) => {
+                        saw_output_stderr.store(true, Ordering::Relaxed);
+                        let _ = tx_stderr
+                            .send(format!(
+                                "\r\n\u{1b}[1;31mkube exec stderr error: {}\u{1b}[0m\r\n",
+                                err
+                            ))
+                            .await;
+                        break;
+                    }
+                }
+            }
+        })
+    });
+
+    while let Some(message) = ws_receiver.next().await {
+        match message {
+            Ok(Message::Text(text)) => {
+                if let Some((cols, rows)) = parse_resize_message(&text) {
+                    if let Some(resize_tx) = terminal_size.as_mut() {
+                        let _ = resize_tx
+                            .send(TerminalSize {
+                                width: cols,
+                                height: rows,
+                            })
+                            .await;
+                    }
+                    continue;
+                }
+
+                if stdin.write_all(text.as_bytes()).await.is_err() {
+                    error!("Failed to write to kube exec stdin");
+                    break;
+                }
+                if let Err(err) = stdin.flush().await {
+                    error!("Failed to flush kube exec stdin: {}", err);
+                    break;
+                }
+            }
+            Ok(Message::Binary(data)) => {
+                if stdin.write_all(&data).await.is_err() {
+                    break;
+                }
+                let _ = stdin.flush().await;
+            }
+            Ok(Message::Close(_)) => break,
+            Ok(Message::Ping(_)) | Ok(Message::Pong(_)) => {}
+            Err(err) => {
+                warn!("kube exec websocket receive error: {}", err);
+                break;
+            }
+        }
+    }
+
+    attached.abort();
+    if let Some(task) = stdout_task.take() {
+        task.abort();
+    }
+    if let Some(task) = stderr_task.take() {
+        task.abort();
+    }
+
+    if !saw_output.load(Ordering::Relaxed) {
+        error!(
+            target = %target,
+            kube_context = ?kube_context,
+            "kube exec produced no output before session ended; \
+             common causes: Omni/API proxy WebSocket exec breakage, RBAC, or pod not running"
+        );
+        let _ = tx
+            .send(
+                "\r\n\u{1b}[1;31m✗ Pod exec failed immediately.\u{1b}[0m\r\n\
+                 \u{1b}[90mIf this cluster uses Omni behind pertisk-eproxy, deploy the latest eproxy \
+                 (k8s exec WebSocket Host + channel.k8s.io forwarding).\u{1b}[0m\r\n"
+                    .to_string(),
+            )
+            .await;
+    }
 }
 
 async fn handle_pty_session(
@@ -2082,3 +2306,26 @@ async fn watch_custom_resources(
     }
 }
 
+#[cfg(test)]
+mod exec_output_log_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[test]
+    fn append_exec_output_log_handles_multibyte_utf8_without_panic() {
+        let log = Mutex::new(String::new());
+        let chunk = "🚀".repeat(3000);
+        append_exec_output_log(&log, &chunk);
+        let stored = log.lock().expect("log lock");
+        assert!(!stored.is_empty());
+        assert!(stored.chars().count() <= 4096);
+    }
+
+    #[test]
+    fn summarize_exec_output_truncates_on_char_boundaries() {
+        let output = "é".repeat(600);
+        let summary = summarize_exec_output(&output);
+        assert!(summary.ends_with("..."));
+        assert!(summary.chars().count() <= 503);
+    }
+}

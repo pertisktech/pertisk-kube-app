@@ -1391,11 +1391,13 @@ const AddMenu = ({ onSelect }: { onSelect: (type: PanelTabType) => void }) => (
 
 const TabContent = ({
   tab,
+  isActive,
   onConnect,
   onYamlChange,
   onCloseCurrentTab,
 }: {
   tab: PanelTab;
+  isActive: boolean;
   onConnect: (target: TabTarget) => void;
   onYamlChange: (content: string) => void;
   onCloseCurrentTab?: () => void;
@@ -1416,6 +1418,7 @@ const TabContent = ({
           namespace={tab.target.namespace}
           containerName={tab.target.containerName}
           initialCommand={tab.initialCommand}
+          isActive={isActive}
         />
       );
 
@@ -1451,7 +1454,7 @@ const TabContent = ({
           />
         );
       }
-      return <TerminalComponent podName={tab.target.podName} namespace="node" initialCommand={tab.initialCommand} />;
+      return <TerminalComponent podName={tab.target.podName} namespace="node" initialCommand={tab.initialCommand} isActive={isActive} />;
 
     case 'logs':
       if (!tab.target) {
@@ -1471,7 +1474,7 @@ const TabContent = ({
       );
 
     case 'host-shell':
-      return <TerminalComponent podName="host" namespace="host" initialCommand={tab.initialCommand} />;
+      return <TerminalComponent podName="host" namespace="host" initialCommand={tab.initialCommand} isActive={isActive} />;
 
     case 'yaml-editor':
       return (
@@ -2045,6 +2048,7 @@ export const BottomPanel = () => {
             <div key={tab.id} className="h-full w-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
               <TabContent
                 tab={tab}
+                isActive={tab.id === activeTabId && !collapsed}
                 onConnect={(target) => connectTab(tab.id, target)}
                 onYamlChange={(content) => updateYaml(tab.id, content)}
                 onCloseCurrentTab={() => closeTab(tab.id)}

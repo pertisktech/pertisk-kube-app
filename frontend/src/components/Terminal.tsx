@@ -13,6 +13,8 @@ interface TerminalProps {
   namespace: string;
   containerName?: string;
   initialCommand?: string;
+  /** When false, the terminal tab is hidden — refit/focus when it becomes true again. */
+  isActive?: boolean;
 }
 
 function toTerminalFontFamily(fontName: string): string {
@@ -26,13 +28,14 @@ function toTerminalFontFamily(fontName: string): string {
   return `"${normalized}", "JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
 }
 
-export const Terminal = ({ podName, namespace, containerName, initialCommand }: TerminalProps) => {
+export const Terminal = ({ podName, namespace, containerName, initialCommand, isActive = true }: TerminalProps) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const lastSentDimensionsRef = useRef<{ cols: number; rows: number } | null>(null);
   const resizeTimeoutRef = useRef<number | null>(null);
+  const disconnectedHintShownRef = useRef(false);
   const theme = useTheme();
   const { settings } = useFeatureSettings();
   
@@ -246,6 +249,7 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
         opened = true;
         hasConnectedOnce = true;
         connectionAttempt = 0;
+        disconnectedHintShownRef.current = false;
         xterm.writeln('\x1b[1;32m✓ Connected to pod shell\x1b[0m');
         xterm.writeln(`\x1b[1;36mPod:\x1b[0m ${namespace}/${podName}`);
         if (containerName) {
@@ -352,35 +356,43 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
     xterm.onData((data) => {
       const currentWs = wsRef.current;
       if (currentWs?.readyState === WebSocket.OPEN) {
+        disconnectedHintShownRef.current = false;
         currentWs.send(data);
+        return;
+      }
+
+      if (!disconnectedHintShownRef.current) {
+        disconnectedHintShownRef.current = true;
+        xterm.writeln('\r\n\x1b[90m[Shell disconnected — close this tab and open a new shell]\x1b[0m');
       }
     });
 
-    const handleFocus = () => {
-      xterm.focus();
+    const refocusTerminal = () => {
+      if (!terminalRef.current || terminalRef.current.offsetWidth <= 0) return;
       doFit();
       sendResize();
+      xterm.focus();
       nudgePromptIfIdle();
     };
 
-    const handleGlobalPointerDown = () => {
-      doFit();
-      sendResize();
-      nudgePromptIfIdle();
+    const handleFocus = () => {
+      refocusTerminal();
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const container = terminalRef.current;
+      if (!container || !container.contains(event.target as Node)) return;
+      refocusTerminal();
     };
 
     const handlePanelTabActivated = () => {
       // Activation event fires after tab visibility/layout changes.
-      window.setTimeout(() => {
-        if (!terminalRef.current || terminalRef.current.offsetWidth <= 0) return;
-        doFit();
-        sendResize();
-        nudgePromptIfIdle();
-      }, 0);
+      window.setTimeout(refocusTerminal, 0);
+      window.setTimeout(refocusTerminal, 50);
     };
 
-    terminalRef.current.addEventListener('mousedown', handleFocus);
-    window.addEventListener('pointerdown', handleGlobalPointerDown, true);
+    terminalRef.current.addEventListener('pointerdown', handleFocus);
+    window.addEventListener('pointerdown', handlePointerDown, true);
     window.addEventListener('panel:tab-activated', handlePanelTabActivated);
 
     // Observe container size changes for responsive terminal
@@ -439,8 +451,8 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
       if (reconnectTimer !== null) {
         window.clearTimeout(reconnectTimer);
       }
-      terminalRef.current?.removeEventListener('mousedown', handleFocus);
-      window.removeEventListener('pointerdown', handleGlobalPointerDown, true);
+      terminalRef.current?.removeEventListener('pointerdown', handleFocus);
+      window.removeEventListener('pointerdown', handlePointerDown, true);
       window.removeEventListener('panel:tab-activated', handlePanelTabActivated);
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
@@ -459,6 +471,33 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
   // Only reconnect when connection params change, not when settings change
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [podName, namespace, containerName, initialCommand]);
+
+  // Refit and restore keyboard focus when this terminal tab becomes visible again.
+  useEffect(() => {
+    if (!isActive) return;
+
+    const xterm = xtermRef.current;
+    const container = terminalRef.current;
+    if (!xterm || !container) return;
+
+    const refocus = () => {
+      if (container.offsetWidth <= 0) return;
+      try {
+        fitAddonRef.current?.fit();
+      } catch {
+        // ignore fit errors during layout transitions
+      }
+      sendResize();
+      xterm.focus();
+    };
+
+    const rafId = window.requestAnimationFrame(refocus);
+    const timerId = window.setTimeout(refocus, 50);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.clearTimeout(timerId);
+    };
+  }, [isActive]);
 
   // Update terminal theme/font when settings change (without reconnecting)
   useEffect(() => {
@@ -514,6 +553,7 @@ export const Terminal = ({ podName, namespace, containerName, initialCommand }: 
     <div
       ref={terminalRef}
       className="terminal-container w-full h-full bg-surface-elevated rounded-md"
+      tabIndex={-1}
       style={{ 
         background: terminalBgColor,
         minHeight: '200px',
