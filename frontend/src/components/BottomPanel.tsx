@@ -1510,6 +1510,7 @@ const DEFAULT_PANEL_HEIGHT = () => Math.round(window.innerHeight * 0.5);
 
 export const BottomPanel = () => {
   const queryClient = useQueryClient();
+  const { settings } = useFeatureSettings();
   const [tabs, setTabs] = useState<PanelTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
@@ -1688,8 +1689,18 @@ export const BottomPanel = () => {
         !!activeTab.helmReleaseName &&
         !!activeTab.helmReleaseNamespace;
 
+      const helmRepoUrl =
+        settings.helmRepositories.find((repo) => repo.enabled)?.url.trim() ||
+        settings.helmRepoUrl.trim();
+
+      const upgradeParams = new URLSearchParams();
+      if (helmRepoUrl) {
+        upgradeParams.set('repo_url', helmRepoUrl);
+      }
+      const upgradeQuery = upgradeParams.toString();
+
       const endpoint = isHelmUpgrade
-        ? `/api/helm/releases/${encodeURIComponent(activeTab.helmReleaseNamespace as string)}/${encodeURIComponent(activeTab.helmReleaseName as string)}/upgrade`
+        ? `/api/helm/releases/${encodeURIComponent(activeTab.helmReleaseNamespace as string)}/${encodeURIComponent(activeTab.helmReleaseName as string)}/upgrade${upgradeQuery ? `?${upgradeQuery}` : ''}`
         : '/api/apply';
 
       const documents = isHelmUpgrade ? [yaml] : splitYamlDocuments(yaml);

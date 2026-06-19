@@ -533,6 +533,7 @@ export interface IngressClass {
   controller: string;
   is_default: boolean;
   parameters: string;
+  address: string;
   age: string;
   labels?: Record<string, string>;
   annotations?: Record<string, string>;

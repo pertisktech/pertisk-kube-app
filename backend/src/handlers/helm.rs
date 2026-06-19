@@ -12,8 +12,9 @@ use kube::{api::ListParams, Api};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::io::Read;
-use std::path::Path as FsPath;
+use std::path::{Path as FsPath, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
@@ -463,6 +464,199 @@ fn decode_helm_release_data(secret: &Secret) -> Option<(String, String, String, 
         .to_string();
 
     Some((chart_name, chart_version, app_version, updated))
+}
+
+#[derive(Deserialize)]
+pub struct UpgradeHelmReleaseQuery {
+    pub repo_url: Option<String>,
+}
+
+struct TempChartDir(PathBuf);
+
+impl Drop for TempChartDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+struct UpgradeChartSelection {
+    chart_ref: String,
+    repo_url: Option<String>,
+    apply_chart_version: bool,
+    _temp_dir: Option<TempChartDir>,
+}
+
+fn is_absolute_helm_chart_ref(chart: &str) -> bool {
+    chart.starts_with("oci://")
+        || chart.contains("://")
+        || chart.starts_with("./")
+        || chart.starts_with("../")
+        || chart.starts_with('/')
+}
+
+fn has_repo_chart_prefix(chart: &str) -> bool {
+    chart.contains('/') && !chart.starts_with('/')
+}
+
+fn extract_chart_from_release(release_json: &Value) -> Result<PathBuf, String> {
+    let chart = release_json
+        .get("chart")
+        .ok_or_else(|| "Release is missing chart metadata".to_string())?;
+    let files = chart.get("files").and_then(|value| value.as_array());
+    let templates = chart.get("templates").and_then(|value| value.as_array());
+
+    if files.is_none() && templates.is_none() {
+        return Err("Release chart has no extractable files".to_string());
+    }
+
+    let base = std::env::temp_dir().join(format!(
+        "pertisk-helm-chart-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    ));
+    fs::create_dir_all(&base).map_err(|err| err.to_string())?;
+
+    let write_entry = |rel_path: &str, data_b64: &str| -> Result<(), String> {
+        let data = STANDARD
+            .decode(data_b64.trim())
+            .map_err(|err| format!("decode chart file {rel_path}: {err}"))?;
+        let path = base.join(rel_path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+        }
+        fs::write(path, data).map_err(|err| err.to_string())
+    };
+
+    if let Some(files) = files {
+        for file in files {
+            let name = file["name"]
+                .as_str()
+                .ok_or_else(|| "Chart file entry is missing name".to_string())?;
+            let data = file["data"]
+                .as_str()
+                .ok_or_else(|| format!("Chart file entry {name} is missing data"))?;
+            write_entry(name, data)?;
+        }
+    }
+
+    if let Some(templates) = templates {
+        for template in templates {
+            let name = template["name"]
+                .as_str()
+                .ok_or_else(|| "Chart template entry is missing name".to_string())?;
+            let data = template["data"]
+                .as_str()
+                .ok_or_else(|| format!("Chart template entry {name} is missing data"))?;
+            write_entry(&format!("templates/{name}"), data)?;
+        }
+    }
+
+    if let Some(values) = chart.get("values") {
+        let values_path = base.join("values.yaml");
+        if !values_path.exists() {
+            let yaml = serde_yaml::to_string(values).map_err(|err| err.to_string())?;
+            fs::write(values_path, yaml).map_err(|err| err.to_string())?;
+        }
+    }
+
+    if !base.join("Chart.yaml").exists() {
+        let _ = fs::remove_dir_all(&base);
+        return Err("Extracted chart is missing Chart.yaml".to_string());
+    }
+
+    Ok(base)
+}
+
+async fn try_helm_search_chart_ref(chart_name: &str, chart_version: &str) -> Option<String> {
+    let output = Command::new("helm")
+        .args(["search", "repo", chart_name, "-o", "json", "-l"])
+        .output()
+        .await
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let entries: Vec<Value> = serde_json::from_slice(&output.stdout).ok()?;
+    let matches: Vec<&Value> = entries
+        .iter()
+        .filter(|entry| {
+            entry["name"].as_str().is_some_and(|name| {
+                name.rsplit('/').next() == Some(chart_name)
+            })
+        })
+        .collect();
+
+    if matches.is_empty() {
+        return None;
+    }
+
+    let pick = if !chart_version.is_empty() && chart_version != "-" {
+        matches
+            .iter()
+            .find(|entry| entry["version"].as_str() == Some(chart_version))
+            .or_else(|| matches.first())
+    } else {
+        matches.first()
+    }?;
+
+    pick["name"].as_str().map(str::to_string)
+}
+
+async fn resolve_upgrade_chart_selection(
+    release_json: &Value,
+    chart_name: &str,
+    chart_version: &str,
+    repo_url: Option<&str>,
+) -> Result<UpgradeChartSelection, String> {
+    let local_chart_path = FsPath::new("helm").join(chart_name);
+    if local_chart_path.join("Chart.yaml").exists() || local_chart_path.exists() {
+        return Ok(UpgradeChartSelection {
+            chart_ref: local_chart_path.to_string_lossy().to_string(),
+            repo_url: None,
+            apply_chart_version: false,
+            _temp_dir: None,
+        });
+    }
+
+    if is_absolute_helm_chart_ref(chart_name) || has_repo_chart_prefix(chart_name) {
+        return Ok(UpgradeChartSelection {
+            chart_ref: chart_name.to_string(),
+            repo_url: None,
+            apply_chart_version: true,
+            _temp_dir: None,
+        });
+    }
+
+    if let Some(repo_url) = repo_url.filter(|url| !url.trim().is_empty()) {
+        return Ok(UpgradeChartSelection {
+            chart_ref: chart_name.to_string(),
+            repo_url: Some(repo_url.trim().to_string()),
+            apply_chart_version: true,
+            _temp_dir: None,
+        });
+    }
+
+    if let Some(chart_ref) = try_helm_search_chart_ref(chart_name, chart_version).await {
+        return Ok(UpgradeChartSelection {
+            chart_ref,
+            repo_url: None,
+            apply_chart_version: true,
+            _temp_dir: None,
+        });
+    }
+
+    let extracted = extract_chart_from_release(release_json)?;
+    Ok(UpgradeChartSelection {
+        chart_ref: extracted.to_string_lossy().to_string(),
+        repo_url: None,
+        apply_chart_version: false,
+        _temp_dir: Some(TempChartDir(extracted)),
+    })
 }
 
 // ── Helm Charts — proxy to Artifact Hub ───────────────────────────────────────
@@ -1138,6 +1332,7 @@ pub async fn delete_helm_release(
 
 pub async fn upgrade_helm_release(
     Path((namespace, name)): Path<(String, String)>,
+    Query(query): Query<UpgradeHelmReleaseQuery>,
     State(state): State<AppState>,
     body: String,
 ) -> impl IntoResponse {
@@ -1234,19 +1429,33 @@ pub async fn upgrade_helm_release(
             .into_response();
     }
 
-    // Prefer local chart path when available (e.g. ./helm/pertisk-kube), otherwise
-    // fall back to chart reference and rely on Helm's configured repositories.
-    let local_chart_path = FsPath::new("helm").join(&chart_name);
-    let chart_ref = if local_chart_path.exists() {
-        local_chart_path.to_string_lossy().to_string()
-    } else {
-        chart_name.clone()
+    let chart_selection = match resolve_upgrade_chart_selection(
+        &release_json,
+        &chart_name,
+        &chart_version,
+        query.repo_url.as_deref(),
+    )
+    .await
+    {
+        Ok(selection) => selection,
+        Err(message) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": message
+                })),
+            )
+                .into_response();
+        }
     };
+
+    let chart_ref = chart_selection.chart_ref.clone();
 
     let mut cmd = Command::new("helm");
     cmd.arg("upgrade")
         .arg(&name)
-        .arg(&chart_ref)
+        .arg(&chart_selection.chart_ref)
         .arg("--namespace")
         .arg(&namespace)
         .arg("--install")
@@ -1257,7 +1466,14 @@ pub async fn upgrade_helm_release(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    if !chart_version.is_empty() && chart_version != "-" {
+    if let Some(repo_url) = &chart_selection.repo_url {
+        cmd.arg("--repo").arg(repo_url);
+    }
+
+    if chart_selection.apply_chart_version
+        && !chart_version.is_empty()
+        && chart_version != "-"
+    {
         cmd.arg("--version").arg(&chart_version);
     }
 

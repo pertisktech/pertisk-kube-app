@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import CronExpressionParser from 'cron-parser';
 import { sortNodeRoles } from '../utils/nodeRoles';
+import { applyIngressControllerAddresses, extractIngressAddress, fetchIngressClassAddressMap } from '../utils/ingress';
 import { getDesktopWebSocketBase, isDesktopRuntime, refreshDesktopBackendPortFromSidecar } from '../utils/desktopBridge';
 import { getAuthToken } from '../utils/auth';
 import {
@@ -324,7 +325,7 @@ const fetchRealtimeResourceSnapshot = async <T>(
   const payload = await response.json() as { data?: any[] };
   const items = Array.isArray(payload?.data) ? payload.data : [];
 
-  return items.map((raw) => {
+  let result = items.map((raw) => {
     const looksLikeRawK8sObject =
       raw
       && typeof raw === 'object'
@@ -339,6 +340,13 @@ const fetchRealtimeResourceSnapshot = async <T>(
     // REST list endpoints already return frontend-shaped items; avoid double-transform.
     return raw as T;
   });
+
+  if (resourceType === 'ingresses') {
+    const classAddressMap = await fetchIngressClassAddressMap(signal);
+    result = applyIngressControllerAddresses(result as Ingress[], classAddressMap) as T[];
+  }
+
+  return result;
 };
 
 const subscribeRealtimeResource = (
@@ -938,38 +946,46 @@ function transformPDB(raw: any): PDB {
 function transformIngress(raw: any): Ingress {
   const metadata = raw.metadata || {};
   const spec = raw.spec || {};
-  const status = raw.status || {};
   const rules = spec.rules || [];
   const hosts = rules.map((r: any) => r.host).filter(Boolean).join(', ') || '-';
-  const address = (status.loadBalancer?.ingress || []).map((i: any) => i.ip || i.hostname).filter(Boolean).join(', ') || '-';
-  const ingressClass = spec.ingressClassName || spec.ingressClass || '-';
+  const address =
+    typeof raw.address === 'string' && raw.address.trim()
+      ? raw.address
+      : extractIngressAddress(raw);
+  const ingressClass = spec.ingressClassName || spec.ingress_class || spec.ingressClass || '-';
   return {
-    name: metadata.name || '',
-    namespace: metadata.namespace || 'default',
+    name: metadata.name || raw.name || '',
+    namespace: metadata.namespace || raw.namespace || 'default',
     ingress_class: ingressClass,
-    hosts,
+    hosts: typeof raw.hosts === 'string' ? raw.hosts : hosts,
     address,
-    rules: rules.length,
-    age: metadata.creationTimestamp ? new Date(metadata.creationTimestamp).toISOString() : '',
-    labels: metadata.labels as Record<string, string> | undefined,
-    annotations: metadata.annotations as Record<string, string> | undefined,
+    rules: typeof raw.rules === 'number' ? raw.rules : rules.length,
+    age: metadata.creationTimestamp
+      ? new Date(metadata.creationTimestamp).toISOString()
+      : (raw.age || ''),
+    labels: (metadata.labels || raw.labels) as Record<string, string> | undefined,
+    annotations: (metadata.annotations || raw.annotations) as Record<string, string> | undefined,
   };
 }
 
 function transformIngressClass(raw: any): IngressClass {
   const metadata = raw.metadata || {};
   const spec = raw.spec || {};
-  const controller = spec.controller || '-';
-  const isDefault = metadata.annotations?.['ingressclass.kubernetes.io/is-default-class'] === 'true';
-  const params = spec.parameters ? `${spec.parameters.kind}/${spec.parameters.name}` : '-';
+  const controller = spec.controller || raw.controller || '-';
+  const isDefault = metadata.annotations?.['ingressclass.kubernetes.io/is-default-class'] === 'true'
+    || raw.is_default === true;
+  const params = spec.parameters ? `${spec.parameters.kind}/${spec.parameters.name}` : (raw.parameters || '-');
   return {
-    name: metadata.name || '',
+    name: metadata.name || raw.name || '',
     controller,
     is_default: isDefault,
     parameters: params,
-    age: metadata.creationTimestamp ? new Date(metadata.creationTimestamp).toISOString() : '',
-    labels: metadata.labels as Record<string, string> | undefined,
-    annotations: metadata.annotations as Record<string, string> | undefined,
+    address: typeof raw.address === 'string' ? raw.address : '-',
+    age: metadata.creationTimestamp
+      ? new Date(metadata.creationTimestamp).toISOString()
+      : (raw.age || ''),
+    labels: (metadata.labels || raw.labels) as Record<string, string> | undefined,
+    annotations: (metadata.annotations || raw.annotations) as Record<string, string> | undefined,
   };
 }
 
@@ -1369,7 +1385,16 @@ function createRealtimeHook<T>(
       let reconcileInterval: ReturnType<typeof setInterval> | null = null;
       let aborted = false;
       let receivedRealtimeEvent = false;
+      let classAddressMap: Record<string, string> = {};
       const abortController = new AbortController();
+
+      if (resourceType === 'ingresses') {
+        void fetchIngressClassAddressMap(abortController.signal).then((map) => {
+          if (!aborted) {
+            classAddressMap = map;
+          }
+        });
+      }
 
       void fetchRealtimeResourceSnapshot(resourceType, transformFn, abortController.signal)
         .then((snapshot) => {
@@ -1402,6 +1427,7 @@ function createRealtimeHook<T>(
         resourceType === 'crds' ? 12_000
         : resourceType === 'helmreleases' ? 2_000
         : resourceType === 'nodes' ? 3_000
+        : resourceType === 'ingresses' ? 5_000
         : null;
 
       if (reconcileIntervalMs !== null) {
@@ -1484,18 +1510,41 @@ function createRealtimeHook<T>(
               const existingIndex = prev.findIndex((p) => getKey(p) === itemKey);
               if (existingIndex >= 0) {
                 const prevItem = prev[existingIndex];
-                // For nodes, explicitly check conditions and taints to ensure changes are detected
                 const isNode = resourceType === 'nodes';
+                let nextItem = item;
+                if (
+                  resourceType === 'ingresses'
+                  && classAddressMap[(nextItem as Ingress).ingress_class]
+                ) {
+                  nextItem = applyIngressControllerAddresses(
+                    [nextItem as Ingress],
+                    classAddressMap,
+                  )[0] as T;
+                } else if (
+                  resourceType === 'ingresses'
+                  && (nextItem as Ingress).address === '-'
+                  && (prevItem as Ingress).address
+                  && (prevItem as Ingress).address !== '-'
+                ) {
+                  nextItem = { ...(nextItem as Ingress), address: (prevItem as Ingress).address } as T;
+                }
                 const hasChanged = isNode 
-                  ? nodeHasChanged(prevItem as any, item as any)
-                  : JSON.stringify(prevItem) !== JSON.stringify(item);
+                  ? nodeHasChanged(prevItem as any, nextItem as any)
+                  : JSON.stringify(prevItem) !== JSON.stringify(nextItem);
                 
                 if (!hasChanged) return prev;
                 const updated = [...prev];
-                updated[existingIndex] = item;
+                updated[existingIndex] = nextItem;
+                if (resourceType === 'ingresses') {
+                  return applyIngressControllerAddresses(updated as Ingress[], classAddressMap) as T[];
+                }
                 return updated;
               }
-              return [...prev, item];
+              const merged = [...prev, item];
+              if (resourceType === 'ingresses') {
+                return applyIngressControllerAddresses(merged as Ingress[], classAddressMap) as T[];
+              }
+              return merged;
             });
           }
           return;

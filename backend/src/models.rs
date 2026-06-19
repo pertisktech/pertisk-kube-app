@@ -428,6 +428,7 @@ pub struct IngressClassItem {
     pub controller: String,
     pub is_default: bool,
     pub parameters: String,
+    pub address: String,
     pub age: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub labels: Option<serde_json::Map<String, serde_json::Value>>,

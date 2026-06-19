@@ -4,6 +4,7 @@ import { timeAgo } from '../utils';
 import { ResourceDetailPanelLayout, PanelActionButton } from './ResourceDetailPanelLayout';
 import { DrawerItem, DrawerTitle, DrawerLabelsAnnotations } from './drawer';
 import { openExternalUrl } from '../utils/openExternalUrl';
+import { normalizeIngressHosts, toExternalIngressUrl } from '../utils/ingress';
 
 interface IngressDetailPanelProps {
   ingress: Ingress;
@@ -11,27 +12,6 @@ interface IngressDetailPanelProps {
   onOpenYamlEditor?: (ingress: Ingress) => void;
   onDelete?: (namespace: string, name: string) => Promise<void>;
 }
-
-const normalizeIngressHosts = (hosts: string): string[] =>
-  hosts
-    .split(',')
-    .map((h) => h.trim())
-    .filter(Boolean);
-
-const toExternalIngressUrl = (host: string): string | null => {
-  const sanitized = host.replace(/^\*\./, '').trim();
-  if (!sanitized) return null;
-
-  const normalized = sanitized.toLowerCase();
-  if (normalized === '-' || normalized === '<none>' || normalized === 'none' || normalized === 'n/a') {
-    return null;
-  }
-
-  if (/^https?:\/\//i.test(sanitized)) return sanitized;
-
-  const defaultProtocol = typeof window !== 'undefined' && window.location.protocol === 'http:' ? 'http' : 'https';
-  return `${defaultProtocol}://${sanitized}`;
-};
 
 export const IngressDetailPanel = ({ ingress, onClose, onOpenYamlEditor, onDelete }: IngressDetailPanelProps) => (
   <ResourceDetailPanelLayout

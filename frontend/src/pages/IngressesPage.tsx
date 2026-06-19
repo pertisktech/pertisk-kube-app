@@ -10,6 +10,7 @@ import { getAuthToken } from '../utils/auth';
 import { timeAgo, matchesResourceNameFilter } from '../utils';
 import { openPanelTab } from '../components/BottomPanel';
 import { openExternalUrl } from '../utils/openExternalUrl';
+import { normalizeIngressHosts, toExternalIngressUrl } from '../utils/ingress';
 
 type IngressSortKey = 'name' | 'namespace' | 'ingress_class' | 'hosts' | 'address' | 'rules' | 'age';
 
@@ -27,27 +28,6 @@ const sanitizeYamlForEdit = (yamlText: string) => {
     delete parsed.status;
     return YAML.stringify(parsed, { lineWidth: 0 });
   } catch { return yamlText; }
-};
-
-const normalizeIngressHosts = (hosts: string): string[] =>
-  hosts
-    .split(',')
-    .map((h) => h.trim())
-    .filter(Boolean);
-
-const toExternalIngressUrl = (host: string): string | null => {
-  const sanitized = host.replace(/^\*\./, '').trim();
-  if (!sanitized) return null;
-
-  const normalized = sanitized.toLowerCase();
-  if (normalized === '-' || normalized === '<none>' || normalized === 'none' || normalized === 'n/a') {
-    return null;
-  }
-
-  if (/^https?:\/\//i.test(sanitized)) return sanitized;
-
-  const defaultProtocol = typeof window !== 'undefined' && window.location.protocol === 'http:' ? 'http' : 'https';
-  return `${defaultProtocol}://${sanitized}`;
 };
 
 const getKey = (item: Ingress) => `${item.namespace}/${item.name}`;
