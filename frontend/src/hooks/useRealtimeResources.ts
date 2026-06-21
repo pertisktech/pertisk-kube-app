@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import CronExpressionParser from 'cron-parser';
 import { sortNodeRoles } from '../utils/nodeRoles';
-import { applyIngressControllerAddresses, extractIngressAddress, fetchIngressClassAddressMap } from '../utils/ingress';
+import {
+  applyIngressControllerAddresses,
+  refreshIngressClassAddressMap,
+  resolveIngressAddressForClass,
+} from '../utils/ingress';
 import { getDesktopWebSocketBase, isDesktopRuntime, refreshDesktopBackendPortFromSidecar } from '../utils/desktopBridge';
 import { getAuthToken } from '../utils/auth';
 import {
@@ -342,7 +346,7 @@ const fetchRealtimeResourceSnapshot = async <T>(
   });
 
   if (resourceType === 'ingresses') {
-    const classAddressMap = await fetchIngressClassAddressMap(signal);
+    const classAddressMap = await refreshIngressClassAddressMap(signal);
     result = applyIngressControllerAddresses(result as Ingress[], classAddressMap) as T[];
   }
 
@@ -948,11 +952,8 @@ function transformIngress(raw: any): Ingress {
   const spec = raw.spec || {};
   const rules = spec.rules || [];
   const hosts = rules.map((r: any) => r.host).filter(Boolean).join(', ') || '-';
-  const address =
-    typeof raw.address === 'string' && raw.address.trim()
-      ? raw.address
-      : extractIngressAddress(raw);
   const ingressClass = spec.ingressClassName || spec.ingress_class || spec.ingressClass || '-';
+  const address = resolveIngressAddressForClass(ingressClass, raw);
   return {
     name: metadata.name || raw.name || '',
     namespace: metadata.namespace || raw.namespace || 'default',
@@ -1385,44 +1386,10 @@ function createRealtimeHook<T>(
       let reconcileInterval: ReturnType<typeof setInterval> | null = null;
       let aborted = false;
       let receivedRealtimeEvent = false;
-      let classAddressMap: Record<string, string> = {};
       const abortController = new AbortController();
 
-      if (resourceType === 'ingresses') {
-        void fetchIngressClassAddressMap(abortController.signal).then((map) => {
-          if (!aborted) {
-            classAddressMap = map;
-          }
-        });
-      }
+      let unsubscribe: (() => void) | null = null;
 
-      void fetchRealtimeResourceSnapshot(resourceType, transformFn, abortController.signal)
-        .then((snapshot) => {
-          if (aborted || receivedRealtimeEvent) {
-            return;
-          }
-          setData(snapshot);
-          setHasFetched(true);
-          setIsLoading(false);
-          setEmptyListConfirmed(snapshot.length === 0);
-          setError(null);
-        })
-        .catch((fetchError) => {
-          if (aborted) {
-            return;
-          }
-          if (isFetchConnectionError(fetchError)) {
-            setError(null);
-            return;
-          }
-          const message = fetchError instanceof Error ? fetchError.message : 'Failed to fetch initial resources';
-          if (isRealtimeDebug()) {
-            console.warn(`Initial snapshot fetch failed for ${displayName}:`, message);
-          }
-        });
-
-      // Some watches can miss events when the API watch is unstable. Periodically reconcile
-      // from REST snapshots so status/version changes are reflected quickly.
       const reconcileIntervalMs =
         resourceType === 'crds' ? 12_000
         : resourceType === 'helmreleases' ? 2_000
@@ -1435,22 +1402,30 @@ function createRealtimeHook<T>(
           if (aborted || document.hidden) return;
 
           const reconcileAbortController = new AbortController();
-          void fetchRealtimeResourceSnapshot(resourceType, transformFn, reconcileAbortController.signal)
-            .then((snapshot) => {
+          void (async () => {
+            try {
+              if (resourceType === 'ingresses') {
+                await refreshIngressClassAddressMap(reconcileAbortController.signal);
+              }
+              const snapshot = await fetchRealtimeResourceSnapshot(
+                resourceType,
+                transformFn,
+                reconcileAbortController.signal,
+              );
               if (aborted) return;
               setData((prev) => (JSON.stringify(prev) === JSON.stringify(snapshot) ? prev : snapshot));
               setHasFetched(true);
               setIsLoading(false);
               setEmptyListConfirmed(snapshot.length === 0);
               setError(null);
-            })
-            .catch(() => {
+            } catch {
               // Keep existing realtime state if reconcile snapshot fails.
-            });
+            }
+          })();
         }, reconcileIntervalMs);
       }
 
-      const unsubscribe = subscribeRealtimeResource(resourceType, (message) => {
+      const handleRealtimeMessage = (message: WebSocketMessage) => {
         if (message.type === 'resource_update' && message.resource === resourceType) {
           receivedRealtimeEvent = true;
           if (emptyListTimeout) {
@@ -1475,7 +1450,6 @@ function createRealtimeHook<T>(
           }
 
           if (action === 'DELETED') {
-            // For deletions, extract key directly from raw metadata to avoid transform errors
             const itemKey = (() => {
               if (resourceType === 'helmreleases') {
                 const release = rawItem as { namespace?: string; name?: string };
@@ -1487,15 +1461,14 @@ function createRealtimeHook<T>(
               if (resourceType === 'nodes') {
                 return (rawItem as any)?.metadata?.name;
               } else if (resourceType === 'namespaces' || resourceType === 'events') {
-                return (resourceType === 'events') 
+                return (resourceType === 'events')
                   ? `${(rawItem as any)?.metadata?.namespace}/${(rawItem as any)?.metadata?.name}`
                   : (rawItem as any)?.metadata?.name;
               } else {
-                // namespaced resources
                 return `${(rawItem as any)?.metadata?.namespace}/${(rawItem as any)?.metadata?.name}`;
               }
             })();
-            
+
             if (itemKey) {
               setData((prev) => prev.filter((p) => getKey(p) !== itemKey));
             }
@@ -1511,38 +1484,22 @@ function createRealtimeHook<T>(
               if (existingIndex >= 0) {
                 const prevItem = prev[existingIndex];
                 const isNode = resourceType === 'nodes';
-                let nextItem = item;
-                if (
-                  resourceType === 'ingresses'
-                  && classAddressMap[(nextItem as Ingress).ingress_class]
-                ) {
-                  nextItem = applyIngressControllerAddresses(
-                    [nextItem as Ingress],
-                    classAddressMap,
-                  )[0] as T;
-                } else if (
-                  resourceType === 'ingresses'
-                  && (nextItem as Ingress).address === '-'
-                  && (prevItem as Ingress).address
-                  && (prevItem as Ingress).address !== '-'
-                ) {
-                  nextItem = { ...(nextItem as Ingress), address: (prevItem as Ingress).address } as T;
-                }
-                const hasChanged = isNode 
+                const nextItem = item;
+                const hasChanged = isNode
                   ? nodeHasChanged(prevItem as any, nextItem as any)
                   : JSON.stringify(prevItem) !== JSON.stringify(nextItem);
-                
+
                 if (!hasChanged) return prev;
                 const updated = [...prev];
                 updated[existingIndex] = nextItem;
                 if (resourceType === 'ingresses') {
-                  return applyIngressControllerAddresses(updated as Ingress[], classAddressMap) as T[];
+                  return applyIngressControllerAddresses(updated as Ingress[]) as T[];
                 }
                 return updated;
               }
               const merged = [...prev, item];
               if (resourceType === 'ingresses') {
-                return applyIngressControllerAddresses(merged as Ingress[], classAddressMap) as T[];
+                return applyIngressControllerAddresses(merged as Ingress[]) as T[];
               }
               return merged;
             });
@@ -1578,7 +1535,44 @@ function createRealtimeHook<T>(
           console.error(`WebSocket error for ${displayName}:`, message.message);
           setError(message.message || 'Unknown error');
         }
-      });
+      };
+
+      void (async () => {
+        try {
+          if (resourceType === 'ingresses') {
+            await refreshIngressClassAddressMap(abortController.signal);
+          }
+
+          if (aborted) return;
+          unsubscribe = subscribeRealtimeResource(resourceType, handleRealtimeMessage);
+
+          const snapshot = await fetchRealtimeResourceSnapshot(
+            resourceType,
+            transformFn,
+            abortController.signal,
+          );
+          if (aborted || receivedRealtimeEvent) {
+            return;
+          }
+          setData(snapshot);
+          setHasFetched(true);
+          setIsLoading(false);
+          setEmptyListConfirmed(snapshot.length === 0);
+          setError(null);
+        } catch (fetchError) {
+          if (aborted) {
+            return;
+          }
+          if (isFetchConnectionError(fetchError)) {
+            setError(null);
+            return;
+          }
+          const message = fetchError instanceof Error ? fetchError.message : 'Failed to fetch initial resources';
+          if (isRealtimeDebug()) {
+            console.warn(`Initial snapshot fetch failed for ${displayName}:`, message);
+          }
+        }
+      })();
 
       return () => {
         aborted = true;
@@ -1589,7 +1583,7 @@ function createRealtimeHook<T>(
         if (reconcileInterval) {
           clearInterval(reconcileInterval);
         }
-        unsubscribe();
+        unsubscribe?.();
       };
     }, [clusterSwitchVersion]);
 

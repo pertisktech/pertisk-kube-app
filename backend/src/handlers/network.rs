@@ -57,17 +57,33 @@ fn controller_service_candidates(
         .as_ref()
         .and_then(|annotations| annotations.get("meta.helm.sh/release-namespace"))
         .cloned();
+    let release_name = metadata
+        .annotations
+        .as_ref()
+        .and_then(|annotations| annotations.get("meta.helm.sh/release-name"))
+        .cloned();
     let app_name = metadata
         .labels
         .as_ref()
         .and_then(|labels| labels.get("app.kubernetes.io/name"))
         .cloned();
+    let app_instance = metadata
+        .labels
+        .as_ref()
+        .and_then(|labels| labels.get("app.kubernetes.io/instance"))
+        .cloned();
 
-    if let (Some(namespace), Some(service_name)) = (release_namespace.clone(), app_name.clone()) {
-        candidates.push((namespace, service_name));
-    }
     if let Some(namespace) = release_namespace.clone() {
-        candidates.push((namespace, class_name.to_string()));
+        if let Some(service_name) = release_name.clone() {
+            candidates.push((namespace.clone(), service_name));
+        }
+        if let Some(service_name) = app_instance.clone() {
+            candidates.push((namespace.clone(), service_name));
+        }
+        if let Some(service_name) = app_name.clone() {
+            candidates.push((namespace.clone(), service_name));
+        }
+        candidates.push((namespace.clone(), class_name.to_string()));
     }
     if let (Some(namespace), Some(controller)) = (release_namespace, controller) {
         if let Some(service_name) = controller.rsplit('/').next().filter(|part| !part.is_empty()) {
@@ -76,6 +92,56 @@ fn controller_service_candidates(
     }
 
     candidates
+}
+
+fn fallback_lb_service_in_namespace(
+    namespace: &str,
+    metadata: &kube::core::ObjectMeta,
+    load_balancer_services: &HashMap<(String, String), Vec<String>>,
+) -> Option<Vec<String>> {
+    let release_name = metadata
+        .annotations
+        .as_ref()
+        .and_then(|annotations| annotations.get("meta.helm.sh/release-name"))
+        .map(String::as_str);
+    let app_instance = metadata
+        .labels
+        .as_ref()
+        .and_then(|labels| labels.get("app.kubernetes.io/instance"))
+        .map(String::as_str);
+
+    let in_namespace: Vec<_> = load_balancer_services
+        .iter()
+        .filter(|((ns, _), _)| ns == namespace)
+        .collect();
+
+    if in_namespace.is_empty() {
+        return None;
+    }
+    if in_namespace.len() == 1 {
+        return Some(in_namespace[0].1.clone());
+    }
+
+    for service_name in [release_name, app_instance] {
+        let Some(service_name) = service_name else {
+            continue;
+        };
+        if let Some(addresses) =
+            load_balancer_services.get(&(namespace.to_string(), service_name.to_string()))
+        {
+            return Some(addresses.clone());
+        }
+        for ((_, candidate_name), addresses) in &in_namespace {
+            if candidate_name == service_name
+                || candidate_name.contains(service_name)
+                || service_name.contains(candidate_name.as_str())
+            {
+                return Some((*addresses).clone());
+            }
+        }
+    }
+
+    None
 }
 
 async fn build_ingress_class_controller_address_map(
@@ -130,6 +196,24 @@ async fn build_ingress_class_controller_address_map(
                 {
                     class_addresses.insert(class_name.clone(), format_ingress_addresses(addresses.clone()));
                     break;
+                }
+            }
+
+            if !class_addresses.contains_key(&class_name) {
+                if let Some(namespace) = ingress_class
+                    .metadata
+                    .annotations
+                    .as_ref()
+                    .and_then(|annotations| annotations.get("meta.helm.sh/release-namespace"))
+                {
+                    if let Some(addresses) = fallback_lb_service_in_namespace(
+                        namespace,
+                        &ingress_class.metadata,
+                        &load_balancer_services,
+                    ) {
+                        class_addresses
+                            .insert(class_name.clone(), format_ingress_addresses(addresses));
+                    }
                 }
             }
         }
