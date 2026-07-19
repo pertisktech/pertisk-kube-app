@@ -89,35 +89,50 @@ const formatRuntime = (runtime?: string) => {
 export const ClusterPage = () => {
   const [activeNodeRoleTab, setActiveNodeRoleTab] = useState<'master' | 'worker'>('master');
   const { data: dashboard, isLoading: dashboardLoading, error: dashboardError } = useDashboard();
-  const { data: apiNodes, isLoading: apiNodesLoading, error: nodesError } = useNodes({ refetchInterval: 30_000 });
+  const { data: apiNodes, isLoading: apiNodesLoading, error: nodesError } = useNodes({ refetchInterval: 5_000 });
   const { data: apiPods, isLoading: apiPodsLoading } = usePods();
   const { data: realtimePods = [], isLoading: realtimePodsLoading } = useRealtimePods<Pod>();
   const { data: realtimeNodes = [], isLoading: realtimeNodesLoading } = useRealtimeNodes();
 
   const nodes = useMemo(() => {
-    if (realtimeNodes.length === 0) return apiNodes || [];
-    if (!apiNodes || apiNodes.length === 0) return realtimeNodes;
+    const realtime = realtimeNodes ?? [];
+    const api = apiNodes ?? [];
 
-    const apiByName = new Map(apiNodes.map((node) => [node.name, node]));
-    return realtimeNodes.map((node) => {
-      const fromApi = apiByName.get(node.name);
-      if (!fromApi) return node;
+    if (realtime.length === 0) return api;
+    if (api.length === 0) return realtime;
+
+    const realtimeByName = new Map(realtime.map((node) => [node.name, node]));
+    const merged = api.map((node) => {
+      const fromRealtime = realtimeByName.get(node.name);
+      if (!fromRealtime) return node;
 
       return {
-        ...node,
-        cpu: fromApi.cpu ?? node.cpu,
-        memory: fromApi.memory ?? node.memory,
-        ephemeral_storage: fromApi.ephemeral_storage ?? node.ephemeral_storage,
-        pods: fromApi.pods ?? node.pods,
-        cpu_used: fromApi.cpu_used ?? node.cpu_used,
-        memory_used: fromApi.memory_used ?? node.memory_used,
-        ephemeral_storage_used: fromApi.ephemeral_storage_used ?? node.ephemeral_storage_used,
-        cpu_usage_percent: fromApi.cpu_usage_percent ?? node.cpu_usage_percent,
-        memory_usage_percent: fromApi.memory_usage_percent ?? node.memory_usage_percent,
+        ...fromRealtime,
+        ready: fromRealtime.ready ?? node.ready,
+        conditions: fromRealtime.conditions ?? node.conditions,
+        unschedulable: fromRealtime.unschedulable ?? node.unschedulable,
+        taints: fromRealtime.taints ?? node.taints,
+        cpu: node.cpu ?? fromRealtime.cpu,
+        memory: node.memory ?? fromRealtime.memory,
+        ephemeral_storage: node.ephemeral_storage ?? fromRealtime.ephemeral_storage,
+        pods: node.pods ?? fromRealtime.pods,
+        cpu_used: node.cpu_used ?? fromRealtime.cpu_used,
+        memory_used: node.memory_used ?? fromRealtime.memory_used,
+        ephemeral_storage_used: node.ephemeral_storage_used ?? fromRealtime.ephemeral_storage_used,
+        cpu_usage_percent: node.cpu_usage_percent ?? fromRealtime.cpu_usage_percent,
+        memory_usage_percent: node.memory_usage_percent ?? fromRealtime.memory_usage_percent,
         ephemeral_storage_usage_percent:
-          fromApi.ephemeral_storage_usage_percent ?? node.ephemeral_storage_usage_percent,
+          node.ephemeral_storage_usage_percent ?? fromRealtime.ephemeral_storage_usage_percent,
       };
     });
+
+    for (const node of realtime) {
+      if (!merged.some((item) => item.name === node.name)) {
+        merged.push(node);
+      }
+    }
+
+    return merged;
   }, [realtimeNodes, apiNodes]);
 
   const pods = useMemo(() => {
@@ -126,21 +141,35 @@ export const ClusterPage = () => {
 
     const keyOf = (pod: Pod) => `${pod.namespace}/${pod.name}`;
     const apiByKey = new Map(apiPods.map((pod) => [keyOf(pod), pod]));
+    const hasMetric = (value: unknown) =>
+      value !== undefined && value !== null && value !== '' && value !== '-';
 
-    return realtimePods.map((pod) => {
+    const merged = realtimePods.map((pod) => {
       const fromApi = apiByKey.get(keyOf(pod));
       if (!fromApi) return pod;
 
       return {
         ...pod,
-        cpu: fromApi.cpu ?? pod.cpu,
-        memory: fromApi.memory ?? pod.memory,
-        cpu_capacity: fromApi.cpu_capacity ?? pod.cpu_capacity,
-        memory_capacity: fromApi.memory_capacity ?? pod.memory_capacity,
+        // Prefer real usage values; never let a stale "-" REST snapshot wipe live metrics.
+        cpu: hasMetric(fromApi.cpu) ? fromApi.cpu : pod.cpu,
+        memory: hasMetric(fromApi.memory) ? fromApi.memory : pod.memory,
+        cpu_capacity: hasMetric(fromApi.cpu_capacity) ? fromApi.cpu_capacity : pod.cpu_capacity,
+        memory_capacity: hasMetric(fromApi.memory_capacity)
+          ? fromApi.memory_capacity
+          : pod.memory_capacity,
         cpu_usage_percent: fromApi.cpu_usage_percent ?? pod.cpu_usage_percent,
         memory_usage_percent: fromApi.memory_usage_percent ?? pod.memory_usage_percent,
       };
     });
+
+    for (const apiPod of apiPods) {
+      const key = keyOf(apiPod);
+      if (!merged.some((pod) => keyOf(pod) === key)) {
+        merged.push(apiPod);
+      }
+    }
+
+    return merged;
   }, [realtimePods, apiPods]);
 
   const nodesLoading = realtimeNodesLoading && apiNodesLoading;

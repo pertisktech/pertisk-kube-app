@@ -117,30 +117,46 @@ const toPercent = (value?: number) =>
 export const Dashboard = () => {
   const { data: dashboard, isLoading: dashLoading } = useDashboard({ refetchInterval: 10_000 });
   const { data: realtimeNodes, isLoading: realtimeNodesLoading } = useRealtimeNodes();
-  const { data: apiNodes, isLoading: apiNodesLoading } = useNodes({ refetchInterval: 10_000 });
+  const { data: apiNodes, isLoading: apiNodesLoading } = useNodes({ refetchInterval: 5_000 });
   const { data: pods = [] } = useRealtimePods<Pod>({ enabled: true });
 
   const nodes = useMemo(() => {
-    if (!realtimeNodes?.length) return apiNodes ?? [];
-    if (!apiNodes?.length) return realtimeNodes;
-    const byName = new Map((apiNodes ?? []).map((n) => [n.name, n]));
-    return realtimeNodes.map((node) => {
-      const fromApi = byName.get(node.name);
-      if (!fromApi) return node;
+    const realtime = realtimeNodes ?? [];
+    const api = apiNodes ?? [];
+
+    if (realtime.length === 0) return api;
+    if (api.length === 0) return realtime;
+
+    const realtimeByName = new Map(realtime.map((node) => [node.name, node]));
+    const merged = api.map((node) => {
+      const fromRealtime = realtimeByName.get(node.name);
+      if (!fromRealtime) return node;
       return {
-        ...node,
-        cpu: fromApi.cpu ?? node.cpu,
-        memory: fromApi.memory ?? node.memory,
-        ephemeral_storage: fromApi.ephemeral_storage ?? node.ephemeral_storage,
-        cpu_used: fromApi.cpu_used ?? node.cpu_used,
-        memory_used: fromApi.memory_used ?? node.memory_used,
-        ephemeral_storage_used: fromApi.ephemeral_storage_used ?? node.ephemeral_storage_used,
-        cpu_usage_percent: fromApi.cpu_usage_percent ?? node.cpu_usage_percent,
-        memory_usage_percent: fromApi.memory_usage_percent ?? node.memory_usage_percent,
+        ...fromRealtime,
+        ready: fromRealtime.ready ?? node.ready,
+        conditions: fromRealtime.conditions ?? node.conditions,
+        unschedulable: fromRealtime.unschedulable ?? node.unschedulable,
+        taints: fromRealtime.taints ?? node.taints,
+        cpu: node.cpu ?? fromRealtime.cpu,
+        memory: node.memory ?? fromRealtime.memory,
+        ephemeral_storage: node.ephemeral_storage ?? fromRealtime.ephemeral_storage,
+        cpu_used: node.cpu_used ?? fromRealtime.cpu_used,
+        memory_used: node.memory_used ?? fromRealtime.memory_used,
+        ephemeral_storage_used: node.ephemeral_storage_used ?? fromRealtime.ephemeral_storage_used,
+        cpu_usage_percent: node.cpu_usage_percent ?? fromRealtime.cpu_usage_percent,
+        memory_usage_percent: node.memory_usage_percent ?? fromRealtime.memory_usage_percent,
         ephemeral_storage_usage_percent:
-          fromApi.ephemeral_storage_usage_percent ?? node.ephemeral_storage_usage_percent,
+          node.ephemeral_storage_usage_percent ?? fromRealtime.ephemeral_storage_usage_percent,
       };
     });
+
+    for (const node of realtime) {
+      if (!merged.some((item) => item.name === node.name)) {
+        merged.push(node);
+      }
+    }
+
+    return merged;
   }, [realtimeNodes, apiNodes]);
 
   const nodesLoading = (realtimeNodesLoading || apiNodesLoading) && (nodes?.length ?? 0) === 0;

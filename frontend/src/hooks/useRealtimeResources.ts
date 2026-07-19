@@ -1413,7 +1413,30 @@ function createRealtimeHook<T>(
                 reconcileAbortController.signal,
               );
               if (aborted) return;
-              setData((prev) => (JSON.stringify(prev) === JSON.stringify(snapshot) ? prev : snapshot));
+              setData((prev) => {
+                if (resourceType === 'nodes') {
+                  const prevByKey = new Map(prev.map((item) => [getKey(item), item]));
+                  const merged = (snapshot as K8sNode[]).map((node) => {
+                    const previous = prevByKey.get(node.name) as K8sNode | undefined;
+                    if (!previous) return node as T;
+                    return {
+                      ...node,
+                      cpu_used: node.cpu_used ?? previous.cpu_used,
+                      memory_used: node.memory_used ?? previous.memory_used,
+                      ephemeral_storage_used:
+                        node.ephemeral_storage_used ?? previous.ephemeral_storage_used,
+                      cpu_usage_percent: node.cpu_usage_percent ?? previous.cpu_usage_percent,
+                      memory_usage_percent:
+                        node.memory_usage_percent ?? previous.memory_usage_percent,
+                      ephemeral_storage_usage_percent:
+                        node.ephemeral_storage_usage_percent
+                        ?? previous.ephemeral_storage_usage_percent,
+                    } as T;
+                  });
+                  return JSON.stringify(prev) === JSON.stringify(merged) ? prev : merged;
+                }
+                return JSON.stringify(prev) === JSON.stringify(snapshot) ? prev : snapshot;
+              });
               setHasFetched(true);
               setIsLoading(false);
               setEmptyListConfirmed(snapshot.length === 0);
@@ -1484,7 +1507,25 @@ function createRealtimeHook<T>(
               if (existingIndex >= 0) {
                 const prevItem = prev[existingIndex];
                 const isNode = resourceType === 'nodes';
-                const nextItem = item;
+                // Watch payloads omit metrics.k8s.io usage — keep last REST-enriched values.
+                const nextItem = isNode
+                  ? ({
+                      ...item,
+                      cpu_used: (item as K8sNode).cpu_used ?? (prevItem as K8sNode).cpu_used,
+                      memory_used: (item as K8sNode).memory_used ?? (prevItem as K8sNode).memory_used,
+                      ephemeral_storage_used:
+                        (item as K8sNode).ephemeral_storage_used
+                        ?? (prevItem as K8sNode).ephemeral_storage_used,
+                      cpu_usage_percent:
+                        (item as K8sNode).cpu_usage_percent ?? (prevItem as K8sNode).cpu_usage_percent,
+                      memory_usage_percent:
+                        (item as K8sNode).memory_usage_percent
+                        ?? (prevItem as K8sNode).memory_usage_percent,
+                      ephemeral_storage_usage_percent:
+                        (item as K8sNode).ephemeral_storage_usage_percent
+                        ?? (prevItem as K8sNode).ephemeral_storage_usage_percent,
+                    } as T)
+                  : item;
                 const hasChanged = isNode
                   ? nodeHasChanged(prevItem as any, nextItem as any)
                   : JSON.stringify(prevItem) !== JSON.stringify(nextItem);

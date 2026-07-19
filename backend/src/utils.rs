@@ -14,16 +14,47 @@ use std::fs;
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{timeout, Duration};
 use tracing::warn;
 
-static NODE_DISK_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
-static POD_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
-static NODE_METRICS_SUPPORTED: AtomicBool = AtomicBool::new(true);
+/// Unix timestamp (secs) until which metrics probes are skipped. 0 = allowed.
+static POD_METRICS_RETRY_AFTER: AtomicU64 = AtomicU64::new(0);
+static NODE_METRICS_RETRY_AFTER: AtomicU64 = AtomicU64::new(0);
+static NODE_DISK_METRICS_RETRY_AFTER: AtomicU64 = AtomicU64::new(0);
+const METRICS_RETRY_COOLDOWN_SECS: u64 = 30;
 const EXEC_PROVIDER_LOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
 const EXEC_PROVIDER_RESOLVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
 const EXEC_PROVIDER_BACKGROUND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+fn now_unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+fn metrics_probe_allowed(retry_after: &AtomicU64) -> bool {
+    let until = retry_after.load(Ordering::Relaxed);
+    until == 0 || now_unix_secs() >= until
+}
+
+fn disable_metrics_temporarily(retry_after: &AtomicU64, kind: &str, err: &kube::Error) {
+    let now = now_unix_secs();
+    let until = now.saturating_add(METRICS_RETRY_COOLDOWN_SECS);
+    let previous = retry_after.swap(until, Ordering::Relaxed);
+    if previous == 0 || previous <= now {
+        warn!(
+            "Temporarily disabling {} metrics for {}s because metrics API is unavailable: {}",
+            kind, METRICS_RETRY_COOLDOWN_SECS, err
+        );
+    }
+}
+
+fn clear_metrics_disable(retry_after: &AtomicU64) {
+    retry_after.store(0, Ordering::Relaxed);
+}
 
 fn is_metrics_api_unavailable(err: &kube::Error) -> bool {
     match err {
@@ -665,7 +696,7 @@ pub fn format_binary_bytes(bytes: f64) -> String {
 pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (String, String)> {
     let mut metrics_map: HashMap<(String, String), (String, String)> = HashMap::new();
 
-    if !POD_METRICS_SUPPORTED.load(Ordering::Relaxed) {
+    if !metrics_probe_allowed(&POD_METRICS_RETRY_AFTER) {
         return metrics_map;
     }
 
@@ -674,10 +705,13 @@ pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (Str
     let metrics_api: Api<DynamicObject> = Api::all_with(client, &pod_metrics_resource);
 
     let metrics_list = match metrics_api.list(&ListParams::default()).await {
-        Ok(list) => list,
+        Ok(list) => {
+            clear_metrics_disable(&POD_METRICS_RETRY_AFTER);
+            list
+        }
         Err(err) => {
             if is_metrics_api_unavailable(&err) {
-                POD_METRICS_SUPPORTED.store(false, Ordering::Relaxed);
+                disable_metrics_temporarily(&POD_METRICS_RETRY_AFTER, "pod", &err);
             }
             return metrics_map;
         }
@@ -748,7 +782,7 @@ pub async fn fetch_pod_metrics(client: Client) -> HashMap<(String, String), (Str
 pub async fn fetch_node_metrics(client: Client) -> HashMap<String, (String, String)> {
     let mut metrics_map: HashMap<String, (String, String)> = HashMap::new();
 
-    if !NODE_METRICS_SUPPORTED.load(Ordering::Relaxed) {
+    if !metrics_probe_allowed(&NODE_METRICS_RETRY_AFTER) {
         return metrics_map;
     }
 
@@ -757,10 +791,13 @@ pub async fn fetch_node_metrics(client: Client) -> HashMap<String, (String, Stri
     let metrics_api: Api<DynamicObject> = Api::all_with(client, &node_metrics_resource);
 
     let metrics_list = match metrics_api.list(&ListParams::default()).await {
-        Ok(list) => list,
+        Ok(list) => {
+            clear_metrics_disable(&NODE_METRICS_RETRY_AFTER);
+            list
+        }
         Err(err) => {
             if is_metrics_api_unavailable(&err) {
-                NODE_METRICS_SUPPORTED.store(false, Ordering::Relaxed);
+                disable_metrics_temporarily(&NODE_METRICS_RETRY_AFTER, "node", &err);
             }
             return metrics_map;
         }
@@ -803,7 +840,7 @@ pub async fn fetch_node_disk_metrics(
     client: Client,
     node_names: &[String],
 ) -> HashMap<String, NodeDiskMetrics> {
-    if node_names.is_empty() || !NODE_DISK_METRICS_SUPPORTED.load(Ordering::Relaxed) {
+    if node_names.is_empty() || !metrics_probe_allowed(&NODE_DISK_METRICS_RETRY_AFTER) {
         return HashMap::new();
     }
 
@@ -824,15 +861,12 @@ pub async fn fetch_node_disk_metrics(
             Duration::from_secs(2),
             client.request::<serde_json::Value>(request)
         ).await {
-            Ok(Ok(summary)) => summary,
+            Ok(Ok(summary)) => {
+                clear_metrics_disable(&NODE_DISK_METRICS_RETRY_AFTER);
+                summary
+            }
             Ok(Err(err)) if is_kubelet_stats_proxy_unavailable(&err) => {
-                let was_supported = NODE_DISK_METRICS_SUPPORTED.swap(false, Ordering::Relaxed);
-                if was_supported {
-                    warn!(
-                        "Disabling node disk metrics collection because kubelet stats proxy is unavailable: {}",
-                        err
-                    );
-                }
+                disable_metrics_temporarily(&NODE_DISK_METRICS_RETRY_AFTER, "node disk", &err);
                 return Err(());
             }
             Ok(Err(_)) => return Ok(None),
