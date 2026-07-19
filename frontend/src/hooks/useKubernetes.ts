@@ -1409,6 +1409,27 @@ export const deleteReplicaSet = (namespace: string, name: string) =>
 export const deleteJob = (namespace: string, name: string) =>
   apiDelete(`/jobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
 
+export const runCronJob = async (namespace: string, name: string): Promise<string> => {
+  const res = await apiFetch(
+    `/cronjobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/run`,
+    { method: 'POST' }
+  );
+  const payload = await res.json().catch(() => null) as {
+    name?: string;
+    message?: string;
+  } | null;
+
+  if (!res.ok) {
+    throw new Error(payload?.message || `Failed to run CronJob (${res.status})`);
+  }
+
+  if (!payload?.name) {
+    throw new Error('CronJob started, but the created Job name was not returned');
+  }
+
+  return payload.name;
+};
+
 export const deleteCronJob = (namespace: string, name: string) =>
   apiDelete(`/cronjobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
 

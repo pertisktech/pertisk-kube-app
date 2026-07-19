@@ -8,7 +8,7 @@ use serde::Deserialize;
 use chrono::Utc;
 use cron::Schedule;
 use kube::{
-    api::{DeleteParams, ListParams, Patch, PatchParams},
+    api::{DeleteParams, ListParams, Patch, PatchParams, PostParams},
     core::{ApiResource, DynamicObject, GroupVersionKind},
     Api,
 };
@@ -3899,6 +3899,127 @@ pub async fn delete_job(
         Err(err) => {
             error!("Error deleting job {}/{}: {:?}", namespace, name, err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+fn job_from_cronjob(
+    cronjob: &k8s_openapi::api::batch::v1::CronJob,
+    namespace: &str,
+    cronjob_name: &str,
+) -> Result<k8s_openapi::api::batch::v1::Job, String> {
+    use k8s_openapi::api::batch::v1::Job;
+    use kube::core::ObjectMeta;
+
+    let job_spec = cronjob
+        .spec
+        .as_ref()
+        .and_then(|spec| spec.job_template.spec.clone())
+        .ok_or_else(|| "CronJob job template has no spec".to_string())?;
+    let template_metadata = cronjob
+        .spec
+        .as_ref()
+        .and_then(|spec| spec.job_template.metadata.as_ref());
+    // Job names are limited to 63 characters. Leave room for "-manual-" and
+    // the API server's generated suffix when the CronJob name is near its limit.
+    let generate_name_base = cronjob_name
+        .chars()
+        .take(50)
+        .collect::<String>()
+        .trim_end_matches('-')
+        .to_string();
+
+    Ok(Job {
+        metadata: ObjectMeta {
+            generate_name: Some(format!("{generate_name_base}-manual-")),
+            namespace: Some(namespace.to_string()),
+            labels: template_metadata.and_then(|metadata| metadata.labels.clone()),
+            annotations: template_metadata.and_then(|metadata| metadata.annotations.clone()),
+            ..ObjectMeta::default()
+        },
+        spec: Some(job_spec),
+        status: None,
+    })
+}
+
+pub async fn run_cronjob_now(
+    Path((namespace, name)): Path<(String, String)>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    use k8s_openapi::api::batch::v1::{CronJob, Job};
+
+    let client = state.kube_client().await;
+    let cronjobs: Api<CronJob> = Api::namespaced(client.clone(), &namespace);
+    let cronjob = match cronjobs.get(&name).await {
+        Ok(cronjob) => cronjob,
+        Err(kube::Error::Api(err)) if err.code == 404 => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("CronJob {}/{} was not found", namespace, name),
+                })),
+            )
+                .into_response();
+        }
+        Err(err) => {
+            error!("Error getting cronjob {}/{} for manual run: {:?}", namespace, name, err);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to load CronJob: {}", err),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let job = match job_from_cronjob(&cronjob, &namespace, &name) {
+        Ok(job) => job,
+        Err(message) => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": message,
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let jobs: Api<Job> = Api::namespaced(client, &namespace);
+    match jobs.create(&PostParams::default(), &job).await {
+        Ok(created) => {
+            let created_name = created.metadata.name.unwrap_or_else(|| "generated job".to_string());
+            info!(
+                "Created manual job {} from cronjob {}/{}",
+                created_name, namespace, name
+            );
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({
+                    "success": true,
+                    "name": created_name,
+                    "message": "CronJob started successfully",
+                })),
+            )
+                .into_response()
+        }
+        Err(err) => {
+            error!(
+                "Error creating manual job from cronjob {}/{}: {:?}",
+                namespace, name, err
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to start CronJob: {}", err),
+                })),
+            )
+                .into_response()
         }
     }
 }

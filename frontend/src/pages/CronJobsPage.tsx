@@ -7,7 +7,7 @@ import { CronJobDetailPanel, DataTable, ConfirmDialog } from '../components';
 import type { CronJob } from '../types';
 import { getAuthToken } from '../utils/auth';
 import { timeAgo, timeFromNow, matchesResourceNameFilter } from '../utils';
-import { deleteCronJob, useCronJobs } from '../hooks/useKubernetes';
+import { deleteCronJob, runCronJob, useCronJobs } from '../hooks/useKubernetes';
 import { openPanelTab } from '../components/BottomPanel';
 
 type CronJobSortKey =
@@ -332,6 +332,7 @@ export const CronJobsPage = () => {
             cronJob={selectedCronJob}
             onClose={() => setPanelOpen(false)}
             onOpenYamlEditor={handleOpenYamlEditorFromPanel}
+            onRun={runCronJob}
             onDelete={handleDeleteSingle}
           />
         </>
