@@ -1,4 +1,4 @@
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { GaugeDoughnut } from './charts/GaugeDoughnut';
 
 interface GaugeChartProps {
   value: number; // 0-100
@@ -12,88 +12,53 @@ interface GaugeChartProps {
 export const GaugeChart = ({ value, color, label, used, total, icon }: GaugeChartProps) => {
   const percent = Math.min(Math.max(value, 0), 100);
 
-  // Determine status color based on usage
   const getStatusColor = (): string => {
     if (percent > 90) {
       return 'var(--color-dashboard-danger)';
-    } else if (percent > 70) {
+    }
+    if (percent > 70) {
       return 'var(--color-dashboard-warning)';
     }
     return color;
   };
 
   const statusColor = getStatusColor();
-
-  // Create data for the gauge - used portion and remaining portion
-  const usedValue = percent;
-  const remainingValue = 100 - percent;
-
-  // Use theme-aware background color
   const remainingColor = 'var(--color-border)';
 
-  const data = [
-    { name: "used", value: usedValue, color: statusColor },
-    { name: "remaining", value: remainingValue, color: remainingColor },
-  ];
-
   return (
-    <div className="mb-4">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
+    <div className="mb-1 w-full flex flex-col items-center">
+      <div className="flex items-center justify-between mb-2 w-full gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {icon}
-          <span className="text-sm font-semibold text-text">{label}</span>
+          <span className="text-sm font-semibold text-text truncate">{label}</span>
         </div>
-        <span className="text-sm font-bold" style={{ color: statusColor }}>
+        <span className="text-sm font-bold shrink-0" style={{ color: statusColor }}>
           {percent.toFixed(1)}%
         </span>
       </div>
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-xs text-text-secondary">
+      <div className="flex items-center gap-2 mb-2 w-full">
+        <span className="text-xs text-text-secondary truncate">
           {used} / {total}
         </span>
       </div>
-      <div className="h-36 -mx-2 relative">
-        <ResponsiveContainer width="100%" height={144} minHeight={144} aspect={undefined}>
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="95%"
-              startAngle={180}
-              endAngle={0}
-              innerRadius={55}
-              outerRadius={75}
-              paddingAngle={2}
-              dataKey="value"
-              stroke="none"
-            >
-              {data.map((entry, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={entry.color}
-                  style={{
-                    transition: "all 0.3s ease",
-                  }}
-                />
-              ))}
-            </Pie>
-            {/* Center text showing percentage */}
-            <text
-              x="50%"
-              y="78%"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              style={{
-                fontSize: "28px",
-                fontWeight: "bold",
-                fill: statusColor,
-                fontFamily: "system-ui, -apple-system, sans-serif",
-              }}
-            >
-              {percent.toFixed(0)}%
-            </text>
-          </PieChart>
-        </ResponsiveContainer>
+      <div className="relative w-full max-w-[160px]">
+        <GaugeDoughnut
+          percent={percent}
+          usedColor={statusColor}
+          remainingColor={remainingColor}
+          className="w-full"
+        />
+        <div className="absolute inset-x-0 bottom-0 flex justify-center pointer-events-none pb-0.5">
+          <span
+            className="text-[26px] leading-none font-bold"
+            style={{
+              color: statusColor,
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+            }}
+          >
+            {percent.toFixed(0)}%
+          </span>
+        </div>
       </div>
     </div>
   );

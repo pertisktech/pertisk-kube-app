@@ -37,7 +37,6 @@
       "react-markdown": "^10.1.0",
       "react-router-dom": "^6.28.0",
       "react-toastify": "^11.1.0",
-      "recharts": "^3.7.0",
       "remark-gfm": "^4.0.1",
       "yaml": "^2.8.2"
    },

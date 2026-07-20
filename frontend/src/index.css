@@ -703,43 +703,9 @@ body,
   outline: 1px solid var(--color-icon-danger) !important;
 }
 
-/* Workload overview charts — use theme text color so labels are visible in dark/light mode */
-.chart-theme-text text {
-  fill: var(--color-text) !important;
-}
-.chart-theme-text .recharts-legend-item-text {
-  color: var(--color-text) !important;
-  fill: var(--color-text) !important;
-}
-
-/* Recharts tooltip — theme background and text; single border on content only */
-.chart-theme-text .recharts-tooltip-wrapper {
-  border: none !important;
-}
-.chart-theme-text .recharts-default-tooltip {
-  background-color: var(--color-surface) !important;
-  border: 1px solid var(--color-border) !important;
-  color: var(--color-text) !important;
-  padding: 10px 12px !important;
-}
-.chart-theme-text .recharts-default-tooltip .recharts-tooltip-label,
-.chart-theme-text .recharts-default-tooltip .recharts-tooltip-item {
-  color: var(--color-text) !important;
-}
-
-/* Global Recharts tooltip (in case rendered in portal) — single border */
-.recharts-tooltip-wrapper {
-  border: none !important;
-}
-.recharts-default-tooltip {
-  background-color: var(--color-surface) !important;
-  border: 1px solid var(--color-border) !important;
-  color: var(--color-text) !important;
-  padding: 10px 12px !important;
-}
-.recharts-default-tooltip .recharts-tooltip-label,
-.recharts-default-tooltip .recharts-tooltip-item {
-  color: var(--color-text) !important;
+/* Chart containers — keep theme text color for any SVG/HTML labels */
+.chart-theme-text {
+  color: var(--color-text);
 }
 
 /* Helm chart README markdown viewer (bottom panel) */

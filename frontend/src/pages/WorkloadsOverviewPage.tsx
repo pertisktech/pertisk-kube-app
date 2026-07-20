@@ -2,14 +2,7 @@ import { useState, useMemo, memo } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-} from 'recharts';
+import { SvgDonutChart, type PieSlice } from '../components/charts/SvgCharts';
 import {
   Box,
   Layers,
@@ -37,12 +30,12 @@ import {
 import { useNamespace } from '../context/NamespaceContext';
 import type { Pod, Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob } from '../types';
 
-// Workload overview uses its own modern teal accent to visually separate from dashboard cards.
+// Concrete hex colors so SVG pies always paint (no nested CSS var issues).
 const PIE_AND_THEME = {
-  success: 'var(--color-workload-accent)',
-  warning: 'var(--color-dashboard-warning)',
-  danger: 'var(--color-dashboard-danger)',
-  muted: 'var(--color-muted)',
+  success: '#14b8a6',
+  warning: '#fbbf24',
+  danger: '#ff5c56',
+  muted: '#7778a0',
 } as const;
 
 const STATUS_COLORS: Record<string, string> = {
@@ -72,7 +65,7 @@ function parseReady(ready: string): [number, number] {
   return [a, b];
 }
 
-function getPodStatusData(pods: Pod[]): { name: string; value: number; color: string }[] {
+function getPodStatusData(pods: Pod[]): PieSlice[] {
   const statusCounts: Record<string, number> = {};
   pods.forEach((pod) => {
     const status = (pod.status || pod.phase || 'Unknown').trim();
@@ -87,7 +80,7 @@ function getPodStatusData(pods: Pod[]): { name: string; value: number; color: st
 
 function getDeploymentStatusData(
   deployments: Deployment[]
-): { name: string; value: number; color: string }[] {
+): PieSlice[] {
   const statusCounts = { Healthy: 0, Progressing: 0, Degraded: 0 };
   deployments.forEach((dep) => {
     const [ready, total] = parseReady(dep.ready);
@@ -106,7 +99,7 @@ function getDeploymentStatusData(
 
 function getDaemonSetStatusData(
   daemonsets: DaemonSet[]
-): { name: string; value: number; color: string }[] {
+): PieSlice[] {
   const statusCounts = { Healthy: 0, Progressing: 0, Degraded: 0 };
   daemonsets.forEach((ds) => {
     if (ds.desired > 0 && ds.ready === ds.desired) statusCounts.Healthy++;
@@ -124,7 +117,7 @@ function getDaemonSetStatusData(
 
 function getStatefulSetStatusData(
   statefulsets: StatefulSet[]
-): { name: string; value: number; color: string }[] {
+): PieSlice[] {
   const statusCounts = { Healthy: 0, Progressing: 0, Degraded: 0 };
   statefulsets.forEach((sts) => {
     const [ready, total] = parseReady(sts.ready);
@@ -143,7 +136,7 @@ function getStatefulSetStatusData(
 
 function getReplicaSetStatusData(
   replicasets: ReplicaSet[]
-): { name: string; value: number; color: string }[] {
+): PieSlice[] {
   const statusCounts = { Healthy: 0, Progressing: 0, Degraded: 0 };
   replicasets.forEach((rs) => {
     if (rs.desired > 0 && rs.ready === rs.desired) statusCounts.Healthy++;
@@ -160,7 +153,7 @@ function getReplicaSetStatusData(
     }));
 }
 
-function getJobStatusData(jobs: Job[]): { name: string; value: number; color: string }[] {
+function getJobStatusData(jobs: Job[]): PieSlice[] {
   const statusCounts = { Complete: 0, Running: 0, Failed: 0 };
   jobs.forEach((job) => {
     const s = (job.status || '').toLowerCase();
@@ -179,7 +172,7 @@ function getJobStatusData(jobs: Job[]): { name: string; value: number; color: st
 
 function getCronJobStatusData(
   cronjobs: CronJob[]
-): { name: string; value: number; color: string }[] {
+): PieSlice[] {
   const statusCounts = { Active: 0, Suspended: 0, Running: 0 };
   cronjobs.forEach((cj) => {
     if (cj.suspend) statusCounts.Suspended++;
@@ -198,7 +191,7 @@ function getCronJobStatusData(
 interface ChartCardProps {
   title: string;
   icon: IconComponent;
-  data: { name: string; value: number; color: string }[];
+  data: PieSlice[];
   total: number;
   linkTo: string;
   isLoading: boolean;
@@ -237,64 +230,31 @@ const ChartCard = memo(function ChartCard({ title, icon: Icon, data, total, link
           <p className="text-text-secondary">No resources found</p>
         </div>
       ) : (
-        <div className="h-48 min-h-[192px] chart-theme-text">
-          <ResponsiveContainer width="100%" height={192} minHeight={192}>
-            <PieChart>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="50%"
-                innerRadius={40}
-                outerRadius={70}
-                paddingAngle={2}
-                dataKey="value"
-                isAnimationActive={false}
-                label={({ name, percent }) =>
-                  (percent ?? 0) > 0.05 ? `${name ?? ''} (${((percent ?? 0) * 100).toFixed(0)}%)` : ''
-                }
-                labelLine={false}
-              >
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: 'var(--color-surface)',
-                  color: 'var(--color-text)',
-                  borderRadius: '8px',
-                  padding: '10px 12px',
-                }}
-                labelStyle={{ color: 'var(--color-text)' }}
-                itemStyle={{ color: 'var(--color-text)' }}
-                wrapperStyle={{ outline: 'none' }}
-                formatter={(value, name) => [
-                  `${value} (${total > 0 ? ((Number(value) / total) * 100).toFixed(1) : 0}%)`,
-                  name,
-                ]}
-              />
-              <Legend
-                wrapperStyle={{ fontSize: '12px', color: 'var(--color-text)' }}
-                formatter={(value) => <span style={{ color: 'var(--color-text)' }}>{value}</span>}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {hasData && (
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          {data.map((item) => (
-            <div key={item.name} className="flex items-center gap-2">
-              <div
-                className="w-3 h-3 rounded-full flex-shrink-0"
-                style={{ backgroundColor: item.color }}
-              />
-              <span className="text-sm text-text-secondary truncate">
-                {item.name}: {item.value}
-              </span>
-            </div>
-          ))}
+        <div className="flex flex-col items-center">
+          <div className="w-full max-w-[200px]">
+            <SvgDonutChart
+              slices={data}
+              size={200}
+              innerRatio={0.58}
+              formatValue={(value) => {
+                const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0';
+                return `${value} (${pct}%)`;
+              }}
+            />
+          </div>
+          <div className="mt-4 w-full grid grid-cols-2 gap-2">
+            {data.map((item) => (
+              <div key={item.name} className="flex items-center gap-2 min-w-0">
+                <div
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: item.color }}
+                />
+                <span className="text-xs text-text-secondary truncate">
+                  {item.name}: <span className="text-text font-medium tabular-nums">{item.value}</span>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

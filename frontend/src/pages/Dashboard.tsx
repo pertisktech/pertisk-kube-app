@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useDashboard, useNodes } from '../hooks/useKubernetes';
 import { useRealtimeNodes } from '../hooks/useRealtimeResources';
 import { useRealtimePods } from '../hooks/useRealtimePods';
 import { WorkloadSummary } from '../components/WorkloadSummary';
 import { MetricsCharts } from '../components/MetricsCharts';
 import { GaugeChart } from '../components/GaugeChart';
+import { CapacityDoughnut } from '../components/charts/CapacityDoughnut';
 import { LoadingState } from '../components/LoadingState';
 import {
   Box,
@@ -335,42 +335,19 @@ export const Dashboard = () => {
                   <Cpu size={20} className="text-dashboard-metric-primary" />
                   <span className="font-semibold text-text">CPU Capacity</span>
                 </div>
-                <div className="w-full h-36 min-h-[144px]">
-                  <ResponsiveContainer width="100%" height={144} minHeight={144}>
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: 'Used', value: Math.max(0, usedCPU) || 0.01, color: CHART_USED },
-                          {
-                            name: 'Available',
-                            value: Math.max(0, totalCPU - usedCPU) || (totalCPU || 0.01),
-                            color: CHART_AVAILABLE,
-                          },
-                        ]}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={34}
-                        outerRadius={52}
-                        paddingAngle={0}
-                        dataKey="value"
-                      >
-                        {[{ color: CHART_USED }, { color: CHART_AVAILABLE }].map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'var(--color-surface)',
-                          color: 'var(--color-text)',
-                          borderRadius: '8px',
-                          padding: '10px 12px',
-                          border: '1px solid var(--color-border)',
-                        }}
-                        formatter={(value, name) => [`${formatCPU(Number(value ?? 0))} cores`, String(name ?? '')]}
-                        labelFormatter={() => `Total: ${formatCPU(totalCPU)} cores`}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+                <div className="w-full flex justify-center items-center min-h-[144px]">
+                  <CapacityDoughnut
+                    slices={[
+                      { name: 'Used', value: Math.max(0, usedCPU) || 0.01, color: CHART_USED },
+                      {
+                        name: 'Available',
+                        value: Math.max(0, totalCPU - usedCPU) || (totalCPU || 0.01),
+                        color: CHART_AVAILABLE,
+                      },
+                    ]}
+                    formatValue={(value) => `${formatCPU(value)} cores`}
+                    formatTitle={() => `Total: ${formatCPU(totalCPU)} cores`}
+                  />
                 </div>
                 <p className="text-xs text-text-secondary mt-2">
                   {formatCPU(usedCPU)} / {formatCPU(totalCPU)} cores
@@ -383,42 +360,19 @@ export const Dashboard = () => {
                   <HardDrive size={20} className="text-dashboard-metric-secondary" />
                   <span className="font-semibold text-text">Memory Capacity</span>
                 </div>
-                <div className="w-full h-36 min-h-[144px]">
-                  <ResponsiveContainer width="100%" height={144} minHeight={144}>
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: 'Used', value: Math.max(0, usedMemory) || 0.01, color: CHART_USED },
-                          {
-                            name: 'Available',
-                            value: Math.max(0, totalMemory - usedMemory) || (totalMemory || 0.01),
-                            color: CHART_AVAILABLE,
-                          },
-                        ]}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={34}
-                        outerRadius={52}
-                        paddingAngle={0}
-                        dataKey="value"
-                      >
-                        {[{ color: CHART_USED }, { color: CHART_AVAILABLE }].map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'var(--color-surface)',
-                          color: 'var(--color-text)',
-                          borderRadius: '8px',
-                          padding: '10px 12px',
-                          border: '1px solid var(--color-border)',
-                        }}
-                        formatter={(value, name) => [formatMemory(Number(value ?? 0)), String(name ?? '')]}
-                        labelFormatter={() => `Total: ${formatMemory(totalMemory)}`}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+                <div className="w-full flex justify-center items-center min-h-[144px]">
+                  <CapacityDoughnut
+                    slices={[
+                      { name: 'Used', value: Math.max(0, usedMemory) || 0.01, color: CHART_USED },
+                      {
+                        name: 'Available',
+                        value: Math.max(0, totalMemory - usedMemory) || (totalMemory || 0.01),
+                        color: CHART_AVAILABLE,
+                      },
+                    ]}
+                    formatValue={(value) => formatMemory(value)}
+                    formatTitle={() => `Total: ${formatMemory(totalMemory)}`}
+                  />
                 </div>
                 <p className="text-xs text-text-secondary mt-2">
                   {formatMemory(usedMemory)} / {formatMemory(totalMemory)}
@@ -431,45 +385,19 @@ export const Dashboard = () => {
                   <Box size={20} className="text-dashboard-metric-tertiary" />
                   <span className="font-semibold text-text">Pods Capacity</span>
                 </div>
-                <div className="w-full h-36 min-h-[144px]">
-                  <ResponsiveContainer width="100%" height={144} minHeight={144}>
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: 'Used', value: podCount || 0.01, color: CHART_USED },
-                          {
-                            name: 'Available',
-                            value: Math.max(0, (totalPodsAllocatable || 1) - podCount) || 0.01,
-                            color: CHART_AVAILABLE,
-                          },
-                        ]}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={34}
-                        outerRadius={52}
-                        paddingAngle={0}
-                        dataKey="value"
-                      >
-                        {[{ color: CHART_USED }, { color: CHART_AVAILABLE }].map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'var(--color-surface)',
-                          color: 'var(--color-text)',
-                          borderRadius: '8px',
-                          padding: '10px 12px',
-                          border: '1px solid var(--color-border)',
-                        }}
-                        formatter={(value, name) => [
-                          `${Math.round(Number(value ?? 0))} pods`,
-                          String(name ?? ''),
-                        ]}
-                        labelFormatter={() => `Capacity: ${totalPodsAllocatable} pods`}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+                <div className="w-full flex justify-center items-center min-h-[144px]">
+                  <CapacityDoughnut
+                    slices={[
+                      { name: 'Used', value: podCount || 0.01, color: CHART_USED },
+                      {
+                        name: 'Available',
+                        value: Math.max(0, (totalPodsAllocatable || 1) - podCount) || 0.01,
+                        color: CHART_AVAILABLE,
+                      },
+                    ]}
+                    formatValue={(value) => `${Math.round(value)} pods`}
+                    formatTitle={() => `Capacity: ${totalPodsAllocatable} pods`}
+                  />
                 </div>
                 <p className="text-xs text-text-secondary mt-2">
                   {podCount} / {totalPodsAllocatable || 0} pods

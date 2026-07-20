@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card } from '../components/Card';
 import { LoadingState } from '../components/LoadingState';
 import {
@@ -10,6 +9,8 @@ import {
 import { useRealtimePods } from '../hooks/useRealtimePods';
 import { useRealtimeNodes } from '../hooks/useRealtimeResources';
 import { NodeMetricGraphs } from '../components/NodeMetricGraphs';
+import { CapacityDoughnut } from '../components/charts/CapacityDoughnut';
+import { NestedCapacityDoughnut } from '../components/charts/NestedCapacityDoughnut';
 import {
   AlertCircle,
   AlertTriangle,
@@ -570,79 +571,61 @@ export const ClusterPage = () => {
                     <Cpu size={16} className="text-dashboard-metric-primary" />
                     <span className="font-semibold text-text text-sm">CPU</span>
                   </div>
-                  <div className="w-full h-36 min-h-[144px]">
-                    <ResponsiveContainer width="100%" height={144} minHeight={144}>
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: 'Usage', value: Math.max(0, roleTabCapacitySummary.usedCPU) || 0.01, color: PIE_USAGE },
+                  <div className="w-full flex justify-center items-center min-h-[144px]">
+                    <NestedCapacityDoughnut
+                      formatTitle={() => 'CPU'}
+                      formatValue={(value) => `${formatCpu(value)} cores`}
+                      rings={[
+                        {
+                          slices: [
+                            {
+                              name: 'Usage',
+                              value: Math.max(0, roleTabCapacitySummary.usedCPU) || 0.01,
+                              color: PIE_USAGE,
+                            },
                             {
                               name: 'Available',
-                              value: Math.max(0, roleTabCapacitySummary.totalCPU - roleTabCapacitySummary.usedCPU) || (roleTabCapacitySummary.totalCPU || 0.01),
+                              value:
+                                Math.max(0, roleTabCapacitySummary.totalCPU - roleTabCapacitySummary.usedCPU)
+                                || (roleTabCapacitySummary.totalCPU || 0.01),
                               color: PIE_DEFAULT,
                             },
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={38}
-                          outerRadius={52}
-                          dataKey="value"
-                        >
-                          {[{ color: PIE_USAGE }, { color: PIE_DEFAULT }].map((entry, index) => (
-                            <Cell key={index} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Pie
-                          data={[
-                            { name: 'Requests', value: Math.max(0, roleTabCapacitySummary.cpuRequests) || 0.01, color: PIE_REQUESTS },
+                          ],
+                        },
+                        {
+                          slices: [
+                            {
+                              name: 'Requests',
+                              value: Math.max(0, roleTabCapacitySummary.cpuRequests) || 0.01,
+                              color: PIE_REQUESTS,
+                            },
                             {
                               name: 'Available',
-                              value: Math.max(0, roleTabCapacitySummary.totalCPU - roleTabCapacitySummary.cpuRequests) || (roleTabCapacitySummary.totalCPU || 0.01),
+                              value:
+                                Math.max(0, roleTabCapacitySummary.totalCPU - roleTabCapacitySummary.cpuRequests)
+                                || (roleTabCapacitySummary.totalCPU || 0.01),
                               color: PIE_DEFAULT,
                             },
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={25}
-                          outerRadius={37}
-                          dataKey="value"
-                        >
-                          {[{ color: PIE_REQUESTS }, { color: PIE_DEFAULT }].map((entry, index) => (
-                            <Cell key={`req-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Pie
-                          data={[
-                            { name: 'Limits', value: Math.max(0, roleTabCapacitySummary.cpuLimits) || 0.01, color: PIE_LIMITS },
+                          ],
+                        },
+                        {
+                          slices: [
+                            {
+                              name: 'Limits',
+                              value: Math.max(0, roleTabCapacitySummary.cpuLimits) || 0.01,
+                              color: PIE_LIMITS,
+                            },
                             {
                               name: 'Available',
-                              value: Math.max(0, roleTabCapacitySummary.totalCPU - roleTabCapacitySummary.cpuLimits) || (roleTabCapacitySummary.totalCPU || 0.01),
+                              value:
+                                Math.max(0, roleTabCapacitySummary.totalCPU - roleTabCapacitySummary.cpuLimits)
+                                || (roleTabCapacitySummary.totalCPU || 0.01),
                               color: PIE_DEFAULT,
                             },
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={12}
-                          outerRadius={24}
-                          dataKey="value"
-                        >
-                          {[{ color: PIE_LIMITS }, { color: PIE_DEFAULT }].map((entry, index) => (
-                            <Cell key={`lim-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: 'var(--color-surface)',
-                            color: 'var(--color-text)',
-                            borderRadius: '8px',
-                            padding: '10px 12px',
-                            border: '1px solid var(--color-border)',
-                          }}
-                          formatter={(value, name) => [`${formatCpu(Number(value ?? 0))} cores`, String(name ?? '')]}
-                          labelFormatter={() => 'CPU'}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
+                          ],
+                        },
+                      ]}
+                    />
                   </div>
                   <div className="w-full mt-1 space-y-0.5 text-[11px] text-text-secondary">
                     <p>Usage: {roleTabCapacitySummary.usedCPU.toFixed(2)}</p>
@@ -658,79 +641,63 @@ export const ClusterPage = () => {
                     <HardDrive size={16} className="text-dashboard-metric-secondary" />
                     <span className="font-semibold text-text text-sm">Memory</span>
                   </div>
-                  <div className="w-full h-36 min-h-[144px]">
-                    <ResponsiveContainer width="100%" height={144} minHeight={144}>
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: 'Usage', value: Math.max(0, roleTabCapacitySummary.usedMemory) || 0.01, color: PIE_USAGE },
+                  <div className="w-full flex justify-center items-center min-h-[144px]">
+                    <NestedCapacityDoughnut
+                      formatTitle={() => 'Memory'}
+                      formatValue={(value) => formatMemoryGb(value)}
+                      rings={[
+                        {
+                          slices: [
+                            {
+                              name: 'Usage',
+                              value: Math.max(0, roleTabCapacitySummary.usedMemory) || 0.01,
+                              color: PIE_USAGE,
+                            },
                             {
                               name: 'Available',
-                              value: Math.max(0, roleTabCapacitySummary.totalMemory - roleTabCapacitySummary.usedMemory) || (roleTabCapacitySummary.totalMemory || 0.01),
+                              value:
+                                Math.max(0, roleTabCapacitySummary.totalMemory - roleTabCapacitySummary.usedMemory)
+                                || (roleTabCapacitySummary.totalMemory || 0.01),
                               color: PIE_DEFAULT,
                             },
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={38}
-                          outerRadius={52}
-                          dataKey="value"
-                        >
-                          {[{ color: PIE_USAGE }, { color: PIE_DEFAULT }].map((entry, index) => (
-                            <Cell key={index} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Pie
-                          data={[
-                            { name: 'Requests', value: Math.max(0, roleTabCapacitySummary.memoryRequests) || 0.01, color: PIE_REQUESTS },
+                          ],
+                        },
+                        {
+                          slices: [
+                            {
+                              name: 'Requests',
+                              value: Math.max(0, roleTabCapacitySummary.memoryRequests) || 0.01,
+                              color: PIE_REQUESTS,
+                            },
                             {
                               name: 'Available',
-                              value: Math.max(0, roleTabCapacitySummary.totalMemory - roleTabCapacitySummary.memoryRequests) || (roleTabCapacitySummary.totalMemory || 0.01),
+                              value:
+                                Math.max(
+                                  0,
+                                  roleTabCapacitySummary.totalMemory - roleTabCapacitySummary.memoryRequests,
+                                ) || (roleTabCapacitySummary.totalMemory || 0.01),
                               color: PIE_DEFAULT,
                             },
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={25}
-                          outerRadius={37}
-                          dataKey="value"
-                        >
-                          {[{ color: PIE_REQUESTS }, { color: PIE_DEFAULT }].map((entry, index) => (
-                            <Cell key={`mem-req-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Pie
-                          data={[
-                            { name: 'Limits', value: Math.max(0, roleTabCapacitySummary.memoryLimits) || 0.01, color: PIE_LIMITS },
+                          ],
+                        },
+                        {
+                          slices: [
+                            {
+                              name: 'Limits',
+                              value: Math.max(0, roleTabCapacitySummary.memoryLimits) || 0.01,
+                              color: PIE_LIMITS,
+                            },
                             {
                               name: 'Available',
-                              value: Math.max(0, roleTabCapacitySummary.totalMemory - roleTabCapacitySummary.memoryLimits) || (roleTabCapacitySummary.totalMemory || 0.01),
+                              value:
+                                Math.max(0, roleTabCapacitySummary.totalMemory - roleTabCapacitySummary.memoryLimits)
+                                || (roleTabCapacitySummary.totalMemory || 0.01),
                               color: PIE_DEFAULT,
                             },
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={12}
-                          outerRadius={24}
-                          dataKey="value"
-                        >
-                          {[{ color: PIE_LIMITS }, { color: PIE_DEFAULT }].map((entry, index) => (
-                            <Cell key={`mem-lim-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: 'var(--color-surface)',
-                            color: 'var(--color-text)',
-                            borderRadius: '8px',
-                            padding: '10px 12px',
-                            border: '1px solid var(--color-border)',
-                          }}
-                          formatter={(value, name) => [formatMemoryGb(Number(value ?? 0)), String(name ?? '')]}
-                          labelFormatter={() => 'Memory'}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
+                          ],
+                        },
+                      ]}
+                    />
                   </div>
                   <div className="w-full mt-1 space-y-0.5 text-[11px] text-text-secondary">
                     <p>Usage: {formatMemoryGiB(roleTabCapacitySummary.usedMemory)}</p>
@@ -746,41 +713,27 @@ export const ClusterPage = () => {
                     <Box size={16} className="text-dashboard-metric-tertiary" />
                     <span className="font-semibold text-text text-sm">Pods</span>
                   </div>
-                  <div className="w-full h-36 min-h-[144px]">
-                    <ResponsiveContainer width="100%" height={144} minHeight={144}>
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: 'Usage', value: roleTabCapacitySummary.podCount || 0.01, color: PIE_REQUESTS },
-                            {
-                              name: 'Available',
-                              value: Math.max(0, (roleTabCapacitySummary.totalPodsAllocatable || 1) - roleTabCapacitySummary.podCount) || 0.01,
-                              color: PIE_DEFAULT,
-                            },
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={34}
-                          outerRadius={52}
-                          dataKey="value"
-                        >
-                          {[{ color: PIE_REQUESTS }, { color: PIE_DEFAULT }].map((entry, index) => (
-                            <Cell key={index} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: 'var(--color-surface)',
-                            color: 'var(--color-text)',
-                            borderRadius: '8px',
-                            padding: '10px 12px',
-                            border: '1px solid var(--color-border)',
-                          }}
-                          formatter={(value, name) => [`${Math.round(Number(value ?? 0))} pods`, String(name ?? '')]}
-                          labelFormatter={() => `Capacity: ${roleTabCapacitySummary.totalPodsAllocatable} pods`}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
+                  <div className="w-full flex justify-center items-center min-h-[144px]">
+                    <CapacityDoughnut
+                      slices={[
+                        {
+                          name: 'Usage',
+                          value: roleTabCapacitySummary.podCount || 0.01,
+                          color: PIE_REQUESTS,
+                        },
+                        {
+                          name: 'Available',
+                          value:
+                            Math.max(
+                              0,
+                              (roleTabCapacitySummary.totalPodsAllocatable || 1) - roleTabCapacitySummary.podCount,
+                            ) || 0.01,
+                          color: PIE_DEFAULT,
+                        },
+                      ]}
+                      formatValue={(value) => `${Math.round(value)} pods`}
+                      formatTitle={() => `Capacity: ${roleTabCapacitySummary.totalPodsAllocatable} pods`}
+                    />
                   </div>
                   <div className="w-full mt-1 space-y-0.5 text-[11px] text-text-secondary">
                     <p>Usage: {roleTabCapacitySummary.podCount}</p>
