@@ -24,6 +24,8 @@ static POD_METRICS_RETRY_AFTER: AtomicU64 = AtomicU64::new(0);
 static NODE_METRICS_RETRY_AFTER: AtomicU64 = AtomicU64::new(0);
 static NODE_DISK_METRICS_RETRY_AFTER: AtomicU64 = AtomicU64::new(0);
 const METRICS_RETRY_COOLDOWN_SECS: u64 = 30;
+/// RBAC denials rarely change without a context/credential switch — avoid log spam.
+const METRICS_FORBIDDEN_COOLDOWN_SECS: u64 = 600;
 const EXEC_PROVIDER_LOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
 const EXEC_PROVIDER_RESOLVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
 const EXEC_PROVIDER_BACKGROUND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
@@ -41,19 +43,35 @@ fn metrics_probe_allowed(retry_after: &AtomicU64) -> bool {
 }
 
 fn disable_metrics_temporarily(retry_after: &AtomicU64, kind: &str, err: &kube::Error) {
+    disable_metrics_for(retry_after, kind, err, METRICS_RETRY_COOLDOWN_SECS);
+}
+
+fn disable_metrics_for(retry_after: &AtomicU64, kind: &str, err: &kube::Error, cooldown_secs: u64) {
     let now = now_unix_secs();
-    let until = now.saturating_add(METRICS_RETRY_COOLDOWN_SECS);
+    let until = now.saturating_add(cooldown_secs);
     let previous = retry_after.swap(until, Ordering::Relaxed);
     if previous == 0 || previous <= now {
         warn!(
-            "Temporarily disabling {} metrics for {}s because metrics API is unavailable: {}",
-            kind, METRICS_RETRY_COOLDOWN_SECS, err
+            "Temporarily disabling {} metrics for {}s: {}",
+            kind, cooldown_secs, err
         );
     }
 }
 
 fn clear_metrics_disable(retry_after: &AtomicU64) {
     retry_after.store(0, Ordering::Relaxed);
+}
+
+fn is_api_forbidden(err: &kube::Error) -> bool {
+    match err {
+        kube::Error::Api(api_err) => api_err.code == 403,
+        _ => {
+            let normalized = err.to_string().to_lowercase();
+            normalized.contains("forbidden")
+                || normalized.contains("status code 403")
+                || normalized.contains("status code: 403")
+        }
+    }
 }
 
 fn is_metrics_api_unavailable(err: &kube::Error) -> bool {
@@ -66,6 +84,7 @@ fn is_metrics_api_unavailable(err: &kube::Error) -> bool {
                 || normalized.contains("status code: 404")
                 || normalized.contains("status code 403")
                 || normalized.contains("status code: 403")
+                || normalized.contains("forbidden")
         }
     }
 }
@@ -844,16 +863,12 @@ pub async fn fetch_node_disk_metrics(
         return HashMap::new();
     }
 
-    let Some(first_name) = node_names.first().cloned() else {
-        return HashMap::new();
-    };
-
     let fetch_summary = |client: Client, name: String| async move {
         let request = match Request::get(format!("/api/v1/nodes/{name}/proxy/stats/summary"))
             .body(Vec::new())
         {
             Ok(request) => request,
-            Err(_) => return Ok(None),
+            Err(_) => return Ok::<Option<(String, NodeDiskMetrics)>, kube::Error>(None),
         };
 
         // Timeout individual node requests to 2 seconds to prevent slow/unresponsive kubelets from blocking list
@@ -861,15 +876,8 @@ pub async fn fetch_node_disk_metrics(
             Duration::from_secs(2),
             client.request::<serde_json::Value>(request)
         ).await {
-            Ok(Ok(summary)) => {
-                clear_metrics_disable(&NODE_DISK_METRICS_RETRY_AFTER);
-                summary
-            }
-            Ok(Err(err)) if is_kubelet_stats_proxy_unavailable(&err) => {
-                disable_metrics_temporarily(&NODE_DISK_METRICS_RETRY_AFTER, "node disk", &err);
-                return Err(());
-            }
-            Ok(Err(_)) => return Ok(None),
+            Ok(Ok(summary)) => summary,
+            Ok(Err(err)) => return Err(err),
             Err(_) => return Ok(None), // Timeout — skip this node's disk metrics
         };
 
@@ -898,22 +906,60 @@ pub async fn fetch_node_disk_metrics(
         )))
     };
 
-    let first_result = match fetch_summary(client.clone(), first_name).await {
-        Ok(result) => result,
-        Err(()) => return HashMap::new(),
-    };
-
-    let mut responses = Vec::new();
-    if let Some(item) = first_result {
-        responses.push(item);
-    }
-
-    let remaining_responses = join_all(node_names.iter().skip(1).cloned().map(|name| {
+    let results = join_all(node_names.iter().cloned().map(|name| {
         let client = client.clone();
-        async move { fetch_summary(client, name).await.ok().flatten() }
+        async move { (name.clone(), fetch_summary(client, name).await) }
     }))
     .await;
 
-    responses.extend(remaining_responses.into_iter().flatten());
-    responses.into_iter().collect()
+    let mut responses = HashMap::new();
+    let mut saw_forbidden = false;
+    let mut saw_unavailable = false;
+    let mut saw_success = false;
+
+    for (_name, result) in results {
+        match result {
+            Ok(Some(item)) => {
+                saw_success = true;
+                responses.insert(item.0, item.1);
+            }
+            Ok(None) => {}
+            Err(err) if is_api_forbidden(&err) => {
+                saw_forbidden = true;
+                saw_unavailable = true;
+            }
+            Err(err) if is_kubelet_stats_proxy_unavailable(&err) => {
+                saw_unavailable = true;
+            }
+            Err(_) => {}
+        }
+    }
+
+    if saw_success {
+        clear_metrics_disable(&NODE_DISK_METRICS_RETRY_AFTER);
+        return responses;
+    }
+
+    // Only cool down when every node failed and at least one failure was "unavailable".
+    if saw_unavailable {
+        let cooldown = if saw_forbidden {
+            METRICS_FORBIDDEN_COOLDOWN_SECS
+        } else {
+            METRICS_RETRY_COOLDOWN_SECS
+        };
+        let kind = if saw_forbidden {
+            "node disk (RBAC/kubelet denied nodes/stats proxy)"
+        } else {
+            "node disk"
+        };
+        let err_msg = kube::Error::Api(kube::error::ErrorResponse {
+            status: "Failure".into(),
+            message: "kubelet stats proxy unavailable for all probed nodes".into(),
+            reason: "Unavailable".into(),
+            code: if saw_forbidden { 403 } else { 503 },
+        });
+        disable_metrics_for(&NODE_DISK_METRICS_RETRY_AFTER, kind, &err_msg, cooldown);
+    }
+
+    responses
 }

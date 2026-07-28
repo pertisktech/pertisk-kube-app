@@ -106,6 +106,13 @@ impl Default for ClusterSwitchStatus {
     }
 }
 
+fn is_packaged_app() -> bool {
+    std::env::current_exe()
+        .ok()
+        .map(|exe| exe.to_string_lossy().contains(".app/Contents/MacOS"))
+        .unwrap_or(false)
+}
+
 fn validated_config(mut cfg: SidecarConfig) -> SidecarConfig {
     if cfg.port == 0 {
         cfg.port = DEFAULT_PORT;
@@ -115,6 +122,12 @@ fn validated_config(mut cfg: SidecarConfig) -> SidecarConfig {
         if !env_bin.trim().is_empty() {
             cfg.backend_bin = Some(env_bin);
         }
+    }
+
+    // Packaged installs must ignore workspace paths saved by `make run-desktop`.
+    // Hardened runtime often cannot exec binaries outside the .app bundle.
+    if is_packaged_app() && std::env::var("PERTISK_BACKEND_BIN").is_err() {
+        cfg.backend_bin = None;
     }
 
     if let Ok(env_port) = std::env::var("PORT").or_else(|_| std::env::var("APP_PORT")) {
@@ -477,6 +490,70 @@ fn configure_sidecar_environment(command: &mut Command) {
     command.env("AWS_PAGER", "");
 }
 
+fn warmup_local_network_access(cfg: &SidecarConfig) {
+    // macOS Local Network privacy (Sequoia+): GUI-launched apps are blocked from LAN
+    // until the user grants permission. Trigger an early connection from the app process
+    // itself so the system prompt is attributed to PTKublet (not only the sidecar child).
+    let mut hosts = Vec::<String>::new();
+
+    if let Some(path) = cfg
+        .kubeconfig_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from)
+        .filter(|p| p.exists())
+    {
+        if let Ok(raw) = fs::read_to_string(&path) {
+            for line in raw.lines() {
+                let trimmed = line.trim();
+                if let Some(rest) = trimmed.strip_prefix("server:") {
+                    let value = rest.trim().trim_matches('"').trim_matches('\'');
+                    if let Some(host_port) = parse_host_port_from_server_url(value) {
+                        hosts.push(host_port);
+                    }
+                }
+            }
+        }
+    }
+
+    // Always probe a common LAN-ish target so the permission prompt can appear even
+    // before a kubeconfig is selected.
+    hosts.push("10.0.0.1:80".to_string());
+    hosts.push("192.168.0.1:80".to_string());
+
+    for target in hosts.into_iter().take(6) {
+        let addr = match target.parse::<SocketAddr>() {
+            Ok(addr) => addr,
+            Err(_) => match std::net::ToSocketAddrs::to_socket_addrs(&target) {
+                Ok(mut iter) => match iter.next() {
+                    Some(addr) => addr,
+                    None => continue,
+                },
+                Err(_) => continue,
+            },
+        };
+        let _ = TcpStream::connect_timeout(&addr, Duration::from_millis(400));
+    }
+}
+
+fn parse_host_port_from_server_url(value: &str) -> Option<String> {
+    let without_scheme = value
+        .strip_prefix("https://")
+        .or_else(|| value.strip_prefix("http://"))
+        .unwrap_or(value);
+    let host_port = without_scheme.split('/').next()?.trim();
+    if host_port.is_empty() {
+        return None;
+    }
+    if host_port.contains(':') {
+        Some(host_port.to_string())
+    } else {
+        let default_port = if value.starts_with("http://") { 80 } else { 6443 };
+        Some(format!("{host_port}:{default_port}"))
+    }
+}
+
 fn backend_socket_addr(port: u16) -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], port))
 }
@@ -493,30 +570,50 @@ fn candidate_backend_paths(app: &AppHandle, cfg: &SidecarConfig) -> Vec<PathBuf>
         paths.push(PathBuf::from("../../target/debug/pertisk-kube-backend"));
     }
 
+    // Packaged .app must use its bundled sidecar. Ignore stale absolute paths
+    // saved during `make run-desktop` (…/target/debug/pertisk-kube-backend).
+    let packaged_app = is_packaged_app();
+
+    let push_bundled_paths = |paths: &mut Vec<PathBuf>| {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                append_unique_path(paths, dir.join("pertisk-kube-backend"));
+                append_unique_path(paths, dir.join("../Resources/pertisk-kube-backend"));
+            }
+        }
+        if let Ok(resource_dir) = app.path().resource_dir() {
+            append_unique_path(paths, resource_dir.join("pertisk-kube-backend"));
+            append_unique_path(
+                paths,
+                resource_dir.join("bundle-resources/pertisk-kube-backend"),
+            );
+        }
+        append_unique_path(
+            paths,
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("bundle-resources/pertisk-kube-backend"),
+        );
+    };
+
+    if packaged_app {
+        push_bundled_paths(&mut paths);
+        // Never consult cfg.backend_bin for packaged apps — it commonly points at
+        // a developer debug binary and breaks DMG installs.
+        return paths;
+    }
+
     if let Some(explicit) = cfg.backend_bin.as_deref() {
-        if !explicit.trim().is_empty() {
-            paths.push(PathBuf::from(explicit));
+        let trimmed = explicit.trim();
+        if !trimmed.is_empty() {
+            append_unique_path(&mut paths, PathBuf::from(trimmed));
         }
     }
 
     paths.push(PathBuf::from("../target/release/pertisk-kube-backend"));
     paths.push(PathBuf::from("../../target/release/pertisk-kube-backend"));
+    push_bundled_paths(&mut paths);
 
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            paths.push(dir.join("pertisk-kube-backend"));
-            paths.push(dir.join("../Resources/pertisk-kube-backend"));
-        }
-    }
-
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        paths.push(resource_dir.join("pertisk-kube-backend"));
-        paths.push(resource_dir.join("bundle-resources/pertisk-kube-backend"));
-    }
-
-    // Check workspace backend binary from user's home
     if let Ok(home) = std::env::var("HOME") {
-        let workspace_candidates = vec![
+        let workspace_candidates = [
             "projects/pertisk-tech/pertisk-kube-app/target/release/pertisk-kube-backend",
             "projects/pertisk-tech/pertisk-kube-app/backend/target/release/pertisk-kube-backend",
             ".pertisk-kube-app-backend/pertisk-kube-backend",
@@ -2874,6 +2971,8 @@ fn main() {
             }
 
             let mut initial_config = load_sidecar_config(app.handle());
+            #[cfg(target_os = "macos")]
+            warmup_local_network_access(&initial_config);
             if let Ok(Some((previous, next))) = ensure_sidecar_port_available(&mut initial_config) {
                 warn!(
                     "startup moved sidecar port from {} to {} because the original port was occupied",

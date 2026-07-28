@@ -8,7 +8,7 @@ import { CheckCircle, AlertCircle, XCircle } from './Icons';
 import { LoadingState } from './LoadingState';
 
 interface ClusterHealth {
-  status: 'healthy' | 'warning' | 'critical';
+  status: 'healthy' | 'warning' | 'critical' | 'unavailable';
   readyNodes: number;
   totalNodes: number;
   runningPods: number;
@@ -45,7 +45,7 @@ export const ClusterHealthCard = () => {
     );
   }
 
-  const clusterHealth: ClusterHealth = (() => {
+    let clusterHealth: ClusterHealth = (() => {
     const readyNodes = nodes?.filter((n) => {
       if (typeof n.ready === 'boolean') return n.ready;
       return String(n.ready).toLowerCase() === 'true';
@@ -60,11 +60,13 @@ export const ClusterHealthCard = () => {
     const pendingPods = pods?.filter((p) => (p.status || p.phase || '').toLowerCase() === 'pending').length || 0;
     const totalPods = pods?.length || 0;
 
-    let status: 'healthy' | 'warning' | 'critical' = 'healthy';
+    let status: 'healthy' | 'warning' | 'critical' | 'unavailable' = 'healthy';
     const nodeHealthPercent = totalNodes > 0 ? (readyNodes / totalNodes) * 100 : 0;
     const podFailurePercent = totalPods > 0 ? (failedPods / totalPods) * 100 : 0;
 
-    if (nodeHealthPercent < 80 || podFailurePercent > 20) {
+    if (totalNodes === 0) {
+      status = 'unavailable';
+    } else if (nodeHealthPercent < 80 || podFailurePercent > 20) {
       status = 'critical';
     } else if (nodeHealthPercent < 95 || podFailurePercent > 5) {
       status = 'warning';
@@ -84,7 +86,7 @@ export const ClusterHealthCard = () => {
   const statusIcon =
     clusterHealth.status === 'healthy' ? (
       <CheckCircle className="w-5 h-5 text-dashboard-success" />
-    ) : clusterHealth.status === 'warning' ? (
+    ) : clusterHealth.status === 'warning' || clusterHealth.status === 'unavailable' ? (
       <AlertCircle className="w-5 h-5 text-dashboard-warning" />
     ) : (
       <XCircle className="w-5 h-5 text-dashboard-danger" />
@@ -93,14 +95,14 @@ export const ClusterHealthCard = () => {
   const statusBgColor =
     clusterHealth.status === 'healthy'
       ? 'bg-dashboard-success-bg'
-      : clusterHealth.status === 'warning'
+      : clusterHealth.status === 'warning' || clusterHealth.status === 'unavailable'
         ? 'bg-dashboard-warning-bg'
         : 'bg-dashboard-danger-bg';
 
   const statusTextColor =
     clusterHealth.status === 'healthy'
       ? 'text-dashboard-success'
-      : clusterHealth.status === 'warning'
+      : clusterHealth.status === 'warning' || clusterHealth.status === 'unavailable'
         ? 'text-dashboard-warning'
         : 'text-dashboard-danger';
 

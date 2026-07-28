@@ -122,10 +122,25 @@ build-macos-dmg: frontend-install
 	TAURI_VERSION=$$(echo "$(VERSION)" | sed -E 's/^[vV]//; s/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/'); \
 	if ! echo "$$TAURI_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then TAURI_VERSION="0.1.0"; fi; \
 	echo "Building macOS DMG v$$TAURI_VERSION (display $(VERSION))..."; \
-	cd frontend && KTAIL_BINARY_PATH="$$KTAIL_BIN" VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --bundles dmg --config '{"version":"'"$$TAURI_VERSION"'"}'
+	mkdir -p frontend/src-tauri/bundle-resources; \
+	cp -f target/release/pertisk-kube-backend frontend/src-tauri/bundle-resources/pertisk-kube-backend; \
+	chmod +x frontend/src-tauri/bundle-resources/pertisk-kube-backend; \
+	if [ -n "$$KTAIL_BIN" ]; then \
+		cp -f "$$KTAIL_BIN" frontend/src-tauri/bundle-resources/ktail; \
+		chmod +x frontend/src-tauri/bundle-resources/ktail; \
+	fi; \
+	test -x frontend/src-tauri/bundle-resources/pertisk-kube-backend || { echo "ERROR: bundled backend missing"; exit 1; }; \
+	echo "Bundled sidecar: $$(ls -lh frontend/src-tauri/bundle-resources/pertisk-kube-backend)"; \
+	cd frontend && KTAIL_BINARY_PATH="$$KTAIL_BIN" VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --bundles dmg --config '{"version":"'"$$TAURI_VERSION"'"}'; \
+	APP_BUNDLE="frontend/src-tauri/target/release/bundle/macos/PTKublet.app"; \
+	if [ -d "$$APP_BUNDLE" ]; then \
+		echo "Ad-hoc signing $$APP_BUNDLE for Local Network / Gatekeeper..."; \
+		codesign --force --deep --sign - "$$APP_BUNDLE" || true; \
+	fi
 	@echo ""
 	@echo "DMG output:"
 	@ls -lh frontend/src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null || echo "  (no .dmg found — check build output above)"
+	@echo "Installed app tip: allow Local Network for PTKublet in System Settings → Privacy & Security → Local Network"
 
 run-desktop: frontend-install build-backend
 	@pkill -f "ptkublet-desktop" 2>/dev/null || true

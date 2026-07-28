@@ -254,13 +254,15 @@ export const Dashboard = () => {
           : 0
       );
 
-  // Calculate health status
+  // Calculate health status. Empty node list means disconnected/unavailable — not Critical.
   const nodeHealthPercent = totalNodeCount > 0 ? (readyNodeCount / totalNodeCount) * 100 : 0;
   const podFailurePercent =
     (dashboard?.pods || 0) > 0 ? (failedPodCount / (dashboard?.pods || 1)) * 100 : 0;
 
-  let healthStatus: 'healthy' | 'warning' | 'critical' = 'healthy';
-  if (nodeHealthPercent < 80 || podFailurePercent > 20) {
+  let healthStatus: 'healthy' | 'warning' | 'critical' | 'unavailable' = 'healthy';
+  if (totalNodeCount === 0) {
+    healthStatus = 'unavailable';
+  } else if (nodeHealthPercent < 80 || podFailurePercent > 20) {
     healthStatus = 'critical';
   } else if (nodeHealthPercent < 95 || podFailurePercent > 5) {
     healthStatus = 'warning';
@@ -290,6 +292,11 @@ export const Dashboard = () => {
               <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-dashboard-warning-bg text-dashboard-warning">
                 <AlertCircle size={16} />
                 <span className="text-sm font-medium">Warning</span>
+              </div>
+            ) : healthStatus === 'unavailable' ? (
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-hover text-text-secondary">
+                <AlertCircle size={16} />
+                <span className="text-sm font-medium">Unavailable</span>
               </div>
             ) : (
               <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-dashboard-danger-bg text-dashboard-danger">
