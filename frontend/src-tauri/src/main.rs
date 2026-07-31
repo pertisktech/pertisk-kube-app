@@ -1008,14 +1008,16 @@ fn discover_kubeconfig_candidates() -> Vec<String> {
         }
     }
 
-    if let Ok(home) = std::env::var("HOME") {
-        let kube_dir = PathBuf::from(home).join(".kube");
+    // Prefer resolve_home_dir() over process HOME: Finder-launched DMG apps often
+    // have a minimal env, while dirs::home_dir()/login-shell HOME still resolve.
+    if let Some(home) = resolve_home_dir() {
+        let kube_dir = home.join(".kube");
         let default_config = kube_dir.join("config");
         if default_config.exists() {
             candidates.push(default_config.to_string_lossy().to_string());
         }
 
-        if let Ok(entries) = fs::read_dir(kube_dir) {
+        if let Ok(entries) = fs::read_dir(&kube_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if !path.is_file() {
@@ -1028,11 +1030,15 @@ fn discover_kubeconfig_candidates() -> Vec<String> {
                     .map(|name| name.to_lowercase())
                     .unwrap_or_default();
 
-                let has_yaml_ext = path
+                let extension = path
                     .extension()
                     .and_then(|ext| ext.to_str())
-                    .map(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
-                    .unwrap_or(false);
+                    .map(|ext| ext.to_ascii_lowercase())
+                    .unwrap_or_default();
+
+                let has_kubeconfig_ext = extension == "yaml"
+                    || extension == "yml"
+                    || extension == "kubeconfig";
 
                 let is_likely_kubeconfig = file_name == "config"
                     || file_name.contains("kubeconfig")
@@ -1040,15 +1046,13 @@ fn discover_kubeconfig_candidates() -> Vec<String> {
                     || file_name.contains("omni")
                     || file_name.contains("talos");
 
-                if has_yaml_ext || is_likely_kubeconfig {
+                if has_kubeconfig_ext || is_likely_kubeconfig {
                     candidates.push(path.to_string_lossy().to_string());
                 }
             }
         }
-    }
 
-    if let Some(home) = env_value("HOME") {
-        let talos_dir = PathBuf::from(home).join(".talos");
+        let talos_dir = home.join(".talos");
         if let Ok(entries) = fs::read_dir(talos_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -2908,11 +2912,23 @@ fn list_azure_clusters(
     Ok(clusters)
 }
 
+fn ensure_process_home_env() {
+    // Finder/launchd-started DMG apps can miss HOME in the process environment.
+    // Seed it early so kubeconfig discovery and sidecar children behave like debug runs.
+    if env::var_os("HOME").filter(|v| !v.is_empty()).is_some() {
+        return;
+    }
+    if let Some(home) = resolve_home_dir() {
+        env::set_var("HOME", home);
+    }
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
+    ensure_process_home_env();
     app_log("[app] PTKublet startup");
 
     let app = tauri::Builder::default()

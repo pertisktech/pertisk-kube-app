@@ -415,30 +415,35 @@ export const Layout = () => {
         ]);
         if (cancelled) return;
 
-        // Check if no kubeconfig files were found
-        if (!candidates || candidates.length === 0) {
+        const currentPath = (config.kubeconfigPath ?? '').trim();
+        const currentContext = (config.kubeContext ?? '').trim();
+
+        // Always keep a saved/persisted kubeconfig path even when discovery is empty
+        // (common for Finder-launched DMG installs with a minimal process env).
+        const merged = new Set(candidates ?? []);
+        if (currentPath) merged.add(currentPath);
+        const sortedCandidates = Array.from(merged).sort((a, b) => a.localeCompare(b));
+
+        if (sortedCandidates.length === 0) {
           setKubeconfigError(null);
           setNoClusterConfigDetected(true);
           setKubeClusters([]);
           setSelectedClusterContext('');
+          setKubeconfigPath('');
+          setKubeContext('');
+          setKubeconfigInput('');
+          setKubeconfigCandidates([]);
           setKubeconfigLoading(false);
           setKubeconfigInitialized(true);
           return;
         }
 
         setNoClusterConfigDetected(false);
-
-        const currentPath = config.kubeconfigPath ?? '';
-        const currentContext = config.kubeContext ?? '';
         setKubeconfigPath(currentPath);
         setKubeContext(currentContext);
-        setStartupClusterSelectionDone(Boolean(currentContext.trim()));
+        setStartupClusterSelectionDone(Boolean(currentContext));
         setKubeconfigInput(currentPath);
         setSelectedClusterContext('');
-
-        const merged = new Set(candidates);
-        if (currentPath) merged.add(currentPath);
-        const sortedCandidates = Array.from(merged).sort((a, b) => a.localeCompare(b));
         setKubeconfigCandidates(sortedCandidates);
 
         const clusters = await listDesktopKubeconfigClusters(currentPath || null);
