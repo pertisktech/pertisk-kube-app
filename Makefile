@@ -130,13 +130,56 @@ build-macos-dmg: frontend-install
 		chmod +x frontend/src-tauri/bundle-resources/ktail; \
 	fi; \
 	test -x frontend/src-tauri/bundle-resources/pertisk-kube-backend || { echo "ERROR: bundled backend missing"; exit 1; }; \
+	echo "Signing bundled sidecar with app identifier (Local Network TCC)..."; \
+	codesign --force --sign - --identifier "com.pertisk.ptkublet" \
+		frontend/src-tauri/bundle-resources/pertisk-kube-backend || true; \
+	if [ -x frontend/src-tauri/bundle-resources/ktail ]; then \
+		codesign --force --sign - --identifier "com.pertisk.ptkublet" \
+			frontend/src-tauri/bundle-resources/ktail || true; \
+	fi; \
 	echo "Bundled sidecar: $$(ls -lh frontend/src-tauri/bundle-resources/pertisk-kube-backend)"; \
-	cd frontend && KTAIL_BINARY_PATH="$$KTAIL_BIN" VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --bundles dmg --config '{"version":"'"$$TAURI_VERSION"'"}'; \
-	APP_BUNDLE="frontend/src-tauri/target/release/bundle/macos/PTKublet.app"; \
-	if [ -d "$$APP_BUNDLE" ]; then \
-		echo "Ad-hoc signing $$APP_BUNDLE for Local Network / Gatekeeper..."; \
-		codesign --force --deep --sign - "$$APP_BUNDLE" || true; \
-	fi
+	(cd frontend && KTAIL_BINARY_PATH="$$KTAIL_BIN" VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --bundles app --config '{"version":"'"$$TAURI_VERSION"'"}'); \
+	APP_BUNDLE="$(CURDIR)/frontend/src-tauri/target/release/bundle/macos/PTKublet.app"; \
+	if [ ! -d "$$APP_BUNDLE" ]; then \
+		echo "ERROR: $$APP_BUNDLE missing after tauri app bundle"; \
+		exit 1; \
+	fi; \
+	MACOS_DIR="$$APP_BUNDLE/Contents/MacOS"; \
+	RES_DIR="$$APP_BUNDLE/Contents/Resources"; \
+	mkdir -p "$$MACOS_DIR"; \
+	# macOS Local Network TCC attributes poorly to helpers under Resources/.
+	# Place the kube sidecar next to the main binary in MacOS/ so LAN access works.
+	if [ -x "$$RES_DIR/pertisk-kube-backend" ]; then \
+		cp -f "$$RES_DIR/pertisk-kube-backend" "$$MACOS_DIR/pertisk-kube-backend"; \
+		chmod +x "$$MACOS_DIR/pertisk-kube-backend"; \
+	fi; \
+	if [ -x "$$RES_DIR/ktail" ]; then \
+		cp -f "$$RES_DIR/ktail" "$$MACOS_DIR/ktail"; \
+		chmod +x "$$MACOS_DIR/ktail"; \
+	fi; \
+	for bin in pertisk-kube-backend ktail; do \
+		if [ -x "$$MACOS_DIR/$$bin" ]; then \
+			codesign --force --sign - --identifier "com.pertisk.ptkublet" "$$MACOS_DIR/$$bin" || true; \
+		fi; \
+		if [ -x "$$RES_DIR/$$bin" ]; then \
+			codesign --force --sign - --identifier "com.pertisk.ptkublet" "$$RES_DIR/$$bin" || true; \
+		fi; \
+	done; \
+	echo "Ad-hoc deep-signing $$APP_BUNDLE for Local Network / Gatekeeper..."; \
+	codesign --force --deep --sign - "$$APP_BUNDLE" || true; \
+	# Re-assert sidecar identifier after deep sign (deep can rewrite nested code).
+	if [ -x "$$MACOS_DIR/pertisk-kube-backend" ]; then \
+		codesign --force --sign - --identifier "com.pertisk.ptkublet" "$$MACOS_DIR/pertisk-kube-backend" || true; \
+		codesign --force --sign - "$$APP_BUNDLE" || true; \
+	fi; \
+	ARCH=$$(uname -m); \
+	case "$$ARCH" in arm64) ARCH_LABEL=aarch64 ;; x86_64) ARCH_LABEL=x64 ;; *) ARCH_LABEL=$$ARCH ;; esac; \
+	DMG_DIR="$(CURDIR)/frontend/src-tauri/target/release/bundle/dmg"; \
+	mkdir -p "$$DMG_DIR"; \
+	DMG_PATH="$$DMG_DIR/PTKublet_$${TAURI_VERSION}_$${ARCH_LABEL}.dmg"; \
+	echo "Creating DMG $$DMG_PATH from signed app..."; \
+	rm -f "$$DMG_PATH"; \
+	hdiutil create -volname "PTKublet" -srcfolder "$$APP_BUNDLE" -ov -format UDZO "$$DMG_PATH"
 	@echo ""
 	@echo "DMG output:"
 	@ls -lh frontend/src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null || echo "  (no .dmg found — check build output above)"

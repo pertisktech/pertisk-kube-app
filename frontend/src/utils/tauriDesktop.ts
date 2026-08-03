@@ -124,12 +124,27 @@ export async function getDesktopAuthStatus(): Promise<DesktopAuthStatus> {
 export async function isDesktopClusterReady(): Promise<boolean> {
   try {
     const url = isDesktopRuntime()
-      ? `${getDesktopBackendOrigin()}/api/ready`
-      : '/api/ready';
+      ? `${getDesktopBackendOrigin()}/api/readiness`
+      : '/api/readiness';
     const res = await fetch(url, { cache: 'no-store' });
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+export async function openDesktopLocalNetworkSettings(): Promise<void> {
+  const urls = [
+    'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocalNetwork',
+    'x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork',
+  ];
+  for (const url of urls) {
+    try {
+      await openDesktopExternalUrl(url);
+      return;
+    } catch {
+      // try next URL style across macOS versions
+    }
   }
 }
 

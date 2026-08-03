@@ -70,11 +70,13 @@ import {
   type DesktopKubeconfigCluster,
   getDesktopAuthStatus,
   getDesktopSidecarConfig,
+  isDesktopClusterReady,
   listDesktopKubeconfigClusters,
   listDesktopKubeconfigCandidates,
   listAwsEksClusters,
   awsEksUpdateKubeconfig,
   openDesktopExternalUrl,
+  openDesktopLocalNetworkSettings,
   saveDesktopSidecarConfig,
   waitDesktopClusterSwitchResult,
   logOmniConnectionAttempt,
@@ -279,6 +281,7 @@ export const Layout = () => {
   const [noClusterConfigDetected, setNoClusterConfigDetected] = useState(false);
   const [startupClusterSelectionDone, setStartupClusterSelectionDone] = useState(false);
   const [authStatus, setAuthStatus] = useState<DesktopAuthStatus | null>(null);
+  const [clusterReachable, setClusterReachable] = useState<boolean | null>(null);
   const [omniUrl, setOmniUrl] = useState('');
   const [omniEmail, setOmniEmail] = useState('');
   const [omniConnectLoading, setOmniConnectLoading] = useState(false);
@@ -499,13 +502,20 @@ export const Layout = () => {
 
   // Poll /api/auth-status every 5s so we can show the browser-login CTA when
   // the sidecar starts with a placeholder (unauthenticated) kube client.
+  // Also poll /api/readiness — packaged macOS apps often look "connected" while
+  // Local Network TCC blocks the LAN kube API, which yields empty resource lists.
   useEffect(() => {
     if (!desktopMode) return;
     let alive = true;
 
     const poll = async () => {
-      const status = await getDesktopAuthStatus();
-      if (alive) setAuthStatus(status);
+      const [status, ready] = await Promise.all([
+        getDesktopAuthStatus(),
+        isDesktopClusterReady(),
+      ]);
+      if (!alive) return;
+      setAuthStatus(status);
+      setClusterReachable(ready);
     };
 
     void poll();
@@ -2926,6 +2936,34 @@ export const Layout = () => {
             >
               Configure
             </Link>
+          </div>
+        )}
+        {desktopMode
+          && !kubeconfigError
+          && hasConfiguredClusterContext
+          && clusterReachable === false
+          && !authStatus?.placeholder && (
+          <div className="bg-amber-900/15 border-b border-amber-700/40 px-4 py-3 flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-1 min-w-0">
+              <div className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                Cluster API unreachable
+              </div>
+              <div className="text-xs text-amber-700 dark:text-amber-300/90">
+                macOS Local Network is blocking this DMG build from reaching your LAN Kubernetes API.
+                After each reinstall: System Settings → Privacy &amp; Security → Local Network → toggle
+                PTKublet off then on, quit the app fully, and reopen. Or launch from Terminal:
+                <span className="font-mono"> /Applications/PTKublet.app/Contents/MacOS/PTKublet</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                void openDesktopLocalNetworkSettings();
+              }}
+              className="flex-shrink-0 rounded-md bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600 transition-colors"
+            >
+              Open Local Network settings
+            </button>
           </div>
         )}
 

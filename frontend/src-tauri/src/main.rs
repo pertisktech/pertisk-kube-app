@@ -492,9 +492,41 @@ fn configure_sidecar_environment(command: &mut Command) {
 
 fn warmup_local_network_access(cfg: &SidecarConfig) {
     // macOS Local Network privacy (Sequoia+): GUI-launched apps are blocked from LAN
-    // until the user grants permission. Trigger an early connection from the app process
-    // itself so the system prompt is attributed to PTKublet (not only the sidecar child).
+    // until the user grants permission. Trigger Bonjour browse + TCP from the app
+    // process itself so the system prompt is attributed to PTKublet (not only the sidecar).
+    #[cfg(target_os = "macos")]
+    {
+        // Bonjour browsing is the most reliable Local Network prompt trigger on Sequoia.
+        let _ = Command::new("/usr/bin/dns-sd")
+            .args(["-B", "_https._tcp", "local."])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()
+            .and_then(|mut child| {
+                thread::sleep(Duration::from_millis(800));
+                let _ = child.kill();
+                let _ = child.wait();
+                Some(())
+            });
+        let _ = Command::new("/usr/bin/dns-sd")
+            .args(["-B", "_http._tcp", "local."])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()
+            .and_then(|mut child| {
+                thread::sleep(Duration::from_millis(800));
+                let _ = child.kill();
+                let _ = child.wait();
+                Some(())
+            });
+    }
+
     let mut hosts = Vec::<String>::new();
+    let mut log_lines = Vec::<String>::new();
 
     if let Some(path) = cfg
         .kubeconfig_path
@@ -533,8 +565,37 @@ fn warmup_local_network_access(cfg: &SidecarConfig) {
                 Err(_) => continue,
             },
         };
-        let _ = TcpStream::connect_timeout(&addr, Duration::from_millis(400));
+        let result = TcpStream::connect_timeout(&addr, Duration::from_millis(1200));
+        log_lines.push(format!(
+            "{} -> {}",
+            addr,
+            if result.is_ok() { "ok" } else { "fail" }
+        ));
     }
+
+    if let Some(home) = resolve_home_dir() {
+        let log_path = home
+            .join("Library/Application Support/com.pertisk.ptkublet/lan-warmup.log");
+        if let Some(parent) = log_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let body = format!(
+            "ts={}\npackaged={}\n{}\n",
+            chrono_like_timestamp(),
+            is_packaged_app(),
+            log_lines.join("\n")
+        );
+        let _ = fs::write(log_path, body);
+    }
+}
+
+fn chrono_like_timestamp() -> String {
+    use std::time::SystemTime;
+    let secs = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    secs.to_string()
 }
 
 fn parse_host_port_from_server_url(value: &str) -> Option<String> {
@@ -720,6 +781,19 @@ fn wait_for_cluster_verification(port: u16, timeout: Duration) -> bool {
     false
 }
 
+fn wait_for_cluster_api_ready(port: u16, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if let Some(status) = probe_backend_status(port, "/api/readiness") {
+            if status == 200 {
+                return true;
+            }
+        }
+        thread::sleep(Duration::from_millis(400));
+    }
+    false
+}
+
 fn is_port_bindable(port: u16) -> bool {
     TcpListener::bind(("0.0.0.0", port)).is_ok()
 }
@@ -791,6 +865,14 @@ fn find_available_port(preferred: u16) -> Option<u16> {
 }
 
 fn ensure_sidecar_port_available(cfg: &mut SidecarConfig) -> anyhow::Result<Option<(u16, u16)>> {
+    // Prefer the default desktop port whenever it is free so UI/localStorage do not
+    // drift to a fallback port across restarts.
+    if cfg.port != DEFAULT_PORT && is_port_bindable(DEFAULT_PORT) {
+        let previous = cfg.port;
+        cfg.port = DEFAULT_PORT;
+        return Ok(Some((previous, DEFAULT_PORT)));
+    }
+
     if is_port_bindable(cfg.port) {
         return Ok(None);
     }
@@ -3012,6 +3094,20 @@ fn main() {
                             "backend sidecar is healthy on {}",
                             backend_socket_addr(initial_config.port)
                         );
+                        // Re-trigger Local Network TCC from the GUI process after the
+                        // sidecar is up. Finder-launched DMG installs often block the
+                        // helper from reaching LAN kube APIs until the parent prompts.
+                        #[cfg(target_os = "macos")]
+                        {
+                            warmup_local_network_access(&initial_config);
+                            if !wait_for_cluster_api_ready(initial_config.port, Duration::from_secs(8)) {
+                                warn!(
+                                    "Kubernetes API not reachable yet on sidecar port {}. \
+                                     On macOS, enable Local Network for PTKublet in System Settings.",
+                                    initial_config.port
+                                );
+                            }
+                        }
                     }
 
                     Some(child)
