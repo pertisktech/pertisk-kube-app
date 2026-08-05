@@ -133,21 +133,6 @@ export async function isDesktopClusterReady(): Promise<boolean> {
   }
 }
 
-export async function openDesktopLocalNetworkSettings(): Promise<void> {
-  const urls = [
-    'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocalNetwork',
-    'x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork',
-  ];
-  for (const url of urls) {
-    try {
-      await openDesktopExternalUrl(url);
-      return;
-    } catch {
-      // try next URL style across macOS versions
-    }
-  }
-}
-
 export async function listDesktopKubeconfigCandidates(): Promise<string[]> {
   if (!isDesktopRuntime()) {
     return [];

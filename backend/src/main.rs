@@ -510,6 +510,7 @@ async fn log_slow_requests(
 async fn health() -> impl IntoResponse {
     let body = HealthResponse {
         status: "ok".into(),
+        message: None,
     };
     (StatusCode::OK, Json(body))
 }
@@ -552,6 +553,14 @@ async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
             StatusCode::SERVICE_UNAVAILABLE,
             Json(HealthResponse {
                 status: "not ready".into(),
+                message: Some(
+                    state
+                        .auth_user_message()
+                        .await
+                        .unwrap_or_else(|| {
+                            "Kubernetes credentials are not available.".to_string()
+                        }),
+                ),
             }),
         )
             .into_response();
@@ -561,14 +570,20 @@ async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
         Ok(_) => {
             let body = HealthResponse {
                 status: "ready".into(),
+                message: None,
             };
             (StatusCode::OK, Json(body)).into_response()
         }
         Err(err) => {
             error!("Kubernetes API not reachable: {}", err);
-            (StatusCode::SERVICE_UNAVAILABLE, Json(HealthResponse {
-                status: "not ready".into(),
-            })).into_response()
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(HealthResponse {
+                    status: "not ready".into(),
+                    message: Some(err.to_string()),
+                }),
+            )
+                .into_response()
         }
     }
 }
