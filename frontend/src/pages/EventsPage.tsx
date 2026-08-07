@@ -25,14 +25,14 @@ export const EventsPage = () => {
     {
       header: 'Namespace',
       accessor: 'namespace' as const,
-      width: '12%',
+      minWidth: '7rem',
       sortable: true,
       sortKey: 'namespace',
     },
     {
       header: 'Object',
       accessor: 'involved_object' as const,
-      width: '18%',
+      minWidth: '10rem',
       sortable: true,
       sortKey: 'involved_object',
     },
@@ -43,39 +43,41 @@ export const EventsPage = () => {
           {row.type || 'Normal'}
         </span>
       ),
-      width: '8%',
+      minWidth: '5rem',
       sortable: true,
       sortKey: 'type',
     },
     {
       header: 'Reason',
       accessor: 'reason' as const,
-      width: '12%',
+      minWidth: '8rem',
       sortable: true,
       sortKey: 'reason',
     },
     {
       header: 'Message',
       accessor: (row: KubernetesEvent) => (
-        <span className="break-words whitespace-normal line-clamp-2" title={row.message}>
-          {row.message}
+        <span className="block whitespace-pre-wrap break-words leading-relaxed">
+          {row.message || '-'}
         </span>
       ),
-      width: '28%',
+      wrap: true,
+      minWidth: '20rem',
+      maxWidth: '48rem',
       sortable: true,
       sortKey: 'message',
     },
     {
       header: 'Count',
       accessor: 'count' as const,
-      width: '7%',
+      minWidth: '4rem',
       sortable: true,
       sortKey: 'count',
     },
     {
       header: 'Last Seen',
       accessor: (row: KubernetesEvent) => timeAgo(row.last_timestamp),
-      width: '15%',
+      minWidth: '6rem',
       sortable: true,
       sortKey: 'last_timestamp',
     },

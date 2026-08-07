@@ -57,6 +57,10 @@ interface Column<T> {
   accessor: keyof T | ((row: T) => ReactNode);
   render?: (row: T) => ReactNode;
   width?: string;
+  minWidth?: string;
+  maxWidth?: string;
+  /** Allow multiline cell content (skips table-wide nowrap). */
+  wrap?: boolean;
   headerClassName?: string;
   cellClassName?: string;
   sortable?: boolean;
@@ -147,9 +151,9 @@ export const DataTable = <T extends Record<string, any>>({
                   )}
                   style={{
                     width: col.width,
-                    minWidth: col.width,
-                    maxWidth: col.width,
-                    whiteSpace: autoFitContent ? 'nowrap' : undefined,
+                    minWidth: col.minWidth ?? col.width,
+                    maxWidth: col.maxWidth ?? (col.wrap ? undefined : col.width),
+                    whiteSpace: col.wrap ? 'normal' : autoFitContent ? 'nowrap' : undefined,
                   }}
                 >
                   {enableRowSelection && idx === 0 ? (
@@ -222,15 +226,17 @@ export const DataTable = <T extends Record<string, any>>({
                       className={cn(
                         'align-middle text-sm',
                         col.cellClassName ?? 'px-3 py-2',
-                        autoFitContent && 'whitespace-nowrap',
+                        col.wrap
+                          ? 'whitespace-normal break-words align-top'
+                          : autoFitContent && 'whitespace-nowrap',
                         col.header === 'Name' && typeof col.accessor !== 'function'
                           ? 'text-text font-medium'
                           : 'text-text-secondary'
                       )}
                       style={{
                         width: col.width,
-                        minWidth: col.width,
-                        maxWidth: col.width,
+                        minWidth: col.minWidth ?? col.width,
+                        maxWidth: col.maxWidth ?? (col.wrap ? undefined : col.width),
                       }}
                     >
                       {(() => {
