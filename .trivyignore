@@ -1,0 +1,4 @@
+# glib 0.18.5 (GHSA-wrw7-89jp-8q8g): Linux-only transitive dep via Tauri → gtk 0.18 → webkit2gtk.
+# gtk3-rs is unmaintained; the fix is in glib 0.20+, which requires Tauri's GTK4 migration.
+# Not compiled into macOS/Windows desktop builds. Track: https://github.com/tauri-apps/tauri/issues/12048
+GHSA-wrw7-89jp-8q8g
