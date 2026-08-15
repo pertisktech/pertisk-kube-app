@@ -140,7 +140,7 @@ make docker-build-multi VERSION=0.0.6
 
 # Deploy
 helm upgrade pertisk-kube ./helm/pertisk-kube \
-  -n pertisk-rproxy \
+  -n your-namespace \
   --set app.image.tag=0.0.6
 ```
 

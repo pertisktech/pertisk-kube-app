@@ -35,7 +35,7 @@
 **Action Required:** Upgrade the Helm release to apply new RBAC permissions:
 
 ```bash
-helm upgrade pertisk-kube ./helm/pertisk-kube -n pertisk-rproxy
+helm upgrade pertisk-kube ./helm/pertisk-kube -n your-namespace
 ```
 
 ---
@@ -153,12 +153,11 @@ make docker-build-multi
 
 # 5. Upgrade Helm release (applies RBAC + new image)
 helm upgrade pertisk-kube ./helm/pertisk-kube \
-  -n pertisk-rproxy \
-  --kubeconfig ~/.kube/talos-omni-hz-cluister-kubeconfig.yaml
+  -n your-namespace
 
 # 6. Verify deployment
-kubectl get pods -n pertisk-rproxy
-kubectl logs -n pertisk-rproxy -l app.kubernetes.io/name=pertisk-kube
+kubectl get pods -n your-namespace
+kubectl logs -n your-namespace -l app.kubernetes.io/name=pertisk-kube
 
 # 7. Test in browser
 # - Delete pods should now work (no 500 error)

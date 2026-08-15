@@ -11,13 +11,11 @@ This project is structured as a **single workspace**:
 
 ## 📸 Screenshots
 
-Add screenshots to `docs/screenshots/` and they will render in GitHub README.
+Add **sanitized** screenshots to `docs/screenshots/` (no real cluster names, IPs, hostnames, or registry URLs) before publishing.
 
-### Desktop Overview
+Recommended names: `dashboard.png`, `resource-map.png`, `deployments.png`.
 
-![Dashboard](docs/screenshots/dashboard.png)
-![Resource Map](docs/screenshots/resource-map.png)
-![Deployments](docs/screenshots/deployments.png)
+See `docs/screenshots/README.md`.
 
 ## 🎯 Core Features
 
@@ -174,21 +172,22 @@ make build-macos-dmg
   1. Click the **Configure** button in the banner (or navigate to **Config** → **Desktop Settings**)
   2. Set the **Backend Binary Path** to the full path of your compiled backend, e.g.:
      ```
-      /Users/your-username/projects/pertisk-tech/pertisk-kube-app/target/debug/pertisk-kube-backend
+     /absolute/path/to/pertisk-kube-app/target/debug/pertisk-kube-backend
      ```
-      For production/distribution builds, use the release binary path instead.
+     For production/distribution builds, use the release binary path instead.
   3. The app will automatically restart the backend with the new path
   4. If the issue persists, click the cluster dropdown and **Retry** to reload
 
 **Backend Binary Search Order** (automatic, no action needed if binary is in one of these locations):
 1. Environment variable `PERTISK_BACKEND_BIN`
-2. Default workspace paths:
+2. Desktop Settings → backend binary path
+3. Relative workspace paths:
   - `target/debug/pertisk-kube-backend`
   - `backend/target/debug/pertisk-kube-backend`
   - `target/release/pertisk-kube-backend`
   - `backend/target/release/pertisk-kube-backend`
-3. Home directory fallback: `~/projects/pertisktech/pertisk-kube-app/backend/target/release/pertisk-kube-backend`
-4. macOS app bundle resources (for distributed builds)
+4. User-local install: `~/.pertisk-kube-app-backend/pertisk-kube-backend`
+5. macOS app bundle resources (for distributed builds)
 
 **DMG Builds:**
 - `make build-macos-dmg` creates a bundled `PTKublet_0.1.0_aarch64.dmg` for distribution.
@@ -257,5 +256,5 @@ make build-macos-dmg
 
 ## 📝 License
 
-See LICENSE file for details.
+License to be added before public release. Contact the maintainers if you need terms sooner.
  

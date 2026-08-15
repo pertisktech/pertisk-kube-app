@@ -18,6 +18,19 @@ pnpm-debug.log*
 !.env.example
 !.env.*.example
 
+# Local desktop / kube / secrets (never commit)
+desktop-sidecar.json
+**/desktop-sidecar.json
+*kubeconfig*
+*.kubeconfig
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+*.crt
+
 # --- Rust ---
 target/
 **/target/
@@ -30,15 +43,29 @@ frontend/.cache/
 frontend/.eslintcache
 frontend/*.tsbuildinfo
 
+# --- Tauri / desktop build artifacts ---
+frontend/src-tauri/bundle-resources/
+frontend/src-tauri/frontend/
+frontend/src-tauri/target/
+*.dmg
+*.app
+*.AppImage
+*.deb
+*.rpm
+*.msi
+*.exe
+
 # --- Coverage / test artifacts ---
 coverage/
 *.lcov
 
-# --- Misc build/cache ---
+# --- Misc build/cache / local dumps ---
 .cache/
+.tmp/
 tmp/
 temp/
 certs/
-.tmp/
-frontend/src-tauri/bundle-resources/
-node_modules/
+data/
+out/
+.venv/
+venv/

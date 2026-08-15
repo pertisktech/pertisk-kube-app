@@ -10,22 +10,21 @@
 
 ```bash
 # Navigate to project root
-cd /Users/nat/projects/pertisktech/pertisk-kube-web
+cd /path/to/pertisk-kube-app
 
 # Build new multi-arch image with fixes
 make docker-build-multi VERSION=0.0.5
 
 # Upgrade Helm release (applies RBAC + new backend)
 helm upgrade pertisk-kube ./helm/pertisk-kube \
-  -n pertisk-rproxy \
-  --set app.image.tag=0.0.5 \
-  --kubeconfig ~/.kube/talos-omni-hz-cluister-kubeconfig.yaml
+  -n your-namespace \
+  --set app.image.tag=0.0.5
 
 # Wait for rollout
-kubectl rollout status deployment/pertisk-kube -n pertisk-rproxy
+kubectl rollout status deployment/pertisk-kube -n your-namespace
 
 # Check logs
-kubectl logs -n pertisk-rproxy -l app.kubernetes.io/name=pertisk-kube --tail=50
+kubectl logs -n your-namespace -l app.kubernetes.io/name=pertisk-kube --tail=50
 ```
 
 ## Verify Fixes
@@ -51,5 +50,5 @@ kubectl logs -n pertisk-rproxy -l app.kubernetes.io/name=pertisk-kube --tail=50
 ## Rollback (if needed)
 
 ```bash
-helm rollback pertisk-kube -n pertisk-rproxy
+helm rollback pertisk-kube -n your-namespace
 ```

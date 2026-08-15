@@ -12,4 +12,5 @@ Recommended file names:
 Tips:
 - Use PNG format.
 - Keep width around 1600px for clear GitHub preview.
-- Avoid sensitive cluster data before publishing.
+- Never commit screenshots that show real cluster names, node IPs, hostnames, registry URLs, or secret names.
+- Prefer a local/demo cluster with fake names before capturing.

@@ -688,30 +688,27 @@ mod gateway_address_tests {
     }
 
     #[test]
-    fn matches_pertisk_eproxy_service_by_gateway_class_name() {
+    fn matches_example_service_by_gateway_class_name() {
         let services = vec![lb_service(
-            "pertisk-eproxy",
-            "pertisk-eproxy",
+            "example-proxy",
+            "example-proxy",
             &[
-                "10.1.1.83",
-                "2405:9800:b900:f3ba:c39:b0af:fc26:d226",
+                "203.0.113.10",
+                "2001:db8::10",
             ],
         )];
 
         let picked = pick_service_for_gateway(
             &services,
-            "pertisk-gateway",
-            "pertisk-eproxy",
-            Some("pertisk-eproxy"),
+            "example-gateway",
+            "example-proxy",
+            Some("example-proxy"),
         )
         .expect("service should match gatewayClassName");
 
         let addresses = load_balancer_addresses_from_service(picked);
         assert_eq!(addresses.len(), 2);
-        assert_eq!(addresses[0]["value"], "10.1.1.83");
-        assert_eq!(
-            addresses[1]["value"],
-            "2405:9800:b900:f3ba:c39:b0af:fc26:d226"
-        );
+        assert_eq!(addresses[0]["value"], "203.0.113.10");
+        assert_eq!(addresses[1]["value"], "2001:db8::10");
     }
 }

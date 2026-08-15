@@ -674,14 +674,8 @@ fn candidate_backend_paths(app: &AppHandle, cfg: &SidecarConfig) -> Vec<PathBuf>
     push_bundled_paths(&mut paths);
 
     if let Ok(home) = std::env::var("HOME") {
-        let workspace_candidates = [
-            "projects/pertisk-tech/pertisk-kube-app/target/release/pertisk-kube-backend",
-            "projects/pertisk-tech/pertisk-kube-app/backend/target/release/pertisk-kube-backend",
-            ".pertisk-kube-app-backend/pertisk-kube-backend",
-        ];
-        for candidate in workspace_candidates {
-            paths.push(PathBuf::from(&home).join(candidate));
-        }
+        // Optional user-local install location (not a personal workspace path).
+        paths.push(PathBuf::from(&home).join(".pertisk-kube-app-backend/pertisk-kube-backend"));
     }
 
     paths

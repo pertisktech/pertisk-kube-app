@@ -97,7 +97,24 @@ async fn main() -> anyhow::Result<()> {
     let username = env::var("USERNAME").unwrap_or_else(|_| "admin".to_string());
     let password = env::var("PASSWORD").unwrap_or_else(|_| "admin".to_string());
     let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key-change-in-production".to_string());
-    
+    let is_production = env::var("APP_ENV")
+        .or_else(|_| env::var("RUST_ENV"))
+        .map(|v| v.eq_ignore_ascii_case("production") || v.eq_ignore_ascii_case("prod"))
+        .unwrap_or(false);
+    if is_production {
+        if jwt_secret == "your-secret-key-change-in-production" {
+            anyhow::bail!("JWT_SECRET must be set to a strong unique value when APP_ENV=production");
+        }
+        if username == "admin" && password == "admin" {
+            anyhow::bail!("USERNAME/PASSWORD must not use the default admin/admin when APP_ENV=production");
+        }
+    } else if jwt_secret == "your-secret-key-change-in-production"
+        || (username == "admin" && password == "admin")
+    {
+        tracing::warn!(
+            "Using default auth credentials or JWT_SECRET; set USERNAME, PASSWORD, and JWT_SECRET before any real deployment"
+        );
+    } 
     let cluster_key = handlers::portforward::cluster_key_from_env_or_default();
     let storage_path = handlers::portforward::build_storage_path_from_env();
     let port_forward_state = Some(Arc::new(handlers::portforward::PortForwardState::new(
