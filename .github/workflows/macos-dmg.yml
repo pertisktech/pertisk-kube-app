@@ -221,25 +221,10 @@ jobs:
           echo "Renamed DMG: ${DEST_PATH}"
           ls -lh "${DEST_PATH}" "dist/${DEST_NAME}"
 
-      - name: Verify bundled sidecar architecture
+      - name: Verify DMG and sidecar architectures
         shell: bash
         run: |
           expected="${{ matrix.macho_arch }}"
-          APP_CANDIDATES=(
-            "frontend/src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/PTKublet.app"
-            "frontend/src-tauri/target/release/bundle/macos/PTKublet.app"
-          )
-          APP=""
-          for path in "${APP_CANDIDATES[@]}"; do
-            if [[ -d "${path}" ]]; then
-              APP="${path}"
-              break
-            fi
-          done
-          if [[ -z "${APP}" ]]; then
-            echo "PTKublet.app not found" >&2
-            exit 1
-          fi
 
           check_arch() {
             local bin="$1"
@@ -258,18 +243,43 @@ jobs:
             fi
           }
 
-          check_arch "${APP}/Contents/MacOS/PTKublet" "app binary"
+          # Staged sidecars survive after Tauri cleans the .app post-DMG bundling.
+          check_arch "frontend/src-tauri/bundle-resources/pertisk-kube-backend" "staged backend sidecar"
+          if [[ -f frontend/src-tauri/bundle-resources/ktail ]]; then
+            check_arch "frontend/src-tauri/bundle-resources/ktail" "staged ktail sidecar"
+          fi
+
+          # Tauri removes PTKublet.app after creating the DMG, so mount the DMG to verify
+          # the packaged app binary and any embedded resources.
+          MOUNT_DIR="$(mktemp -d /tmp/ptkublet-dmg-XXXXXX)"
+          cleanup() {
+            hdiutil detach "${MOUNT_DIR}" -force >/dev/null 2>&1 || true
+            rmdir "${MOUNT_DIR}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          echo "Mounting ${DMG_PATH} at ${MOUNT_DIR}"
+          hdiutil attach "${DMG_PATH}" -nobrowse -readonly -mountpoint "${MOUNT_DIR}"
+
+          APP="$(find "${MOUNT_DIR}" -maxdepth 2 -type d -name 'PTKublet.app' | head -n 1)"
+          if [[ -z "${APP}" ]]; then
+            echo "PTKublet.app not found inside DMG" >&2
+            ls -la "${MOUNT_DIR}" >&2 || true
+            exit 1
+          fi
+
+          check_arch "${APP}/Contents/MacOS/PTKublet" "app binary (from DMG)"
           SIDECAR="$(find "${APP}/Contents" -type f -name 'pertisk-kube-backend' | head -n 1)"
           if [[ -z "${SIDECAR}" ]]; then
             echo "Bundled pertisk-kube-backend not found in ${APP}" >&2
             exit 1
           fi
-          check_arch "${SIDECAR}" "backend sidecar"
+          check_arch "${SIDECAR}" "backend sidecar (from DMG)"
           KTAIL="$(find "${APP}/Contents" -type f -name 'ktail' | head -n 1)"
           if [[ -n "${KTAIL}" ]]; then
-            check_arch "${KTAIL}" "ktail sidecar"
+            check_arch "${KTAIL}" "ktail sidecar (from DMG)"
           else
-            echo "ktail sidecar not found in app bundle (continuing)"
+            echo "ktail sidecar not found in DMG app bundle (continuing)"
           fi
 
       - name: Verify DMG signatures and notarization staple
