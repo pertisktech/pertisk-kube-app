@@ -191,7 +191,7 @@ make build-macos-dmg
 
 **DMG Builds:**
 - `make build-macos-dmg` creates a bundled DMG for the current Mac architecture (Intel `x64` or Apple Silicon `aarch64`).
-- GitHub Releases: push a version tag (for example `v1.1.77`) to run `.github/workflows/macos-dmg.yml`. It builds native Intel (`macos-13`) and Apple Silicon (`macos-14`) DMGs and publishes both on one GitHub Release as `PTKublet_<version>_x64.dmg` and `PTKublet_<version>_aarch64.dmg`.
+- GitHub Releases: push a version tag (for example `v1.1.77`) to run `.github/workflows/macos-dmg.yml`. Both Intel and Apple Silicon DMGs build on `macos-14` runners; Intel (`x86_64`) is cross-compiled because GitHub deprecated `macos-13` Intel runners. Artifacts publish as `PTKublet_<version>_x64.dmg` and `PTKublet_<version>_aarch64.dmg`.
 - You can also run the workflow manually from **Actions → Build macOS DMG**.
 - If Apple signing secrets are configured, tag builds are signed and notarized. Otherwise unsigned DMGs are published (first launch on macOS needs right-click → Open).
 - The bundled app includes the backend sidecar binary and will also bundle `ktail` when available at build time.
