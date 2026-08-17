@@ -11,9 +11,22 @@ permissions:
 
 jobs:
   build-dmg:
-    runs-on: macos-latest
+    name: Build ${{ matrix.arch }} DMG
+    runs-on: ${{ matrix.os }}
     env:
       CARGO_TERM_COLOR: always
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-13
+            arch: x64
+            rust_target: x86_64-apple-darwin
+            macho_arch: x86_64
+          - os: macos-14
+            arch: aarch64
+            rust_target: aarch64-apple-darwin
+            macho_arch: arm64
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,6 +40,8 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
 
       - name: Install protobuf compiler
         run: brew install protobuf
@@ -37,6 +52,7 @@ jobs:
           workspaces: |
             . -> target
             frontend/src-tauri -> frontend/src-tauri/target
+          key: ${{ matrix.arch }}
 
       - name: Resolve app version from tag
         shell: bash
@@ -59,6 +75,7 @@ jobs:
           echo "TAURI_VERSION=${TAURI_VERSION}" >> "$GITHUB_ENV"
           echo "Resolved app version: ${VERSION}"
           echo "Resolved tauri version: ${TAURI_VERSION}"
+          echo "Native architecture: ${{ matrix.arch }} (${{ matrix.rust_target }})"
 
       - name: Detect macOS signing configuration
         shell: bash
@@ -73,7 +90,7 @@ jobs:
             APPLE_TEAM_ID
           do
             if [[ -z "${!var}" ]]; then
-              echo "Missing required secret: ${var}" >&2
+              echo "Missing Apple secret: ${var}" >&2
               missing=1
             fi
           done
@@ -83,7 +100,7 @@ jobs:
             echo "Apple signing/notarization secrets detected."
           else
             echo "HAS_APPLE_SIGNING=false" >> "$GITHUB_ENV"
-            echo "Apple signing/notarization secrets are incomplete."
+            echo "Apple signing/notarization secrets are incomplete; building unsigned DMG."
           fi
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -92,14 +109,6 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      - name: Fail tag release when Apple signing secrets are missing
-        if: github.ref_type == 'tag' && env.HAS_APPLE_SIGNING != 'true'
-        shell: bash
-        run: |
-          echo "Refusing to publish unsigned macOS release artifacts for tag builds." >&2
-          echo "Configure APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID in repository secrets." >&2
-          exit 1
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -116,14 +125,40 @@ jobs:
           git clone --depth 1 https://github.com/pertisktech/pertisk-ktail.git "${KTAIL_DIR}"
           cargo build --release --manifest-path "${KTAIL_DIR}/Cargo.toml"
 
-          if [[ -x "${KTAIL_DIR}/target/release/ktail" ]]; then
-            echo "KTAIL_BINARY_PATH=${KTAIL_DIR}/target/release/ktail" >> "$GITHUB_ENV"
-          elif [[ -x "${KTAIL_DIR}/target/release/pertisk-ktail" ]]; then
-            echo "KTAIL_BINARY_PATH=${KTAIL_DIR}/target/release/pertisk-ktail" >> "$GITHUB_ENV"
-          else
+          KTAIL_BIN=""
+          for candidate in \
+            "${KTAIL_DIR}/target/release/ktail" \
+            "${KTAIL_DIR}/target/release/pertisk-ktail"
+          do
+            if [[ -x "${candidate}" ]]; then
+              KTAIL_BIN="${candidate}"
+              break
+            fi
+          done
+
+          if [[ -z "${KTAIL_BIN}" ]]; then
             echo "ktail binary was not produced" >&2
             exit 1
           fi
+
+          echo "KTAIL_BINARY_PATH=${KTAIL_BIN}" >> "$GITHUB_ENV"
+          echo "Using ktail binary: ${KTAIL_BIN}"
+
+      - name: Stage sidecar binaries for Tauri bundle
+        shell: bash
+        run: |
+          mkdir -p frontend/src-tauri/bundle-resources
+          BACKEND_BIN="target/release/pertisk-kube-backend"
+          if [[ ! -x "${BACKEND_BIN}" ]]; then
+            echo "Backend binary missing after cargo build" >&2
+            exit 1
+          fi
+          cp -f "${BACKEND_BIN}" frontend/src-tauri/bundle-resources/pertisk-kube-backend
+          chmod +x frontend/src-tauri/bundle-resources/pertisk-kube-backend
+          cp -f "${KTAIL_BINARY_PATH}" frontend/src-tauri/bundle-resources/ktail
+          chmod +x frontend/src-tauri/bundle-resources/ktail
+          echo "Staged sidecars:"
+          ls -lh frontend/src-tauri/bundle-resources/
 
       - name: Build signed and notarized macOS DMG
         if: env.HAS_APPLE_SIGNING == 'true'
@@ -140,8 +175,8 @@ jobs:
         run: |
           npm run tauri:build -- --bundles dmg --config '{"version":"${{ env.TAURI_VERSION }}"}'
 
-      - name: Build unsigned macOS DMG (manual runs only)
-        if: env.HAS_APPLE_SIGNING != 'true' && github.event_name == 'workflow_dispatch'
+      - name: Build unsigned macOS DMG
+        if: env.HAS_APPLE_SIGNING != 'true'
         working-directory: frontend
         env:
           VITE_APP_VERSION: ${{ env.APP_VERSION }}
@@ -149,33 +184,154 @@ jobs:
         run: |
           npm run tauri:build -- --bundles dmg --config '{"version":"${{ env.TAURI_VERSION }}"}'
 
+      - name: Locate and rename DMG
+        id: dmg
+        shell: bash
+        run: |
+          shopt -s nullglob
+          CANDIDATES=(
+            frontend/src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg/*.dmg
+            frontend/src-tauri/target/release/bundle/dmg/*.dmg
+          )
+          DMG_PATH=""
+          for path in "${CANDIDATES[@]}"; do
+            if [[ -f "${path}" ]]; then
+              DMG_PATH="${path}"
+              break
+            fi
+          done
+          if [[ -z "${DMG_PATH}" ]]; then
+            echo "No DMG produced" >&2
+            find frontend/src-tauri/target -name '*.dmg' 2>/dev/null || true
+            exit 1
+          fi
+
+          DEST_DIR="$(dirname "${DMG_PATH}")"
+          DEST_NAME="PTKublet_${APP_VERSION}_${{ matrix.arch }}.dmg"
+          DEST_PATH="${DEST_DIR}/${DEST_NAME}"
+          if [[ "${DMG_PATH}" != "${DEST_PATH}" ]]; then
+            mv -f "${DMG_PATH}" "${DEST_PATH}"
+          fi
+
+          mkdir -p dist
+          cp -f "${DEST_PATH}" "dist/${DEST_NAME}"
+
+          echo "DMG_PATH=${PWD}/dist/${DEST_NAME}" >> "$GITHUB_ENV"
+          echo "dmg_path=${PWD}/dist/${DEST_NAME}" >> "$GITHUB_OUTPUT"
+          echo "Renamed DMG: ${DEST_PATH}"
+          ls -lh "${DEST_PATH}" "dist/${DEST_NAME}"
+
+      - name: Verify bundled sidecar architecture
+        shell: bash
+        run: |
+          expected="${{ matrix.macho_arch }}"
+          APP_CANDIDATES=(
+            "frontend/src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/PTKublet.app"
+            "frontend/src-tauri/target/release/bundle/macos/PTKublet.app"
+          )
+          APP=""
+          for path in "${APP_CANDIDATES[@]}"; do
+            if [[ -d "${path}" ]]; then
+              APP="${path}"
+              break
+            fi
+          done
+          if [[ -z "${APP}" ]]; then
+            echo "PTKublet.app not found" >&2
+            exit 1
+          fi
+
+          check_arch() {
+            local bin="$1"
+            local label="$2"
+            if [[ ! -f "${bin}" ]]; then
+              echo "Missing ${label}: ${bin}" >&2
+              exit 1
+            fi
+            local info
+            info="$(file "${bin}")"
+            echo "${label}: ${info}"
+            if ! echo "${info}" | grep -Eq "${expected}"; then
+              echo "${label} architecture mismatch; expected ${expected}" >&2
+              lipo -info "${bin}" || true
+              exit 1
+            fi
+          }
+
+          check_arch "${APP}/Contents/MacOS/PTKublet" "app binary"
+          SIDECAR="$(find "${APP}/Contents" -type f -name 'pertisk-kube-backend' | head -n 1)"
+          if [[ -z "${SIDECAR}" ]]; then
+            echo "Bundled pertisk-kube-backend not found in ${APP}" >&2
+            exit 1
+          fi
+          check_arch "${SIDECAR}" "backend sidecar"
+          KTAIL="$(find "${APP}/Contents" -type f -name 'ktail' | head -n 1)"
+          if [[ -n "${KTAIL}" ]]; then
+            check_arch "${KTAIL}" "ktail sidecar"
+          else
+            echo "ktail sidecar not found in app bundle (continuing)"
+          fi
+
       - name: Verify DMG signatures and notarization staple
         if: env.HAS_APPLE_SIGNING == 'true'
         shell: bash
         run: |
-          DMG_PATH="$(ls -1 frontend/src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)"
-          if [[ -z "${DMG_PATH}" ]]; then
-            echo "No DMG produced" >&2
-            exit 1
-          fi
-
-          echo "Verifying DMG at ${DMG_PATH}"
+          echo "Verifying signed DMG at ${DMG_PATH}"
           codesign --verify --deep --strict --verbose=2 "${DMG_PATH}"
           xcrun stapler validate "${DMG_PATH}"
           spctl --assess --type open --context context:primary-signature --verbose=4 "${DMG_PATH}"
 
+      - name: Skip signature checks for unsigned build
+        if: env.HAS_APPLE_SIGNING != 'true'
+        shell: bash
+        run: |
+          echo "Unsigned ${{ matrix.arch }} DMG at ${DMG_PATH}; skipping codesign/notarization checks."
+
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ptkublet-dmg-${{ env.APP_VERSION }}
-          path: frontend/src-tauri/target/release/bundle/dmg/*.dmg
+          name: ptkublet-dmg-${{ env.APP_VERSION }}-${{ matrix.arch }}
+          path: ${{ env.DMG_PATH }}
           if-no-files-found: error
 
-      - name: Publish GitHub Release with DMG
-        if: github.ref_type == 'tag' && env.HAS_APPLE_SIGNING == 'true'
+  release:
+    name: Publish GitHub Release
+    needs: build-dmg
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Intel and Apple Silicon DMGs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ptkublet-dmg-*
+          merge-multiple: true
+          path: dist
+
+      - name: List release assets
+        run: |
+          ls -lh dist
+          if ! compgen -G "dist/*_x64.dmg" >/dev/null; then
+            echo "Missing Intel x64 DMG" >&2
+            exit 1
+          fi
+          if ! compgen -G "dist/*_aarch64.dmg" >/dev/null; then
+            echo "Missing Apple Silicon aarch64 DMG" >&2
+            exit 1
+          fi
+          ls -lh dist/*.dmg
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           generate_release_notes: true
-          files: frontend/src-tauri/target/release/bundle/dmg/*.dmg
+          files: dist/*.dmg
+          fail_on_unmatched_files: true
+          body: |
+            macOS desktop builds for this release:
+
+            - `PTKublet_*_aarch64.dmg` — Apple Silicon (M-series)
+            - `PTKublet_*_x64.dmg` — Intel
+
+            Unsigned builds require a right-click → Open the first time on macOS.
