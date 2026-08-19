@@ -114,6 +114,51 @@ pub struct KubeClientStatus {
     pub user_message: Option<String>,
 }
 
+fn kubeconfig_file_exists_in_dir(dir: &std::path::Path, remaining_depth: usize) -> bool {
+    if remaining_depth == 0 || !dir.is_dir() {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if name.starts_with('.') || matches!(name.as_str(), "cache" | "http-cache" | "discovery") {
+                continue;
+            }
+            if kubeconfig_file_exists_in_dir(&path, remaining_depth - 1) {
+                return true;
+            }
+            continue;
+        }
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if file_name == "config"
+            || ext == "yaml"
+            || ext == "yml"
+            || ext == "kubeconfig"
+            || file_name.contains("kubeconfig")
+        {
+            return true;
+        }
+    }
+    false
+}
+
 fn has_accessible_kubeconfig() -> bool {
     let configured_paths = env::var("KUBECONFIG")
         .ok()
@@ -127,12 +172,14 @@ fn has_accessible_kubeconfig() -> bool {
         .unwrap_or_default();
 
     if !configured_paths.is_empty() {
-        return configured_paths.iter().any(|path| path.exists());
+        return configured_paths.iter().any(|path| {
+            path.is_file() || (path.is_dir() && kubeconfig_file_exists_in_dir(path, 3))
+        });
     }
 
     match env::var("HOME") {
         Ok(home) if !home.trim().is_empty() => {
-            std::path::PathBuf::from(home).join(".kube/config").exists()
+            kubeconfig_file_exists_in_dir(&std::path::PathBuf::from(home).join(".kube"), 4)
         }
         _ => false,
     }
@@ -143,7 +190,7 @@ fn default_placeholder_user_message() -> String {
         && env::var("KUBERNETES_SERVICE_PORT").is_ok();
 
     if !has_incluster_env && !has_accessible_kubeconfig() {
-        return "No Kubernetes cluster configuration found. Add a kubeconfig at ~/.kube/config or set KUBECONFIG, then restart the app.".to_string();
+        return "No Kubernetes cluster configuration found. Add a kubeconfig under ~/.kube (including subfolders) or set KUBECONFIG, then restart the app.".to_string();
     }
 
     "Kubernetes credentials are not available. Check your kubeconfig/context and re-authenticate, then restart the app.".to_string()

@@ -234,6 +234,10 @@ function kubeconfigDisplayName(path: string): string {
   const trimmed = path.trim();
   if (!trimmed) return 'Default kubeconfig';
   const segments = trimmed.split('/').filter(Boolean);
+  const kubeIdx = segments.lastIndexOf('.kube');
+  if (kubeIdx >= 0 && kubeIdx < segments.length - 1) {
+    return `.kube/${segments.slice(kubeIdx + 1).join('/')}`;
+  }
   return segments.length ? segments[segments.length - 1] : trimmed;
 }
 
@@ -2027,7 +2031,7 @@ export const Layout = () => {
                                 </span>
                               </div>
                               <div className="truncate text-xs text-text-secondary">
-                                cluster: {item.cluster ?? '-'}{item.namespace ? ` • ns: ${item.namespace}` : ''}
+                                {kubeconfigDisplayName(item.kubeconfigPath)} • cluster: {item.cluster ?? '-'}{item.namespace ? ` • ns: ${item.namespace}` : ''}
                               </div>
                             </button>
                           ))}

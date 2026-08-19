@@ -1069,17 +1069,98 @@ fn spawn_backend(app: &AppHandle, cfg: &SidecarConfig, logs: &SidecarLogs) -> an
     ))
 }
 
+fn looks_like_kubeconfig_file(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_lowercase())
+        .unwrap_or_default();
+
+    if file_name.is_empty() || file_name.starts_with('.') {
+        return false;
+    }
+
+    let extension = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .unwrap_or_default();
+
+    if matches!(
+        extension.as_str(),
+        "crt" | "key" | "pem" | "pub" | "csr" | "json" | "lock" | "log" | "txt"
+    ) {
+        return false;
+    }
+
+    let has_kubeconfig_ext =
+        extension == "yaml" || extension == "yml" || extension == "kubeconfig";
+
+    let is_likely_kubeconfig = file_name == "config"
+        || file_name.contains("kubeconfig")
+        || file_name.contains("kube-config")
+        || file_name.contains("omni")
+        || file_name.contains("talos");
+
+    has_kubeconfig_ext || is_likely_kubeconfig
+}
+
+fn should_skip_kube_subdir(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with('.')
+        || matches!(
+            lower.as_str(),
+            "cache" | "http-cache" | "discovery" | "plugins" | "tmp" | "temp"
+        )
+}
+
+fn collect_kubeconfig_files(dir: &Path, remaining_depth: usize, out: &mut Vec<String>) {
+    if remaining_depth == 0 || !dir.is_dir() {
+        return;
+    }
+
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let dir_name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            if should_skip_kube_subdir(dir_name) {
+                continue;
+            }
+            collect_kubeconfig_files(&path, remaining_depth - 1, out);
+            continue;
+        }
+
+        if looks_like_kubeconfig_file(&path) {
+            out.push(path.to_string_lossy().to_string());
+        }
+    }
+}
+
 fn discover_kubeconfig_candidates() -> Vec<String> {
     let mut candidates = Vec::<String>::new();
 
     if let Some(from_env) = env_value("KUBECONFIG") {
         for item in from_env.split(':') {
             let path = item.trim();
-            if !path.is_empty() {
-                let candidate = PathBuf::from(path);
-                if candidate.exists() {
-                    candidates.push(candidate.to_string_lossy().to_string());
-                }
+            if path.is_empty() {
+                continue;
+            }
+            let candidate = PathBuf::from(path);
+            if candidate.is_dir() {
+                collect_kubeconfig_files(&candidate, 3, &mut candidates);
+            } else if candidate.exists() {
+                candidates.push(candidate.to_string_lossy().to_string());
             }
         }
     }
@@ -1087,66 +1168,9 @@ fn discover_kubeconfig_candidates() -> Vec<String> {
     // Prefer resolve_home_dir() over process HOME: Finder-launched DMG apps often
     // have a minimal env, while dirs::home_dir()/login-shell HOME still resolve.
     if let Some(home) = resolve_home_dir() {
-        let kube_dir = home.join(".kube");
-        let default_config = kube_dir.join("config");
-        if default_config.exists() {
-            candidates.push(default_config.to_string_lossy().to_string());
-        }
-
-        if let Ok(entries) = fs::read_dir(&kube_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if !path.is_file() {
-                    continue;
-                }
-
-                let file_name = path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .map(|name| name.to_lowercase())
-                    .unwrap_or_default();
-
-                let extension = path
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .map(|ext| ext.to_ascii_lowercase())
-                    .unwrap_or_default();
-
-                let has_kubeconfig_ext = extension == "yaml"
-                    || extension == "yml"
-                    || extension == "kubeconfig";
-
-                let is_likely_kubeconfig = file_name == "config"
-                    || file_name.contains("kubeconfig")
-                    || file_name.contains("kube-config")
-                    || file_name.contains("omni")
-                    || file_name.contains("talos");
-
-                if has_kubeconfig_ext || is_likely_kubeconfig {
-                    candidates.push(path.to_string_lossy().to_string());
-                }
-            }
-        }
-
-        let talos_dir = home.join(".talos");
-        if let Ok(entries) = fs::read_dir(talos_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if !path.is_file() {
-                    continue;
-                }
-
-                let file_name = path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .map(|name| name.to_lowercase())
-                    .unwrap_or_default();
-
-                if file_name.contains("kubeconfig") || file_name.contains("omni") {
-                    candidates.push(path.to_string_lossy().to_string());
-                }
-            }
-        }
+        // Recurse into ~/.kube and nested folders (e.g. ~/.kube/clusters/*.yaml).
+        collect_kubeconfig_files(&home.join(".kube"), 4, &mut candidates);
+        collect_kubeconfig_files(&home.join(".talos"), 2, &mut candidates);
     }
 
     candidates.sort();
