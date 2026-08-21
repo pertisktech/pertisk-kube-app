@@ -1689,13 +1689,24 @@ export const BottomPanel = () => {
         !!activeTab.helmReleaseName &&
         !!activeTab.helmReleaseNamespace;
 
-      const helmRepoUrl =
-        settings.helmRepositories.find((repo) => repo.enabled)?.url.trim() ||
-        settings.helmRepoUrl.trim();
-
+      // Resolve chart against host helm repos first; then probe each enabled UI repo
+      // (so private charts are found even when Bitnami is also enabled).
+      // Prefer non-Bitnami URLs first so private charts are matched sooner.
       const upgradeParams = new URLSearchParams();
-      if (helmRepoUrl) {
-        upgradeParams.set('repo_url', helmRepoUrl);
+      const enabledRepoUrls = settings.helmRepositories
+        .filter((repo) => repo.enabled && repo.url.trim())
+        .map((repo) => repo.url.trim());
+      const repoUrls = [
+        ...enabledRepoUrls,
+        ...(settings.helmRepoUrl.trim() ? [settings.helmRepoUrl.trim()] : []),
+      ];
+      const uniqueRepoUrls = Array.from(new Set(repoUrls)).sort((a, b) => {
+        const aBitnami = a.includes('charts.bitnami.com') ? 1 : 0;
+        const bBitnami = b.includes('charts.bitnami.com') ? 1 : 0;
+        return aBitnami - bBitnami;
+      });
+      if (uniqueRepoUrls.length > 0) {
+        upgradeParams.set('repo_urls', uniqueRepoUrls.join(','));
       }
       const upgradeQuery = upgradeParams.toString();
 
@@ -1738,7 +1749,13 @@ export const BottomPanel = () => {
           throw new Error(withIndex);
         }
 
-        lastSuccessMessage = message;
+        if (isHelmUpgrade) {
+          const releaseName = activeTab.helmReleaseName as string;
+          const releaseNs = activeTab.helmReleaseNamespace as string;
+          lastSuccessMessage = `Release '${releaseName}' upgraded successfully in namespace '${releaseNs}'`;
+        } else {
+          lastSuccessMessage = message;
+        }
       }
 
       if (documents.length > 1) {

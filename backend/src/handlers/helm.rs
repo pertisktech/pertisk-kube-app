@@ -469,6 +469,8 @@ fn decode_helm_release_data(secret: &Secret) -> Option<(String, String, String, 
 #[derive(Deserialize)]
 pub struct UpgradeHelmReleaseQuery {
     pub repo_url: Option<String>,
+    /// Optional comma-separated list of Helm repository URLs to try (private charts first).
+    pub repo_urls: Option<String>,
 }
 
 struct TempChartDir(PathBuf);
@@ -498,6 +500,123 @@ fn has_repo_chart_prefix(chart: &str) -> bool {
     chart.contains('/') && !chart.starts_with('/')
 }
 
+/// Trim Helm CLI stdout/stderr for UI toasts: drop NOTES and keep the first useful line(s).
+fn summarize_helm_cli_message(raw: &str, success: bool) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return if success {
+            "Helm operation completed successfully".to_string()
+        } else {
+            "Helm operation failed".to_string()
+        };
+    }
+
+    // Cut off chart NOTES blocks which are huge and not useful in toasts.
+    let without_notes = trimmed
+        .split_once("\nNOTES:")
+        .or_else(|| trimmed.split_once("NOTES:"))
+        .map(|(before, _)| before.trim())
+        .unwrap_or(trimmed);
+
+    let first_lines: Vec<&str> = without_notes
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take(3)
+        .collect();
+
+    let mut summary = if first_lines.is_empty() {
+        without_notes.to_string()
+    } else {
+        first_lines.join(" ")
+    };
+
+    // Collapse whitespace from multi-line helm banners.
+    summary = summary.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    const MAX_LEN: usize = 180;
+    if summary.chars().count() > MAX_LEN {
+        let shortened: String = summary.chars().take(MAX_LEN.saturating_sub(1)).collect();
+        format!("{shortened}…")
+    } else {
+        summary
+    }
+}
+
+fn normalize_chart_entry_path(name: &str, chart_name: &str) -> String {
+    let trimmed = name.trim().trim_start_matches("./");
+    if trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+
+    // Helm sometimes stores entries as "<chart-name>/Chart.yaml".
+    let prefix = format!("{chart_name}/");
+    if let Some(rest) = trimmed.strip_prefix(&prefix) {
+        return rest.to_string();
+    }
+
+    trimmed.to_string()
+}
+
+fn write_chart_yaml_from_metadata(base: &FsPath, chart: &Value) -> Result<(), String> {
+    let chart_yaml_path = base.join("Chart.yaml");
+    if chart_yaml_path.exists() {
+        return Ok(());
+    }
+
+    let metadata = chart
+        .get("metadata")
+        .cloned()
+        .ok_or_else(|| "Release chart is missing metadata and Chart.yaml".to_string())?;
+
+    // Prefer a clean Chart.yaml. Keep known fields first for readability.
+    let mut ordered = serde_yaml::Mapping::new();
+    let prefer = [
+        "apiVersion",
+        "name",
+        "description",
+        "type",
+        "version",
+        "appVersion",
+        "kubeVersion",
+        "home",
+        "icon",
+        "keywords",
+        "sources",
+        "maintainers",
+        "dependencies",
+        "annotations",
+    ];
+
+    if let Some(map) = metadata.as_object() {
+        for key in prefer {
+            if let Some(value) = map.get(key) {
+                let yaml_value = serde_yaml::to_value(value)
+                    .map_err(|err| format!("serialize Chart.yaml field {key}: {err}"))?;
+                ordered.insert(serde_yaml::Value::String(key.to_string()), yaml_value);
+            }
+        }
+        for (key, value) in map {
+            if prefer.contains(&key.as_str()) {
+                continue;
+            }
+            // Skip helm-internal fields that are not valid Chart.yaml content.
+            if key == "raw" || key == "files" || key == "lock" {
+                continue;
+            }
+            let yaml_value = serde_yaml::to_value(value)
+                .map_err(|err| format!("serialize Chart.yaml field {key}: {err}"))?;
+            ordered.insert(serde_yaml::Value::String(key.clone()), yaml_value);
+        }
+    } else {
+        return Err("Release chart metadata is not an object".to_string());
+    }
+
+    let yaml = serde_yaml::to_string(&serde_yaml::Value::Mapping(ordered))
+        .map_err(|err| format!("serialize Chart.yaml: {err}"))?;
+    fs::write(chart_yaml_path, yaml).map_err(|err| err.to_string())
+}
+
 fn extract_chart_from_release(release_json: &Value) -> Result<PathBuf, String> {
     let chart = release_json
         .get("chart")
@@ -505,9 +624,16 @@ fn extract_chart_from_release(release_json: &Value) -> Result<PathBuf, String> {
     let files = chart.get("files").and_then(|value| value.as_array());
     let templates = chart.get("templates").and_then(|value| value.as_array());
 
-    if files.is_none() && templates.is_none() {
-        return Err("Release chart has no extractable files".to_string());
+    if files.is_none() && templates.is_none() && chart.get("metadata").is_none() {
+        return Err("Release chart has no extractable files or metadata".to_string());
     }
+
+    let chart_name = chart
+        .pointer("/metadata/name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("chart")
+        .trim()
+        .to_string();
 
     let base = std::env::temp_dir().join(format!(
         "pertisk-helm-chart-{}-{}",
@@ -520,10 +646,14 @@ fn extract_chart_from_release(release_json: &Value) -> Result<PathBuf, String> {
     fs::create_dir_all(&base).map_err(|err| err.to_string())?;
 
     let write_entry = |rel_path: &str, data_b64: &str| -> Result<(), String> {
+        let normalized = normalize_chart_entry_path(rel_path, &chart_name);
+        if normalized.is_empty() {
+            return Ok(());
+        }
         let data = STANDARD
             .decode(data_b64.trim())
-            .map_err(|err| format!("decode chart file {rel_path}: {err}"))?;
-        let path = base.join(rel_path);
+            .map_err(|err| format!("decode chart file {normalized}: {err}"))?;
+        let path = base.join(&normalized);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|err| err.to_string())?;
         }
@@ -550,7 +680,13 @@ fn extract_chart_from_release(release_json: &Value) -> Result<PathBuf, String> {
             let data = template["data"]
                 .as_str()
                 .ok_or_else(|| format!("Chart template entry {name} is missing data"))?;
-            write_entry(&format!("templates/{name}"), data)?;
+            // Helm stores template names as "templates/foo.yaml" already.
+            let rel = if name.starts_with("templates/") {
+                name.to_string()
+            } else {
+                format!("templates/{name}")
+            };
+            write_entry(&rel, data)?;
         }
     }
 
@@ -562,6 +698,9 @@ fn extract_chart_from_release(release_json: &Value) -> Result<PathBuf, String> {
         }
     }
 
+    // Helm release secrets keep Chart.yaml content in chart.metadata, not always in files.
+    write_chart_yaml_from_metadata(&base, chart)?;
+
     if !base.join("Chart.yaml").exists() {
         let _ = fs::remove_dir_all(&base);
         return Err("Extracted chart is missing Chart.yaml".to_string());
@@ -571,6 +710,12 @@ fn extract_chart_from_release(release_json: &Value) -> Result<PathBuf, String> {
 }
 
 async fn try_helm_search_chart_ref(chart_name: &str, chart_version: &str) -> Option<String> {
+    // Refresh repo indexes so newly added private charts are visible.
+    let _ = Command::new("helm")
+        .args(["repo", "update"])
+        .output()
+        .await;
+
     let output = Command::new("helm")
         .args(["search", "repo", chart_name, "-o", "json", "-l"])
         .output()
@@ -595,23 +740,66 @@ async fn try_helm_search_chart_ref(chart_name: &str, chart_version: &str) -> Opt
         return None;
     }
 
-    let pick = if !chart_version.is_empty() && chart_version != "-" {
-        matches
+    // Prefer an exact version match in any repo (private first if listed).
+    if !chart_version.is_empty() && chart_version != "-" {
+        if let Some(exact) = matches
             .iter()
             .find(|entry| entry["version"].as_str() == Some(chart_version))
-            .or_else(|| matches.first())
-    } else {
-        matches.first()
-    }?;
+        {
+            return exact["name"].as_str().map(str::to_string);
+        }
+        // Exact version not in index; still return the chart ref so upgrade can
+        // target the repo chart (helm --version will fail clearly if unavailable).
+        return matches.first().and_then(|entry| entry["name"].as_str().map(str::to_string));
+    }
 
-    pick["name"].as_str().map(str::to_string)
+    matches.first().and_then(|entry| entry["name"].as_str().map(str::to_string))
+}
+
+async fn try_helm_show_chart_in_repo(
+    chart_name: &str,
+    chart_version: &str,
+    repo_url: &str,
+) -> bool {
+    let mut with_version = Command::new("helm");
+    with_version.args(["show", "chart", chart_name, "--repo", repo_url]);
+    if !chart_version.is_empty() && chart_version != "-" {
+        with_version.args(["--version", chart_version]);
+        if matches!(with_version.output().await, Ok(out) if out.status.success()) {
+            return true;
+        }
+    }
+
+    // Retry without version pin in case the index is stale or the upgrade
+    // target version differs from the currently installed chart version.
+    let mut any = Command::new("helm");
+    any.args(["show", "chart", chart_name, "--repo", repo_url]);
+    matches!(any.output().await, Ok(out) if out.status.success())
+}
+
+fn parse_upgrade_repo_urls(query: &UpgradeHelmReleaseQuery) -> Vec<String> {
+    let mut urls = Vec::new();
+    if let Some(raw) = query.repo_urls.as_deref() {
+        for part in raw.split(',') {
+            let url = part.trim();
+            if !url.is_empty() && !urls.iter().any(|existing: &String| existing == url) {
+                urls.push(url.to_string());
+            }
+        }
+    }
+    if let Some(url) = query.repo_url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+        if !urls.iter().any(|existing| existing == url) {
+            urls.push(url.to_string());
+        }
+    }
+    urls
 }
 
 async fn resolve_upgrade_chart_selection(
     release_json: &Value,
     chart_name: &str,
     chart_version: &str,
-    repo_url: Option<&str>,
+    repo_urls: &[String],
 ) -> Result<UpgradeChartSelection, String> {
     let local_chart_path = FsPath::new("helm").join(chart_name);
     if local_chart_path.join("Chart.yaml").exists() || local_chart_path.exists() {
@@ -632,15 +820,7 @@ async fn resolve_upgrade_chart_selection(
         });
     }
 
-    if let Some(repo_url) = repo_url.filter(|url| !url.trim().is_empty()) {
-        return Ok(UpgradeChartSelection {
-            chart_ref: chart_name.to_string(),
-            repo_url: Some(repo_url.trim().to_string()),
-            apply_chart_version: true,
-            _temp_dir: None,
-        });
-    }
-
+    // Prefer helm search across all configured host repos (including private charts).
     if let Some(chart_ref) = try_helm_search_chart_ref(chart_name, chart_version).await {
         return Ok(UpgradeChartSelection {
             chart_ref,
@@ -648,6 +828,19 @@ async fn resolve_upgrade_chart_selection(
             apply_chart_version: true,
             _temp_dir: None,
         });
+    }
+
+    // Probe configured repository URLs (private repos from app settings) and pick
+    // the first one that actually contains this chart/version — never assume Bitnami.
+    for repo_url in repo_urls {
+        if try_helm_show_chart_in_repo(chart_name, chart_version, repo_url).await {
+            return Ok(UpgradeChartSelection {
+                chart_ref: chart_name.to_string(),
+                repo_url: Some(repo_url.clone()),
+                apply_chart_version: true,
+                _temp_dir: None,
+            });
+        }
     }
 
     let extracted = extract_chart_from_release(release_json)?;
@@ -1429,11 +1622,12 @@ pub async fn upgrade_helm_release(
             .into_response();
     }
 
+    let repo_urls = parse_upgrade_repo_urls(&query);
     let chart_selection = match resolve_upgrade_chart_selection(
         &release_json,
         &chart_name,
         &chart_version,
-        query.repo_url.as_deref(),
+        &repo_urls,
     )
     .await
     {
@@ -1522,11 +1716,10 @@ pub async fn upgrade_helm_release(
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
 
     if output.status.success() {
-        let message = if stdout.is_empty() {
-            format!("Helm release '{}' upgraded successfully", name)
-        } else {
-            stdout
-        };
+        let message = format!(
+            "Release '{}' upgraded successfully in namespace '{}'",
+            name, namespace
+        );
         (
             StatusCode::OK,
             Json(serde_json::json!({
@@ -1538,13 +1731,15 @@ pub async fn upgrade_helm_release(
         )
             .into_response()
     } else {
-        let message = if !stderr.is_empty() {
+        // Prefer a short actionable error; Helm NOTES are not useful on failure either.
+        let raw = if !stderr.is_empty() {
             stderr
         } else if !stdout.is_empty() {
             stdout
         } else {
             format!("helm upgrade failed with status {}", output.status)
         };
+        let message = summarize_helm_cli_message(&raw, false);
 
         (
             StatusCode::BAD_REQUEST,
