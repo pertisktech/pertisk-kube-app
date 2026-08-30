@@ -795,11 +795,8 @@ export const Layout = () => {
 
       setKubeClusters(clusters);
       setNoClusterConfigDetected(false);
-      if (clusters.length === 0) {
-        setSelectedClusterContext('');
-      } else {
-        setSelectedClusterContext('');
-      }
+      const defaultCluster = clusters.find((cluster) => cluster.isCurrent) ?? clusters[0];
+      setSelectedClusterContext(defaultCluster?.context ?? '');
     } catch (err) {
       if (requestId !== kubeconfigRefreshRequestRef.current) {
         return;

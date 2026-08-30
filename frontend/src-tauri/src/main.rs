@@ -775,19 +775,6 @@ fn wait_for_cluster_verification(port: u16, timeout: Duration) -> bool {
     false
 }
 
-fn wait_for_cluster_api_ready(port: u16, timeout: Duration) -> bool {
-    let start = Instant::now();
-    while start.elapsed() < timeout {
-        if let Some(status) = probe_backend_status(port, "/api/readiness") {
-            if status == 200 {
-                return true;
-            }
-        }
-        thread::sleep(Duration::from_millis(400));
-    }
-    false
-}
-
 fn is_port_bindable(port: u16) -> bool {
     TcpListener::bind(("0.0.0.0", port)).is_ok()
 }
@@ -3087,8 +3074,6 @@ fn main() {
             }
 
             let mut initial_config = load_sidecar_config(app.handle());
-            #[cfg(target_os = "macos")]
-            warmup_local_network_access(&initial_config);
             if let Ok(Some((previous, next))) = ensure_sidecar_port_available(&mut initial_config) {
                 warn!(
                     "startup moved sidecar port from {} to {} because the original port was occupied",
@@ -3117,14 +3102,8 @@ fn main() {
                         // helper from reaching LAN kube APIs until the parent prompts.
                         #[cfg(target_os = "macos")]
                         {
-                            warmup_local_network_access(&initial_config);
-                            if !wait_for_cluster_api_ready(initial_config.port, Duration::from_secs(8)) {
-                                warn!(
-                                    "Kubernetes API not reachable yet on sidecar port {}. \
-                                     On macOS, enable Local Network for PTKublet in System Settings.",
-                                    initial_config.port
-                                );
-                            }
+                            let warmup_config = initial_config.clone();
+                            thread::spawn(move || warmup_local_network_access(&warmup_config));
                         }
                     }
 
