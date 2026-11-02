@@ -359,3 +359,33 @@ jobs:
             - `Pertisk_Kube_*_x64.dmg` — Intel (cross-compiled)
 
             Unsigned builds require a right-click → Open the first time on macOS.
+
+      # softprops reuses an existing release for the tag and may skip updating
+      # title/notes (seen when re-tagging 0.1.78 over the old PTKublet release).
+      - name: Force release title, notes, and asset cleanup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          NOTES="$(mktemp)"
+          cat > "${NOTES}" <<EOF
+          ## Pertisk Kube ${TAG}
+
+          macOS desktop builds for this release:
+
+          - \`Pertisk_Kube_*_aarch64.dmg\` — Apple Silicon (M-series)
+          - \`Pertisk_Kube_*_x64.dmg\` — Intel (cross-compiled)
+
+          Unsigned builds require a right-click → Open the first time on macOS.
+          EOF
+          gh release edit "${TAG}" --title "Pertisk Kube ${TAG}" --notes-file "${NOTES}" --latest
+
+          while IFS= read -r asset; do
+            case "${asset}" in
+              PTKublet_*)
+                echo "Removing legacy asset ${asset}"
+                gh release delete-asset "${TAG}" "${asset}" --yes
+                ;;
+            esac
+          done < <(gh release view "${TAG}" --json assets --jq '.assets[].name')
