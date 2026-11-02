@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>PTKublet needs local network access to reach your Kubernetes API servers on your LAN (for example 10.x / 192.168.x cluster endpoints).</string>
+	<string>Pertisk Kube needs local network access to reach your Kubernetes API servers on your LAN (for example 10.x / 192.168.x cluster endpoints).</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_http._tcp</string>

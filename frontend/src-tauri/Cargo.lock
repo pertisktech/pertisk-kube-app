@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "PTKublet"
+name = "PertiskKube"
 version = "0.1.0"
 dependencies = [
  "anyhow",

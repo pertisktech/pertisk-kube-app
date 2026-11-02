@@ -1,6 +1,6 @@
-# PTKublet – Kubernetes Desktop App
+# Pertisk Kube – Kubernetes Desktop App
 
-A comprehensive, real-time Kubernetes management desktop application built with Tauri 2 (Rust shell), a Rust (Axum) backend sidecar, and a modern React frontend. PTKublet provides a unified native desktop interface for monitoring and managing Kubernetes clusters with a focus on performance and user experience.
+A comprehensive, real-time Kubernetes management desktop application built with Tauri 2 (Rust shell), a Rust (Axum) backend sidecar, and a modern React frontend. Pertisk Kube provides a unified native desktop interface for monitoring and managing Kubernetes clusters with a focus on performance and user experience.
 
 This project is structured as a **single workspace**:
 
@@ -191,7 +191,7 @@ make build-macos-dmg
 
 **DMG Builds:**
 - `make build-macos-dmg` creates a bundled DMG for the current Mac architecture (Intel `x64` or Apple Silicon `aarch64`).
-- GitHub Releases: push a version tag (for example `v1.1.77`) to run `.github/workflows/macos-dmg.yml`. Both Intel and Apple Silicon DMGs build on `macos-14` runners; Intel (`x86_64`) is cross-compiled because GitHub deprecated `macos-13` Intel runners. Artifacts publish as `PTKublet_<version>_x64.dmg` and `PTKublet_<version>_aarch64.dmg`.
+- GitHub Releases: push a version tag (for example `v1.1.77`) to run `.github/workflows/macos-dmg.yml`. Both Intel and Apple Silicon DMGs build on `macos-14` runners; Intel (`x86_64`) is cross-compiled because GitHub deprecated `macos-13` Intel runners. Artifacts publish as `Pertisk_Kube_<version>_x64.dmg` and `Pertisk_Kube_<version>_aarch64.dmg`.
 - You can also run the workflow manually from **Actions → Build macOS DMG**.
 - If Apple signing secrets are configured, tag builds are signed and notarized. Otherwise unsigned DMGs are published (first launch on macOS needs right-click → Open).
 - The bundled app includes the backend sidecar binary and will also bundle `ktail` when available at build time.

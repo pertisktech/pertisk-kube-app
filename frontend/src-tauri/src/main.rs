@@ -493,7 +493,7 @@ fn configure_sidecar_environment(command: &mut Command) {
 fn warmup_local_network_access(cfg: &SidecarConfig) {
     // macOS Local Network privacy (Sequoia+): GUI-launched apps are blocked from LAN
     // until the user grants permission. Trigger Bonjour browse + TCP from the app
-    // process itself so the system prompt is attributed to PTKublet (not only the sidecar).
+    // process itself so the system prompt is attributed to Pertisk Kube (not only the sidecar).
     #[cfg(target_os = "macos")]
     {
         // Bonjour browsing is the most reliable Local Network prompt trigger on Sequoia.
@@ -3016,7 +3016,7 @@ fn main() {
         .init();
 
     ensure_process_home_env();
-    app_log("[app] PTKublet startup");
+    app_log("[app] Pertisk Kube startup");
 
     let app = tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![

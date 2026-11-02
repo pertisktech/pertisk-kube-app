@@ -56,7 +56,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
 
       <div className={styles.brand}>
         <img src="/favicon.svg" alt="" className={styles.brandLogo} width={48} height={48} />
-        <span className={styles.brandName}>PTKublet</span>
+        <span className={styles.brandName}>Pertisk Kube</span>
       </div>
 
       <div className={styles.card}>
@@ -103,7 +103,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       </div>
 
       <footer className={styles.footer}>
-        <p className={styles.version}>PTKublet v{APP_VERSION}</p>
+        <p className={styles.version}>Pertisk Kube v{APP_VERSION}</p>
       </footer>
     </div>
   );

@@ -1,7 +1,7 @@
 [package]
-name = "PTKublet"
+name = "PertiskKube"
 version = "0.1.0"
-description = "PTKublet desktop shell"
+description = "Pertisk Kube desktop shell"
 authors = ["Pertisk Tech"]
 edition = "2021"
 

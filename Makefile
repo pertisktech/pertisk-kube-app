@@ -131,7 +131,7 @@ build-macos-dmg: frontend-install
 	test -x frontend/src-tauri/bundle-resources/pertisk-kube-backend || { echo "ERROR: bundled backend missing"; exit 1; }; \
 	echo "Bundled sidecar: $$(ls -lh frontend/src-tauri/bundle-resources/pertisk-kube-backend)"; \
 	cd frontend && KTAIL_BINARY_PATH="$$KTAIL_BIN" VITE_APP_VERSION="$(VERSION)" npm run tauri:build -- --bundles dmg --config '{"version":"'"$$TAURI_VERSION"'"}'; \
-	APP_BUNDLE="$(CURDIR)/frontend/src-tauri/target/release/bundle/macos/PTKublet.app"; \
+	APP_BUNDLE="$(CURDIR)/frontend/src-tauri/target/release/bundle/macos/Pertisk Kube.app"; \
 	if [ -d "$$APP_BUNDLE" ]; then \
 		echo "Ad-hoc signing $$APP_BUNDLE for Local Network / Gatekeeper..."; \
 		codesign --force --deep --sign - "$$APP_BUNDLE" || true; \
@@ -139,10 +139,10 @@ build-macos-dmg: frontend-install
 	@echo ""
 	@echo "DMG output:"
 	@ls -lh frontend/src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null || echo "  (no .dmg found — check build output above)"
-	@echo "Installed app tip: allow Local Network for PTKublet in System Settings → Privacy & Security → Local Network"
+	@echo "Installed app tip: allow Local Network for Pertisk Kube in System Settings → Privacy & Security → Local Network"
 
 run-desktop: frontend-install build-backend
-	@pkill -f "ptkublet-desktop" 2>/dev/null || true
+	@pkill -f "PertiskKube" 2>/dev/null || true
 	@pkill -f "pertisk-kube-backend" 2>/dev/null || true
 	@pkill -f "tauri dev" 2>/dev/null || true
 	@pkill -f "vite" 2>/dev/null || true

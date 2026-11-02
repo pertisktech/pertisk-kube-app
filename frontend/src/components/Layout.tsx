@@ -1353,7 +1353,7 @@ export const Layout = () => {
 
   const effectiveSidebarWidth = sidebarCollapsed ? 72 : sidebarWidthPx;
   const topRightTitle = (typeof window !== 'undefined' && window.__PERTISK_CONFIG__?.topRightTitle?.trim())
-    || 'PTKublet';
+    || 'Pertisk Kube';
 
   const handleDesktopTitleBarMouseDown = (e: React.MouseEvent) => {
     if (e.buttons !== 1) return;
@@ -2207,14 +2207,14 @@ export const Layout = () => {
                 <Link
                   to="/"
                   className="flex items-center gap-2.5 min-w-0 rounded-lg transition-colors hover:bg-hover px-3 py-1"
-                  aria-label="PTKublet home"
+                  aria-label="Pertisk Kube home"
                 >
                   <img
                     src="/favicon.svg"
                     alt=""
                     className="h-7 w-7 shrink-0"
                   />
-                  <h1 className="truncate text-[0.98rem] font-[650] tracking-[-0.02em] text-text">PTKublet</h1>
+                  <h1 className="truncate text-[0.98rem] font-[650] tracking-[-0.02em] text-text">Pertisk Kube</h1>
                 </Link>
               </>
             )}

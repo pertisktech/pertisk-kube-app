@@ -216,7 +216,7 @@ jobs:
           fi
 
           DEST_DIR="$(dirname "${DMG_PATH}")"
-          DEST_NAME="PTKublet_${APP_VERSION}_${{ matrix.arch }}.dmg"
+          DEST_NAME="Pertisk_Kube_${APP_VERSION}_${{ matrix.arch }}.dmg"
           DEST_PATH="${DEST_DIR}/${DEST_NAME}"
           if [[ "${DMG_PATH}" != "${DEST_PATH}" ]]; then
             mv -f "${DMG_PATH}" "${DEST_PATH}"
@@ -258,9 +258,9 @@ jobs:
             check_arch "frontend/src-tauri/bundle-resources/ktail" "staged ktail sidecar"
           fi
 
-          # Tauri removes PTKublet.app after creating the DMG, so mount the DMG to verify
+          # Tauri removes Pertisk Kube.app after creating the DMG, so mount the DMG to verify
           # the packaged app binary and any embedded resources.
-          MOUNT_DIR="$(mktemp -d /tmp/ptkublet-dmg-XXXXXX)"
+          MOUNT_DIR="$(mktemp -d /tmp/pertisk-kube-dmg-XXXXXX)"
           cleanup() {
             hdiutil detach "${MOUNT_DIR}" -force >/dev/null 2>&1 || true
             rmdir "${MOUNT_DIR}" >/dev/null 2>&1 || true
@@ -270,14 +270,14 @@ jobs:
           echo "Mounting ${DMG_PATH} at ${MOUNT_DIR}"
           hdiutil attach "${DMG_PATH}" -nobrowse -readonly -mountpoint "${MOUNT_DIR}"
 
-          APP="$(find "${MOUNT_DIR}" -maxdepth 2 -type d -name 'PTKublet.app' | head -n 1)"
+          APP="$(find "${MOUNT_DIR}" -maxdepth 2 -type d -name 'Pertisk Kube.app' | head -n 1)"
           if [[ -z "${APP}" ]]; then
-            echo "PTKublet.app not found inside DMG" >&2
+            echo "Pertisk Kube.app not found inside DMG" >&2
             ls -la "${MOUNT_DIR}" >&2 || true
             exit 1
           fi
 
-          check_arch "${APP}/Contents/MacOS/PTKublet" "app binary (from DMG)"
+          check_arch "${APP}/Contents/MacOS/PertiskKube" "app binary (from DMG)"
           SIDECAR="$(find "${APP}/Contents" -type f -name 'pertisk-kube-backend' | head -n 1)"
           if [[ -z "${SIDECAR}" ]]; then
             echo "Bundled pertisk-kube-backend not found in ${APP}" >&2
@@ -309,7 +309,7 @@ jobs:
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ptkublet-dmg-${{ env.APP_VERSION }}-${{ matrix.arch }}
+          name: pertisk-kube-dmg-${{ env.APP_VERSION }}-${{ matrix.arch }}
           path: ${{ env.DMG_PATH }}
           if-no-files-found: error
 
@@ -322,7 +322,7 @@ jobs:
       - name: Download Intel and Apple Silicon DMGs
         uses: actions/download-artifact@v4
         with:
-          pattern: ptkublet-dmg-*
+          pattern: pertisk-kube-dmg-*
           merge-multiple: true
           path: dist
 
@@ -343,7 +343,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: PTKublet ${{ github.ref_name }}
+          name: Pertisk Kube ${{ github.ref_name }}
           draft: false
           prerelease: false
           make_latest: true
@@ -351,11 +351,11 @@ jobs:
           files: dist/*.dmg
           fail_on_unmatched_files: true
           body: |
-            ## PTKublet ${{ github.ref_name }}
+            ## Pertisk Kube ${{ github.ref_name }}
 
             macOS desktop builds for this release:
 
-            - `PTKublet_*_aarch64.dmg` — Apple Silicon (M-series)
-            - `PTKublet_*_x64.dmg` — Intel (cross-compiled)
+            - `Pertisk_Kube_*_aarch64.dmg` — Apple Silicon (M-series)
+            - `Pertisk_Kube_*_x64.dmg` — Intel (cross-compiled)
 
             Unsigned builds require a right-click → Open the first time on macOS.

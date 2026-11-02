@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "PTKublet",
+  "productName": "Pertisk Kube",
   "version": "0.1.0",
   "identifier": "com.pertisk.ptkublet",
   "build": {
@@ -13,7 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "PTKublet",
+        "title": "Pertisk Kube",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,
